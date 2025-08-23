@@ -15,6 +15,12 @@ Execute the following commands on WSL.
 # Check compatibility for your system
 docker pull pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
 
+# Build the docker image
+docker build -t kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 .
+
 # Train
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime python3 vae.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 vae.py
+
+# Evaluate
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 stats.py
 ```
