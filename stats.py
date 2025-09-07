@@ -87,7 +87,7 @@ if __name__ == "__main__":
     val_data_path = "./data/val-resize"
     transform = transforms.Compose(
         [
-            transforms.Resize((224, 224)),
+            transforms.Resize((512, 512)),
             # transforms.RandomHorizontalFlip(p=0.5),
             # transforms.RandomRotation(degrees=15),
             # transforms.ColorJitter(brightness=0.2, contrast=0.2),
