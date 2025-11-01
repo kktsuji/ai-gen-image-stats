@@ -91,7 +91,7 @@ def _save_graph(
     plt.savefig(output_path)
 
 
-def _calculate_wasserstein_distances(feature0, feature1):
+def calculate_wasserstein_distances(feature0, feature1):
     distances = []
     for dim in range(feature0.shape[1]):
         dist = wasserstein_distance(feature0[:, dim], feature1[:, dim])
@@ -260,13 +260,13 @@ if __name__ == "__main__":
     )
 
     # mean_distance_original_generated = np.mean(
-    #     _calculate_wasserstein_distances(original_features, generated_features)
+    #     calculate_wasserstein_distances(original_features, generated_features)
     # )
     # mean_distance_original_normal = np.mean(
-    #     _calculate_wasserstein_distances(original_features, original_normal_features)
+    #     calculate_wasserstein_distances(original_features, original_normal_features)
     # )
     # mean_distance_normal_generated = np.mean(
-    #     _calculate_wasserstein_distances(original_normal_features, generated_features)
+    #     calculate_wasserstein_distances(original_normal_features, generated_features)
     # )
     # print("Average Wasserstein Distance:")
     # print(f"  - Original vs Generated: {mean_distance_original_generated}")

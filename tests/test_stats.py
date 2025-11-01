@@ -1,9 +1,13 @@
-"""Pytest tests for FID and Precision/Recall metrics"""
+"""Pytest tests for FID, Precision/Recall, and Wasserstein Distance metrics"""
 
 import numpy as np
 import pytest
 
-from stats import calculate_fid, calculate_precision_recall
+from stats import (
+    calculate_fid,
+    calculate_precision_recall,
+    calculate_wasserstein_distances,
+)
 
 
 class TestCalculateFID:
@@ -150,6 +154,192 @@ class TestCalculateFID:
 
         assert fid_score >= 0
         assert not np.isnan(fid_score)
+
+
+class TestCalculateWassersteinDistances:
+    """Test cases for Wasserstein Distance calculation"""
+
+    def test_wasserstein_identical_distributions(self):
+        """Test Wasserstein distances are 0 for identical distributions"""
+        np.random.seed(42)
+        features = np.random.randn(100, 128)
+
+        distances = calculate_wasserstein_distances(features, features)
+
+        # All distances should be 0 for identical distributions
+        assert len(distances) == 128
+        assert all(d < 1e-10 for d in distances)
+
+    def test_wasserstein_output_length(self):
+        """Test output has one distance per feature dimension"""
+        np.random.seed(42)
+        feature_dim = 256
+        feature0 = np.random.randn(50, feature_dim)
+        feature1 = np.random.randn(50, feature_dim)
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        # Should return one distance per dimension
+        assert len(distances) == feature_dim
+
+    def test_wasserstein_all_positive(self):
+        """Test all Wasserstein distances are non-negative"""
+        np.random.seed(42)
+        feature0 = np.random.randn(80, 64)
+        feature1 = np.random.randn(80, 64) + 1.0
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        # Wasserstein distance is always non-negative
+        assert all(d >= 0 for d in distances)
+
+    def test_wasserstein_returns_list(self):
+        """Test function returns a list"""
+        np.random.seed(42)
+        feature0 = np.random.randn(50, 32)
+        feature1 = np.random.randn(50, 32)
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        assert isinstance(distances, list)
+
+    def test_wasserstein_larger_shift_larger_distance(self):
+        """Test larger distribution shift results in larger Wasserstein distance"""
+        np.random.seed(42)
+        feature0 = np.random.randn(100, 64)
+
+        # Small shift
+        feature1_small = feature0 + 0.5
+        # Large shift
+        feature1_large = feature0 + 2.0
+
+        distances_small = calculate_wasserstein_distances(feature0, feature1_small)
+        distances_large = calculate_wasserstein_distances(feature0, feature1_large)
+
+        # Average distance should be larger for larger shift
+        assert np.mean(distances_large) > np.mean(distances_small)
+
+    def test_wasserstein_with_different_sample_sizes(self):
+        """Test Wasserstein distance works with different sample sizes"""
+        np.random.seed(42)
+        feature0 = np.random.randn(100, 128)
+        feature1 = np.random.randn(50, 128)  # Different sample size
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        # Should still compute correctly
+        assert len(distances) == 128
+        assert all(d >= 0 for d in distances)
+
+    def test_wasserstein_dimension_wise(self):
+        """Test that distances are computed dimension-wise independently"""
+        np.random.seed(42)
+        feature0 = np.random.randn(100, 10)
+        feature1 = np.random.randn(100, 10)
+
+        # Modify only first dimension
+        feature1[:, 0] += 5.0
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        # First dimension should have much larger distance
+        assert distances[0] > np.mean(distances[1:]) * 2
+
+    def test_wasserstein_consistency(self):
+        """Test Wasserstein distances are deterministic"""
+        np.random.seed(42)
+        feature0 = np.random.randn(80, 64)
+        feature1 = np.random.randn(80, 64)
+
+        distances1 = calculate_wasserstein_distances(feature0, feature1)
+        distances2 = calculate_wasserstein_distances(feature0, feature1)
+
+        # Should produce identical results
+        assert distances1 == distances2
+
+    def test_wasserstein_with_constant_dimension(self):
+        """Test Wasserstein distance with constant dimensions"""
+        np.random.seed(42)
+        feature0 = np.random.randn(50, 5)
+        feature1 = np.random.randn(50, 5)
+
+        # Make first dimension constant in both
+        feature0[:, 0] = 1.0
+        feature1[:, 0] = 1.0
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        # First dimension should have 0 distance
+        assert distances[0] < 1e-10
+        # Other dimensions should have non-zero distances
+        assert any(d > 1e-5 for d in distances[1:])
+
+    def test_wasserstein_symmetric(self):
+        """Test Wasserstein distance is symmetric"""
+        np.random.seed(42)
+        feature0 = np.random.randn(60, 32)
+        feature1 = np.random.randn(60, 32)
+
+        distances_01 = calculate_wasserstein_distances(feature0, feature1)
+        distances_10 = calculate_wasserstein_distances(feature1, feature0)
+
+        # Should be symmetric
+        assert np.allclose(distances_01, distances_10)
+
+    @pytest.mark.parametrize("feature_dim", [32, 64, 128, 512, 2048])
+    def test_wasserstein_various_dimensions(self, feature_dim):
+        """Test Wasserstein distance works with various feature dimensions"""
+        np.random.seed(42)
+        feature0 = np.random.randn(50, feature_dim)
+        feature1 = np.random.randn(50, feature_dim)
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        assert len(distances) == feature_dim
+        assert all(d >= 0 for d in distances)
+
+    def test_wasserstein_mean_as_summary(self):
+        """Test using mean of distances as overall metric"""
+        np.random.seed(42)
+        feature0 = np.random.randn(100, 128)
+
+        # Similar distribution
+        feature1_similar = feature0 + np.random.randn(100, 128) * 0.1
+        # Different distribution
+        feature1_different = np.random.randn(100, 128) + 3.0
+
+        distances_similar = calculate_wasserstein_distances(feature0, feature1_similar)
+        distances_different = calculate_wasserstein_distances(
+            feature0, feature1_different
+        )
+
+        mean_similar = np.mean(distances_similar)
+        mean_different = np.mean(distances_different)
+
+        # Mean distance should be smaller for similar distributions
+        assert mean_similar < mean_different
+
+    def test_wasserstein_with_single_dimension(self):
+        """Test Wasserstein distance with single-dimensional features"""
+        np.random.seed(42)
+        feature0 = np.random.randn(100, 1)
+        feature1 = np.random.randn(100, 1) + 1.0
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        assert len(distances) == 1
+        assert distances[0] > 0
+
+    def test_wasserstein_no_nan_or_inf(self):
+        """Test that distances don't contain NaN or Inf"""
+        np.random.seed(42)
+        feature0 = np.random.randn(80, 128)
+        feature1 = np.random.randn(80, 128)
+
+        distances = calculate_wasserstein_distances(feature0, feature1)
+
+        assert not any(np.isnan(d) for d in distances)
+        assert not any(np.isinf(d) for d in distances)
 
 
 class TestCalculatePrecisionRecall:
@@ -474,4 +664,5 @@ class TestIntegration:
 
 
 if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--tb=short"])
     pytest.main([__file__, "-v", "--tb=short"])
