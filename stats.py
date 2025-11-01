@@ -47,6 +47,10 @@ def _save_graph(
     unique_classes,
     title: str,
     output_path: str,
+    xlim=None,
+    ylim=None,
+    colors=None,
+    alphas=None,
 ):
     plt.figure(figsize=(10, 8))
     num_classes = len(unique_classes)
@@ -54,7 +58,20 @@ def _save_graph(
         colormap = cm.tab10
     else:
         colormap = cm.tab20
-    colors = [colormap(i / max(num_classes - 1, 1)) for i in range(num_classes)]
+    if colors is None:
+        colors = [colormap(i / max(num_classes - 1, 1)) for i in range(num_classes)]
+        colors = [
+            "blue",
+            "red",
+            "green",
+            "orange",
+            "purple",
+            "brown",
+            "pink",
+            "gray",
+            "olive",
+            "cyan",
+        ]
 
     for i, class_name in enumerate(unique_classes):
         mask = np.array([c == class_name for c in classes])
@@ -63,8 +80,12 @@ def _save_graph(
             data[mask, 1],
             color=colors[i],
             label=class_name,
-            alpha=0.6,
+            alpha=alphas[i] if alphas is not None else 0.7,
         )
+    if xlim is not None:
+        plt.xlim(xlim[0], xlim[1])
+    if ylim is not None:
+        plt.ylim(ylim[0], ylim[1])
     plt.legend()
     plt.title(title)
     plt.savefig(output_path)
@@ -100,41 +121,65 @@ if __name__ == "__main__":
     IMG_SIZE_ORIGINAL = 40
     IMG_SIZE_RESNET = 224
     IMG_SIZE_INCEPTION = 299
+    COLORS = ["blue", "red", "green"]
+    ALPHAS = [0.3, 1.0, 0.3]
+    LOAD_FLAG = True
     os.makedirs("./out", exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    if not LOAD_FLAG:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
 
-    feature_extractor = (
-        ResNetFeatureExtractor(model_dir="./models/", resnet_variant="resnet50")
-        if MODEL == RESNET50
-        else InceptionV3FeatureExtractor(model_dir="./models/")
-    )
-    feature_extractor.to(device)
-    feature_extractor.eval()
-    img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
-    print(f"Model: {MODEL}, Image Size: {img_size}")
+        feature_extractor = (
+            ResNetFeatureExtractor(model_dir="./models/", resnet_variant="resnet50")
+            if MODEL == RESNET50
+            else InceptionV3FeatureExtractor(model_dir="./models/")
+        )
+        feature_extractor.to(device)
+        feature_extractor.eval()
+        img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
+        print(f"Model: {MODEL}, Image Size: {img_size}")
 
-    data_path = "./data/stats"
-    transform = transforms.Compose(
-        [
-            transforms.Resize(
-                (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
-            ),  # make the spacial frequency equal
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    loader = _make_dataloader(data_path, transform)
-    unique_classes = loader.dataset.classes
+        data_path = "./data/stats"
+        transform = transforms.Compose(
+            [
+                transforms.Resize(
+                    (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
+                ),  # make the spacial frequency equal
+                transforms.Resize((img_size, img_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
+        loader = _make_dataloader(data_path, transform)
+        unique_classes = loader.dataset.classes
 
-    print("\nExtract features...")
-    features, classes = _extract_features(feature_extractor, loader)
-    print("\n\nExtracted features:")
-    print("  - features.shape:", features.shape)
-    print("  - Num of samples:", len(classes))
-    print("  - unique classes:", unique_classes)
+        print("\nExtract features...")
+        features, classes = _extract_features(feature_extractor, loader)
+
+        print("\n\nExtracted features:")
+        print("  - features.shape:", features.shape)
+        print("  - Num of samples:", len(classes))
+        print("  - unique classes:", unique_classes)
+
+        print("\nSaving feature extractor...")
+        np.save("./out/classes.npy", classes)
+        print("  - Saved classes to ./out/classes.npy")
+        np.save("./out/features.npy", features)
+        print("  - Saved features to ./out/features.npy")
+    else:
+        print("\nLoading feature extractor...")
+        classes = np.load("./out/classes.npy", allow_pickle=True)
+        features = np.load("./out/features.npy", allow_pickle=True)
+        print("  - Loaded classes from ./out/classes.npy")
+        print("  - Loaded features from ./out/features.npy")
+
+        print("\nLoaded features:")
+        print("  - features.shape:", features.shape)
+        print("  - Num of samples:", len(classes))
+        print("  - unique classes:", unique_classes)
 
     print("\nProcessing t-SNE...")
     tsne = TSNE(n_components=2, random_state=42, perplexity=30)
@@ -145,6 +190,8 @@ if __name__ == "__main__":
         unique_classes,
         "t-SNE: Data Distribution",
         "./out/tsne_plot.png",
+        colors=COLORS,
+        alphas=ALPHAS,
     )
 
     print("\nProcessing UMAP...")
@@ -156,6 +203,9 @@ if __name__ == "__main__":
         unique_classes,
         "UMAP: Data Distribution",
         "./out/umap_plot.png",
+        xlim=(3, 15),
+        colors=COLORS,
+        alphas=ALPHAS,
     )
 
     # mean_distance_original_generated = np.mean(
