@@ -24,8 +24,14 @@ def _make_dataloader(data_path, transform):
 def _extract_features(feature_extractor, dataloader):
     features_list = []
     class_name_list = []
+    total_batches = len(dataloader)
     with torch.no_grad():
-        for batch in dataloader:
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx % 10 == 0:
+                print(
+                    f"  - Processing batch {batch_idx}/{total_batches}",
+                    end="\r",
+                )
             images, labels = batch
             images = images.to(device)
             feat = feature_extractor(images)
@@ -107,6 +113,7 @@ if __name__ == "__main__":
     feature_extractor.to(device)
     feature_extractor.eval()
     img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
+    print(f"Model: {MODEL}, Image Size: {img_size}")
 
     data_path = "./data/stats"
     transform = transforms.Compose(
@@ -122,14 +129,14 @@ if __name__ == "__main__":
     loader = _make_dataloader(data_path, transform)
     unique_classes = loader.dataset.classes
 
-    print("Extract features")
+    print("\nExtract features...")
     features, classes = _extract_features(feature_extractor, loader)
-    print("Extracted features:")
+    print("\n\nExtracted features:")
     print("  - features.shape:", features.shape)
-    print("  - len of classes:", len(classes))
+    print("  - Num of samples:", len(classes))
     print("  - unique classes:", unique_classes)
 
-    print("Start t-SNE")
+    print("\nProcessing t-SNE...")
     tsne = TSNE(n_components=2, random_state=42, perplexity=30)
     tsne_results = tsne.fit_transform(features)
     _save_graph(
@@ -140,7 +147,7 @@ if __name__ == "__main__":
         "./out/tsne_plot.png",
     )
 
-    print("Start UMAP")
+    print("\nProcessing UMAP...")
     reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
     umap_results = reducer.fit_transform(features)
     _save_graph(
