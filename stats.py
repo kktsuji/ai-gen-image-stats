@@ -99,7 +99,7 @@ def _calculate_wasserstein_distances(feature0, feature1):
     return distances
 
 
-def _calculate_fid(real_features, fake_features):
+def calculate_fid(real_features, fake_features):
     mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
     mu2, sigma2 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
 
@@ -111,6 +111,57 @@ def _calculate_fid(real_features, fake_features):
 
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
     return fid
+
+
+def calculate_precision_recall(real_features, fake_features, k=5):
+    """
+    Calculate precision and recall metrics for generative models.
+
+    Precision: measures if fake samples fall within the real data manifold
+    Recall: measures if real samples are covered by the fake distribution
+
+    Based on "Improved Precision and Recall Metric for Assessing Generative Models"
+    (Kynkäänniemi et al., NeurIPS 2019)
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    # Compute k-th nearest neighbor distances within each distribution
+    real_nbrs = NearestNeighbors(n_neighbors=k + 1).fit(real_features)
+    real_distances, _ = real_nbrs.kneighbors(real_features)
+    # Take the k-th neighbor (index k, since index 0 is the point itself)
+    real_kth_distances = real_distances[:, k]
+
+    fake_nbrs = NearestNeighbors(n_neighbors=k + 1).fit(fake_features)
+    fake_distances, _ = fake_nbrs.kneighbors(fake_features)
+    fake_kth_distances = fake_distances[:, k]
+
+    # Precision: For each fake sample, find nearest real sample
+    fake_to_real_nbrs = NearestNeighbors(n_neighbors=1).fit(real_features)
+    fake_to_real_distances, fake_to_real_indices = fake_to_real_nbrs.kneighbors(
+        fake_features
+    )
+    fake_to_real_distances = fake_to_real_distances.flatten()
+    fake_to_real_indices = fake_to_real_indices.flatten()
+
+    # Precision: fake is within real manifold if distance to nearest real
+    # is <= that real point's k-th nearest neighbor distance
+    precision = np.mean(
+        fake_to_real_distances <= real_kth_distances[fake_to_real_indices]
+    )
+
+    # Recall: For each real sample, find nearest fake sample
+    real_to_fake_nbrs = NearestNeighbors(n_neighbors=1).fit(fake_features)
+    real_to_fake_distances, real_to_fake_indices = real_to_fake_nbrs.kneighbors(
+        real_features
+    )
+    real_to_fake_distances = real_to_fake_distances.flatten()
+    real_to_fake_indices = real_to_fake_indices.flatten()
+
+    # Recall: real is covered by fake manifold if distance to nearest fake
+    # is <= that fake point's k-th nearest neighbor distance
+    recall = np.mean(real_to_fake_distances <= fake_kth_distances[real_to_fake_indices])
+
+    return precision, recall
 
 
 if __name__ == "__main__":
