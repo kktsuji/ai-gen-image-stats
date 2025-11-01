@@ -170,8 +170,16 @@ if __name__ == "__main__":
 
     train_loss_list = []
     train_acc_list = []
+    train_class0_acc_list = []
+    train_class1_acc_list = []
+    train_class0_loss_list = []
+    train_class1_loss_list = []
     val_loss_list = []
     val_acc_list = []
+    val_class0_acc_list = []
+    val_class1_acc_list = []
+    val_class0_loss_list = []
+    val_class1_loss_list = []
 
     # Training loop
     print("\nStarting training...")
@@ -181,6 +189,14 @@ if __name__ == "__main__":
         running_loss = 0.0
         correct = 0
         total = 0
+        class0_correct = 0
+        class0_total = 0
+        class1_correct = 0
+        class1_total = 0
+        class0_loss = 0.0
+        class1_loss = 0.0
+        class0_batch_count = 0
+        class1_batch_count = 0
 
         for batch_idx, (inputs, labels) in enumerate(train_loader):
             # Move data to device
@@ -201,15 +217,50 @@ if __name__ == "__main__":
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            # Track per-class metrics
+            for i in range(len(labels)):
+                label_class = labels[i].item()
+                # Calculate per-sample loss for this class
+                sample_loss = criterion(
+                    outputs[i].unsqueeze(0), labels[i].unsqueeze(0)
+                ).item()
+
+                if label_class == 0:
+                    class0_total += 1
+                    class0_loss += sample_loss
+                    class0_batch_count += 1
+                    if predicted[i].item() == label_class:
+                        class0_correct += 1
+                elif label_class == 1:
+                    class1_total += 1
+                    class1_loss += sample_loss
+                    class1_batch_count += 1
+                    if predicted[i].item() == label_class:
+                        class1_correct += 1
+
         # Calculate training metrics
         train_loss = running_loss / len(train_loader)
         train_acc = 100 * correct / total
+        train_class0_acc = (
+            100 * class0_correct / class0_total if class0_total > 0 else 0
+        )
+        train_class1_acc = (
+            100 * class1_correct / class1_total if class1_total > 0 else 0
+        )
+        train_class0_loss = class0_loss / class0_total if class0_total > 0 else 0
+        train_class1_loss = class1_loss / class1_total if class1_total > 0 else 0
 
         # Validation phase
         trainer.eval()
         val_running_loss = 0.0
         val_correct = 0
         val_total = 0
+        val_class0_correct = 0
+        val_class0_total = 0
+        val_class1_correct = 0
+        val_class1_total = 0
+        val_class0_loss = 0.0
+        val_class1_loss = 0.0
 
         with torch.no_grad():
             for inputs, labels in val_loader:
@@ -226,21 +277,64 @@ if __name__ == "__main__":
                 val_total += labels.size(0)
                 val_correct += (predicted == labels).sum().item()
 
+                # Track per-class metrics
+                for i in range(len(labels)):
+                    label_class = labels[i].item()
+                    # Calculate per-sample loss for this class
+                    sample_loss = criterion(
+                        outputs[i].unsqueeze(0), labels[i].unsqueeze(0)
+                    ).item()
+
+                    if label_class == 0:
+                        val_class0_total += 1
+                        val_class0_loss += sample_loss
+                        if predicted[i].item() == label_class:
+                            val_class0_correct += 1
+                    elif label_class == 1:
+                        val_class1_total += 1
+                        val_class1_loss += sample_loss
+                        if predicted[i].item() == label_class:
+                            val_class1_correct += 1
+
         # Calculate validation metrics
         val_loss = val_running_loss / len(val_loader)
         val_acc = 100 * val_correct / val_total
+        val_class0_acc = (
+            100 * val_class0_correct / val_class0_total if val_class0_total > 0 else 0
+        )
+        val_class1_acc = (
+            100 * val_class1_correct / val_class1_total if val_class1_total > 0 else 0
+        )
+        val_class0_loss = (
+            val_class0_loss / val_class0_total if val_class0_total > 0 else 0
+        )
+        val_class1_loss = (
+            val_class1_loss / val_class1_total if val_class1_total > 0 else 0
+        )
 
         # Epoch summary
         print(
             f"Epoch {epoch + 1}: "
-            f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | "
-            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%"
+            f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% "
+            f"(Class 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}, "
+            f"Class 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}) | "
+            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}% "
+            f"(Class 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}, "
+            f"Class 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f})"
         )
 
         train_loss_list.append(train_loss)
         train_acc_list.append(train_acc)
+        train_class0_acc_list.append(train_class0_acc)
+        train_class1_acc_list.append(train_class1_acc)
+        train_class0_loss_list.append(train_class0_loss)
+        train_class1_loss_list.append(train_class1_loss)
         val_loss_list.append(val_loss)
         val_acc_list.append(val_acc)
+        val_class0_acc_list.append(val_class0_acc)
+        val_class1_acc_list.append(val_class1_acc)
+        val_class0_loss_list.append(val_class0_loss)
+        val_class1_loss_list.append(val_class1_loss)
 
     print("\nTraining completed!")
 
@@ -254,7 +348,31 @@ if __name__ == "__main__":
         writer.writerow(["epoch"] + list(range(1, EPOCHS + 1)))
         writer.writerow(["train_loss"] + [f"{loss:.4f}" for loss in train_loss_list])
         writer.writerow(["train_accuracy"] + [f"{acc:.2f}" for acc in train_acc_list])
+        writer.writerow(
+            ["train_class0_accuracy"] + [f"{acc:.2f}" for acc in train_class0_acc_list]
+        )
+        writer.writerow(
+            ["train_class1_accuracy"] + [f"{acc:.2f}" for acc in train_class1_acc_list]
+        )
+        writer.writerow(
+            ["train_class0_loss"] + [f"{loss:.4f}" for loss in train_class0_loss_list]
+        )
+        writer.writerow(
+            ["train_class1_loss"] + [f"{loss:.4f}" for loss in train_class1_loss_list]
+        )
         writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
         writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
+        writer.writerow(
+            ["val_class0_accuracy"] + [f"{acc:.2f}" for acc in val_class0_acc_list]
+        )
+        writer.writerow(
+            ["val_class1_accuracy"] + [f"{acc:.2f}" for acc in val_class1_acc_list]
+        )
+        writer.writerow(
+            ["val_class0_loss"] + [f"{loss:.4f}" for loss in val_class0_loss_list]
+        )
+        writer.writerow(
+            ["val_class1_loss"] + [f"{loss:.4f}" for loss in val_class1_loss_list]
+        )
 
     print(f"Training results saved to {csv_path}")
