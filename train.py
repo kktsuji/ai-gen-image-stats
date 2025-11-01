@@ -105,6 +105,7 @@ if __name__ == "__main__":
     UNDER_SAMPLING = True
     IMG_SIZE = 299  # InceptionV3 input size
     OUT_DIR = "./out"
+    SEED = 0
     os.makedirs(OUT_DIR, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -118,7 +119,10 @@ if __name__ == "__main__":
     for param in trainer.get_trainable_parameters():
         print("  -", param.shape)
 
-    data_path = "./data/train"
+    # Data paths
+    train_data_path = "./data/train"
+    val_data_path = "./data/val"
+
     transform = transforms.Compose(
         [
             transforms.Resize(
@@ -130,38 +134,55 @@ if __name__ == "__main__":
         ]
     )
 
-    print("Transform pipeline:")
-    loader = _make_dataloader(
-        data_path,
+    print("\nLoading datasets...")
+
+    # Training dataloader
+    print("\nTraining set:")
+    train_loader = _make_dataloader(
+        train_data_path,
         transform,
         BATCH_SIZE,
         under_sampling=UNDER_SAMPLING,
         min_samples_per_class=None,
-        seed=None,
+        seed=SEED,
     )
-
-    print("\nDataloader:")
-    print("  - Number of batches:", len(loader))
+    print("  - Number of batches:", len(train_loader))
     print("  - Batch size:", BATCH_SIZE)
-    print("  - Unique classes:", loader.dataset.classes)
+    print("  - Unique classes:", train_loader.dataset.classes)
+
+    # Validation dataloader (no under-sampling for validation)
+    print("\nValidation set:")
+    val_loader = _make_dataloader(
+        val_data_path,
+        transform,
+        BATCH_SIZE,
+        under_sampling=False,
+        min_samples_per_class=None,
+        seed=SEED,
+    )
+    print("  - Number of batches:", len(val_loader))
+    print("  - Total samples:", len(val_loader.dataset))
+    print("  - Unique classes:", val_loader.dataset.classes)
 
     # Setup optimizer to only train the final layer
     optimizer = torch.optim.Adam(trainer.get_trainable_parameters(), lr=LEARNING_RATE)
     criterion = torch.nn.CrossEntropyLoss()
 
-    loss_list = []
-    acc_list = []
+    train_loss_list = []
+    train_acc_list = []
+    val_loss_list = []
+    val_acc_list = []
 
     # Training loop
     print("\nStarting training...")
     for epoch in range(EPOCHS):
+        # Training phase
         trainer.train()
-
         running_loss = 0.0
         correct = 0
         total = 0
 
-        for batch_idx, (inputs, labels) in enumerate(loader):
+        for batch_idx, (inputs, labels) in enumerate(train_loader):
             # Move data to device
             inputs, labels = inputs.to(device), labels.to(device)
 
@@ -180,16 +201,46 @@ if __name__ == "__main__":
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+        # Calculate training metrics
+        train_loss = running_loss / len(train_loader)
+        train_acc = 100 * correct / total
+
+        # Validation phase
+        trainer.eval()
+        val_running_loss = 0.0
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                # Move data to device
+                inputs, labels = inputs.to(device), labels.to(device)
+
+                # Forward pass
+                outputs = trainer(inputs)
+                loss = criterion(outputs, labels)
+
+                # Track metrics
+                val_running_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                val_total += labels.size(0)
+                val_correct += (predicted == labels).sum().item()
+
+        # Calculate validation metrics
+        val_loss = val_running_loss / len(val_loader)
+        val_acc = 100 * val_correct / val_total
+
         # Epoch summary
-        epoch_loss = running_loss / len(loader)
-        epoch_acc = 100 * correct / total
         print(
             f"Epoch {epoch + 1}: "
-            f"Avg Loss: {epoch_loss:.4f}, "
-            f"Accuracy: {epoch_acc:.2f}%"
+            f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | "
+            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%"
         )
-        loss_list.append(epoch_loss)
-        acc_list.append(epoch_acc)
+
+        train_loss_list.append(train_loss)
+        train_acc_list.append(train_acc)
+        val_loss_list.append(val_loss)
+        val_acc_list.append(val_acc)
 
     print("\nTraining completed!")
 
@@ -201,7 +252,9 @@ if __name__ == "__main__":
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch"] + list(range(1, EPOCHS + 1)))
-        writer.writerow(["loss"] + [f"{loss:.4f}" for loss in loss_list])
-        writer.writerow(["accuracy"] + [f"{acc:.2f}" for acc in acc_list])
+        writer.writerow(["train_loss"] + [f"{loss:.4f}" for loss in train_loss_list])
+        writer.writerow(["train_accuracy"] + [f"{acc:.2f}" for acc in train_acc_list])
+        writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
+        writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
 
     print(f"Training results saved to {csv_path}")
