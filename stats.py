@@ -38,6 +38,7 @@ def _extract_features(feature_extractor, dataloader):
             features_list.append(feat.cpu().numpy())
             class_names = [dataloader.dataset.classes[label] for label in labels]
             class_name_list.extend(class_names)
+        print()
     return np.concatenate(features_list, axis=0), class_name_list
 
 
@@ -164,6 +165,24 @@ def calculate_precision_recall(real_features, fake_features, k=5):
     return precision, recall
 
 
+def split_features_by_class(features, classes, unique_classes):
+    class_feature_dict = {class_name: [] for class_name in unique_classes}
+    for feat, class_name in zip(features, classes):
+        class_feature_dict[class_name].append(feat)
+    for class_name in unique_classes:
+        class_feature_dict[class_name] = np.array(class_feature_dict[class_name])
+    return class_feature_dict
+
+
+def under_sample_features(features, num_samples):
+    if features.shape[0] <= num_samples:
+        raise ValueError(
+            "Number of samples to under-sample must be less than the number of features."
+        )
+    indices = np.random.choice(features.shape[0], num_samples, replace=False)
+    return features[indices]
+
+
 if __name__ == "__main__":
     RESNET50 = "resnet50"
     INCEPTIONV3 = "inceptionv3"
@@ -175,6 +194,11 @@ if __name__ == "__main__":
     COLORS = ["blue", "red", "green"]
     ALPHAS = [0.3, 1.0, 0.3]
     LOAD_FLAG = True
+    GRAPH_FLAG = False
+    REAL_CLASS = "1.Abnormal"
+    FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
+    FAKE_CLASS = FAKE_CLASS_LIST[0]
+    NUM_OF_AVERAGE = 10
     os.makedirs("./out", exist_ok=True)
 
     if not LOAD_FLAG:
@@ -210,7 +234,7 @@ if __name__ == "__main__":
         print("\nExtract features...")
         features, classes = _extract_features(feature_extractor, loader)
 
-        print("\n\nExtracted features:")
+        print("\nExtracted features:")
         print("  - features.shape:", features.shape)
         print("  - Num of samples:", len(classes))
         print("  - unique classes:", unique_classes)
@@ -226,63 +250,91 @@ if __name__ == "__main__":
         features = np.load("./out/features.npy", allow_pickle=True)
         print("  - Loaded classes from ./out/classes.npy")
         print("  - Loaded features from ./out/features.npy")
+        unique_classes = np.unique(classes)
 
         print("\nLoaded features:")
         print("  - features.shape:", features.shape)
         print("  - Num of samples:", len(classes))
         print("  - unique classes:", unique_classes)
 
-    print("\nProcessing t-SNE...")
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-    tsne_results = tsne.fit_transform(features)
-    _save_graph(
-        tsne_results,
-        classes,
-        unique_classes,
-        "t-SNE: Data Distribution",
-        "./out/tsne_plot.png",
-        colors=COLORS,
-        alphas=ALPHAS,
-    )
+    if GRAPH_FLAG:
+        print("\nProcessing t-SNE...")
+        tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+        tsne_results = tsne.fit_transform(features)
+        _save_graph(
+            tsne_results,
+            classes,
+            unique_classes,
+            "t-SNE: Data Distribution",
+            "./out/tsne_plot.png",
+            colors=COLORS,
+            alphas=ALPHAS,
+        )
 
-    print("\nProcessing UMAP...")
-    reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
-    umap_results = reducer.fit_transform(features)
-    _save_graph(
-        umap_results,
-        classes,
-        unique_classes,
-        "UMAP: Data Distribution",
-        "./out/umap_plot.png",
-        xlim=(3, 15),
-        colors=COLORS,
-        alphas=ALPHAS,
-    )
+        print("\nProcessing UMAP...")
+        reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
+        umap_results = reducer.fit_transform(features)
+        _save_graph(
+            umap_results,
+            classes,
+            unique_classes,
+            "UMAP: Data Distribution",
+            "./out/umap_plot.png",
+            xlim=(3, 15),
+            colors=COLORS,
+            alphas=ALPHAS,
+        )
 
-    # mean_distance_original_generated = np.mean(
-    #     calculate_wasserstein_distances(original_features, generated_features)
-    # )
-    # mean_distance_original_normal = np.mean(
-    #     calculate_wasserstein_distances(original_features, original_normal_features)
-    # )
-    # mean_distance_normal_generated = np.mean(
-    #     calculate_wasserstein_distances(original_normal_features, generated_features)
-    # )
-    # print("Average Wasserstein Distance:")
-    # print(f"  - Original vs Generated: {mean_distance_original_generated}")
-    # print(f"  - Original vs Original Normal: {mean_distance_original_normal}")
-    # print(f"  - Original Normal vs Generated: {mean_distance_normal_generated}")
+    class_feature_dict = split_features_by_class(features, classes, unique_classes)
+    num_real_class = class_feature_dict[REAL_CLASS].shape[0]
+    real_class = class_feature_dict[REAL_CLASS]
+    print(f"\nNumber of each class:")
+    for class_name in unique_classes:
+        num_samples = class_feature_dict[class_name].shape[0]
+        print(f"  - {class_name}: {num_samples} samples")
 
-    # fid_score_original_generated = _calculate_fid(original_features, generated_features)
-    # fid_score_original_normal = _calculate_fid(
-    #     original_features, original_normal_features
-    # )
-    # fid_score_normal_generated = _calculate_fid(
-    #     original_normal_features, generated_features
-    # )
-    # print("FID Score:")
-    # print(f"  - Original vs Generated: {fid_score_original_generated}")
-    # print(f"  - Original vs Original Normal: {fid_score_original_normal}")
-    # print(f"  - Original Normal vs Generated: {fid_score_normal_generated}")
-    # print(f"  - Original vs Original Normal: {fid_score_original_normal}")
-    # print(f"  - Original Normal vs Generated: {fid_score_normal_generated}")
+    fid_list = []
+    precision_list = []
+    recall_list = []
+    wasserstein_list = []
+
+    print(f"\nCalculating statistics over {NUM_OF_AVERAGE} runs...")
+    for i in range(NUM_OF_AVERAGE):
+        print(f"  - Run {i+1}/{NUM_OF_AVERAGE}", end="\r")
+        fake_class = under_sample_features(
+            class_feature_dict[FAKE_CLASS], num_real_class
+        )
+        fid = calculate_fid(real_class, fake_class)
+        precision, recall = calculate_precision_recall(real_class, fake_class, k=5)
+        wasserstein_distances = calculate_wasserstein_distances(real_class, fake_class)
+        fid_list.append(fid)
+        precision_list.append(precision)
+        recall_list.append(recall)
+        wasserstein_list.append(wasserstein_distances)
+
+    print()
+    print(f"\nAverage results {REAL_CLASS} vs. {FAKE_CLASS}:")
+    print(f"  - FID Score (lower is better): {np.mean(fid_list)}")
+    print(f"  - Precision (higher is better): {np.mean(precision_list)}")
+    print(f"  - Recall (higher is better): {np.mean(recall_list)}")
+    print(f"  - Wasserstein Distance (lower is better): {np.mean(wasserstein_list)}")
+
+    # Save results to text file
+    output_file = f"./out/stats_{REAL_CLASS}_vs_{FAKE_CLASS}.txt"
+    with open(output_file, "w") as f:
+        f.write(f"Statistics: {REAL_CLASS} vs. {FAKE_CLASS}\n")
+        f.write(f"Number of runs: {NUM_OF_AVERAGE}\n")
+        f.write(f"Number of samples: {num_real_class}\n\n")
+        f.write(
+            f"FID Score (lower is better): {np.mean(fid_list):.4f} ± {np.std(fid_list):.4f}\n"
+        )
+        f.write(
+            f"Precision (higher is better): {np.mean(precision_list):.4f} ± {np.std(precision_list):.4f}\n"
+        )
+        f.write(
+            f"Recall (higher is better): {np.mean(recall_list):.4f} ± {np.std(recall_list):.4f}\n"
+        )
+        f.write(
+            f"Wasserstein Distance (lower is better): {np.mean(wasserstein_list):.4f} ± {np.std(wasserstein_list):.4f}\n"
+        )
+    print(f"\nResults saved to {output_file}")

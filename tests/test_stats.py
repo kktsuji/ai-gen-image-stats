@@ -7,6 +7,8 @@ from stats import (
     calculate_fid,
     calculate_precision_recall,
     calculate_wasserstein_distances,
+    split_features_by_class,
+    under_sample_features,
 )
 
 
@@ -663,6 +665,266 @@ class TestIntegration:
         assert precision_close >= precision_far or recall_close >= recall_far
 
 
+class TestSplitFeaturesByClass:
+    """Test cases for split_features_by_class function"""
+
+    def test_split_basic_functionality(self):
+        """Test basic splitting of features by class"""
+        np.random.seed(42)
+        features = np.random.randn(10, 64)
+        classes = ["A", "B", "A", "C", "B", "A", "C", "B", "A", "C"]
+        unique_classes = ["A", "B", "C"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        # Should return a dictionary
+        assert isinstance(result, dict)
+        # Should have all unique classes as keys
+        assert set(result.keys()) == set(unique_classes)
+        # Should have correct number of samples per class
+        assert result["A"].shape[0] == 4  # A appears 4 times
+        assert result["B"].shape[0] == 3  # B appears 3 times
+        assert result["C"].shape[0] == 3  # C appears 3 times
+
+    def test_split_preserves_feature_dimension(self):
+        """Test that feature dimensions are preserved after splitting"""
+        np.random.seed(42)
+        feature_dim = 128
+        features = np.random.randn(20, feature_dim)
+        classes = ["class1"] * 10 + ["class2"] * 10
+        unique_classes = ["class1", "class2"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        # All arrays should have the correct feature dimension
+        assert result["class1"].shape[1] == feature_dim
+        assert result["class2"].shape[1] == feature_dim
+
+    def test_split_returns_numpy_arrays(self):
+        """Test that split returns numpy arrays for each class"""
+        np.random.seed(42)
+        features = np.random.randn(15, 32)
+        classes = ["X"] * 5 + ["Y"] * 5 + ["Z"] * 5
+        unique_classes = ["X", "Y", "Z"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        # All values should be numpy arrays
+        for class_name in unique_classes:
+            assert isinstance(result[class_name], np.ndarray)
+
+    def test_split_with_single_class(self):
+        """Test splitting with only one class"""
+        np.random.seed(42)
+        features = np.random.randn(10, 64)
+        classes = ["A"] * 10
+        unique_classes = ["A"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        assert len(result) == 1
+        assert result["A"].shape == (10, 64)
+
+    def test_split_preserves_feature_values(self):
+        """Test that feature values are preserved correctly"""
+        np.random.seed(42)
+        features = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]])
+        classes = ["A", "B", "A", "B"]
+        unique_classes = ["A", "B"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        # Check that features are correctly assigned
+        np.testing.assert_array_equal(result["A"], np.array([[1.0, 2.0], [5.0, 6.0]]))
+        np.testing.assert_array_equal(result["B"], np.array([[3.0, 4.0], [7.0, 8.0]]))
+
+    def test_split_with_many_classes(self):
+        """Test splitting with many classes"""
+        np.random.seed(42)
+        num_classes = 10
+        samples_per_class = 5
+        features = np.random.randn(num_classes * samples_per_class, 64)
+        classes = [
+            f"class{i}" for i in range(num_classes) for _ in range(samples_per_class)
+        ]
+        unique_classes = [f"class{i}" for i in range(num_classes)]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        assert len(result) == num_classes
+        for class_name in unique_classes:
+            assert result[class_name].shape[0] == samples_per_class
+
+    def test_split_with_unbalanced_classes(self):
+        """Test splitting with unbalanced class distribution"""
+        np.random.seed(42)
+        features = np.random.randn(25, 32)
+        # Unbalanced: A=10, B=3, C=12
+        classes = ["A"] * 10 + ["B"] * 3 + ["C"] * 12
+        unique_classes = ["A", "B", "C"]
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        assert result["A"].shape[0] == 10
+        assert result["B"].shape[0] == 3
+        assert result["C"].shape[0] == 12
+
+    def test_split_creates_dict_with_all_unique_classes(self):
+        """Test that dictionary contains all unique classes even if some are missing"""
+        np.random.seed(42)
+        features = np.random.randn(10, 64)
+        classes = ["A"] * 5 + ["B"] * 5
+        unique_classes = ["A", "B", "C"]  # C not in classes
+
+        result = split_features_by_class(features, classes, unique_classes)
+
+        # Should have all unique classes as keys
+        assert "A" in result
+        assert "B" in result
+        assert "C" in result
+        # C should have empty array
+        assert result["C"].shape[0] == 0
+
+
+class TestUnderSampleFeatures:
+    """Test cases for under_sample_features function"""
+
+    def test_undersample_basic_functionality(self):
+        """Test basic undersampling functionality"""
+        np.random.seed(42)
+        features = np.random.randn(100, 64)
+        num_samples = 50
+
+        result = under_sample_features(features, num_samples)
+
+        # Should return correct number of samples
+        assert result.shape[0] == num_samples
+        # Should preserve feature dimension
+        assert result.shape[1] == 64
+
+    def test_undersample_preserves_feature_dimension(self):
+        """Test that feature dimensions are preserved"""
+        np.random.seed(42)
+        feature_dim = 256
+        features = np.random.randn(200, feature_dim)
+
+        result = under_sample_features(features, 100)
+
+        assert result.shape == (100, feature_dim)
+
+    def test_undersample_raises_error_when_num_samples_too_large(self):
+        """Test that error is raised when num_samples >= available samples"""
+        np.random.seed(42)
+        features = np.random.randn(50, 64)
+
+        # Should raise error when num_samples equals available samples
+        with pytest.raises(
+            ValueError, match="Number of samples to under-sample must be less than"
+        ):
+            under_sample_features(features, 50)
+
+        # Should raise error when num_samples exceeds available samples
+        with pytest.raises(
+            ValueError, match="Number of samples to under-sample must be less than"
+        ):
+            under_sample_features(features, 100)
+
+    def test_undersample_returns_numpy_array(self):
+        """Test that function returns a numpy array"""
+        np.random.seed(42)
+        features = np.random.randn(100, 32)
+
+        result = under_sample_features(features, 30)
+
+        assert isinstance(result, np.ndarray)
+
+    def test_undersample_samples_without_replacement(self):
+        """Test that sampling is done without replacement"""
+        np.random.seed(42)
+        # Create features with unique rows for tracking
+        features = np.arange(100).reshape(100, 1).astype(float)
+
+        result = under_sample_features(features, 50)
+
+        # All sampled values should be unique
+        assert len(np.unique(result)) == 50
+
+    def test_undersample_different_seeds_different_results(self):
+        """Test that different random states produce different samples"""
+        features = np.random.randn(100, 64)
+
+        np.random.seed(42)
+        result1 = under_sample_features(features, 50)
+
+        np.random.seed(123)
+        result2 = under_sample_features(features, 50)
+
+        # Results should differ (with very high probability)
+        assert not np.allclose(result1, result2)
+
+    def test_undersample_same_seed_same_results(self):
+        """Test that same random state produces same samples"""
+        features = np.random.randn(100, 64)
+
+        np.random.seed(42)
+        result1 = under_sample_features(features, 50)
+
+        np.random.seed(42)
+        result2 = under_sample_features(features, 50)
+
+        # Results should be identical
+        np.testing.assert_array_equal(result1, result2)
+
+    def test_undersample_with_small_num_samples(self):
+        """Test undersampling to very small number"""
+        np.random.seed(42)
+        features = np.random.randn(1000, 128)
+
+        result = under_sample_features(features, 5)
+
+        assert result.shape == (5, 128)
+
+    def test_undersample_with_large_dataset(self):
+        """Test undersampling from large dataset"""
+        np.random.seed(42)
+        features = np.random.randn(10000, 2048)
+
+        result = under_sample_features(features, 100)
+
+        assert result.shape == (100, 2048)
+
+    @pytest.mark.parametrize("num_samples", [10, 25, 50, 75])
+    def test_undersample_various_sample_sizes(self, num_samples):
+        """Test undersampling with various sample sizes"""
+        np.random.seed(42)
+        features = np.random.randn(100, 64)
+
+        result = under_sample_features(features, num_samples)
+
+        assert result.shape[0] == num_samples
+        assert result.shape[1] == 64
+
+    def test_undersample_boundary_case(self):
+        """Test undersampling with num_samples = total - 1"""
+        np.random.seed(42)
+        features = np.random.randn(50, 32)
+
+        result = under_sample_features(features, 49)
+
+        assert result.shape == (49, 32)
+
+    def test_undersample_selected_features_are_subset(self):
+        """Test that undersampled features are a subset of original"""
+        np.random.seed(42)
+        # Create features with unique identifiable rows
+        features = np.array([[float(i)] * 3 for i in range(100)])
+
+        result = under_sample_features(features, 30)
+
+        # Each sampled row should exist in original features
+        for row in result:
+            assert any(np.array_equal(row, orig_row) for orig_row in features)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
     pytest.main([__file__, "-v", "--tb=short"])
