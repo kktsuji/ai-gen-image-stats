@@ -12,6 +12,7 @@ from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+from inception_v3 import InceptionV3FeatureExtractor
 from resnet import ResNetFeatureExtractor
 
 
@@ -86,13 +87,19 @@ def _calculate_fid(real_features, fake_features):
 
 
 if __name__ == "__main__":
+    RESNET50 = "resnet50"
+    INCEPTIONV3 = "inceptionv3"
+    MODEL_LIST = [RESNET50, INCEPTIONV3]
+    MODEL = MODEL_LIST[1]
     os.makedirs("./out", exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    feature_extractor = ResNetFeatureExtractor(
-        model_dir="./models/", resnet_variant="resnet50"
+    feature_extractor = (
+        ResNetFeatureExtractor(model_dir="./models/", resnet_variant="resnet50")
+        if MODEL == RESNET50
+        else InceptionV3FeatureExtractor(model_dir="./models/")
     )
     feature_extractor.to(device)
     feature_extractor.eval()
