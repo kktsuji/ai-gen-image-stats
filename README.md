@@ -23,4 +23,7 @@ docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pyt
 
 # Evaluate
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 stats.py
+
+# Test
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 -m pytest
 ```

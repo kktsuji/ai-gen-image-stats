@@ -1,15 +1,18 @@
-import torch
-from torch.utils.data import DataLoader
-import torchvision.models as models
-from torchvision import datasets, transforms
-from sklearn.manifold import TSNE
-import umap.umap_ as umap
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import numpy as np
-from scipy.stats import wasserstein_distance
-from scipy.linalg import sqrtm
 import os
+
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torchvision.models as models
+import umap.umap_ as umap
+from scipy.linalg import sqrtm
+from scipy.stats import wasserstein_distance
+from sklearn.manifold import TSNE
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+
+from resnet import ResNetFeatureExtractor
 
 
 def _make_dataloader(data_path, transform):
@@ -83,18 +86,15 @@ def _calculate_fid(real_features, fake_features):
 
 
 if __name__ == "__main__":
+    os.makedirs("./out", exist_ok=True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    os.makedirs("./models", exist_ok=True)
-    os.makedirs("./out", exist_ok=True)  # Create output directory
-    if not os.path.exists("./models/resnet50.pth"):
-        feature_extractor = models.resnet50(pretrained=True)
-        torch.save(feature_extractor, "./models/resnet50.pth")
-    else:
-        feature_extractor = torch.load("./models/resnet50.pth")
-    feature_extractor.fc = torch.nn.Identity()
-    feature_extractor = feature_extractor.to(device)
+    feature_extractor = ResNetFeatureExtractor(
+        model_dir="./models/", resnet_variant="resnet50"
+    )
+    feature_extractor.to(device)
     feature_extractor.eval()
 
     data_path = "./data/stats"
@@ -163,5 +163,7 @@ if __name__ == "__main__":
     # )
     # print("FID Score:")
     # print(f"  - Original vs Generated: {fid_score_original_generated}")
+    # print(f"  - Original vs Original Normal: {fid_score_original_normal}")
+    # print(f"  - Original Normal vs Generated: {fid_score_normal_generated}")
     # print(f"  - Original vs Original Normal: {fid_score_original_normal}")
     # print(f"  - Original Normal vs Generated: {fid_score_normal_generated}")
