@@ -91,6 +91,9 @@ if __name__ == "__main__":
     INCEPTIONV3 = "inceptionv3"
     MODEL_LIST = [RESNET50, INCEPTIONV3]
     MODEL = MODEL_LIST[1]
+    IMG_SIZE_ORIGINAL = 40
+    IMG_SIZE_RESNET = 224
+    IMG_SIZE_INCEPTION = 299
     os.makedirs("./out", exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -103,14 +106,15 @@ if __name__ == "__main__":
     )
     feature_extractor.to(device)
     feature_extractor.eval()
+    img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
 
     data_path = "./data/stats"
     transform = transforms.Compose(
         [
-            transforms.Resize((512, 512)),
-            # transforms.RandomHorizontalFlip(p=0.5),
-            # transforms.RandomRotation(degrees=15),
-            # transforms.ColorJitter(brightness=0.2, contrast=0.2),
+            transforms.Resize(
+                (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
+            ),  # make the spacial frequency equal
+            transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
