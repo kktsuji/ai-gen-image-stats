@@ -23,7 +23,7 @@ def _extract_features(model, path_list, transform, device):
             feature = model(img_tensor)
 
         extracted_features.append(feature.cpu().numpy())
-    print()
+    print("  - Completed.")
     return np.vstack(extracted_features)
 
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         distances = np.linalg.norm(other_real - target_features_normalized[i], axis=1)
         knn_dist = np.mean(np.sort(distances)[:k])
         real_knn_distances.append(knn_dist)
-    print()
+    print("  - Completed.")
 
     percentile = 80
     threshold = np.percentile(real_knn_distances, percentile)
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 
         if knn_dist <= threshold:
             accepted_indices.append(i)
-    print()
+    print("  - Completed.")
 
     print(f"\nResults:")
     print(f"  - Total synthesized samples: {len(synthesized_knn_distances)}")
@@ -185,5 +185,6 @@ if __name__ == "__main__":
         src_path = synthesized_path_list[idx]
         dst_path = os.path.join(cleansing_data_dir, os.path.basename(src_path))
         shutil.copy2(src_path, dst_path)
-    print()
-    print(f"Successfully copied {len(accepted_indices)} images to {cleansing_data_dir}")
+    print(
+        f"  - Successfully copied {len(accepted_indices)} images to {cleansing_data_dir}"
+    )

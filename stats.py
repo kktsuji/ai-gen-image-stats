@@ -38,7 +38,7 @@ def _extract_features(feature_extractor, dataloader):
             features_list.append(feat.cpu().numpy())
             class_names = [dataloader.dataset.classes[label] for label in labels]
             class_name_list.extend(class_names)
-        print()
+        print("  - Completed.")
     return np.concatenate(features_list, axis=0), class_name_list
 
 
@@ -316,8 +316,8 @@ if __name__ == "__main__":
             precision_list.append(precision)
             recall_list.append(recall)
             wasserstein_list.append(wasserstein_distances)
+        print("  - Completed.")
 
-        print()
         print(f"\nAverage results {REAL_CLASS} vs. {FAKE_CLASS}:")
         print(f"  - FID Score (lower is better): {np.mean(fid_list)}")
         print(f"  - Precision (higher is better): {np.mean(precision_list)}")
