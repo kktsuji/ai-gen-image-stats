@@ -185,6 +185,26 @@ if __name__ == "__main__":
         src_path = synthesized_path_list[idx]
         dst_path = os.path.join(cleansing_data_dir, os.path.basename(src_path))
         shutil.copy2(src_path, dst_path)
+    print("\n  - Completed.")
     print(
         f"  - Successfully copied {len(accepted_indices)} images to {cleansing_data_dir}"
+    )
+
+    # Copy rejected images to output directory
+    rejected_indices = [
+        i for i in range(len(synthesized_knn_distances)) if i not in accepted_indices
+    ]
+    rejected_data_dir = f"{OUT_DIR}/rejected_data_k{k}_th{percentile}"
+    os.makedirs(rejected_data_dir, exist_ok=True)
+
+    print(f"\nCopying rejected images to {rejected_data_dir}...")
+    for i, idx in enumerate(rejected_indices):
+        if (i + 1) % 100 == 0:
+            print(f"  - Copying image {i + 1}/{len(rejected_indices)}...", end="\r")
+        src_path = synthesized_path_list[idx]
+        dst_path = os.path.join(rejected_data_dir, os.path.basename(src_path))
+        shutil.copy2(src_path, dst_path)
+    print("\n  - Completed.")
+    print(
+        f"  - Successfully copied {len(rejected_indices)} images to {rejected_data_dir}"
     )
