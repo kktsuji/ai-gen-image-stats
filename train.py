@@ -99,12 +99,12 @@ def _make_dataloader(
 if __name__ == "__main__":
     EPOCHS = 10
     BATCH_SIZE = 16
-    LEARNING_RATE = 0.001
+    LEARNING_RATE = 0.0001
     NUM_CLASSES = 2
     IMG_SIZE_ORIGINAL = 40
     UNDER_SAMPLING = True
     IMG_SIZE = 299  # InceptionV3 input size
-    OUT_DIR = "./out"
+    OUT_DIR = "./out/train"
     SEED = 0
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -338,11 +338,11 @@ if __name__ == "__main__":
 
     print("\nTraining completed!")
 
-    save_path = "./models/inception_v3_trained.pth"
+    save_path = f"{OUT_DIR}/inception_v3_trained.pth"
     torch.save(trainer.state_dict(), save_path)
     print(f"Model saved to {save_path}")
 
-    csv_path = OUT_DIR + "/training_results.csv"
+    csv_path = f"{OUT_DIR}/training_results.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch"] + list(range(1, EPOCHS + 1)))

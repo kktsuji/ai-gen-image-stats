@@ -199,7 +199,8 @@ if __name__ == "__main__":
     FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
     FAKE_CLASS = FAKE_CLASS_LIST[0]
     NUM_OF_AVERAGE = 10
-    os.makedirs("./out", exist_ok=True)
+    OUT_DIR = "./out/stats"
+    os.makedirs(OUT_DIR, exist_ok=True)
 
     if not LOAD_FLAG:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -240,16 +241,16 @@ if __name__ == "__main__":
         print("  - unique classes:", unique_classes)
 
         print("\nSaving feature extractor...")
-        np.save("./out/classes.npy", classes)
-        print("  - Saved classes to ./out/classes.npy")
-        np.save("./out/features.npy", features)
-        print("  - Saved features to ./out/features.npy")
+        np.save(f"{OUT_DIR}/classes.npy", classes)
+        print(f"  - Saved classes to {OUT_DIR}/classes.npy")
+        np.save(f"{OUT_DIR}/features.npy", features)
+        print(f"  - Saved features to {OUT_DIR}/features.npy")
     else:
         print("\nLoading feature extractor...")
-        classes = np.load("./out/classes.npy", allow_pickle=True)
-        features = np.load("./out/features.npy", allow_pickle=True)
-        print("  - Loaded classes from ./out/classes.npy")
-        print("  - Loaded features from ./out/features.npy")
+        classes = np.load(f"{OUT_DIR}/classes.npy", allow_pickle=True)
+        features = np.load(f"{OUT_DIR}/features.npy", allow_pickle=True)
+        print(f"  - Loaded classes from {OUT_DIR}/classes.npy")
+        print(f"  - Loaded features from {OUT_DIR}/features.npy")
         unique_classes = np.unique(classes)
 
         print("\nLoaded features:")
@@ -266,7 +267,7 @@ if __name__ == "__main__":
             classes,
             unique_classes,
             "t-SNE: Data Distribution",
-            "./out/tsne_plot.png",
+            f"{OUT_DIR}/tsne_plot.png",
             colors=COLORS,
             alphas=ALPHAS,
         )
@@ -279,7 +280,7 @@ if __name__ == "__main__":
             classes,
             unique_classes,
             "UMAP: Data Distribution",
-            "./out/umap_plot.png",
+            f"{OUT_DIR}/umap_plot.png",
             xlim=(3, 15),
             colors=COLORS,
             alphas=ALPHAS,
@@ -320,7 +321,7 @@ if __name__ == "__main__":
     print(f"  - Wasserstein Distance (lower is better): {np.mean(wasserstein_list)}")
 
     # Save results to text file
-    output_file = f"./out/stats_{REAL_CLASS}_vs_{FAKE_CLASS}.txt"
+    output_file = f"{OUT_DIR}/stats_{REAL_CLASS}_vs_{FAKE_CLASS}.txt"
     with open(output_file, "w") as f:
         f.write(f"Statistics: {REAL_CLASS} vs. {FAKE_CLASS}\n")
         f.write(f"Number of runs: {NUM_OF_AVERAGE}\n")
