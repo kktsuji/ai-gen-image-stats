@@ -12,7 +12,7 @@ if __name__ == "__main__":
     VAL_RATIO = 0.2
     SYNTH_RATIO = 0.3
     RANDOM_SEED = 42
-    SYNTH_FLAG = True
+    USE_SYNTH = True
 
     os.makedirs(TRAIN_DIR, exist_ok=True)
     os.makedirs(VAL_DIR, exist_ok=True)
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     for img in abnormal_val:
         shutil.copy(img, os.path.join(VAL_DIR, "1.Abnormal"))
 
-    if SYNTH_FLAG:
+    if USE_SYNTH:
         # Calculate how many synthesized images to use based on SYNTH_RATIO
         # We want: original_abnormal / (original_abnormal + synthesized) = (1 - SYNTH_RATIO)
         # So: synthesized = original_abnormal * SYNTH_RATIO / (1 - SYNTH_RATIO)
