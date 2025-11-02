@@ -193,6 +193,8 @@ if __name__ == "__main__":
     IMG_SIZE_INCEPTION = 299
     COLORS = ["blue", "red", "green"]
     ALPHAS = [0.3, 1.0, 0.3]
+    FINETUNED_FLAG = False
+    FINETUNED_MODEL_PATH = "./out/train/inception_v3_trained.pth"
     LOAD_FLAG = False
     GRAPH_FLAG = True
     STATS_FLAG = True
@@ -212,6 +214,19 @@ if __name__ == "__main__":
             if MODEL == RESNET50
             else InceptionV3FeatureExtractor(model_dir="./models/")
         )
+
+        if FINETUNED_FLAG:
+            print("\nLoading fine-tuned model...")
+            if os.path.exists(FINETUNED_MODEL_PATH):
+                print(f"  - Loading fine-tuned weights from {FINETUNED_MODEL_PATH}")
+                feature_extractor.load_state_dict(
+                    torch.load(FINETUNED_MODEL_PATH, map_location=device), strict=False
+                )
+            else:
+                raise FileNotFoundError(
+                    f"Fine-tuned model not found at {FINETUNED_MODEL_PATH}"
+                )
+
         feature_extractor.to(device)
         feature_extractor.eval()
         img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
