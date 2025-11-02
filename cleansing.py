@@ -23,7 +23,7 @@ def _extract_features(model, path_list, transform, device):
             feature = model(img_tensor)
 
         extracted_features.append(feature.cpu().numpy())
-    print("  - Completed.")
+    print("\n  - Completed.")
     return np.vstack(extracted_features)
 
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         distances = np.linalg.norm(other_real - target_features_normalized[i], axis=1)
         knn_dist = np.mean(np.sort(distances)[:k])
         real_knn_distances.append(knn_dist)
-    print("  - Completed.")
+    print("\n  - Completed.")
 
     percentile = 80
     threshold = np.percentile(real_knn_distances, percentile)
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 
         if knn_dist <= threshold:
             accepted_indices.append(i)
-    print("  - Completed.")
+    print("\n  - Completed.")
 
     print(f"\nResults:")
     print(f"  - Total synthesized samples: {len(synthesized_knn_distances)}")
