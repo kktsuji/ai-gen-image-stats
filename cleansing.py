@@ -1,4 +1,5 @@
 import os
+import shutil
 from glob import glob
 
 import numpy as np
@@ -103,3 +104,86 @@ if __name__ == "__main__":
     print(f"\nExtracted features:")
     print(f"  - Target features shape: {target_features.shape}")
     print(f"  - Synthesized features shape: {synthesized_features.shape}")
+
+    # Z-score normalization using target (real) set statistics
+    target_mean = target_features.mean(axis=0)
+    target_std = target_features.std(axis=0)
+    target_std[target_std == 0] = 1  # Avoid division by zero
+
+    target_features_normalized = (target_features - target_mean) / target_std
+    synthesized_features_normalized = (synthesized_features - target_mean) / target_std
+
+    # Compute leave-one-out kNN distances for real samples to determine threshold
+    k = 5
+    real_knn_distances = []
+    print(f"\nComputing leave-one-out kNN distances for real samples (k={k})...")
+    for i in range(target_features_normalized.shape[0]):
+        if (i + 1) % 100 == 0:
+            print(
+                f"  - Processing real sample {i + 1}/{target_features_normalized.shape[0]}...",
+                end="\r",
+            )
+        # Exclude the current sample
+        other_real = np.delete(target_features_normalized, i, axis=0)
+        distances = np.linalg.norm(other_real - target_features_normalized[i], axis=1)
+        knn_dist = np.mean(np.sort(distances)[:k])
+        real_knn_distances.append(knn_dist)
+    print()
+
+    percentile = 80
+    threshold = np.percentile(real_knn_distances, percentile)
+    print(f"{percentile}th percentile threshold: {threshold:.4f}")
+
+    # Compute kNN distances for each synthesized sample
+    print(f"\nComputing kNN distances for synthesized samples...")
+    accepted_indices = []
+    synthesized_knn_distances = []
+
+    for i in range(synthesized_features_normalized.shape[0]):
+        if (i + 1) % 100 == 0:
+            print(
+                f"  - Processing synthetic sample {i + 1}/{synthesized_features_normalized.shape[0]}...",
+                end="\r",
+            )
+        distances = np.linalg.norm(
+            target_features_normalized - synthesized_features_normalized[i], axis=1
+        )
+        knn_dist = np.mean(np.sort(distances)[:k])
+        synthesized_knn_distances.append(knn_dist)
+
+        if knn_dist <= threshold:
+            accepted_indices.append(i)
+    print()
+
+    print(f"\nResults:")
+    print(f"  - Total synthesized samples: {len(synthesized_knn_distances)}")
+    print(
+        f"  - Accepted samples: {len(accepted_indices)} ({100 * len(accepted_indices) / len(synthesized_knn_distances):.2f}%)"
+    )
+    print(
+        f"  - Rejected samples: {len(synthesized_knn_distances) - len(accepted_indices)}"
+    )
+
+    # Save results
+    np.save(
+        f"{OUT_DIR}/accepted_indices_k{k}_th{percentile}.npy",
+        np.array(accepted_indices),
+    )
+    np.save(
+        f"{OUT_DIR}/synthesized_knn_distances_k{k}_th{percentile}.npy",
+        np.array(synthesized_knn_distances),
+    )
+
+    # Copy accepted images to output directory
+    cleansing_data_dir = f"{OUT_DIR}/cleansing_data_k{k}_th{percentile}"
+    os.makedirs(cleansing_data_dir, exist_ok=True)
+
+    print(f"\nCopying accepted images to {cleansing_data_dir}...")
+    for i, idx in enumerate(accepted_indices):
+        if (i + 1) % 100 == 0:
+            print(f"  - Copying image {i + 1}/{len(accepted_indices)}...", end="\r")
+        src_path = synthesized_path_list[idx]
+        dst_path = os.path.join(cleansing_data_dir, os.path.basename(src_path))
+        shutil.copy2(src_path, dst_path)
+    print()
+    print(f"Successfully copied {len(accepted_indices)} images to {cleansing_data_dir}")
