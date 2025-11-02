@@ -193,8 +193,9 @@ if __name__ == "__main__":
     IMG_SIZE_INCEPTION = 299
     COLORS = ["blue", "red", "green"]
     ALPHAS = [0.3, 1.0, 0.3]
-    LOAD_FLAG = True
-    GRAPH_FLAG = False
+    LOAD_FLAG = False
+    GRAPH_FLAG = True
+    STATS_FLAG = True
     REAL_CLASS = "1.Abnormal"
     FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
     FAKE_CLASS = FAKE_CLASS_LIST[0]
@@ -286,56 +287,61 @@ if __name__ == "__main__":
             alphas=ALPHAS,
         )
 
-    class_feature_dict = split_features_by_class(features, classes, unique_classes)
-    num_real_class = class_feature_dict[REAL_CLASS].shape[0]
-    real_class = class_feature_dict[REAL_CLASS]
-    print(f"\nNumber of each class:")
-    for class_name in unique_classes:
-        num_samples = class_feature_dict[class_name].shape[0]
-        print(f"  - {class_name}: {num_samples} samples")
+    if STATS_FLAG:
+        class_feature_dict = split_features_by_class(features, classes, unique_classes)
+        num_real_class = class_feature_dict[REAL_CLASS].shape[0]
+        real_class = class_feature_dict[REAL_CLASS]
+        print(f"\nNumber of each class:")
+        for class_name in unique_classes:
+            num_samples = class_feature_dict[class_name].shape[0]
+            print(f"  - {class_name}: {num_samples} samples")
 
-    fid_list = []
-    precision_list = []
-    recall_list = []
-    wasserstein_list = []
+        fid_list = []
+        precision_list = []
+        recall_list = []
+        wasserstein_list = []
 
-    print(f"\nCalculating statistics over {NUM_OF_AVERAGE} runs...")
-    for i in range(NUM_OF_AVERAGE):
-        print(f"  - Run {i+1}/{NUM_OF_AVERAGE}", end="\r")
-        fake_class = under_sample_features(
-            class_feature_dict[FAKE_CLASS], num_real_class
-        )
-        fid = calculate_fid(real_class, fake_class)
-        precision, recall = calculate_precision_recall(real_class, fake_class, k=5)
-        wasserstein_distances = calculate_wasserstein_distances(real_class, fake_class)
-        fid_list.append(fid)
-        precision_list.append(precision)
-        recall_list.append(recall)
-        wasserstein_list.append(wasserstein_distances)
+        print(f"\nCalculating statistics over {NUM_OF_AVERAGE} runs...")
+        for i in range(NUM_OF_AVERAGE):
+            print(f"  - Run {i+1}/{NUM_OF_AVERAGE}", end="\r")
+            fake_class = under_sample_features(
+                class_feature_dict[FAKE_CLASS], num_real_class
+            )
+            fid = calculate_fid(real_class, fake_class)
+            precision, recall = calculate_precision_recall(real_class, fake_class, k=5)
+            wasserstein_distances = calculate_wasserstein_distances(
+                real_class, fake_class
+            )
+            fid_list.append(fid)
+            precision_list.append(precision)
+            recall_list.append(recall)
+            wasserstein_list.append(wasserstein_distances)
 
-    print()
-    print(f"\nAverage results {REAL_CLASS} vs. {FAKE_CLASS}:")
-    print(f"  - FID Score (lower is better): {np.mean(fid_list)}")
-    print(f"  - Precision (higher is better): {np.mean(precision_list)}")
-    print(f"  - Recall (higher is better): {np.mean(recall_list)}")
-    print(f"  - Wasserstein Distance (lower is better): {np.mean(wasserstein_list)}")
+        print()
+        print(f"\nAverage results {REAL_CLASS} vs. {FAKE_CLASS}:")
+        print(f"  - FID Score (lower is better): {np.mean(fid_list)}")
+        print(f"  - Precision (higher is better): {np.mean(precision_list)}")
+        print(f"  - Recall (higher is better): {np.mean(recall_list)}")
+        print(
+            f"  - Wasserstein Distance (lower is better): {np.mean(wasserstein_list)}"
+        )
 
-    # Save results to text file
-    output_file = f"{OUT_DIR}/stats_{REAL_CLASS}_vs_{FAKE_CLASS}.txt"
-    with open(output_file, "w") as f:
-        f.write(f"Statistics: {REAL_CLASS} vs. {FAKE_CLASS}\n")
-        f.write(f"Number of runs: {NUM_OF_AVERAGE}\n")
-        f.write(f"Number of samples: {num_real_class}\n\n")
-        f.write(
-            f"FID Score (lower is better): {np.mean(fid_list):.4f} ± {np.std(fid_list):.4f}\n"
-        )
-        f.write(
-            f"Precision (higher is better): {np.mean(precision_list):.4f} ± {np.std(precision_list):.4f}\n"
-        )
-        f.write(
-            f"Recall (higher is better): {np.mean(recall_list):.4f} ± {np.std(recall_list):.4f}\n"
-        )
-        f.write(
-            f"Wasserstein Distance (lower is better): {np.mean(wasserstein_list):.4f} ± {np.std(wasserstein_list):.4f}\n"
-        )
-    print(f"\nResults saved to {output_file}")
+        # Save results to text file
+        output_file = f"{OUT_DIR}/stats_{REAL_CLASS}_vs_{FAKE_CLASS}.txt"
+        with open(output_file, "w") as f:
+            f.write(f"Statistics: {REAL_CLASS} vs. {FAKE_CLASS}\n")
+            f.write(f"Number of runs: {NUM_OF_AVERAGE}\n")
+            f.write(f"Number of samples: {num_real_class}\n\n")
+            f.write(
+                f"FID Score (lower is better): {np.mean(fid_list):.4f} ± {np.std(fid_list):.4f}\n"
+            )
+            f.write(
+                f"Precision (higher is better): {np.mean(precision_list):.4f} ± {np.std(precision_list):.4f}\n"
+            )
+            f.write(
+                f"Recall (higher is better): {np.mean(recall_list):.4f} ± {np.std(recall_list):.4f}\n"
+            )
+            f.write(
+                f"Wasserstein Distance (lower is better): {np.mean(wasserstein_list):.4f} ± {np.std(wasserstein_list):.4f}\n"
+            )
+        print(f"\nResults saved to {output_file}")
