@@ -32,7 +32,9 @@ if __name__ == "__main__":
     SYNTHESIZED_DATA_PATH = "./data/stats/2.Synthesized_Abnormal"
     IMG_SIZE_ORIGINAL = 40
     IMG_SIZE = 299
-    LOAD_FLAG = True
+    LOAD_FLAG = False
+    K = 5  # Number of nearest neighbors
+    PERCENTILE = 95  # Percentile threshold for cleansing
     OUT_DIR = "./out/cleansing"
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -114,9 +116,8 @@ if __name__ == "__main__":
     synthesized_features_normalized = (synthesized_features - target_mean) / target_std
 
     # Compute leave-one-out kNN distances for real samples to determine threshold
-    k = 5
     real_knn_distances = []
-    print(f"\nComputing leave-one-out kNN distances for real samples (k={k})...")
+    print(f"\nComputing leave-one-out kNN distances for real samples (k={K})...")
     for i in range(target_features_normalized.shape[0]):
         if (i + 1) % 100 == 0:
             print(
@@ -126,13 +127,12 @@ if __name__ == "__main__":
         # Exclude the current sample
         other_real = np.delete(target_features_normalized, i, axis=0)
         distances = np.linalg.norm(other_real - target_features_normalized[i], axis=1)
-        knn_dist = np.mean(np.sort(distances)[:k])
+        knn_dist = np.mean(np.sort(distances)[:K])
         real_knn_distances.append(knn_dist)
     print("\n  - Completed.")
 
-    percentile = 80
-    threshold = np.percentile(real_knn_distances, percentile)
-    print(f"{percentile}th percentile threshold: {threshold:.4f}")
+    threshold = np.percentile(real_knn_distances, PERCENTILE)
+    print(f"{PERCENTILE}th percentile threshold: {threshold:.4f}")
 
     # Compute kNN distances for each synthesized sample
     print(f"\nComputing kNN distances for synthesized samples...")
@@ -148,7 +148,7 @@ if __name__ == "__main__":
         distances = np.linalg.norm(
             target_features_normalized - synthesized_features_normalized[i], axis=1
         )
-        knn_dist = np.mean(np.sort(distances)[:k])
+        knn_dist = np.mean(np.sort(distances)[:K])
         synthesized_knn_distances.append(knn_dist)
 
         if knn_dist <= threshold:
@@ -166,16 +166,16 @@ if __name__ == "__main__":
 
     # Save results
     np.save(
-        f"{OUT_DIR}/accepted_indices_k{k}_th{percentile}.npy",
+        f"{OUT_DIR}/accepted_indices_k{K}_th{PERCENTILE}.npy",
         np.array(accepted_indices),
     )
     np.save(
-        f"{OUT_DIR}/synthesized_knn_distances_k{k}_th{percentile}.npy",
+        f"{OUT_DIR}/synthesized_knn_distances_k{K}_th{PERCENTILE}.npy",
         np.array(synthesized_knn_distances),
     )
 
     # Copy accepted images to output directory
-    cleansing_data_dir = f"{OUT_DIR}/cleansing_data_k{k}_th{percentile}"
+    cleansing_data_dir = f"{OUT_DIR}/cleansing_data_k{K}_th{PERCENTILE}"
     os.makedirs(cleansing_data_dir, exist_ok=True)
 
     print(f"\nCopying accepted images to {cleansing_data_dir}...")
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     rejected_indices = [
         i for i in range(len(synthesized_knn_distances)) if i not in accepted_indices
     ]
-    rejected_data_dir = f"{OUT_DIR}/rejected_data_k{k}_th{percentile}"
+    rejected_data_dir = f"{OUT_DIR}/rejected_data_k{K}_th{PERCENTILE}"
     os.makedirs(rejected_data_dir, exist_ok=True)
 
     print(f"\nCopying rejected images to {rejected_data_dir}...")
