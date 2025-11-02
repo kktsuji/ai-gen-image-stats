@@ -32,11 +32,11 @@ if __name__ == "__main__":
     SYNTHESIZED_DATA_PATH = "./data/stats/2.Synthesized_Abnormal"
     IMG_SIZE_ORIGINAL = 40
     IMG_SIZE = 299
-    LOAD_FLAG = False
+    LOAD_FLAG = True
     OUT_DIR = "./out/cleansing"
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    if LOAD_FLAG:
+    if not LOAD_FLAG:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
