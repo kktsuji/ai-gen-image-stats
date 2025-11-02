@@ -315,12 +315,12 @@ if __name__ == "__main__":
         # Epoch summary
         print(
             f"Epoch {epoch + 1}: "
-            f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% "
-            f"(Class 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}, "
-            f"Class 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}) | "
-            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}% "
-            f"(Class 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}, "
-            f"Class 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f})"
+            f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%\033[0m "
+            f"(\033[94mClass 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}\033[0m, "
+            f"\033[91mClass 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}\033[0m) | "
+            f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%\033[0m "
+            f"(\033[94mClass 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}\033[0m, "
+            f"\033[91mClass 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f}\033[0m)"
         )
 
         train_loss_list.append(train_loss)
