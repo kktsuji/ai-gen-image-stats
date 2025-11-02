@@ -106,12 +106,17 @@ if __name__ == "__main__":
     IMG_SIZE = 299  # InceptionV3 input size
     OUT_DIR = "./out/train"
     SEED = 0
+    ONLY_LAST_LAYER = False
     os.makedirs(OUT_DIR, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     trainer = InceptionV3FeatureTrainer(model_dir="./models", num_classes=NUM_CLASSES)
+    if not ONLY_LAST_LAYER:
+        # Make Mixed_7c (last layer before fc) trainable
+        for param in trainer.Mixed_7c.parameters():
+            param.requires_grad = True
     trainer = trainer.to(device)
     print("Model initialized successfully.")
 
