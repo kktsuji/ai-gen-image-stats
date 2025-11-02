@@ -25,6 +25,7 @@ docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pyt
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 cleansing.py
 
 # Train
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 prepare_dataset.py
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 train.py
 
 # Test
