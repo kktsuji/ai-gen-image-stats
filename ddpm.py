@@ -729,6 +729,11 @@ class DDPM(nn.Module):
 
         # Iteratively denoise
         for i in reversed(range(self.num_timesteps)):
+            if (i + 1) % 10 == 0:
+                print(
+                    f"  - Sampling timestep {i+1:04d}/{self.num_timesteps:04d}",
+                    end="\r",
+                )
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, t, class_labels, guidance_scale)
 
@@ -1214,8 +1219,7 @@ def generate(
                     save_image(sample_normalized, sample_path, normalize=False)
 
             print(
-                f"  Batch {batch_idx + 1}/{num_batches}: Generated {current_batch_size} samples",
-                end="\r",
+                f"  - Batch {batch_idx + 1}/{num_batches}: Generated {current_batch_size} samples",
             )
     print("\nGeneration completed.")
 
@@ -1224,17 +1228,31 @@ def generate(
 
 
 if __name__ == "__main__":
+    import time
+
     TRAIN = False
     GEN = True
 
     if TRAIN:
+        start_time = time.time()
+
         train()
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        hours = int(elapsed_time // 3600)
+        minutes = int((elapsed_time % 3600) // 60)
+        seconds = int(elapsed_time % 60)
+        print(
+            f"\nTotal execution time for training: {hours:02d}:{minutes:02d}:{seconds:02d}"
+        )
 
     if GEN:
         import torch
 
+        start_time = time.time()
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        num_samples = 10
+        num_samples = 1000
         model_path = "./out/ddpm/ddpm_model.pth"
         out_dir = "./out/ddpm/samples_class1"
         os.makedirs(out_dir, exist_ok=True)
@@ -1242,7 +1260,7 @@ if __name__ == "__main__":
         generate(
             model_path=model_path,
             num_samples=num_samples,
-            batch_size=3,
+            batch_size=500,
             class_labels=[1] * num_samples,
             guidance_scale=5.0,
             image_size=40,
@@ -1254,3 +1272,16 @@ if __name__ == "__main__":
             save_images=True,
             device=device,
         )
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        hours = int(elapsed_time // 3600)
+        minutes = int((elapsed_time % 3600) // 60)
+        seconds = int(elapsed_time % 60)
+        print(
+            f"\nTotal execution time for generation: {hours:02d}:{minutes:02d}:{seconds:02d}"
+        )
+        time_per_sample = elapsed_time / num_samples
+        minutes_per_sample = int(time_per_sample // 60)
+        seconds_per_sample = time_per_sample % 60
+        print(f"Time per sample: {minutes_per_sample:02d}:{seconds_per_sample:05.2f}")
