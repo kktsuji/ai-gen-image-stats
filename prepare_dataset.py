@@ -25,7 +25,7 @@ if __name__ == "__main__":
     else:
         suffix = f"_{NOT_USE_SYNTH}"
     suffix += "_imbalanced-val" if USE_REMAINING_NORMAL_VAL else "_balanced-val"
-    suffix += f"-seed{RANDOM_SEED}"
+    suffix += f"_seed{RANDOM_SEED}"
     TRAIN_DIR = f"./data/train{suffix}"
     VAL_DIR = f"./data/val{suffix}"
 
