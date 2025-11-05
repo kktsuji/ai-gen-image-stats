@@ -188,6 +188,7 @@ if __name__ == "__main__":
     train_class0_loss_list = []
     train_class1_loss_list = []
     train_pr_auc_list = []
+    train_roc_auc_list = []
     val_loss_list = []
     val_acc_list = []
     val_class0_acc_list = []
@@ -195,6 +196,7 @@ if __name__ == "__main__":
     val_class0_loss_list = []
     val_class1_loss_list = []
     val_pr_auc_list = []
+    val_roc_auc_list = []
 
     # Training loop
     print("\nStarting training...")
@@ -279,6 +281,10 @@ if __name__ == "__main__":
         # Calculate PR-AUC for training
         train_pr_auc = average_precision_score(all_labels, all_probs)
 
+        # Calculate ROC-AUC for training
+        fpr_train_epoch, tpr_train_epoch, _ = roc_curve(all_labels, all_probs)
+        train_roc_auc = auc(fpr_train_epoch, tpr_train_epoch)
+
         # Validation phase
         trainer.eval()
         val_running_loss = 0.0
@@ -353,13 +359,17 @@ if __name__ == "__main__":
         # Calculate PR-AUC for validation
         val_pr_auc = average_precision_score(val_all_labels, val_all_probs)
 
+        # Calculate ROC-AUC for validation
+        fpr_val_epoch, tpr_val_epoch, _ = roc_curve(val_all_labels, val_all_probs)
+        val_roc_auc = auc(fpr_val_epoch, tpr_val_epoch)
+
         # Epoch summary
         print(
             f"Epoch {epoch + 1}: "
-            f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, PR-AUC: {train_pr_auc:.4f}\033[0m "
+            f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, PR-AUC: {train_pr_auc:.4f}, ROC-AUC: {train_roc_auc:.4f}\033[0m "
             f"(\033[94mClass 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}\033[0m, "
             f"\033[91mClass 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}\033[0m) | "
-            f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, PR-AUC: {val_pr_auc:.4f}\033[0m "
+            f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, PR-AUC: {val_pr_auc:.4f}, ROC-AUC: {val_roc_auc:.4f}\033[0m "
             f"(\033[94mClass 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}\033[0m, "
             f"\033[91mClass 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f}\033[0m)"
         )
@@ -371,6 +381,7 @@ if __name__ == "__main__":
         train_class0_loss_list.append(train_class0_loss)
         train_class1_loss_list.append(train_class1_loss)
         train_pr_auc_list.append(train_pr_auc)
+        train_roc_auc_list.append(train_roc_auc)
         val_loss_list.append(val_loss)
         val_acc_list.append(val_acc)
         val_class0_acc_list.append(val_class0_acc)
@@ -378,6 +389,7 @@ if __name__ == "__main__":
         val_class0_loss_list.append(val_class0_loss)
         val_class1_loss_list.append(val_class1_loss)
         val_pr_auc_list.append(val_pr_auc)
+        val_roc_auc_list.append(val_roc_auc)
 
     print("\nTraining completed!")
 
@@ -641,6 +653,27 @@ if __name__ == "__main__":
     plt.close()
     print(f"PR-AUC plot saved to {pr_auc_plot_path}")
 
+    # Plot ROC-AUC over epochs
+    print("\nGenerating ROC-AUC plot...")
+    plt.figure(figsize=(10, 6))
+    plt.plot(
+        epochs_range, train_roc_auc_list, "b-", label="Training ROC-AUC", linewidth=2
+    )
+    plt.plot(
+        epochs_range, val_roc_auc_list, "r-", label="Validation ROC-AUC", linewidth=2
+    )
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("ROC-AUC", fontsize=12)
+    plt.title("ROC-AUC over Epochs", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 1.05])
+
+    roc_auc_plot_path = f"{OUT_DIR}/roc_auc_plot.png"
+    plt.savefig(roc_auc_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"ROC-AUC plot saved to {roc_auc_plot_path}")
+
     save_path = f"{OUT_DIR}/inception_v3_trained.pth"
     torch.save(trainer.state_dict(), save_path)
     print(f"Model saved to {save_path}")
@@ -666,6 +699,9 @@ if __name__ == "__main__":
         writer.writerow(
             ["train_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in train_pr_auc_list]
         )
+        writer.writerow(
+            ["train_roc_auc"] + [f"{roc_auc:.4f}" for roc_auc in train_roc_auc_list]
+        )
         writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
         writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
         writer.writerow(
@@ -682,6 +718,9 @@ if __name__ == "__main__":
         )
         writer.writerow(
             ["val_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in val_pr_auc_list]
+        )
+        writer.writerow(
+            ["val_roc_auc"] + [f"{roc_auc:.4f}" for roc_auc in val_roc_auc_list]
         )
 
     print(f"Training results saved to {csv_path}")
