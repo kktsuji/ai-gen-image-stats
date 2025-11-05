@@ -1111,7 +1111,7 @@ def generate(
     out_dir: str = "./out/ddpm/samples",
     save_images: bool = True,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-) -> torch.Tensor:
+) -> None:
     """Generate samples using a trained DDPM model.
 
     Args:
@@ -1132,10 +1132,6 @@ def generate(
         out_dir: Directory to save generated images
         save_images: Whether to save images to disk
         device: Device to run generation on
-
-    Returns:
-        Generated samples as a tensor, shape (num_samples, 3, image_size, image_size)
-        Values are in range [-1, 1]
     """
     import os
 
@@ -1182,10 +1178,12 @@ def generate(
     class_labels_tensor = torch.tensor(class_labels, device=device, dtype=torch.long)
 
     # Generate samples in batches
-    all_samples = []
     num_batches = (num_samples + batch_size - 1) // batch_size  # Ceiling division
 
     print(f"\nGenerating in {num_batches} batch(es) of size {batch_size}...")
+
+    if save_images:
+        os.makedirs(out_dir, exist_ok=True)
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
@@ -1203,7 +1201,17 @@ def generate(
                 guidance_scale=guidance_scale,
             )
 
-            all_samples.append(batch_samples)
+            # Save images immediately after generating this batch
+            if save_images:
+                batch_labels = class_labels[start_idx:end_idx]
+                for i, (sample, label) in enumerate(zip(batch_samples, batch_labels)):
+                    sample_idx = start_idx + i
+                    sample_path = os.path.join(
+                        out_dir,
+                        f"sample_{sample_idx:03d}_class{label}_guidance{guidance_scale}.png",
+                    )
+                    sample_normalized = (sample + 1.0) / 2.0
+                    save_image(sample_normalized, sample_path, normalize=False)
 
             print(
                 f"  Batch {batch_idx + 1}/{num_batches}: Generated {current_batch_size} samples",
@@ -1211,28 +1219,8 @@ def generate(
             )
     print("\nGeneration completed.")
 
-    # Concatenate all batches
-    samples = torch.cat(all_samples, dim=0)
-
-    print(f"\nGenerated {samples.shape[0]} samples")
-    print(f"  Shape: {samples.shape}")
-    print(f"  Range: [{samples.min().item():.3f}, {samples.max().item():.3f}]")
-
-    # Save images if requested
     if save_images:
-        os.makedirs(out_dir, exist_ok=True)
-
-        # Save individual samples
-        for idx, (sample, label) in enumerate(zip(samples, class_labels)):
-            sample_path = os.path.join(
-                out_dir, f"sample_{idx:03d}_class{label}_guidance{guidance_scale}.png"
-            )
-            sample_normalized = (sample + 1.0) / 2.0
-            save_image(sample_normalized, sample_path, normalize=False)
-
         print(f"  Saved {num_samples} individual images to {out_dir}")
-
-    return samples
 
 
 if __name__ == "__main__":
@@ -1251,7 +1239,7 @@ if __name__ == "__main__":
         out_dir = "./out/ddpm/samples_class1"
         os.makedirs(out_dir, exist_ok=True)
 
-        samples_class0 = generate(
+        generate(
             model_path=model_path,
             num_samples=num_samples,
             batch_size=3,

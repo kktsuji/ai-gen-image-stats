@@ -763,8 +763,9 @@ class TestGenerateFunction:
         model_path = os.path.join(temp_out_dir, "test_model.pth")
         torch.save(model.state_dict(), model_path)
 
-        # Generate samples
-        samples = generate(
+        # Generate samples with saving
+        out_dir = os.path.join(temp_out_dir, "generated_basic")
+        result = generate(
             model_path=model_path,
             num_samples=4,
             batch_size=4,
@@ -773,14 +774,18 @@ class TestGenerateFunction:
             num_classes=2,
             model_channels=32,
             num_timesteps=10,
-            out_dir=temp_out_dir,
-            save_images=False,
+            out_dir=out_dir,
+            save_images=True,
             device=device,
         )
 
-        assert samples.shape == (4, 3, 40, 40)
-        assert samples.min() >= -1.0
-        assert samples.max() <= 1.0
+        # Function should return None
+        assert result is None
+
+        # Check that images were saved
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
 
     def test_generate_with_class_labels(self, device, temp_out_dir):
         """Test generation with specific class labels"""
@@ -795,9 +800,10 @@ class TestGenerateFunction:
         model_path = os.path.join(temp_out_dir, "test_model.pth")
         torch.save(model.state_dict(), model_path)
 
-        # Generate samples for class 0
+        # Generate samples for class 0 with saving
         class_labels = [0, 0, 0, 0]
-        samples = generate(
+        out_dir = os.path.join(temp_out_dir, "generated_class_labels")
+        result = generate(
             model_path=model_path,
             num_samples=4,
             batch_size=2,
@@ -807,12 +813,18 @@ class TestGenerateFunction:
             num_classes=2,
             model_channels=32,
             num_timesteps=10,
-            out_dir=temp_out_dir,
-            save_images=False,
+            out_dir=out_dir,
+            save_images=True,
             device=device,
         )
 
-        assert samples.shape == (4, 3, 40, 40)
+        # Function should return None
+        assert result is None
+
+        # Check that images were saved
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
 
     def test_generate_saves_images(self, device, temp_out_dir):
         """Test that generate saves images when requested"""
@@ -829,7 +841,7 @@ class TestGenerateFunction:
 
         # Generate samples with saving
         out_dir = os.path.join(temp_out_dir, "generated")
-        samples = generate(
+        result = generate(
             model_path=model_path,
             num_samples=4,
             batch_size=2,
@@ -843,12 +855,15 @@ class TestGenerateFunction:
             device=device,
         )
 
+        # Function should return None
+        assert result is None
+
         # Check that output directory was created
         assert os.path.exists(out_dir)
 
-        # Check that grid image was saved
-        grid_files = [f for f in os.listdir(out_dir) if "grid" in f]
-        assert len(grid_files) > 0
+        # Check that individual images were saved
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
 
     def test_generate_balanced_classes(self, device, temp_out_dir):
         """Test that generate creates balanced samples when class_labels is None"""
@@ -863,8 +878,9 @@ class TestGenerateFunction:
         model_path = os.path.join(temp_out_dir, "test_model.pth")
         torch.save(model.state_dict(), model_path)
 
-        # Generate 10 samples (should be 5 per class)
-        samples = generate(
+        # Generate 10 samples (should be 5 per class) with saving
+        out_dir = os.path.join(temp_out_dir, "generated_balanced")
+        result = generate(
             model_path=model_path,
             num_samples=10,
             batch_size=5,
@@ -874,12 +890,18 @@ class TestGenerateFunction:
             num_classes=2,
             model_channels=32,
             num_timesteps=10,
-            out_dir=temp_out_dir,
-            save_images=False,
+            out_dir=out_dir,
+            save_images=True,
             device=device,
         )
 
-        assert samples.shape == (10, 3, 40, 40)
+        # Function should return None
+        assert result is None
+
+        # Check that images were saved
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 10
 
     def test_generate_invalid_class_labels_length(self, device, temp_out_dir):
         """Test that generate raises error when class_labels length doesn't match num_samples"""
@@ -924,8 +946,9 @@ class TestGenerateFunction:
         model_path = os.path.join(temp_out_dir, "test_model.pth")
         torch.save(model.state_dict(), model_path)
 
-        # Generate 10 samples in batches of 3
-        samples = generate(
+        # Generate 10 samples in batches of 3 with saving
+        out_dir = os.path.join(temp_out_dir, "generated_batches")
+        result = generate(
             model_path=model_path,
             num_samples=10,
             batch_size=3,  # Will need 4 batches (3+3+3+1)
@@ -934,14 +957,18 @@ class TestGenerateFunction:
             num_classes=2,
             model_channels=32,
             num_timesteps=10,
-            out_dir=temp_out_dir,
-            save_images=False,
+            out_dir=out_dir,
+            save_images=True,
             device=device,
         )
 
-        assert samples.shape == (10, 3, 40, 40)
-        assert samples.min() >= -1.0
-        assert samples.max() <= 1.0
+        # Function should return None
+        assert result is None
+
+        # Check that images were saved
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 10
 
     def test_generate_batch_size_larger_than_num_samples(self, device, temp_out_dir):
         """Test generation when batch_size > num_samples (single batch)"""
@@ -957,7 +984,8 @@ class TestGenerateFunction:
         torch.save(model.state_dict(), model_path)
 
         # Generate 4 samples with batch_size=10 (should work with single batch)
-        samples = generate(
+        out_dir = os.path.join(temp_out_dir, "generated_large_batch")
+        result = generate(
             model_path=model_path,
             num_samples=4,
             batch_size=10,
@@ -966,12 +994,18 @@ class TestGenerateFunction:
             num_classes=2,
             model_channels=32,
             num_timesteps=10,
-            out_dir=temp_out_dir,
-            save_images=False,
+            out_dir=out_dir,
+            save_images=True,
             device=device,
         )
 
-        assert samples.shape == (4, 3, 40, 40)
+        # Function should return None
+        assert result is None
+
+        # Check that images were saved
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
 
 
 if __name__ == "__main__":
