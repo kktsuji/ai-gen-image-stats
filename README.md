@@ -28,6 +28,7 @@ docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id
 # Train
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 prepare_dataset.py
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 train.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 ddpm.py
 
 # Test
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 -m pytest

@@ -1,0 +1,1233 @@
+"""DDPM (Denoising Diffusion Probabilistic Models) Implementation
+
+A simple DDPM implementation for 40x40x3 images without text encoder, VAE, or latent space.
+Uses U-Net architecture for the denoising network.
+"""
+
+import csv
+from typing import Optional, Tuple
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class SinusoidalPositionEmbeddings(nn.Module):
+    """Sinusoidal position embeddings for timestep encoding."""
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time: torch.Tensor) -> torch.Tensor:
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = np.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
+
+class ResidualBlock(nn.Module):
+    """Residual block with time embedding and optional class conditioning."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        time_emb_dim: int,
+        num_classes: Optional[int] = None,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.time_mlp = nn.Linear(time_emb_dim, out_channels)
+
+        # Add class conditioning if num_classes is provided
+        self.class_mlp = (
+            nn.Linear(time_emb_dim, out_channels) if num_classes is not None else None
+        )
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+
+        self.norm1 = nn.GroupNorm(8, out_channels)
+        self.norm2 = nn.GroupNorm(8, out_channels)
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.residual_conv = (
+            nn.Conv2d(in_channels, out_channels, kernel_size=1)
+            if in_channels != out_channels
+            else nn.Identity()
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        time_emb: torch.Tensor,
+        class_emb: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        # First conv
+        h = self.conv1(x)
+        h = self.norm1(h)
+
+        # Add time embedding
+        emb = self.time_mlp(F.silu(time_emb))
+
+        # Add class embedding if provided
+        if class_emb is not None and self.class_mlp is not None:
+            emb = emb + self.class_mlp(F.silu(class_emb))
+
+        h = h + emb[:, :, None, None]
+        h = F.silu(h)
+
+        # Second conv
+        h = self.conv2(h)
+        h = self.norm2(h)
+        h = self.dropout(h)
+
+        # Residual connection
+        return F.silu(h + self.residual_conv(x))
+
+
+class AttentionBlock(nn.Module):
+    """Self-attention block."""
+
+    def __init__(self, channels: int, num_heads: int = 4):
+        super().__init__()
+        self.channels = channels
+        self.num_heads = num_heads
+
+        assert channels % num_heads == 0, "channels must be divisible by num_heads"
+
+        self.norm = nn.GroupNorm(8, channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, kernel_size=1)
+        self.proj = nn.Conv2d(channels, channels, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, channels, height, width = x.shape
+
+        # Normalize and compute Q, K, V
+        h = self.norm(x)
+        qkv = self.qkv(h)
+
+        # Reshape for multi-head attention
+        qkv = qkv.reshape(
+            batch, 3, self.num_heads, channels // self.num_heads, height * width
+        )
+        qkv = qkv.permute(1, 0, 2, 4, 3)  # (3, batch, heads, hw, dim)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        # Attention
+        scale = (channels // self.num_heads) ** -0.5
+        attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+        attn = F.softmax(attn, dim=-1)
+
+        # Apply attention to values
+        h = torch.matmul(attn, v)
+
+        # Reshape back
+        h = h.permute(0, 1, 3, 2).reshape(batch, channels, height, width)
+        h = self.proj(h)
+
+        # Residual
+        return x + h
+
+
+class DownBlock(nn.Module):
+    """Downsampling block with residual blocks."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        time_emb_dim: int,
+        num_classes: Optional[int] = None,
+        num_layers: int = 2,
+        downsample: bool = True,
+        use_attention: bool = False,
+    ):
+        super().__init__()
+        self.downsample = downsample
+
+        self.resblocks = nn.ModuleList(
+            [
+                ResidualBlock(
+                    in_channels if i == 0 else out_channels,
+                    out_channels,
+                    time_emb_dim,
+                    num_classes,
+                )
+                for i in range(num_layers)
+            ]
+        )
+
+        if use_attention:
+            self.attention = AttentionBlock(out_channels)
+        else:
+            self.attention = None
+
+        if downsample:
+            self.downsample_conv = nn.Conv2d(
+                out_channels, out_channels, kernel_size=3, stride=2, padding=1
+            )
+        else:
+            self.downsample_conv = None
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        time_emb: torch.Tensor,
+        class_emb: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        h = x
+        for resblock in self.resblocks:
+            h = resblock(h, time_emb, class_emb)
+
+        if self.attention is not None:
+            h = self.attention(h)
+
+        if self.downsample_conv is not None:
+            skip = h
+            h = self.downsample_conv(h)
+            return h, skip
+        else:
+            return h, h
+
+
+class UpBlock(nn.Module):
+    """Upsampling block with residual blocks."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        time_emb_dim: int,
+        num_classes: Optional[int] = None,
+        num_layers: int = 2,
+        upsample: bool = True,
+        use_attention: bool = False,
+    ):
+        super().__init__()
+        self.upsample = upsample
+
+        self.resblocks = nn.ModuleList(
+            [
+                ResidualBlock(
+                    in_channels if i == 0 else out_channels,
+                    out_channels,
+                    time_emb_dim,
+                    num_classes,
+                )
+                for i in range(num_layers)
+            ]
+        )
+
+        if use_attention:
+            self.attention = AttentionBlock(out_channels)
+        else:
+            self.attention = None
+
+        if upsample:
+            self.upsample_conv = nn.ConvTranspose2d(
+                out_channels, out_channels, kernel_size=4, stride=2, padding=1
+            )
+        else:
+            self.upsample_conv = None
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        skip: torch.Tensor,
+        time_emb: torch.Tensor,
+        class_emb: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        # Concatenate skip connection
+        h = torch.cat([x, skip], dim=1)
+
+        for resblock in self.resblocks:
+            h = resblock(h, time_emb, class_emb)
+
+        if self.attention is not None:
+            h = self.attention(h)
+
+        if self.upsample_conv is not None:
+            h = self.upsample_conv(h)
+
+        return h
+
+
+class UNet(nn.Module):
+    """U-Net architecture for DDPM with optional class conditioning."""
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        base_channels: int = 64,
+        channel_multipliers: Tuple[int, ...] = (1, 2, 4),
+        num_res_blocks: int = 2,
+        time_emb_dim: int = 256,
+        num_classes: Optional[int] = None,
+        dropout: float = 0.1,
+        use_attention: Tuple[bool, ...] = (False, False, True),
+    ):
+        super().__init__()
+
+        self.num_classes = num_classes
+
+        # Time embedding
+        self.time_mlp = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim * 4),
+            nn.SiLU(),
+            nn.Linear(time_emb_dim * 4, time_emb_dim),
+        )
+
+        # Class embedding (for classifier-free guidance)
+        if num_classes is not None:
+            self.class_emb = nn.Embedding(
+                num_classes + 1, time_emb_dim
+            )  # +1 for unconditional class
+        else:
+            self.class_emb = None
+
+        # Initial convolution
+        self.conv_in = nn.Conv2d(in_channels, base_channels, kernel_size=3, padding=1)
+
+        # Downsampling
+        self.downs = nn.ModuleList([])
+        channels = [base_channels]
+        now_channels = base_channels
+
+        for i, mult in enumerate(channel_multipliers):
+            out_ch = base_channels * mult
+
+            self.downs.append(
+                DownBlock(
+                    now_channels,
+                    out_ch,
+                    time_emb_dim,
+                    num_classes,
+                    num_layers=num_res_blocks,
+                    downsample=(i != len(channel_multipliers) - 1),
+                    use_attention=use_attention[i],
+                )
+            )
+
+            now_channels = out_ch
+            channels.append(now_channels)
+
+        # Middle
+        self.mid = nn.ModuleList(
+            [
+                ResidualBlock(
+                    now_channels, now_channels, time_emb_dim, num_classes, dropout
+                ),
+                AttentionBlock(now_channels),
+                ResidualBlock(
+                    now_channels, now_channels, time_emb_dim, num_classes, dropout
+                ),
+            ]
+        )
+
+        # Upsampling
+        self.ups = nn.ModuleList([])
+
+        for i, mult in enumerate(reversed(channel_multipliers)):
+            out_ch = base_channels * mult
+
+            self.ups.append(
+                UpBlock(
+                    now_channels + channels.pop(),
+                    out_ch,
+                    time_emb_dim,
+                    num_classes,
+                    num_layers=num_res_blocks,
+                    upsample=(i != len(channel_multipliers) - 1),
+                    use_attention=use_attention[len(channel_multipliers) - 1 - i],
+                )
+            )
+
+            now_channels = out_ch
+
+        # Final convolution
+        self.conv_out = nn.Sequential(
+            nn.GroupNorm(8, base_channels),
+            nn.SiLU(),
+            nn.Conv2d(base_channels, out_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        timestep: torch.Tensor,
+        class_labels: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        # Time embedding
+        time_emb = self.time_mlp(timestep)
+
+        # Class embedding
+        class_emb = None
+        if self.class_emb is not None and class_labels is not None:
+            class_emb = self.class_emb(class_labels)
+
+        # Initial conv
+        h = self.conv_in(x)
+
+        # Downsampling with skip connections
+        skips = []
+        for down in self.downs:
+            h, skip = down(h, time_emb, class_emb)
+            skips.append(skip)
+
+        # Middle
+        for layer in self.mid:
+            if isinstance(layer, ResidualBlock):
+                h = layer(h, time_emb, class_emb)
+            else:
+                h = layer(h)
+
+        # Upsampling
+        for up in self.ups:
+            skip = skips.pop()
+            h = up(h, skip, time_emb, class_emb)
+
+        # Final conv
+        return self.conv_out(h)
+
+
+class DDPM(nn.Module):
+    """Denoising Diffusion Probabilistic Model with Classifier-Free Guidance.
+
+    Args:
+        image_size: Size of the input images (assumes square images)
+        in_channels: Number of input channels
+        model_channels: Base number of channels in the U-Net
+        num_classes: Number of classes for conditional generation (None for unconditional)
+        num_timesteps: Number of diffusion timesteps
+        beta_schedule: Type of noise schedule ('linear', 'cosine', 'quadratic', 'sigmoid')
+        beta_start: Starting beta value for noise schedule (used for linear, quadratic, sigmoid)
+        beta_end: Ending beta value for noise schedule (used for linear, quadratic, sigmoid)
+        class_dropout_prob: Probability of dropping class labels during training (for classifier-free guidance)
+    """
+
+    def __init__(
+        self,
+        image_size: int = 40,
+        in_channels: int = 3,
+        model_channels: int = 64,
+        channel_multipliers: Tuple[int, ...] = (1, 2, 4),
+        num_res_blocks: int = 2,
+        num_classes: Optional[int] = None,
+        num_timesteps: int = 1000,
+        beta_schedule: str = "linear",
+        beta_start: float = 0.0001,
+        beta_end: float = 0.02,
+        class_dropout_prob: float = 0.1,
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    ):
+        super().__init__()
+
+        self.image_size = image_size
+        self.in_channels = in_channels
+        self.num_timesteps = num_timesteps
+        self.num_classes = num_classes
+        self.class_dropout_prob = class_dropout_prob
+        self.beta_schedule = beta_schedule
+        self.device = device
+
+        # U-Net model
+        self.model = UNet(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            base_channels=model_channels,
+            channel_multipliers=channel_multipliers,
+            num_res_blocks=num_res_blocks,
+            num_classes=num_classes,
+        )
+
+        # Precompute noise schedule
+        self.register_buffer(
+            "betas",
+            self._get_beta_schedule(beta_schedule, num_timesteps, beta_start, beta_end),
+        )
+        self.register_buffer("alphas", 1.0 - self.betas)
+        self.register_buffer("alphas_cumprod", torch.cumprod(self.alphas, dim=0))
+        self.register_buffer(
+            "alphas_cumprod_prev", F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
+        )
+
+        # Calculations for diffusion q(x_t | x_{t-1})
+        self.register_buffer("sqrt_alphas_cumprod", torch.sqrt(self.alphas_cumprod))
+        self.register_buffer(
+            "sqrt_one_minus_alphas_cumprod", torch.sqrt(1.0 - self.alphas_cumprod)
+        )
+        self.register_buffer(
+            "log_one_minus_alphas_cumprod", torch.log(1.0 - self.alphas_cumprod)
+        )
+        self.register_buffer(
+            "sqrt_recip_alphas_cumprod", torch.sqrt(1.0 / self.alphas_cumprod)
+        )
+        self.register_buffer(
+            "sqrt_recipm1_alphas_cumprod", torch.sqrt(1.0 / self.alphas_cumprod - 1)
+        )
+
+        # Calculations for posterior q(x_{t-1} | x_t, x_0)
+        posterior_variance = (
+            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
+        self.register_buffer("posterior_variance", posterior_variance)
+        self.register_buffer(
+            "posterior_log_variance_clipped",
+            torch.log(torch.clamp(posterior_variance, min=1e-20)),
+        )
+        self.register_buffer(
+            "posterior_mean_coef1",
+            self.betas
+            * torch.sqrt(self.alphas_cumprod_prev)
+            / (1.0 - self.alphas_cumprod),
+        )
+        self.register_buffer(
+            "posterior_mean_coef2",
+            (1.0 - self.alphas_cumprod_prev)
+            * torch.sqrt(self.alphas)
+            / (1.0 - self.alphas_cumprod),
+        )
+
+    def _get_beta_schedule(
+        self, schedule: str, timesteps: int, beta_start: float, beta_end: float
+    ) -> torch.Tensor:
+        """Get beta schedule based on the specified type.
+
+        Args:
+            schedule: Type of schedule ('linear', 'cosine', 'quadratic', 'sigmoid')
+            timesteps: Number of timesteps
+            beta_start: Starting beta value (for linear, quadratic, sigmoid)
+            beta_end: Ending beta value (for linear, quadratic, sigmoid)
+
+        Returns:
+            Beta schedule tensor
+        """
+        if schedule == "linear":
+            return self._linear_beta_schedule(timesteps, beta_start, beta_end)
+        elif schedule == "cosine":
+            return self._cosine_beta_schedule(timesteps)
+        elif schedule == "quadratic":
+            return self._quadratic_beta_schedule(timesteps, beta_start, beta_end)
+        elif schedule == "sigmoid":
+            return self._sigmoid_beta_schedule(timesteps, beta_start, beta_end)
+        else:
+            raise ValueError(
+                f"Unknown beta schedule: {schedule}. "
+                f"Choose from: 'linear', 'cosine', 'quadratic', 'sigmoid'"
+            )
+
+    def _linear_beta_schedule(
+        self, timesteps: int, beta_start: float, beta_end: float
+    ) -> torch.Tensor:
+        """Linear beta schedule."""
+        return torch.linspace(beta_start, beta_end, timesteps)
+
+    def _cosine_beta_schedule(self, timesteps: int, s: float = 0.008) -> torch.Tensor:
+        """Cosine beta schedule as proposed in https://arxiv.org/abs/2102.09672
+
+        Args:
+            timesteps: Number of timesteps
+            s: Small offset to prevent beta from being too small near t=0
+
+        Returns:
+            Beta schedule tensor
+        """
+        steps = timesteps + 1
+        x = torch.linspace(0, timesteps, steps)
+        alphas_cumprod = torch.cos(((x / timesteps) + s) / (1 + s) * np.pi * 0.5) ** 2
+        alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+        betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+        return torch.clip(betas, 0.0001, 0.9999)
+
+    def _quadratic_beta_schedule(
+        self, timesteps: int, beta_start: float, beta_end: float
+    ) -> torch.Tensor:
+        """Quadratic beta schedule for smoother transitions.
+
+        Args:
+            timesteps: Number of timesteps
+            beta_start: Starting beta value
+            beta_end: Ending beta value
+
+        Returns:
+            Beta schedule tensor
+        """
+        return torch.linspace(beta_start**0.5, beta_end**0.5, timesteps) ** 2
+
+    def _sigmoid_beta_schedule(
+        self, timesteps: int, beta_start: float, beta_end: float
+    ) -> torch.Tensor:
+        """Sigmoid beta schedule for smoother transitions.
+
+        Args:
+            timesteps: Number of timesteps
+            beta_start: Starting beta value
+            beta_end: Ending beta value
+
+        Returns:
+            Beta schedule tensor
+        """
+        betas = torch.linspace(-6, 6, timesteps)
+        return torch.sigmoid(betas) * (beta_end - beta_start) + beta_start
+
+    def _extract(
+        self, a: torch.Tensor, t: torch.Tensor, x_shape: Tuple
+    ) -> torch.Tensor:
+        """Extract coefficients at specified timesteps and reshape to match x_shape."""
+        batch_size = t.shape[0]
+        out = a.gather(-1, t)
+        return out.reshape(batch_size, *((1,) * (len(x_shape) - 1)))
+
+    def q_sample(
+        self,
+        x_start: torch.Tensor,
+        t: torch.Tensor,
+        noise: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Forward diffusion process: q(x_t | x_0)."""
+        if noise is None:
+            noise = torch.randn_like(x_start)
+
+        sqrt_alphas_cumprod_t = self._extract(
+            self.sqrt_alphas_cumprod, t, x_start.shape
+        )
+        sqrt_one_minus_alphas_cumprod_t = self._extract(
+            self.sqrt_one_minus_alphas_cumprod, t, x_start.shape
+        )
+
+        return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
+
+    def predict_start_from_noise(
+        self, x_t: torch.Tensor, t: torch.Tensor, noise: torch.Tensor
+    ) -> torch.Tensor:
+        """Predict x_0 from x_t and predicted noise."""
+        sqrt_recip_alphas_cumprod_t = self._extract(
+            self.sqrt_recip_alphas_cumprod, t, x_t.shape
+        )
+        sqrt_recipm1_alphas_cumprod_t = self._extract(
+            self.sqrt_recipm1_alphas_cumprod, t, x_t.shape
+        )
+
+        return sqrt_recip_alphas_cumprod_t * x_t - sqrt_recipm1_alphas_cumprod_t * noise
+
+    def q_posterior(
+        self, x_start: torch.Tensor, x_t: torch.Tensor, t: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute mean and variance of diffusion posterior q(x_{t-1} | x_t, x_0)."""
+        posterior_mean = (
+            self._extract(self.posterior_mean_coef1, t, x_t.shape) * x_start
+            + self._extract(self.posterior_mean_coef2, t, x_t.shape) * x_t
+        )
+        posterior_variance = self._extract(self.posterior_variance, t, x_t.shape)
+
+        return posterior_mean, posterior_variance
+
+    def p_mean_variance(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        class_labels: Optional[torch.Tensor] = None,
+        guidance_scale: float = 0.0,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute predicted mean and variance for reverse process with classifier-free guidance.
+
+        Args:
+            x_t: Noisy input
+            t: Timestep
+            class_labels: Class labels for conditional generation
+            guidance_scale: Classifier-free guidance scale (0.0 = no guidance, higher = stronger conditioning)
+        """
+        if (
+            self.num_classes is not None
+            and guidance_scale > 0.0
+            and class_labels is not None
+        ):
+            # Classifier-free guidance: interpolate between conditional and unconditional predictions
+            # Conditional prediction
+            predicted_noise_cond = self.model(x_t, t, class_labels)
+
+            # Unconditional prediction (use class index num_classes as the unconditional token)
+            batch_size = x_t.shape[0]
+            unconditional_labels = torch.full(
+                (batch_size,), self.num_classes, device=x_t.device, dtype=torch.long
+            )
+            predicted_noise_uncond = self.model(x_t, t, unconditional_labels)
+
+            # Apply guidance: noise = uncond + guidance_scale * (cond - uncond)
+            predicted_noise = predicted_noise_uncond + guidance_scale * (
+                predicted_noise_cond - predicted_noise_uncond
+            )
+        else:
+            # Standard prediction without guidance
+            predicted_noise = self.model(x_t, t, class_labels)
+
+        # Predict x_0
+        x_start = self.predict_start_from_noise(x_t, t, predicted_noise)
+        x_start = torch.clamp(x_start, -1.0, 1.0)
+
+        # Compute posterior
+        model_mean, model_variance = self.q_posterior(x_start, x_t, t)
+
+        return model_mean, model_variance
+
+    @torch.no_grad()
+    def p_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        class_labels: Optional[torch.Tensor] = None,
+        guidance_scale: float = 0.0,
+    ) -> torch.Tensor:
+        """Sample from reverse process: p(x_{t-1} | x_t) with classifier-free guidance."""
+        model_mean, model_variance = self.p_mean_variance(
+            x_t, t, class_labels, guidance_scale
+        )
+
+        noise = torch.randn_like(x_t)
+        # No noise when t == 0
+        nonzero_mask = (t != 0).float().view(-1, *([1] * (len(x_t.shape) - 1)))
+
+        return model_mean + nonzero_mask * torch.sqrt(model_variance) * noise
+
+    @torch.no_grad()
+    def sample(
+        self,
+        batch_size: int = 1,
+        class_labels: Optional[torch.Tensor] = None,
+        guidance_scale: float = 0.0,
+        return_intermediates: bool = False,
+    ) -> torch.Tensor:
+        """Generate samples from the model with optional classifier-free guidance.
+
+        Args:
+            batch_size: Number of samples to generate
+            class_labels: Class labels for conditional generation (shape: [batch_size])
+            guidance_scale: Classifier-free guidance scale (0.0 = no guidance, 3.0-7.0 typical)
+            return_intermediates: If True, return all intermediate timesteps
+
+        Returns:
+            Generated samples, shape (batch_size, in_channels, image_size, image_size)
+            If return_intermediates is True, returns (num_timesteps, batch_size, in_channels, image_size, image_size)
+        """
+        shape = (batch_size, self.in_channels, self.image_size, self.image_size)
+        device = next(self.parameters()).device
+
+        # Start from pure noise
+        x = torch.randn(shape, device=device)
+
+        intermediates = [x] if return_intermediates else None
+
+        # Iteratively denoise
+        for i in reversed(range(self.num_timesteps)):
+            t = torch.full((batch_size,), i, device=device, dtype=torch.long)
+            x = self.p_sample(x, t, class_labels, guidance_scale)
+
+            if return_intermediates:
+                intermediates.append(x)
+
+        if return_intermediates:
+            return torch.stack(intermediates)
+
+        return x
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        t: Optional[torch.Tensor] = None,
+        class_labels: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Forward pass for training with optional class conditioning.
+
+        Args:
+            x: Input images, shape (batch_size, in_channels, image_size, image_size)
+            t: Timesteps, shape (batch_size,). If None, random timesteps are sampled.
+            class_labels: Class labels, shape (batch_size,). For classifier-free guidance training.
+
+        Returns:
+            Predicted noise and target noise
+        """
+        batch_size = x.shape[0]
+        device = x.device
+
+        # Sample random timesteps if not provided
+        if t is None:
+            t = torch.randint(
+                0, self.num_timesteps, (batch_size,), device=device
+            ).long()
+
+        # Apply class dropout for classifier-free guidance training
+        if self.num_classes is not None and class_labels is not None and self.training:
+            # Randomly drop class labels (replace with unconditional token)
+            mask = torch.rand(batch_size, device=device) < self.class_dropout_prob
+            class_labels = class_labels.clone()
+            class_labels[mask] = (
+                self.num_classes
+            )  # Use num_classes as unconditional token
+
+        # Sample noise
+        noise = torch.randn_like(x)
+
+        # Forward diffusion
+        x_t = self.q_sample(x, t, noise)
+
+        # Predict noise
+        predicted_noise = self.model(x_t, t, class_labels)
+
+        return predicted_noise, noise
+
+    def training_step(
+        self,
+        x: torch.Tensor,
+        class_labels: Optional[torch.Tensor] = None,
+        criterion: Optional[nn.Module] = None,
+    ) -> torch.Tensor:
+        """Single training step with optional class conditioning.
+
+        Args:
+            x: Input images
+            class_labels: Class labels for conditional generation
+            criterion: Loss function (default: MSE)
+
+        Returns:
+            Loss value
+        """
+        if criterion is None:
+            criterion = nn.MSELoss()
+
+        predicted_noise, noise = self.forward(x, class_labels=class_labels)
+        loss = criterion(predicted_noise, noise)
+
+        return loss
+
+
+def create_ddpm(
+    image_size: int = 40,
+    in_channels: int = 3,
+    model_channels: int = 64,
+    num_classes: Optional[int] = None,
+    num_timesteps: int = 1000,
+    beta_schedule: str = "cosine",
+    beta_start: float = 0.0001,
+    beta_end: float = 0.02,
+    class_dropout_prob: float = 0.1,
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+) -> DDPM:
+    """Factory function to create a DDPM model.
+
+    Args:
+        image_size: Size of input images (assumes square)
+        in_channels: Number of input channels
+        model_channels: Base number of channels in U-Net
+        num_classes: Number of classes for conditional generation (None for unconditional)
+        num_timesteps: Number of diffusion timesteps
+        beta_schedule: Type of noise schedule ('linear', 'cosine', 'quadratic', 'sigmoid')
+        beta_start: Starting beta value for noise schedule
+        beta_end: Ending beta value for noise schedule
+        class_dropout_prob: Probability of dropping class labels during training (for classifier-free guidance)
+        device: Device to place the model on
+
+    Returns:
+        DDPM model
+    """
+    model = DDPM(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=model_channels,
+        num_classes=num_classes,
+        num_timesteps=num_timesteps,
+        beta_schedule=beta_schedule,
+        beta_start=beta_start,
+        beta_end=beta_end,
+        class_dropout_prob=class_dropout_prob,
+        device=device,
+    )
+    return model.to(device)
+
+
+def train():
+    """Training function for DDPM."""
+    import os
+
+    from torch.utils.data import DataLoader, WeightedRandomSampler
+    from torchvision import datasets, transforms
+
+    # Training configuration
+    EPOCHS = 200
+    BATCH_SIZE = 8
+    LEARNING_RATE = 0.00005
+    NUM_CLASSES = 2  # 0: Normal, 1: Abnormal
+    IMG_SIZE = 40
+    NUM_TIMESTEPS = 1000
+    MODEL_CHANNELS = 64
+    BETA_SCHEDULE = "cosine"  # Options: 'linear', 'cosine', 'quadratic', 'sigmoid'
+    BETA_START = 0.0001  # Starting beta value (for linear, quadratic, sigmoid)
+    BETA_END = 0.02  # Ending beta value (for linear, quadratic, sigmoid)
+    CLASS_DROPOUT_PROB = 0.3  # For classifier-free guidance
+    GUIDANCE_SCALE = 5.0  # For sampling
+    USE_WEIGHTED_SAMPLING = True  # Enable/disable weighted sampling for class imbalance
+    OUT_DIR = "./out/ddpm"
+
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # Data paths
+    train_data_path = "./data/stats"
+    val_data_path = "./data/stats"
+
+    # Data transforms (normalize to [-1, 1] for DDPM)
+    transform = transforms.Compose(
+        [
+            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(15),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
+            ),  # Scale to [-1, 1]
+        ]
+    )
+
+    print("\nLoading datasets...")
+
+    # Training dataset
+    train_dataset = datasets.ImageFolder(train_data_path, transform=transform)
+
+    # Calculate class distribution
+    class_counts = [0] * NUM_CLASSES
+    for _, label in train_dataset.samples:
+        class_counts[label] += 1
+
+    print(f"Training set: {len(train_dataset)} images")
+    print(f"  - Class distribution:")
+    for idx, (class_name, count) in enumerate(zip(train_dataset.classes, class_counts)):
+        print(
+            f"    - {class_name}: {count} images ({count/len(train_dataset)*100:.2f}%)"
+        )
+
+    # Setup weighted sampling if enabled
+    if USE_WEIGHTED_SAMPLING:
+        print(f"\n  - Weighted sampling: ENABLED")
+        # Calculate weights for each class (inverse frequency)
+        num_samples = sum(class_counts)
+        class_weights = [num_samples / count for count in class_counts]
+        print(f"    - Class weights: {[f'{w:.3f}' for w in class_weights]}")
+
+        # Assign weight to each sample based on its class
+        sample_weights = [class_weights[label] for _, label in train_dataset.samples]
+
+        # Create weighted sampler
+        sampler = WeightedRandomSampler(
+            weights=sample_weights, num_samples=len(train_dataset), replacement=True
+        )
+
+        # Use sampler (don't use shuffle with sampler)
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler)
+    else:
+        print(f"\n  - Weighted sampling: DISABLED (using random sampling)")
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+    print(f"  - Number of batches: {len(train_loader)}")
+    print(f"  - Batch size: {BATCH_SIZE}")
+    print(f"  - Classes: {train_dataset.classes}")
+
+    # Validation dataset
+    val_dataset = datasets.ImageFolder(val_data_path, transform=transform)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    print(f"\nValidation set: {len(val_dataset)} images")
+    print(f"  - Number of batches: {len(val_loader)}")
+    print(f"  - Classes: {val_dataset.classes}")
+
+    if train_dataset.classes != val_dataset.classes:
+        raise ValueError("Training and validation datasets have different classes.")
+
+    if len(train_dataset.classes) != NUM_CLASSES:
+        raise ValueError(
+            f"Expected {NUM_CLASSES} classes, but found {len(train_dataset.classes)}"
+        )
+
+    # Create class-conditional DDPM model
+    print("\n=== Creating Class-Conditional DDPM ===")
+    print(f"Using beta schedule: {BETA_SCHEDULE}")
+    model = create_ddpm(
+        image_size=IMG_SIZE,
+        in_channels=3,
+        model_channels=MODEL_CHANNELS,
+        num_classes=NUM_CLASSES,
+        num_timesteps=NUM_TIMESTEPS,
+        beta_schedule=BETA_SCHEDULE,
+        beta_start=BETA_START,
+        beta_end=BETA_END,
+        class_dropout_prob=CLASS_DROPOUT_PROB,
+        device=device,
+    )
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+
+    # Setup optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.MSELoss()
+
+    # Training loop
+    print("\n=== Starting Training ===")
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(EPOCHS):
+        # Training phase
+        model.train()
+        train_loss = 0.0
+        train_batches = 0
+
+        for batch_idx, (images, labels) in enumerate(train_loader):
+            images = images.to(device)
+            labels = labels.to(device)
+
+            # Forward pass
+            loss = model.training_step(images, class_labels=labels, criterion=criterion)
+
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            train_batches += 1
+
+            if (batch_idx + 1) % 10 == 0:
+                print(
+                    f"  - Epoch [{epoch+1}/{EPOCHS}], Step [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}",
+                    end="\r",
+                )
+
+        avg_train_loss = train_loss / train_batches
+        train_losses.append(avg_train_loss)
+
+        # Validation phase
+        model.eval()
+        val_loss = 0.0
+        val_batches = 0
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images = images.to(device)
+                labels = labels.to(device)
+
+                predicted_noise, noise = model(images, class_labels=labels)
+                loss = criterion(predicted_noise, noise)
+
+                val_loss += loss.item()
+                val_batches += 1
+
+        avg_val_loss = val_loss / val_batches
+        val_losses.append(avg_val_loss)
+
+        if (epoch + 1) % 20 == 0:
+            torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}.pth")
+
+        print(
+            f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+        )
+
+    print("\n=== Training Completed ===")
+
+    # Save model
+    model_path = f"{OUT_DIR}/ddpm_model.pth"
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
+
+    # Save training history to CSV
+    history_path = f"{OUT_DIR}/training_history.csv"
+    with open(history_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["epoch", "train_loss", "val_loss"])
+        for epoch, (train_loss, val_loss) in enumerate(
+            zip(train_losses, val_losses), 1
+        ):
+            writer.writerow([epoch, train_loss, val_loss])
+    print(f"Training history saved to {history_path}")
+
+    # Plot training curves
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(12, 5))
+
+    # Plot loss
+    plt.subplot(1, 2, 1)
+    plt.plot(range(1, EPOCHS + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, EPOCHS + 1), val_losses, label="Val Loss", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # Plot loss (log scale) if useful
+    plt.subplot(1, 2, 2)
+    plt.plot(range(1, EPOCHS + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, EPOCHS + 1), val_losses, label="Val Loss", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (log scale)")
+    plt.title("Training and Validation Loss (Log Scale)")
+    plt.yscale("log")
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plot_path = f"{OUT_DIR}/training_curves.png"
+    plt.savefig(plot_path, dpi=150)
+    print(f"Training curves saved to {plot_path}")
+    plt.close()
+
+
+def generate(
+    model_path: str,
+    num_samples: int = 16,
+    class_labels: Optional[list] = None,
+    guidance_scale: float = 3.0,
+    image_size: int = 40,
+    num_classes: int = 2,
+    model_channels: int = 64,
+    num_timesteps: int = 1000,
+    beta_schedule: str = "linear",
+    beta_start: float = 0.0001,
+    beta_end: float = 0.02,
+    out_dir: str = "./out/ddpm/samples",
+    save_images: bool = True,
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+) -> torch.Tensor:
+    """Generate samples using a trained DDPM model.
+
+    Args:
+        model_path: Path to the trained model checkpoint (.pth file)
+        num_samples: Number of samples to generate
+        class_labels: List of class labels for conditional generation.
+                     If None, generates equal samples for each class.
+                     Length should match num_samples.
+        guidance_scale: Classifier-free guidance scale (0.0 = no guidance, 3.0-7.0 typical)
+        image_size: Size of the images (assumes square)
+        num_classes: Number of classes in the model
+        model_channels: Base number of channels in U-Net
+        num_timesteps: Number of diffusion timesteps
+        beta_schedule: Type of noise schedule ('linear', 'cosine', 'quadratic', 'sigmoid')
+        beta_start: Starting beta value for noise schedule
+        beta_end: Ending beta value for noise schedule
+        out_dir: Directory to save generated images
+        save_images: Whether to save images to disk
+        device: Device to run generation on
+
+    Returns:
+        Generated samples as a tensor, shape (num_samples, 3, image_size, image_size)
+        Values are in range [-1, 1]
+    """
+    import os
+
+    from torchvision.utils import save_image
+
+    print(f"Loading model from {model_path}...")
+
+    # Create model
+    model = create_ddpm(
+        image_size=image_size,
+        in_channels=3,
+        model_channels=model_channels,
+        num_classes=num_classes,
+        num_timesteps=num_timesteps,
+        beta_schedule=beta_schedule,
+        beta_start=beta_start,
+        beta_end=beta_end,
+        device=device,
+    )
+
+    # Load trained weights
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+
+    print(f"Model loaded successfully on {device}")
+    print(f"Generating {num_samples} samples with guidance_scale={guidance_scale}...")
+
+    # Prepare class labels
+    if class_labels is None:
+        # Generate equal samples for each class
+        samples_per_class = num_samples // num_classes
+        remainder = num_samples % num_classes
+        class_labels = []
+        for class_idx in range(num_classes):
+            count = samples_per_class + (1 if class_idx < remainder else 0)
+            class_labels.extend([class_idx] * count)
+
+    if len(class_labels) != num_samples:
+        raise ValueError(
+            f"Length of class_labels ({len(class_labels)}) must match num_samples ({num_samples})"
+        )
+
+    # Convert to tensor
+    class_labels_tensor = torch.tensor(class_labels, device=device, dtype=torch.long)
+
+    # Generate samples
+    with torch.no_grad():
+        samples = model.sample(
+            batch_size=num_samples,
+            class_labels=class_labels_tensor,
+            guidance_scale=guidance_scale,
+        )
+
+    print(f"Generated {samples.shape[0]} samples")
+    print(f"  Shape: {samples.shape}")
+    print(f"  Range: [{samples.min().item():.3f}, {samples.max().item():.3f}]")
+
+    # Save images if requested
+    if save_images:
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Save all samples in a grid
+        grid_path = os.path.join(
+            out_dir, f"generated_grid_guidance{guidance_scale}.png"
+        )
+        # Denormalize from [-1, 1] to [0, 1] for saving
+        samples_normalized = (samples + 1.0) / 2.0
+        save_image(samples_normalized, grid_path, nrow=4, normalize=False)
+        print(f"  Saved grid to {grid_path}")
+
+        # Save individual samples
+        for idx, (sample, label) in enumerate(zip(samples, class_labels)):
+            sample_path = os.path.join(
+                out_dir, f"sample_{idx:03d}_class{label}_guidance{guidance_scale}.png"
+            )
+            sample_normalized = (sample + 1.0) / 2.0
+            save_image(sample_normalized, sample_path, normalize=False)
+
+        print(f"  Saved {num_samples} individual images to {out_dir}")
+
+        # Save by class
+        for class_idx in range(num_classes):
+            class_samples = samples_normalized[
+                [i for i, l in enumerate(class_labels) if l == class_idx]
+            ]
+            if len(class_samples) > 0:
+                class_grid_path = os.path.join(
+                    out_dir,
+                    f"generated_class{class_idx}_guidance{guidance_scale}.png",
+                )
+                save_image(class_samples, class_grid_path, nrow=4, normalize=False)
+                print(f"  Saved class {class_idx} grid to {class_grid_path}")
+
+    return samples
+
+
+if __name__ == "__main__":
+    train()
