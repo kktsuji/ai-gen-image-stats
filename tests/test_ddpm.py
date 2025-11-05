@@ -767,6 +767,7 @@ class TestGenerateFunction:
         samples = generate(
             model_path=model_path,
             num_samples=4,
+            batch_size=4,
             guidance_scale=0.0,
             image_size=40,
             num_classes=2,
@@ -799,6 +800,7 @@ class TestGenerateFunction:
         samples = generate(
             model_path=model_path,
             num_samples=4,
+            batch_size=2,
             class_labels=class_labels,
             guidance_scale=3.0,
             image_size=40,
@@ -830,6 +832,7 @@ class TestGenerateFunction:
         samples = generate(
             model_path=model_path,
             num_samples=4,
+            batch_size=2,
             guidance_scale=0.0,
             image_size=40,
             num_classes=2,
@@ -864,6 +867,7 @@ class TestGenerateFunction:
         samples = generate(
             model_path=model_path,
             num_samples=10,
+            batch_size=5,
             class_labels=None,
             guidance_scale=0.0,
             image_size=40,
@@ -895,6 +899,7 @@ class TestGenerateFunction:
             generate(
                 model_path=model_path,
                 num_samples=4,
+                batch_size=2,
                 class_labels=[0, 0],  # Only 2 labels for 4 samples
                 guidance_scale=0.0,
                 image_size=40,
@@ -905,6 +910,68 @@ class TestGenerateFunction:
                 save_images=False,
                 device=device,
             )
+
+    def test_generate_with_batches(self, device, temp_out_dir):
+        """Test generation with num_samples > batch_size (generates in multiple batches)"""
+        # Create and save a model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        model_path = os.path.join(temp_out_dir, "test_model.pth")
+        torch.save(model.state_dict(), model_path)
+
+        # Generate 10 samples in batches of 3
+        samples = generate(
+            model_path=model_path,
+            num_samples=10,
+            batch_size=3,  # Will need 4 batches (3+3+3+1)
+            guidance_scale=0.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=temp_out_dir,
+            save_images=False,
+            device=device,
+        )
+
+        assert samples.shape == (10, 3, 40, 40)
+        assert samples.min() >= -1.0
+        assert samples.max() <= 1.0
+
+    def test_generate_batch_size_larger_than_num_samples(self, device, temp_out_dir):
+        """Test generation when batch_size > num_samples (single batch)"""
+        # Create and save a model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        model_path = os.path.join(temp_out_dir, "test_model.pth")
+        torch.save(model.state_dict(), model_path)
+
+        # Generate 4 samples with batch_size=10 (should work with single batch)
+        samples = generate(
+            model_path=model_path,
+            num_samples=4,
+            batch_size=10,
+            guidance_scale=0.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=temp_out_dir,
+            save_images=False,
+            device=device,
+        )
+
+        assert samples.shape == (4, 3, 40, 40)
 
 
 if __name__ == "__main__":

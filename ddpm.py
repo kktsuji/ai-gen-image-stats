@@ -1098,6 +1098,7 @@ def train():
 def generate(
     model_path: str,
     num_samples: int = 16,
+    batch_size: int = 16,
     class_labels: Optional[list] = None,
     guidance_scale: float = 3.0,
     image_size: int = 40,
@@ -1115,7 +1116,8 @@ def generate(
 
     Args:
         model_path: Path to the trained model checkpoint (.pth file)
-        num_samples: Number of samples to generate
+        num_samples: Total number of samples to generate
+        batch_size: Batch size for generation (for memory efficiency, will generate in batches)
         class_labels: List of class labels for conditional generation.
                      If None, generates equal samples for each class.
                      Length should match num_samples.
@@ -1179,15 +1181,40 @@ def generate(
     # Convert to tensor
     class_labels_tensor = torch.tensor(class_labels, device=device, dtype=torch.long)
 
-    # Generate samples
-    with torch.no_grad():
-        samples = model.sample(
-            batch_size=num_samples,
-            class_labels=class_labels_tensor,
-            guidance_scale=guidance_scale,
-        )
+    # Generate samples in batches
+    all_samples = []
+    num_batches = (num_samples + batch_size - 1) // batch_size  # Ceiling division
 
-    print(f"Generated {samples.shape[0]} samples")
+    print(f"\nGenerating in {num_batches} batch(es) of size {batch_size}...")
+
+    with torch.no_grad():
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, num_samples)
+            current_batch_size = end_idx - start_idx
+
+            # Get class labels for this batch
+            batch_class_labels = class_labels_tensor[start_idx:end_idx]
+
+            # Generate batch
+            batch_samples = model.sample(
+                batch_size=current_batch_size,
+                class_labels=batch_class_labels,
+                guidance_scale=guidance_scale,
+            )
+
+            all_samples.append(batch_samples)
+
+            print(
+                f"  Batch {batch_idx + 1}/{num_batches}: Generated {current_batch_size} samples",
+                end="\r",
+            )
+    print("\nGeneration completed.")
+
+    # Concatenate all batches
+    samples = torch.cat(all_samples, dim=0)
+
+    print(f"\nGenerated {samples.shape[0]} samples")
     print(f"  Shape: {samples.shape}")
     print(f"  Range: [{samples.min().item():.3f}, {samples.max().item():.3f}]")
 
@@ -1241,7 +1268,7 @@ if __name__ == "__main__":
         import torch
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        num_samples = 100
+        num_samples = 10
         model_path = "./out/ddpm/ddpm_model.pth"
         out_dir = "./out/ddpm/samples_class1"
         os.makedirs(out_dir, exist_ok=True)
@@ -1249,6 +1276,7 @@ if __name__ == "__main__":
         samples_class0 = generate(
             model_path=model_path,
             num_samples=num_samples,
+            batch_size=3,
             class_labels=[1] * num_samples,
             guidance_scale=5.0,
             image_size=40,
