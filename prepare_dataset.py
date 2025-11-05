@@ -53,6 +53,8 @@ if __name__ == "__main__":
 
         # Calculate total abnormal train count
         total_abnormal_train = len(abnormal_train) + len(synth_images)
+    else:
+        total_abnormal_train = len(abnormal_train)
 
     # Get normal images and split to match abnormal train count
     normal_images = glob(os.path.join(ORI_NORMAL_DIR, "*.png"))
@@ -75,7 +77,7 @@ if __name__ == "__main__":
         shutil.copy(img, os.path.join(VAL_DIR, "0.Normal"))
 
     print(f"Abnormal - Train: {len(abnormal_train)}, Val: {len(abnormal_val)}")
-    print(f"Synthesized - Train: {len(synth_images)}")
+    print(f"Synthesized - Train: {len(synth_images) if USE_SYNTH else 0}")
     print(f"Normal - Train: {len(normal_train)}, Val: {len(normal_val)}")
     print(
         f"Total Train - Abnormal: {total_abnormal_train}, Normal: {len(normal_train)}"
