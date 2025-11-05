@@ -5,6 +5,7 @@ Uses U-Net architecture for the denoising network.
 """
 
 import csv
+import os
 from typing import Optional, Tuple
 
 import numpy as np
@@ -1230,4 +1231,32 @@ def generate(
 
 
 if __name__ == "__main__":
-    train()
+    TRAIN = False
+    GEN = True
+
+    if TRAIN:
+        train()
+
+    if GEN:
+        import torch
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        num_samples = 100
+        model_path = "./out/ddpm/ddpm_model.pth"
+        out_dir = "./out/ddpm/samples_class1"
+        os.makedirs(out_dir, exist_ok=True)
+
+        samples_class0 = generate(
+            model_path=model_path,
+            num_samples=num_samples,
+            class_labels=[1] * num_samples,
+            guidance_scale=5.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=64,
+            num_timesteps=1000,
+            beta_schedule="cosine",
+            out_dir=out_dir,
+            save_images=True,
+            device=device,
+        )
