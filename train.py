@@ -110,6 +110,7 @@ if __name__ == "__main__":
     NUM_CLASSES = 2
     IMG_SIZE_ORIGINAL = 40
     UNDER_SAMPLING = True
+    USE_CLASS_WEIGHTS = False
     IMG_SIZE = 299  # InceptionV3 input size
     SUFFIX = ""
     OUT_DIR = f"./out/train{SUFFIX}"
@@ -177,9 +178,30 @@ if __name__ == "__main__":
     print("  - Total samples:", len(val_loader.dataset))
     print("  - Unique classes:", val_loader.dataset.classes)
 
+    # Calculate class weights for handling imbalance
+    class_weights = None
+    if USE_CLASS_WEIGHTS:
+        # Count samples per class in training set
+        class_sample_count = torch.zeros(NUM_CLASSES)
+        for _, label in train_loader.dataset.samples:
+            class_sample_count[label] += 1
+
+        # Calculate weights as inverse of frequency
+        # weight = 1 / (samples_per_class / total_samples)
+        # = total_samples / samples_per_class
+        total_samples = class_sample_count.sum()
+        class_weights = total_samples / class_sample_count
+
+        # Normalize weights so they sum to NUM_CLASSES
+        class_weights = class_weights / class_weights.sum() * NUM_CLASSES
+        class_weights = class_weights.to(device)
+
+        print(f"\nClass sample distribution: {class_sample_count.tolist()}")
+        print(f"Class weights applied: {class_weights.tolist()}")
+
     # Setup optimizer to only train the final layer
     optimizer = torch.optim.Adam(trainer.get_trainable_parameters(), lr=LEARNING_RATE)
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     train_loss_list = []
     train_acc_list = []
