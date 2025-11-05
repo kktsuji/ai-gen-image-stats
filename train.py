@@ -178,6 +178,13 @@ if __name__ == "__main__":
     print("  - Total samples:", len(val_loader.dataset))
     print("  - Unique classes:", val_loader.dataset.classes)
 
+    if train_loader.dataset.classes != val_loader.dataset.classes:
+        raise ValueError("Train and validation datasets have different classes!")
+    if len(train_loader.dataset.classes) != NUM_CLASSES:
+        raise ValueError("Number of classes does not match NUM_CLASSES!")
+
+    unique_classes = train_loader.dataset.classes
+
     # Calculate class weights for handling imbalance
     class_weights = None
     if USE_CLASS_WEIGHTS:
@@ -389,11 +396,11 @@ if __name__ == "__main__":
         print(
             f"Epoch {epoch + 1}: "
             f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, PR-AUC: {train_pr_auc:.4f}, ROC-AUC: {train_roc_auc:.4f}\033[0m "
-            f"(\033[94mClass 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}\033[0m, "
-            f"\033[91mClass 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}\033[0m) | "
+            f"(\033[94m{unique_classes[0]}: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}\033[0m, "
+            f"\033[91m{unique_classes[1]}: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}\033[0m) | "
             f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, PR-AUC: {val_pr_auc:.4f}, ROC-AUC: {val_roc_auc:.4f}\033[0m "
-            f"(\033[94mClass 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}\033[0m, "
-            f"\033[91mClass 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f}\033[0m)"
+            f"(\033[94m{unique_classes[0]}: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}\033[0m, "
+            f"\033[91m{unique_classes[1]}: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f}\033[0m)"
         )
 
         train_loss_list.append(train_loss)
@@ -597,15 +604,33 @@ if __name__ == "__main__":
 
     plt.subplot(1, 2, 2)
     plt.plot(
-        epochs_range, train_class0_loss_list, "b--", label="Train Class 0", linewidth=2
+        epochs_range,
+        train_class0_loss_list,
+        "b--",
+        label=f"Train {unique_classes[0]}",
+        linewidth=2,
     )
     plt.plot(
-        epochs_range, train_class1_loss_list, "b:", label="Train Class 1", linewidth=2
+        epochs_range,
+        train_class1_loss_list,
+        "b:",
+        label=f"Train {unique_classes[1]}",
+        linewidth=2,
     )
     plt.plot(
-        epochs_range, val_class0_loss_list, "r--", label="Val Class 0", linewidth=2
+        epochs_range,
+        val_class0_loss_list,
+        "r--",
+        label=f"Val {unique_classes[0]}",
+        linewidth=2,
     )
-    plt.plot(epochs_range, val_class1_loss_list, "r:", label="Val Class 1", linewidth=2)
+    plt.plot(
+        epochs_range,
+        val_class1_loss_list,
+        "r:",
+        label=f"Val {unique_classes[1]}",
+        linewidth=2,
+    )
     plt.xlabel("Epoch", fontsize=12)
     plt.ylabel("Loss", fontsize=12)
     plt.title("Per-Class Loss", fontsize=14, fontweight="bold")
@@ -634,13 +659,33 @@ if __name__ == "__main__":
 
     plt.subplot(1, 2, 2)
     plt.plot(
-        epochs_range, train_class0_acc_list, "b--", label="Train Class 0", linewidth=2
+        epochs_range,
+        train_class0_acc_list,
+        "b--",
+        label=f"Train {unique_classes[0]}",
+        linewidth=2,
     )
     plt.plot(
-        epochs_range, train_class1_acc_list, "b:", label="Train Class 1", linewidth=2
+        epochs_range,
+        train_class1_acc_list,
+        "b:",
+        label=f"Train {unique_classes[1]}",
+        linewidth=2,
     )
-    plt.plot(epochs_range, val_class0_acc_list, "r--", label="Val Class 0", linewidth=2)
-    plt.plot(epochs_range, val_class1_acc_list, "r:", label="Val Class 1", linewidth=2)
+    plt.plot(
+        epochs_range,
+        val_class0_acc_list,
+        "r--",
+        label=f"Val {unique_classes[0]}",
+        linewidth=2,
+    )
+    plt.plot(
+        epochs_range,
+        val_class1_acc_list,
+        "r:",
+        label=f"Val {unique_classes[1]}",
+        linewidth=2,
+    )
     plt.xlabel("Epoch", fontsize=12)
     plt.ylabel("Accuracy (%)", fontsize=12)
     plt.title("Per-Class Accuracy", fontsize=14, fontweight="bold")
@@ -707,16 +752,20 @@ if __name__ == "__main__":
         writer.writerow(["train_loss"] + [f"{loss:.4f}" for loss in train_loss_list])
         writer.writerow(["train_accuracy"] + [f"{acc:.2f}" for acc in train_acc_list])
         writer.writerow(
-            ["train_class0_accuracy"] + [f"{acc:.2f}" for acc in train_class0_acc_list]
+            [f"train_{unique_classes[0]}_accuracy"]
+            + [f"{acc:.2f}" for acc in train_class0_acc_list]
         )
         writer.writerow(
-            ["train_class1_accuracy"] + [f"{acc:.2f}" for acc in train_class1_acc_list]
+            [f"train_{unique_classes[1]}_accuracy"]
+            + [f"{acc:.2f}" for acc in train_class1_acc_list]
         )
         writer.writerow(
-            ["train_class0_loss"] + [f"{loss:.4f}" for loss in train_class0_loss_list]
+            [f"train_{unique_classes[0]}_loss"]
+            + [f"{loss:.4f}" for loss in train_class0_loss_list]
         )
         writer.writerow(
-            ["train_class1_loss"] + [f"{loss:.4f}" for loss in train_class1_loss_list]
+            [f"train_{unique_classes[1]}_loss"]
+            + [f"{loss:.4f}" for loss in train_class1_loss_list]
         )
         writer.writerow(
             ["train_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in train_pr_auc_list]
@@ -727,16 +776,20 @@ if __name__ == "__main__":
         writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
         writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
         writer.writerow(
-            ["val_class0_accuracy"] + [f"{acc:.2f}" for acc in val_class0_acc_list]
+            [f"val_{unique_classes[0]}_accuracy"]
+            + [f"{acc:.2f}" for acc in val_class0_acc_list]
         )
         writer.writerow(
-            ["val_class1_accuracy"] + [f"{acc:.2f}" for acc in val_class1_acc_list]
+            [f"val_{unique_classes[1]}_accuracy"]
+            + [f"{acc:.2f}" for acc in val_class1_acc_list]
         )
         writer.writerow(
-            ["val_class0_loss"] + [f"{loss:.4f}" for loss in val_class0_loss_list]
+            [f"val_{unique_classes[0]}_loss"]
+            + [f"{loss:.4f}" for loss in val_class0_loss_list]
         )
         writer.writerow(
-            ["val_class1_loss"] + [f"{loss:.4f}" for loss in val_class1_loss_list]
+            [f"val_{unique_classes[1]}_loss"]
+            + [f"{loss:.4f}" for loss in val_class1_loss_list]
         )
         writer.writerow(
             ["val_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in val_pr_auc_list]
