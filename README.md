@@ -19,7 +19,8 @@ docker pull pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
 docker build -t kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 .
 
 # Evaluate
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 stats.py
+# Avoid Numba cache issue and Matplotlib config issue by setting environment variables
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 stats.py
 
 # Cleansing
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 cleansing.py
