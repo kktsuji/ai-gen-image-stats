@@ -7,16 +7,22 @@ if __name__ == "__main__":
     ORI_NORMAL_DIR = "./data/stats/0.Normal/"
     ORI_ABNORMAL_DIR = "./data/stats/1.Abnormal/"
     ORI_SYNTH_DIR = "./data/stats/2.Synthesized_Abnormal/"
-    TRAIN_DIR = "./data/train"
-    VAL_DIR = "./data/val"
+    SUFFIX = ""
+    TRAIN_DIR = f"./data/train{SUFFIX}"
+    VAL_DIR = f"./data/val{SUFFIX}"
     VAL_RATIO = 0.2
     SYNTH_RATIO = 0.3
+    SYNTH_COUNT = 2000
     RANDOM_SEED = 42
-    USE_SYNTH = True
-    USE_REMAINING_NORMAL_VAL = False
+    USE_SYNTH_RATIO = "use-synth-ratio"
+    USE_SYNTH_COUNT = "use-synth-count"
+    NOT_USE_SYNTH = "not-use-synth"
+    CHOICE = [USE_SYNTH_RATIO, USE_SYNTH_COUNT, NOT_USE_SYNTH]
+    MODE = CHOICE[0]
+    USE_REMAINING_NORMAL_VAL = True
 
-    os.makedirs(TRAIN_DIR, exist_ok=True)
-    os.makedirs(VAL_DIR, exist_ok=True)
+    os.makedirs(TRAIN_DIR)
+    os.makedirs(VAL_DIR)
 
     random.seed(RANDOM_SEED)
 
@@ -38,7 +44,7 @@ if __name__ == "__main__":
     for img in abnormal_val:
         shutil.copy(img, os.path.join(VAL_DIR, "1.Abnormal"))
 
-    if USE_SYNTH:
+    if MODE == USE_SYNTH_RATIO:
         # Calculate how many synthesized images to use based on SYNTH_RATIO
         # We want: original_abnormal / (original_abnormal + synthesized) = (1 - SYNTH_RATIO)
         # So: synthesized = original_abnormal * SYNTH_RATIO / (1 - SYNTH_RATIO)
@@ -54,12 +60,27 @@ if __name__ == "__main__":
 
         # Calculate total abnormal train count
         total_abnormal_train = len(abnormal_train) + len(synth_images)
-    else:
+    elif MODE == USE_SYNTH_COUNT:
+        # Use synthesized images
+        synth_images = glob(os.path.join(ORI_SYNTH_DIR, "*.png"))
+        random.shuffle(synth_images)
+        synth_images = synth_images[:SYNTH_COUNT]
+
+        for img in synth_images:
+            shutil.copy(img, os.path.join(TRAIN_DIR, "1.Abnormal"))
+
+        # Calculate total abnormal train count
+        total_abnormal_train = len(abnormal_train) + len(synth_images)
+    else:  # MODE == NOT_USE_SYNTH
+        synth_images = []
         total_abnormal_train = len(abnormal_train)
 
     # Get normal images and split to match abnormal train count
     normal_images = glob(os.path.join(ORI_NORMAL_DIR, "*.png"))
     random.shuffle(normal_images)
+
+    if len(normal_images) < total_abnormal_train:
+        raise ValueError("Not enough normal images to match abnormal training count.")
 
     normal_train_count = total_abnormal_train
     normal_train = normal_images[:normal_train_count]
@@ -80,8 +101,9 @@ if __name__ == "__main__":
         shutil.copy(img, os.path.join(VAL_DIR, "0.Normal"))
 
     print(f"Abnormal - Train: {len(abnormal_train)}, Val: {len(abnormal_val)}")
-    print(f"Synthesized - Train: {len(synth_images) if USE_SYNTH else 0}")
+    print(f"Synthesized - Train: {len(synth_images)}")
     print(f"Normal - Train: {len(normal_train)}, Val: {len(normal_val)}")
     print(
         f"Total Train - Abnormal: {total_abnormal_train}, Normal: {len(normal_train)}"
     )
+    print(f"Total Val - Abnormal: {len(abnormal_val)}, Normal: {len(normal_val)}")
