@@ -111,7 +111,8 @@ if __name__ == "__main__":
     IMG_SIZE_ORIGINAL = 40
     UNDER_SAMPLING = True
     IMG_SIZE = 299  # InceptionV3 input size
-    OUT_DIR = "./out/train"
+    SUFIX = ""
+    OUT_DIR = f"./out/train{SUFIX}"
     SEED = 0
     ONLY_LAST_LAYER = False
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -132,8 +133,8 @@ if __name__ == "__main__":
         print("  -", param.shape)
 
     # Data paths
-    train_data_path = "./data/train"
-    val_data_path = "./data/val"
+    train_data_path = f"./data/train{SUFIX}"
+    val_data_path = f"./data/val{SUFIX}"
 
     transform = transforms.Compose(
         [
