@@ -547,6 +547,100 @@ if __name__ == "__main__":
     plt.close()
     print(f"ROC curve plot saved to {roc_curve_plot_path}")
 
+    # Plot training and validation loss
+    print("\nGenerating loss plot...")
+    plt.figure(figsize=(12, 6))
+    epochs_range = range(1, EPOCHS + 1)
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, train_loss_list, "b-", label="Training Loss", linewidth=2)
+    plt.plot(epochs_range, val_loss_list, "r-", label="Validation Loss", linewidth=2)
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("Loss", fontsize=12)
+    plt.title("Training and Validation Loss", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+
+    plt.subplot(1, 2, 2)
+    plt.plot(
+        epochs_range, train_class0_loss_list, "b--", label="Train Class 0", linewidth=2
+    )
+    plt.plot(
+        epochs_range, train_class1_loss_list, "b:", label="Train Class 1", linewidth=2
+    )
+    plt.plot(
+        epochs_range, val_class0_loss_list, "r--", label="Val Class 0", linewidth=2
+    )
+    plt.plot(epochs_range, val_class1_loss_list, "r:", label="Val Class 1", linewidth=2)
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("Loss", fontsize=12)
+    plt.title("Per-Class Loss", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    loss_plot_path = f"{OUT_DIR}/loss_plot.png"
+    plt.savefig(loss_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Loss plot saved to {loss_plot_path}")
+
+    # Plot training and validation accuracy
+    print("\nGenerating accuracy plot...")
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, train_acc_list, "b-", label="Training Accuracy", linewidth=2)
+    plt.plot(epochs_range, val_acc_list, "r-", label="Validation Accuracy", linewidth=2)
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("Accuracy (%)", fontsize=12)
+    plt.title("Training and Validation Accuracy", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 100])
+
+    plt.subplot(1, 2, 2)
+    plt.plot(
+        epochs_range, train_class0_acc_list, "b--", label="Train Class 0", linewidth=2
+    )
+    plt.plot(
+        epochs_range, train_class1_acc_list, "b:", label="Train Class 1", linewidth=2
+    )
+    plt.plot(epochs_range, val_class0_acc_list, "r--", label="Val Class 0", linewidth=2)
+    plt.plot(epochs_range, val_class1_acc_list, "r:", label="Val Class 1", linewidth=2)
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("Accuracy (%)", fontsize=12)
+    plt.title("Per-Class Accuracy", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 100])
+
+    plt.tight_layout()
+    accuracy_plot_path = f"{OUT_DIR}/accuracy_plot.png"
+    plt.savefig(accuracy_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Accuracy plot saved to {accuracy_plot_path}")
+
+    # Plot PR-AUC over epochs
+    print("\nGenerating PR-AUC plot...")
+    plt.figure(figsize=(10, 6))
+    plt.plot(
+        epochs_range, train_pr_auc_list, "b-", label="Training PR-AUC", linewidth=2
+    )
+    plt.plot(
+        epochs_range, val_pr_auc_list, "r-", label="Validation PR-AUC", linewidth=2
+    )
+    plt.xlabel("Epoch", fontsize=12)
+    plt.ylabel("PR-AUC", fontsize=12)
+    plt.title("PR-AUC over Epochs", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 1.05])
+
+    pr_auc_plot_path = f"{OUT_DIR}/pr_auc_plot.png"
+    plt.savefig(pr_auc_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"PR-AUC plot saved to {pr_auc_plot_path}")
+
     save_path = f"{OUT_DIR}/inception_v3_trained.pth"
     torch.save(trainer.state_dict(), save_path)
     print(f"Model saved to {save_path}")
