@@ -297,7 +297,6 @@ if __name__ == "__main__":
             unique_classes,
             "UMAP: Data Distribution",
             f"{OUT_DIR}/umap_plot.png",
-            xlim=(3, 15),
             colors=COLORS,
             alphas=ALPHAS,
         )
