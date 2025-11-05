@@ -1222,15 +1222,6 @@ def generate(
     if save_images:
         os.makedirs(out_dir, exist_ok=True)
 
-        # Save all samples in a grid
-        grid_path = os.path.join(
-            out_dir, f"generated_grid_guidance{guidance_scale}.png"
-        )
-        # Denormalize from [-1, 1] to [0, 1] for saving
-        samples_normalized = (samples + 1.0) / 2.0
-        save_image(samples_normalized, grid_path, nrow=4, normalize=False)
-        print(f"  Saved grid to {grid_path}")
-
         # Save individual samples
         for idx, (sample, label) in enumerate(zip(samples, class_labels)):
             sample_path = os.path.join(
@@ -1240,19 +1231,6 @@ def generate(
             save_image(sample_normalized, sample_path, normalize=False)
 
         print(f"  Saved {num_samples} individual images to {out_dir}")
-
-        # Save by class
-        for class_idx in range(num_classes):
-            class_samples = samples_normalized[
-                [i for i, l in enumerate(class_labels) if l == class_idx]
-            ]
-            if len(class_samples) > 0:
-                class_grid_path = os.path.join(
-                    out_dir,
-                    f"generated_class{class_idx}_guidance{guidance_scale}.png",
-                )
-                save_image(class_samples, class_grid_path, nrow=4, normalize=False)
-                print(f"  Saved class {class_idx} grid to {class_grid_path}")
 
     return samples
 
