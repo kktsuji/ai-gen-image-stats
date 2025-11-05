@@ -7,19 +7,27 @@ if __name__ == "__main__":
     ORI_NORMAL_DIR = "./data/stats/0.Normal/"
     ORI_ABNORMAL_DIR = "./data/stats/1.Abnormal/"
     ORI_SYNTH_DIR = "./data/stats/2.Synthesized_Abnormal/"
-    SUFFIX = ""
-    TRAIN_DIR = f"./data/train{SUFFIX}"
-    VAL_DIR = f"./data/val{SUFFIX}"
     VAL_RATIO = 0.2
     SYNTH_RATIO = 0.3
-    SYNTH_COUNT = 2000
-    RANDOM_SEED = 42
-    USE_SYNTH_RATIO = "use-synth-ratio"
-    USE_SYNTH_COUNT = "use-synth-count"
-    NOT_USE_SYNTH = "not-use-synth"
+    SYNTH_COUNT = 1000
+    RANDOM_SEED = 0
+    USE_SYNTH_RATIO = "synth-ratio"
+    USE_SYNTH_COUNT = "synth-count"
+    NOT_USE_SYNTH = "no-synth"
     CHOICE = [USE_SYNTH_RATIO, USE_SYNTH_COUNT, NOT_USE_SYNTH]
     MODE = CHOICE[0]
     USE_REMAINING_NORMAL_VAL = True
+
+    if USE_SYNTH_RATIO:
+        suffix = f"_{USE_SYNTH_RATIO}-{SYNTH_RATIO}"
+    elif USE_SYNTH_COUNT:
+        suffix = f"_{USE_SYNTH_COUNT}-{SYNTH_COUNT}"
+    else:
+        suffix = f"_{NOT_USE_SYNTH}"
+    suffix += "_imbalanced-val" if USE_REMAINING_NORMAL_VAL else "_balanced-val"
+    suffix += f"-seed{RANDOM_SEED}"
+    TRAIN_DIR = f"./data/train{suffix}"
+    VAL_DIR = f"./data/val{suffix}"
 
     os.makedirs(TRAIN_DIR)
     os.makedirs(VAL_DIR)
