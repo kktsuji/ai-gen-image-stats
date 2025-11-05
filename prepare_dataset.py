@@ -13,6 +13,7 @@ if __name__ == "__main__":
     SYNTH_RATIO = 0.3
     RANDOM_SEED = 42
     USE_SYNTH = True
+    USE_REMAINING_NORMAL_VAL = False
 
     os.makedirs(TRAIN_DIR, exist_ok=True)
     os.makedirs(VAL_DIR, exist_ok=True)
@@ -62,9 +63,11 @@ if __name__ == "__main__":
 
     normal_train_count = total_abnormal_train
     normal_train = normal_images[:normal_train_count]
-    normal_val = normal_images[
-        normal_train_count : normal_train_count + len(abnormal_val)
-    ]
+    normal_val = (
+        normal_images[normal_train_count:]
+        if USE_REMAINING_NORMAL_VAL
+        else normal_images[normal_train_count : normal_train_count + len(abnormal_val)]
+    )
 
     # Copy normal images to train/val
     os.makedirs(os.path.join(TRAIN_DIR, "0.Normal"), exist_ok=True)
