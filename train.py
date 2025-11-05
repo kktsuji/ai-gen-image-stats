@@ -2,7 +2,14 @@ import csv
 import os
 import random
 
+import matplotlib.pyplot as plt
 import torch
+from sklearn.metrics import (
+    auc,
+    average_precision_score,
+    precision_recall_curve,
+    roc_curve,
+)
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -179,12 +186,14 @@ if __name__ == "__main__":
     train_class1_acc_list = []
     train_class0_loss_list = []
     train_class1_loss_list = []
+    train_pr_auc_list = []
     val_loss_list = []
     val_acc_list = []
     val_class0_acc_list = []
     val_class1_acc_list = []
     val_class0_loss_list = []
     val_class1_loss_list = []
+    val_pr_auc_list = []
 
     # Training loop
     print("\nStarting training...")
@@ -202,6 +211,10 @@ if __name__ == "__main__":
         class1_loss = 0.0
         class0_batch_count = 0
         class1_batch_count = 0
+
+        # For PR-AUC calculation
+        all_labels = []
+        all_probs = []
 
         for batch_idx, (inputs, labels) in enumerate(train_loader):
             # Move data to device
@@ -221,6 +234,13 @@ if __name__ == "__main__":
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+            # Collect probabilities for PR-AUC (softmax to get probabilities)
+            probs = torch.nn.functional.softmax(outputs, dim=1)
+            all_probs.extend(
+                probs[:, 1].detach().cpu().numpy()
+            )  # Probability of class 1
+            all_labels.extend(labels.cpu().numpy())
 
             # Track per-class metrics
             for i in range(len(labels)):
@@ -255,6 +275,9 @@ if __name__ == "__main__":
         train_class0_loss = class0_loss / class0_total if class0_total > 0 else 0
         train_class1_loss = class1_loss / class1_total if class1_total > 0 else 0
 
+        # Calculate PR-AUC for training
+        train_pr_auc = average_precision_score(all_labels, all_probs)
+
         # Validation phase
         trainer.eval()
         val_running_loss = 0.0
@@ -266,6 +289,10 @@ if __name__ == "__main__":
         val_class1_total = 0
         val_class0_loss = 0.0
         val_class1_loss = 0.0
+
+        # For PR-AUC calculation
+        val_all_labels = []
+        val_all_probs = []
 
         with torch.no_grad():
             for inputs, labels in val_loader:
@@ -281,6 +308,11 @@ if __name__ == "__main__":
                 _, predicted = torch.max(outputs.data, 1)
                 val_total += labels.size(0)
                 val_correct += (predicted == labels).sum().item()
+
+                # Collect probabilities for PR-AUC
+                probs = torch.nn.functional.softmax(outputs, dim=1)
+                val_all_probs.extend(probs[:, 1].detach().cpu().numpy())
+                val_all_labels.extend(labels.cpu().numpy())
 
                 # Track per-class metrics
                 for i in range(len(labels)):
@@ -317,13 +349,16 @@ if __name__ == "__main__":
             val_class1_loss / val_class1_total if val_class1_total > 0 else 0
         )
 
+        # Calculate PR-AUC for validation
+        val_pr_auc = average_precision_score(val_all_labels, val_all_probs)
+
         # Epoch summary
         print(
             f"Epoch {epoch + 1}: "
-            f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%\033[0m "
+            f"\033[92mTrain Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, PR-AUC: {train_pr_auc:.4f}\033[0m "
             f"(\033[94mClass 0: {train_class0_acc:.2f}% Loss: {train_class0_loss:.4f}\033[0m, "
             f"\033[91mClass 1: {train_class1_acc:.2f}% Loss: {train_class1_loss:.4f}\033[0m) | "
-            f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%\033[0m "
+            f"\033[92mVal Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, PR-AUC: {val_pr_auc:.4f}\033[0m "
             f"(\033[94mClass 0: {val_class0_acc:.2f}% Loss: {val_class0_loss:.4f}\033[0m, "
             f"\033[91mClass 1: {val_class1_acc:.2f}% Loss: {val_class1_loss:.4f}\033[0m)"
         )
@@ -334,14 +369,182 @@ if __name__ == "__main__":
         train_class1_acc_list.append(train_class1_acc)
         train_class0_loss_list.append(train_class0_loss)
         train_class1_loss_list.append(train_class1_loss)
+        train_pr_auc_list.append(train_pr_auc)
         val_loss_list.append(val_loss)
         val_acc_list.append(val_acc)
         val_class0_acc_list.append(val_class0_acc)
         val_class1_acc_list.append(val_class1_acc)
         val_class0_loss_list.append(val_class0_loss)
         val_class1_loss_list.append(val_class1_loss)
+        val_pr_auc_list.append(val_pr_auc)
 
     print("\nTraining completed!")
+
+    # Calculate precision-recall curve for the last epoch
+    print("\nCalculating precision-recall curve for final epoch...")
+    precision_train, recall_train, thresholds_train = precision_recall_curve(
+        all_labels, all_probs
+    )
+    precision_val, recall_val, thresholds_val = precision_recall_curve(
+        val_all_labels, val_all_probs
+    )
+    print(
+        f"  - Training: {len(precision_train)} points on PR curve (PR-AUC: {train_pr_auc:.4f})"
+    )
+    print(
+        f"  - Validation: {len(precision_val)} points on PR curve (PR-AUC: {val_pr_auc:.4f})"
+    )
+
+    # Calculate ROC curve for the last epoch
+    print("\nCalculating ROC curve for final epoch...")
+    fpr_train, tpr_train, roc_thresholds_train = roc_curve(all_labels, all_probs)
+    fpr_val, tpr_val, roc_thresholds_val = roc_curve(val_all_labels, val_all_probs)
+    roc_auc_train = auc(fpr_train, tpr_train)
+    roc_auc_val = auc(fpr_val, tpr_val)
+    print(
+        f"  - Training: {len(fpr_train)} points on ROC curve (ROC-AUC: {roc_auc_train:.4f})"
+    )
+    print(
+        f"  - Validation: {len(fpr_val)} points on ROC curve (ROC-AUC: {roc_auc_val:.4f})"
+    )
+
+    # Save precision-recall curve data
+    pr_curve_train_path = f"{OUT_DIR}/pr_curve_train.csv"
+    with open(pr_curve_train_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["precision", "recall", "threshold"])
+        # Note: thresholds array has one fewer element than precision/recall
+        for i in range(len(precision_train)):
+            threshold = thresholds_train[i] if i < len(thresholds_train) else "N/A"
+            writer.writerow(
+                [
+                    f"{precision_train[i]:.6f}",
+                    f"{recall_train[i]:.6f}",
+                    threshold if threshold == "N/A" else f"{threshold:.6f}",
+                ]
+            )
+    print(f"\nTraining PR curve saved to {pr_curve_train_path}")
+
+    pr_curve_val_path = f"{OUT_DIR}/pr_curve_val.csv"
+    with open(pr_curve_val_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["precision", "recall", "threshold"])
+        for i in range(len(precision_val)):
+            threshold = thresholds_val[i] if i < len(thresholds_val) else "N/A"
+            writer.writerow(
+                [
+                    f"{precision_val[i]:.6f}",
+                    f"{recall_val[i]:.6f}",
+                    threshold if threshold == "N/A" else f"{threshold:.6f}",
+                ]
+            )
+    print(f"Validation PR curve saved to {pr_curve_val_path}")
+
+    # Save ROC curve data
+    roc_curve_train_path = f"{OUT_DIR}/roc_curve_train.csv"
+    with open(roc_curve_train_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["fpr", "tpr", "threshold"])
+        for i in range(len(fpr_train)):
+            threshold = (
+                roc_thresholds_train[i] if i < len(roc_thresholds_train) else "N/A"
+            )
+            writer.writerow(
+                [
+                    f"{fpr_train[i]:.6f}",
+                    f"{tpr_train[i]:.6f}",
+                    threshold if threshold == "N/A" else f"{threshold:.6f}",
+                ]
+            )
+    print(f"Training ROC curve saved to {roc_curve_train_path}")
+
+    roc_curve_val_path = f"{OUT_DIR}/roc_curve_val.csv"
+    with open(roc_curve_val_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["fpr", "tpr", "threshold"])
+        for i in range(len(fpr_val)):
+            threshold = roc_thresholds_val[i] if i < len(roc_thresholds_val) else "N/A"
+            writer.writerow(
+                [
+                    f"{fpr_val[i]:.6f}",
+                    f"{tpr_val[i]:.6f}",
+                    threshold if threshold == "N/A" else f"{threshold:.6f}",
+                ]
+            )
+    print(f"Validation ROC curve saved to {roc_curve_val_path}")
+
+    # Plot precision-recall curves
+    print("\nGenerating PR curve plots...")
+    plt.figure(figsize=(10, 8))
+
+    # Plot training PR curve
+    plt.plot(
+        recall_train,
+        precision_train,
+        label=f"Training (PR-AUC = {train_pr_auc:.4f})",
+        linewidth=2,
+        color="blue",
+    )
+
+    # Plot validation PR curve
+    plt.plot(
+        recall_val,
+        precision_val,
+        label=f"Validation (PR-AUC = {val_pr_auc:.4f})",
+        linewidth=2,
+        color="red",
+    )
+
+    plt.xlabel("Recall", fontsize=12)
+    plt.ylabel("Precision", fontsize=12)
+    plt.title("Precision-Recall Curve - Final Epoch", fontsize=14, fontweight="bold")
+    plt.legend(loc="best", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+
+    pr_curve_plot_path = f"{OUT_DIR}/pr_curve.png"
+    plt.savefig(pr_curve_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"PR curve plot saved to {pr_curve_plot_path}")
+
+    # Plot ROC curves
+    print("\nGenerating ROC curve plots...")
+    plt.figure(figsize=(10, 8))
+
+    # Plot training ROC curve
+    plt.plot(
+        fpr_train,
+        tpr_train,
+        label=f"Training (ROC-AUC = {roc_auc_train:.4f})",
+        linewidth=2,
+        color="blue",
+    )
+
+    # Plot validation ROC curve
+    plt.plot(
+        fpr_val,
+        tpr_val,
+        label=f"Validation (ROC-AUC = {roc_auc_val:.4f})",
+        linewidth=2,
+        color="red",
+    )
+
+    # Plot diagonal line (random classifier)
+    plt.plot([0, 1], [0, 1], "k--", linewidth=1, label="Random Classifier")
+
+    plt.xlabel("False Positive Rate", fontsize=12)
+    plt.ylabel("True Positive Rate", fontsize=12)
+    plt.title("ROC Curve - Final Epoch", fontsize=14, fontweight="bold")
+    plt.legend(loc="lower right", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+
+    roc_curve_plot_path = f"{OUT_DIR}/roc_curve.png"
+    plt.savefig(roc_curve_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"ROC curve plot saved to {roc_curve_plot_path}")
 
     save_path = f"{OUT_DIR}/inception_v3_trained.pth"
     torch.save(trainer.state_dict(), save_path)
@@ -365,6 +568,9 @@ if __name__ == "__main__":
         writer.writerow(
             ["train_class1_loss"] + [f"{loss:.4f}" for loss in train_class1_loss_list]
         )
+        writer.writerow(
+            ["train_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in train_pr_auc_list]
+        )
         writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
         writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
         writer.writerow(
@@ -378,6 +584,9 @@ if __name__ == "__main__":
         )
         writer.writerow(
             ["val_class1_loss"] + [f"{loss:.4f}" for loss in val_class1_loss_list]
+        )
+        writer.writerow(
+            ["val_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in val_pr_auc_list]
         )
 
     print(f"Training results saved to {csv_path}")
