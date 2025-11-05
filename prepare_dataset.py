@@ -16,11 +16,11 @@ if __name__ == "__main__":
     NOT_USE_SYNTH = "no-synth"
     CHOICE = [USE_SYNTH_RATIO, USE_SYNTH_COUNT, NOT_USE_SYNTH]
     MODE = CHOICE[0]
-    USE_REMAINING_NORMAL_VAL = True
+    USE_REMAINING_NORMAL_VAL = False
 
-    if USE_SYNTH_RATIO:
+    if MODE == USE_SYNTH_RATIO:
         suffix = f"_{USE_SYNTH_RATIO}-{SYNTH_RATIO}"
-    elif USE_SYNTH_COUNT:
+    elif MODE == USE_SYNTH_COUNT:
         suffix = f"_{USE_SYNTH_COUNT}-{SYNTH_COUNT}"
     else:
         suffix = f"_{NOT_USE_SYNTH}"
