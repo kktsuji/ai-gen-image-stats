@@ -146,14 +146,10 @@ if __name__ == "__main__":
     USE_WEIGHTED_SAMPLING = False
     IMG_SIZE = 299  # InceptionV3 input size
     SUFFIX = ""
-    OUT_DIR = (
-        f"./out/train{SUFFIX}" + "-us"
+    OUT_DIR = f"./out/train{SUFFIX}" + (
+        "-us"
         if UNDER_SAMPLING
-        else (
-            "" + "_cw"
-            if USE_CLASS_WEIGHTS
-            else "" + "-ws" if USE_WEIGHTED_SAMPLING else ""
-        )
+        else ("_cw" if USE_CLASS_WEIGHTS else ("-ws" if USE_WEIGHTED_SAMPLING else ""))
     )
     SEED = 0
     ONLY_LAST_LAYER = False
