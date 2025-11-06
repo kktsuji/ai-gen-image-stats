@@ -8,7 +8,11 @@ import torchvision.models as models
 import umap.umap_ as umap
 from scipy.linalg import sqrtm
 from scipy.stats import wasserstein_distance
+from sklearn.linear_model import LogisticRegression
 from sklearn.manifold import TSNE
+from sklearn.metrics import auc, precision_recall_curve, roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -183,6 +187,93 @@ def under_sample_features(features, num_samples):
     return features[indices]
 
 
+def compute_domain_classifier_auc(
+    features: np.ndarray,
+    classes,
+    real_class: str = "1.Abnormal",
+    synth_class: str = "2.Synthesized_Abnormal",
+    out_dir: str = "./out/stats",
+    balance_mode: str = "none",  # "none" or "downsample"
+    repeats: int = 1,
+    test_size: float = 0.3,
+    random_state: int = 0,
+):
+    """
+    Train a simple logistic regression to separate real vs synthetic within the Abnormal class.
+    Returns ROC AUC and PR AUC on a held-out split and saves a short report.
+    """
+    classes = np.array(classes)
+    mask = np.isin(classes, [real_class, synth_class])
+    X = features[mask]
+    y = (classes[mask] == synth_class).astype(int)  # 1: synthetic, 0: real
+
+    if X.shape[0] == 0 or y.sum() == 0:
+        print(
+            "[Domain] Not enough synthetic abnormal samples to run domain classifier."
+        )
+        return None, None
+
+    rng = np.random.default_rng(random_state)
+    roc_list = []
+    pr_list = []
+
+    def run_once(_X, _y):
+        scaler = StandardScaler()
+        Xn = scaler.fit_transform(_X)
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            Xn, _y, test_size=test_size, random_state=random_state, stratify=_y
+        )
+        clf = LogisticRegression(max_iter=1000, class_weight="balanced")
+        clf.fit(X_tr, y_tr)
+        p = clf.predict_proba(X_te)[:, 1]
+        roc = roc_auc_score(y_te, p)
+        pr, rc, _ = precision_recall_curve(y_te, p)
+        pr_auc = auc(rc, pr)
+        return roc, pr_auc
+
+    if balance_mode == "downsample":
+        real_idx = np.where(y == 0)[0]
+        synth_idx = np.where(y == 1)[0]
+        n = min(len(real_idx), len(synth_idx))
+        if n < 10:
+            print(
+                "[Domain] Too few samples per class after downsampling; falling back to none."
+            )
+            balance_mode = "none"
+        else:
+            for _ in range(max(1, repeats)):
+                sel_real = rng.choice(real_idx, n, replace=False)
+                sel_synth = rng.choice(synth_idx, n, replace=False)
+                sel = np.concatenate([sel_real, sel_synth])
+                roc, pr_auc = run_once(X[sel], y[sel])
+                roc_list.append(roc)
+                pr_list.append(pr_auc)
+
+    if balance_mode == "none":
+        roc, pr_auc = run_once(X, y)
+        roc_list.append(roc)
+        pr_list.append(pr_auc)
+
+    roc_mean, roc_std = float(np.mean(roc_list)), float(np.std(roc_list))
+    pr_mean, pr_std = float(np.mean(pr_list)), float(np.std(pr_list))
+
+    # Save a brief report
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "domain_gap_abnormal_real_vs_synth.txt")
+    with open(out_path, "w") as f:
+        f.write("Domain classifier (Abnormal: real vs synthetic)\n")
+        f.write(
+            f"Samples (original): total={len(y)}, real={int((y==0).sum())}, synth={int((y==1).sum())}\n"
+        )
+        f.write(f"Balance mode: {balance_mode}, repeats={repeats}\n")
+        f.write(f"ROC AUC: {roc_mean:.4f} ± {roc_std:.4f}\n")
+        f.write(f"PR AUC: {pr_mean:.4f} ± {pr_std:.4f}\n")
+    print(
+        f"[Domain] ROC AUC={roc_mean:.3f}±{roc_std:.3f}, PR AUC={pr_mean:.3f}±{pr_std:.3f} — saved to {out_path}"
+    )
+    return roc_mean, pr_mean
+
+
 if __name__ == "__main__":
     RESNET50 = "resnet50"
     INCEPTIONV3 = "inceptionv3"
@@ -196,8 +287,9 @@ if __name__ == "__main__":
     FINETUNED_FLAG = False
     FINETUNED_MODEL_PATH = "./out/train/inception_v3_trained.pth"
     LOAD_FLAG = False
-    GRAPH_FLAG = True
-    STATS_FLAG = True
+    GRAPH_FLAG = False
+    STATS_FLAG = False
+    DOMAIN_GAP_FLAG = False
     REAL_CLASS = "1.Abnormal"
     FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
     FAKE_CLASS = FAKE_CLASS_LIST[0]
@@ -359,3 +451,17 @@ if __name__ == "__main__":
                 f"Wasserstein Distance (lower is better): {np.mean(wasserstein_list):.4f} ± {np.std(wasserstein_list):.4f}\n"
             )
         print(f"\nResults saved to {output_file}")
+
+    if DOMAIN_GAP_FLAG and ("2.Synthesized_Abnormal" in unique_classes):
+        print("\nRunning domain classifier (Abnormal: real vs synthetic)...")
+        compute_domain_classifier_auc(
+            features,
+            classes,
+            real_class="1.Abnormal",
+            synth_class="2.Synthesized_Abnormal",
+            out_dir=OUT_DIR,
+            balance_mode="downsample",
+            repeats=5,
+            test_size=0.3,
+            random_state=0,
+        )
