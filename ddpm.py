@@ -892,7 +892,7 @@ def train():
     val_data_path = "./data/stats"
 
     # Data transforms (normalize to [-1, 1] for DDPM)
-    transform = transforms.Compose(
+    train_transform = transforms.Compose(
         [
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
             transforms.RandomHorizontalFlip(p=0.5),
@@ -905,10 +905,20 @@ def train():
         ]
     )
 
+    val_transform = transforms.Compose(
+        [
+            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
+            ),  # Scale to [-1, 1]
+        ]
+    )
+
     print("\nLoading datasets...")
 
     # Training dataset
-    train_dataset = datasets.ImageFolder(train_data_path, transform=transform)
+    train_dataset = datasets.ImageFolder(train_data_path, transform=train_transform)
 
     # Calculate class distribution
     class_counts = [0] * NUM_CLASSES
@@ -949,7 +959,7 @@ def train():
     print(f"  - Classes: {train_dataset.classes}")
 
     # Validation dataset
-    val_dataset = datasets.ImageFolder(val_data_path, transform=transform)
+    val_dataset = datasets.ImageFolder(val_data_path, transform=val_transform)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
     print(f"\nValidation set: {len(val_dataset)} images")
     print(f"  - Number of batches: {len(val_loader)}")
