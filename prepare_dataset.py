@@ -91,7 +91,11 @@ def prepare_dataset():
     if len(normal_images) < total_abnormal_train:
         raise ValueError("Not enough normal images to match abnormal training count.")
 
-    normal_train_count = total_abnormal_train
+    if MODE == NOT_USE_SYNTH:
+        normal_abnormal_ratio = len(normal_images) / len(abnormal_images)
+        normal_train_count = int(total_abnormal_train * normal_abnormal_ratio)
+    else:
+        normal_train_count = total_abnormal_train
     normal_train = normal_images[:normal_train_count]
     normal_val = (
         normal_images[normal_train_count:]
