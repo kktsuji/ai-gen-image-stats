@@ -106,10 +106,10 @@ def _make_dataloader(
 if __name__ == "__main__":
     EPOCHS = 10
     BATCH_SIZE = 16
-    LEARNING_RATE = 0.0001
+    LEARNING_RATE = 0.00005
     NUM_CLASSES = 2
     IMG_SIZE_ORIGINAL = 40
-    UNDER_SAMPLING = True
+    UNDER_SAMPLING = False
     USE_CLASS_WEIGHTS = False
     IMG_SIZE = 299  # InceptionV3 input size
     SUFFIX = ""
@@ -143,6 +143,9 @@ if __name__ == "__main__":
                 (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
             ),  # make the spacial frequency equal
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(15),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
