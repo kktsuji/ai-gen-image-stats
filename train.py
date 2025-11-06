@@ -137,7 +137,7 @@ if __name__ == "__main__":
     train_data_path = f"./data/train{SUFFIX}"
     val_data_path = f"./data/val{SUFFIX}"
 
-    transform = transforms.Compose(
+    train_transform = transforms.Compose(
         [
             transforms.Resize(
                 (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
@@ -151,13 +151,24 @@ if __name__ == "__main__":
         ]
     )
 
+    val_transform = transforms.Compose(
+        [
+            transforms.Resize(
+                (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
+            ),  # make the spacial frequency equal
+            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+
     print("\nLoading datasets...")
 
     # Training dataloader
     print("\nTraining set:")
     train_loader = _make_dataloader(
         train_data_path,
-        transform,
+        train_transform,
         BATCH_SIZE,
         under_sampling=UNDER_SAMPLING,
         min_samples_per_class=None,
@@ -171,7 +182,7 @@ if __name__ == "__main__":
     print("\nValidation set:")
     val_loader = _make_dataloader(
         val_data_path,
-        transform,
+        val_transform,
         BATCH_SIZE,
         under_sampling=False,
         min_samples_per_class=None,
