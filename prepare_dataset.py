@@ -140,6 +140,27 @@ def copy_synthesized_images():
     print(f"Copied {len(synth_images)} synthesized images to {DEST_DIR}")
 
 
+def split_dataset_into_train_val_by_ratio(data_dir, val_ratio):
+    all_images = glob(os.path.join(data_dir, "*.png"))
+    random.shuffle(all_images)
+
+    val_count = int(len(all_images) * val_ratio)
+    val_images = all_images[:val_count]
+    train_images = all_images[val_count:]
+
+    return train_images, val_images
+
+
+def split_dataset_into_train_val_by_count(data_dir, val_count):
+    all_images = glob(os.path.join(data_dir, "*.png"))
+    random.shuffle(all_images)
+
+    val_images = all_images[:val_count]
+    train_images = all_images[val_count:]
+
+    return train_images, val_images
+
+
 if __name__ == "__main__":
     prepare_dataset()
     copy_synthesized_images()
