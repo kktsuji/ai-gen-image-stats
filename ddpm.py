@@ -1068,7 +1068,6 @@ def train():
     BETA_START = 0.0001  # Starting beta value (for linear, quadratic, sigmoid)
     BETA_END = 0.02  # Ending beta value (for linear, quadratic, sigmoid)
     CLASS_DROPOUT_PROB = 0.3  # For classifier-free guidance
-    GUIDANCE_SCALE = 5.0  # For sampling
     USE_WEIGHTED_SAMPLING = True  # Enable/disable weighted sampling for class imbalance
     OUT_DIR = "./out/ddpm"
 
