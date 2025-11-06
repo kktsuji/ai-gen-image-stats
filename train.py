@@ -91,6 +91,7 @@ def _make_dataloader(
     under_sampling=False,
     min_samples_per_class=None,
     seed=None,
+    use_weighted_sampling=False,
 ):
     if under_sampling:
         if seed is not None:
@@ -100,7 +101,37 @@ def _make_dataloader(
         )
     else:
         dataset = datasets.ImageFolder(data_path, transform=transform)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    # Setup weighted sampling if enabled
+    if use_weighted_sampling:
+        from torch.utils.data import WeightedRandomSampler
+
+        print(f"  - Weighted sampling: ENABLED")
+        # Calculate class distribution
+        class_counts = {}
+        for _, class_idx in dataset.samples:
+            class_counts[class_idx] = class_counts.get(class_idx, 0) + 1
+
+        # Calculate weights for each class (inverse frequency)
+        num_samples = sum(class_counts.values())
+        class_weights = [
+            num_samples / class_counts[i] for i in sorted(class_counts.keys())
+        ]
+        print(f"    - Class weights: {[f'{w:.3f}' for w in class_weights]}")
+
+        # Assign weight to each sample based on its class
+        sample_weights = [class_weights[label] for _, label in dataset.samples]
+
+        # Create weighted sampler
+        sampler = WeightedRandomSampler(
+            weights=sample_weights, num_samples=len(dataset), replacement=True
+        )
+
+        # Use sampler (don't use shuffle with sampler)
+        return DataLoader(dataset, batch_size=batch_size, sampler=sampler)
+    else:
+        print(f"  - Weighted sampling: DISABLED (using random sampling)")
+        return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
 if __name__ == "__main__":
@@ -111,6 +142,7 @@ if __name__ == "__main__":
     IMG_SIZE_ORIGINAL = 40
     UNDER_SAMPLING = False
     USE_CLASS_WEIGHTS = False
+    USE_WEIGHTED_SAMPLING = False
     IMG_SIZE = 299  # InceptionV3 input size
     SUFFIX = ""
     OUT_DIR = f"./out/train{SUFFIX}"
@@ -173,6 +205,7 @@ if __name__ == "__main__":
         under_sampling=UNDER_SAMPLING,
         min_samples_per_class=None,
         seed=SEED,
+        use_weighted_sampling=USE_WEIGHTED_SAMPLING,
     )
     print("  - Number of batches:", len(train_loader))
     print("  - Batch size:", BATCH_SIZE)
