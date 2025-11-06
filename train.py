@@ -1,6 +1,7 @@
 import csv
 import os
 import random
+import time
 
 import matplotlib.pyplot as plt
 import torch
@@ -276,6 +277,8 @@ if __name__ == "__main__":
 
     # Training loop
     print("\nStarting training...")
+    training_start_time = time.time()
+
     for epoch in range(EPOCHS):
         # Training phase
         trainer.train()
@@ -467,7 +470,11 @@ if __name__ == "__main__":
         val_pr_auc_list.append(val_pr_auc)
         val_roc_auc_list.append(val_roc_auc)
 
-    print("\nTraining completed!")
+    total_training_time = time.time() - training_start_time
+    hours = int(total_training_time // 3600)
+    minutes = int((total_training_time % 3600) // 60)
+    seconds = int(total_training_time % 60)
+    print(f"\nTraining completed! Total time: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
     # Calculate precision-recall curve for the last epoch
     print("\nCalculating precision-recall curve for final epoch...")
