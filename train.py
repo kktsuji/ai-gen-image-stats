@@ -135,21 +135,21 @@ def _make_dataloader(
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
-if __name__ == "__main__":
+def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
     EPOCHS = 10
     BATCH_SIZE = 16
     LEARNING_RATE = 0.00005
     NUM_CLASSES = 2
     IMG_SIZE_ORIGINAL = 40
     UNDER_SAMPLING = False
-    USE_CLASS_WEIGHTS = False
-    USE_WEIGHTED_SAMPLING = False
+    # USE_CLASS_WEIGHTS = True
+    # USE_WEIGHTED_SAMPLING = False
     IMG_SIZE = 299  # InceptionV3 input size
-    SUFFIX = ""
-    OUT_DIR = f"./out/train{SUFFIX}" + (
+    # SUFFIX = "_no-synth_imbalanced-val_seed0"
+    OUT_DIR = f"./out/train{suffix}" + (
         "-us"
         if UNDER_SAMPLING
-        else ("_cw" if USE_CLASS_WEIGHTS else ("-ws" if USE_WEIGHTED_SAMPLING else ""))
+        else ("_cw" if use_class_weights else ("-ws" if use_weighted_sampling else ""))
     )
     SEED = 0
     ONLY_LAST_LAYER = False
@@ -171,8 +171,8 @@ if __name__ == "__main__":
         print("  -", param.shape)
 
     # Data paths
-    train_data_path = f"./data/train{SUFFIX}"
-    val_data_path = f"./data/val{SUFFIX}"
+    train_data_path = f"./out/train{suffix}"
+    val_data_path = f"./out/val{suffix}"
 
     train_transform = transforms.Compose(
         [
@@ -210,7 +210,7 @@ if __name__ == "__main__":
         under_sampling=UNDER_SAMPLING,
         min_samples_per_class=None,
         seed=SEED,
-        use_weighted_sampling=USE_WEIGHTED_SAMPLING,
+        use_weighted_sampling=use_weighted_sampling,
     )
     print("  - Number of batches:", len(train_loader))
     print("  - Batch size:", BATCH_SIZE)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 
     # Calculate class weights for handling imbalance
     class_weights = None
-    if USE_CLASS_WEIGHTS:
+    if use_class_weights:
         # Count samples per class in training set
         class_sample_count = torch.zeros(NUM_CLASSES)
         for _, label in train_loader.dataset.samples:
@@ -857,3 +857,12 @@ if __name__ == "__main__":
         )
 
     print(f"Training results saved to {csv_path}")
+
+
+if __name__ == "__main__":
+    for cw, ws, sf in [
+        (False, False, "_no-synth_imbalanced-val_seed0"),
+        (True, False, "_no-synth_imbalanced-val_seed0"),
+        (False, True, "_no-synth_imbalanced-val_seed0"),
+    ]:
+        train(use_class_weights=cw, use_weighted_sampling=ws, suffix=sf)
