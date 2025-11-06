@@ -3,7 +3,8 @@ import random
 import shutil
 from glob import glob
 
-if __name__ == "__main__":
+
+def prepare_dataset():
     ORI_NORMAL_DIR = "./data/stats/0.Normal/"
     ORI_ABNORMAL_DIR = "./data/stats/1.Abnormal/"
     ORI_SYNTH_DIR = "./data/stats/2.Synthesized_Abnormal/"
@@ -115,3 +116,30 @@ if __name__ == "__main__":
         f"Total Train - Abnormal: {total_abnormal_train}, Normal: {len(normal_train)}"
     )
     print(f"Total Val - Abnormal: {len(abnormal_val)}, Normal: {len(normal_val)}")
+
+
+def copy_synthesized_images():
+    ORI_ABNORMAL_DIR = "./data/stats/1.Abnormal/"
+    ORI_SYNTH_DIR = "./data/stats/2.Synthesized_Abnormal/"
+    DEST_DIR = "./data/train_synth-ratio0.3_imbalanced-val_seed0/1.Abnormal/"
+    SYNTH_RATIO = 0.3
+
+    seed = 0
+    random.seed(seed)
+
+    abnormal_train = len(glob(os.path.join(ORI_ABNORMAL_DIR, "*.png")))
+
+    synth_images = glob(os.path.join(ORI_SYNTH_DIR, "*.png"))
+    random.shuffle(synth_images)
+
+    synth_count = int(abnormal_train * SYNTH_RATIO / (1 - SYNTH_RATIO))
+
+    for img in synth_images[:synth_count]:
+        shutil.copy(img, os.path.join(DEST_DIR, os.path.basename(img)))
+
+    print(f"Copied {len(synth_images)} synthesized images to {DEST_DIR}")
+
+
+if __name__ == "__main__":
+    prepare_dataset()
+    copy_synthesized_images()
