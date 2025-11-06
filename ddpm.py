@@ -6,12 +6,73 @@ Uses U-Net architecture for the denoising network.
 
 import csv
 import os
+from copy import deepcopy
 from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+class EMA:
+    """Exponential Moving Average of model parameters.
+
+    Keeps a moving average of model weights during training to improve sampling quality.
+    The EMA weights are typically more stable and produce cleaner outputs with fewer artifacts.
+
+    Args:
+        model: The model to track with EMA
+        decay: Decay rate for the moving average (default: 0.9999)
+        device: Device to store EMA weights on
+    """
+
+    def __init__(self, model: nn.Module, decay: float = 0.9999, device: str = "cpu"):
+        self.model = model
+        self.decay = decay
+        self.device = device
+        self.shadow = {}
+        self.backup = {}
+
+        # Initialize shadow parameters
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone().to(device)
+
+    def update(self):
+        """Update EMA parameters."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (
+                    1.0 - self.decay
+                ) * param.data + self.decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+
+    def apply_shadow(self):
+        """Apply EMA parameters to the model (for inference)."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.backup[name] = param.data.clone()
+                param.data = self.shadow[name].clone()
+
+    def restore(self):
+        """Restore original parameters (after inference)."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name].clone()
+        self.backup = {}
+
+    def state_dict(self):
+        """Return state dict for checkpointing."""
+        return {"decay": self.decay, "shadow": self.shadow}
+
+    def load_state_dict(self, state_dict):
+        """Load state dict from checkpoint."""
+        self.decay = state_dict["decay"]
+        self.shadow = state_dict["shadow"]
 
 
 class SinusoidalPositionEmbeddings(nn.Module):
@@ -450,6 +511,9 @@ class DDPM(nn.Module):
             num_classes=num_classes,
         )
 
+        # EMA for improved sampling quality
+        self.ema = None  # Will be initialized externally if needed
+
         # Precompute noise schedule
         self.register_buffer(
             "betas",
@@ -620,6 +684,38 @@ class DDPM(nn.Module):
 
         return sqrt_recip_alphas_cumprod_t * x_t - sqrt_recipm1_alphas_cumprod_t * noise
 
+    def dynamic_threshold(
+        self, x_start: torch.Tensor, percentile: float = 0.995
+    ) -> torch.Tensor:
+        """Apply dynamic thresholding to reduce extreme pixel values.
+
+        This technique from Imagen helps suppress artifacts by clipping values
+        based on a percentile threshold rather than fixed values.
+
+        Args:
+            x_start: Predicted x_0
+            percentile: Percentile for dynamic threshold (default: 0.995, i.e., 99.5%)
+
+        Returns:
+            Thresholded x_start
+        """
+        # Compute absolute values
+        x_flat = x_start.flatten(start_dim=1)
+        abs_flat = torch.abs(x_flat)
+
+        # Compute percentile threshold per sample in batch
+        s = torch.quantile(abs_flat, percentile, dim=1, keepdim=True)
+
+        # Ensure threshold is at least 1.0
+        s = torch.clamp(s, min=1.0)
+
+        # Clip and rescale
+        # For older PyTorch versions, use torch.max/min instead of clamp with tensor args
+        s = s.view(-1, 1, 1, 1)  # Reshape for broadcasting
+        x_start = torch.max(torch.min(x_start, s), -s) / s
+
+        return x_start
+
     def q_posterior(
         self, x_start: torch.Tensor, x_t: torch.Tensor, t: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -638,6 +734,8 @@ class DDPM(nn.Module):
         t: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
+        use_dynamic_threshold: bool = True,
+        dynamic_threshold_percentile: float = 0.995,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute predicted mean and variance for reverse process with classifier-free guidance.
 
@@ -646,6 +744,8 @@ class DDPM(nn.Module):
             t: Timestep
             class_labels: Class labels for conditional generation
             guidance_scale: Classifier-free guidance scale (0.0 = no guidance, higher = stronger conditioning)
+            use_dynamic_threshold: Whether to apply dynamic thresholding (default: True)
+            dynamic_threshold_percentile: Percentile for dynamic thresholding (default: 0.995)
         """
         if (
             self.num_classes is not None
@@ -675,6 +775,10 @@ class DDPM(nn.Module):
         x_start = self.predict_start_from_noise(x_t, t, predicted_noise)
         x_start = torch.clamp(x_start, -1.0, 1.0)
 
+        # Apply dynamic thresholding if enabled
+        if use_dynamic_threshold:
+            x_start = self.dynamic_threshold(x_start, dynamic_threshold_percentile)
+
         # Compute posterior
         model_mean, model_variance = self.q_posterior(x_start, x_t, t)
 
@@ -687,10 +791,17 @@ class DDPM(nn.Module):
         t: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
+        use_dynamic_threshold: bool = True,
+        dynamic_threshold_percentile: float = 0.995,
     ) -> torch.Tensor:
         """Sample from reverse process: p(x_{t-1} | x_t) with classifier-free guidance."""
         model_mean, model_variance = self.p_mean_variance(
-            x_t, t, class_labels, guidance_scale
+            x_t,
+            t,
+            class_labels,
+            guidance_scale,
+            use_dynamic_threshold,
+            dynamic_threshold_percentile,
         )
 
         noise = torch.randn_like(x_t)
@@ -706,6 +817,8 @@ class DDPM(nn.Module):
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
         return_intermediates: bool = False,
+        use_dynamic_threshold: bool = True,
+        dynamic_threshold_percentile: float = 0.995,
     ) -> torch.Tensor:
         """Generate samples from the model with optional classifier-free guidance.
 
@@ -714,6 +827,8 @@ class DDPM(nn.Module):
             class_labels: Class labels for conditional generation (shape: [batch_size])
             guidance_scale: Classifier-free guidance scale (0.0 = no guidance, 3.0-7.0 typical)
             return_intermediates: If True, return all intermediate timesteps
+            use_dynamic_threshold: Whether to apply dynamic thresholding (default: True)
+            dynamic_threshold_percentile: Percentile for dynamic thresholding (default: 0.995)
 
         Returns:
             Generated samples, shape (batch_size, in_channels, image_size, image_size)
@@ -735,7 +850,82 @@ class DDPM(nn.Module):
                     end="\r",
                 )
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            x = self.p_sample(x, t, class_labels, guidance_scale)
+            x = self.p_sample(
+                x,
+                t,
+                class_labels,
+                guidance_scale,
+                use_dynamic_threshold,
+                dynamic_threshold_percentile,
+            )
+
+            if return_intermediates:
+                intermediates.append(x)
+
+        if return_intermediates:
+            return torch.stack(intermediates)
+
+        return x
+
+    @torch.no_grad()
+    def sample_from_image(
+        self,
+        x_0: torch.Tensor,
+        t_0: int = 300,
+        class_labels: Optional[torch.Tensor] = None,
+        guidance_scale: float = 0.0,
+        return_intermediates: bool = False,
+        use_dynamic_threshold: bool = True,
+        dynamic_threshold_percentile: float = 0.995,
+    ) -> torch.Tensor:
+        """SDEdit: Generate samples by starting from a real image (image-to-image diffusion).
+
+        This is particularly useful for generating abnormalities on real normal backgrounds,
+        which helps preserve real image statistics and reduces domain gap.
+
+        Args:
+            x_0: Starting images (e.g., real Normal images), shape (batch_size, in_channels, image_size, image_size)
+                 Should be normalized to [-1, 1] range.
+            t_0: Starting timestep for denoising (e.g., 200-400). Higher = more change, lower = more preservation.
+            class_labels: Target class labels for conditional generation (shape: [batch_size])
+            guidance_scale: Classifier-free guidance scale (0.0 = no guidance, 3.0-7.0 typical)
+            return_intermediates: If True, return all intermediate timesteps
+            use_dynamic_threshold: Whether to apply dynamic thresholding (default: True)
+            dynamic_threshold_percentile: Percentile for dynamic thresholding (default: 0.995)
+
+        Returns:
+            Generated samples, shape (batch_size, in_channels, image_size, image_size)
+            If return_intermediates is True, returns (num_denoising_steps, batch_size, in_channels, image_size, image_size)
+        """
+        batch_size = x_0.shape[0]
+        device = x_0.device
+
+        # Add noise to x_0 to reach timestep t_0
+        t = torch.full((batch_size,), t_0, device=device, dtype=torch.long)
+        noise = torch.randn_like(x_0)
+        x_t = self.q_sample(x_0, t, noise)
+
+        print(f"  - Starting SDEdit from timestep {t_0}/{self.num_timesteps}")
+
+        intermediates = [x_t] if return_intermediates else None
+
+        # Denoise from t_0 down to 0
+        x = x_t
+        for i in reversed(range(t_0)):
+            if (i + 1) % 10 == 0:
+                print(
+                    f"  - Sampling timestep {i+1:04d}/{t_0:04d}",
+                    end="\r",
+                )
+            t = torch.full((batch_size,), i, device=device, dtype=torch.long)
+            x = self.p_sample(
+                x,
+                t,
+                class_labels,
+                guidance_scale,
+                use_dynamic_threshold,
+                dynamic_threshold_percentile,
+            )
 
             if return_intermediates:
                 intermediates.append(x)
@@ -994,6 +1184,11 @@ def train():
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
 
+    # Setup EMA for improved sampling quality
+    print("\n=== Setting up EMA ===")
+    ema = EMA(model, decay=0.9999, device=device)
+    print(f"EMA decay rate: 0.9999")
+
     # Setup optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.MSELoss()
@@ -1021,6 +1216,15 @@ def train():
             loss.backward()
             optimizer.step()
 
+            # Update EMA
+            ema.update()
+
+            train_loss += loss.item()
+            train_batches += 1
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
             train_loss += loss.item()
             train_batches += 1
 
@@ -1033,8 +1237,10 @@ def train():
         avg_train_loss = train_loss / train_batches
         train_losses.append(avg_train_loss)
 
-        # Validation phase
+        # Validation phase (use EMA weights)
         model.eval()
+        ema.apply_shadow()  # Switch to EMA weights for validation
+
         val_loss = 0.0
         val_batches = 0
 
@@ -1049,11 +1255,17 @@ def train():
                 val_loss += loss.item()
                 val_batches += 1
 
+        ema.restore()  # Restore training weights
+
         avg_val_loss = val_loss / val_batches
         val_losses.append(avg_val_loss)
 
         if (epoch + 1) % 20 == 0:
+            # Save both regular and EMA weights
             torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}.pth")
+            ema.apply_shadow()
+            torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}_ema.pth")
+            ema.restore()
 
         print(
             f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
@@ -1061,10 +1273,22 @@ def train():
 
     print("\n=== Training Completed ===")
 
-    # Save model
+    # Save model (both regular and EMA weights)
     model_path = f"{OUT_DIR}/ddpm_model.pth"
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
+
+    # Save EMA model
+    ema.apply_shadow()
+    ema_model_path = f"{OUT_DIR}/ddpm_model_ema.pth"
+    torch.save(model.state_dict(), ema_model_path)
+    print(f"EMA model saved to {ema_model_path}")
+    ema.restore()
+
+    # Save EMA state dict separately for resuming training
+    ema_state_path = f"{OUT_DIR}/ema_state.pth"
+    torch.save(ema.state_dict(), ema_state_path)
+    print(f"EMA state saved to {ema_state_path}")
 
     # Save training history to CSV
     history_path = f"{OUT_DIR}/training_history.csv"
@@ -1125,6 +1349,8 @@ def generate(
     beta_end: float = 0.02,
     out_dir: str = "./out/ddpm/samples",
     save_images: bool = True,
+    use_dynamic_threshold: bool = True,
+    dynamic_threshold_percentile: float = 0.995,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> None:
     """Generate samples using a trained DDPM model.
@@ -1146,6 +1372,8 @@ def generate(
         beta_end: Ending beta value for noise schedule
         out_dir: Directory to save generated images
         save_images: Whether to save images to disk
+        use_dynamic_threshold: Whether to apply dynamic thresholding (default: True)
+        dynamic_threshold_percentile: Percentile for dynamic thresholding (default: 0.995)
         device: Device to run generation on
     """
     import os
@@ -1167,12 +1395,13 @@ def generate(
         device=device,
     )
 
-    # Load trained weights
+    # Load trained weights (preferably EMA weights if available)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
     print(f"Model loaded successfully on {device}")
     print(f"Generating {num_samples} samples with guidance_scale={guidance_scale}...")
+    print(f"Dynamic thresholding: {'enabled' if use_dynamic_threshold else 'disabled'}")
 
     # Prepare class labels
     if class_labels is None:
@@ -1209,11 +1438,13 @@ def generate(
             # Get class labels for this batch
             batch_class_labels = class_labels_tensor[start_idx:end_idx]
 
-            # Generate batch
+            # Generate batch with dynamic thresholding
             batch_samples = model.sample(
                 batch_size=current_batch_size,
                 class_labels=batch_class_labels,
                 guidance_scale=guidance_scale,
+                use_dynamic_threshold=use_dynamic_threshold,
+                dynamic_threshold_percentile=dynamic_threshold_percentile,
             )
 
             # Save images immediately after generating this batch
@@ -1263,7 +1494,9 @@ if __name__ == "__main__":
         start_time = time.time()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         num_samples = 1000
-        model_path = "./out/ddpm/ddpm_model.pth"
+        # Use EMA weights for generation (recommended for better quality)
+        model_path = "./out/ddpm/ddpm_model_ema.pth"  # Use EMA weights if available
+        # Fallback: model_path = "./out/ddpm/ddpm_model.pth"  # Regular weights
         out_dir = "./out/ddpm/samples_class1"
         os.makedirs(out_dir, exist_ok=True)
 
@@ -1272,7 +1505,7 @@ if __name__ == "__main__":
             num_samples=num_samples,
             batch_size=500,
             class_labels=[1] * num_samples,
-            guidance_scale=5.0,
+            guidance_scale=2.0,
             image_size=40,
             num_classes=2,
             model_channels=64,
@@ -1280,6 +1513,8 @@ if __name__ == "__main__":
             beta_schedule="cosine",
             out_dir=out_dir,
             save_images=True,
+            use_dynamic_threshold=True,  # Enable dynamic thresholding
+            dynamic_threshold_percentile=0.995,  # 99.5th percentile
             device=device,
         )
 
@@ -1295,3 +1530,48 @@ if __name__ == "__main__":
         minutes_per_sample = int(time_per_sample // 60)
         seconds_per_sample = time_per_sample % 60
         print(f"Time per sample: {minutes_per_sample:02d}:{seconds_per_sample:05.2f}")
+
+
+# Example usage for SDEdit (image-to-image generation):
+"""
+# Load a trained DDPM model
+model = create_ddpm(
+    image_size=40,
+    in_channels=3,
+    model_channels=64,
+    num_classes=2,
+    num_timesteps=1000,
+    beta_schedule="cosine",
+    device="cuda"
+)
+model.load_state_dict(torch.load("./out/ddpm/ddpm_model_ema.pth"))
+model.eval()
+
+# Load real Normal images (normalized to [-1, 1])
+from torchvision import transforms, datasets
+transform = transforms.Compose([
+    transforms.Resize((40, 40)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+])
+normal_dataset = datasets.ImageFolder("./data/stats/0.Normal", transform=transform)
+normal_images = torch.stack([normal_dataset[i][0] for i in range(16)]).cuda()
+
+# Generate Abnormal images from Normal backgrounds using SDEdit
+# t_0 controls how much to change: 200-300 = subtle, 400-600 = more change
+abnormal_class_labels = torch.ones(16, dtype=torch.long, device="cuda")  # Class 1 = Abnormal
+generated_abnormals = model.sample_from_image(
+    x_0=normal_images,
+    t_0=300,  # Start denoising from timestep 300
+    class_labels=abnormal_class_labels,
+    guidance_scale=2.0,
+    use_dynamic_threshold=True,
+    dynamic_threshold_percentile=0.995
+)
+
+# Save generated images
+from torchvision.utils import save_image
+for i, img in enumerate(generated_abnormals):
+    img_normalized = (img + 1.0) / 2.0
+    save_image(img_normalized, f"./out/sdedit_abnormal_{i}.png")
+"""

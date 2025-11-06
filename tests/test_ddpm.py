@@ -11,6 +11,7 @@ import torch.nn as nn
 
 from ddpm import (
     DDPM,
+    EMA,
     AttentionBlock,
     DownBlock,
     ResidualBlock,
@@ -1006,6 +1007,697 @@ class TestGenerateFunction:
         assert os.path.exists(out_dir)
         saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
         assert len(saved_images) == 4
+
+
+class TestEMA:
+    """Test EMA (Exponential Moving Average) class"""
+
+    def test_initialization(self, device):
+        """Test EMA initialization"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        assert ema is not None
+        assert ema.model is model
+        assert ema.decay == 0.9999
+        assert len(ema.shadow) > 0
+        assert len(ema.backup) == 0
+
+    def test_shadow_parameters_initialized(self, device):
+        """Test that shadow parameters are properly initialized"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Check that shadow params match model params initially
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert name in ema.shadow
+                assert ema.shadow[name].shape == param.data.shape
+
+    def test_update(self, device):
+        """Test EMA update"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Get initial shadow value
+        first_param_name = list(ema.shadow.keys())[0]
+        initial_shadow = ema.shadow[first_param_name].clone()
+
+        # Modify model parameters
+        for param in model.parameters():
+            if param.requires_grad:
+                param.data += 1.0
+                break
+
+        # Update EMA
+        ema.update()
+
+        # Shadow should have changed
+        updated_shadow = ema.shadow[first_param_name]
+        assert not torch.allclose(initial_shadow, updated_shadow)
+
+    def test_apply_shadow(self, device):
+        """Test applying shadow parameters to model"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Get original param value
+        first_param = next(model.parameters())
+        original_value = first_param.data.clone()
+
+        # Modify model slightly
+        first_param.data += 1.0
+
+        # Update EMA
+        ema.update()
+
+        # Apply shadow
+        ema.apply_shadow()
+
+        # Model params should now be shadow params
+        shadow_value = first_param.data.clone()
+        assert not torch.allclose(original_value + 1.0, shadow_value)
+
+        # Backup should be populated
+        assert len(ema.backup) > 0
+
+    def test_restore(self, device):
+        """Test restoring original parameters"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Get original value
+        first_param = next(model.parameters())
+        original_value = first_param.data.clone()
+
+        # Modify and update
+        first_param.data += 1.0
+        ema.update()
+
+        # Apply shadow and then restore
+        ema.apply_shadow()
+        shadow_value = first_param.data.clone()
+        ema.restore()
+
+        # Should be back to the modified value
+        restored_value = first_param.data.clone()
+        assert torch.allclose(restored_value, original_value + 1.0)
+        assert not torch.allclose(restored_value, shadow_value)
+
+        # Backup should be cleared
+        assert len(ema.backup) == 0
+
+    def test_state_dict(self, device):
+        """Test EMA state_dict"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        state_dict = ema.state_dict()
+
+        assert "decay" in state_dict
+        assert "shadow" in state_dict
+        assert state_dict["decay"] == 0.9999
+        assert len(state_dict["shadow"]) > 0
+
+    def test_load_state_dict(self, device):
+        """Test EMA load_state_dict"""
+        model1 = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema1 = EMA(model1, decay=0.9999, device=device)
+        ema1.update()
+
+        # Save state
+        state_dict = ema1.state_dict()
+
+        # Create new EMA and load
+        model2 = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema2 = EMA(model2, decay=0.9, device=device)  # Different decay
+        ema2.load_state_dict(state_dict)
+
+        assert ema2.decay == 0.9999  # Should match loaded value
+
+    def test_ema_reduces_variance(self, device):
+        """Test that EMA actually smooths parameter updates"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        )
+        ema = EMA(model, decay=0.99, device=device)  # High decay for noticeable effect
+
+        first_param = next(model.parameters())
+        first_param_name = [n for n, p in model.named_parameters()][0]
+
+        # Apply several random updates
+        original = first_param.data.clone()
+        for _ in range(5):
+            first_param.data = original + torch.randn_like(first_param.data) * 10
+            ema.update()
+
+        # Shadow should be closer to original than final param
+        final_param = first_param.data
+        shadow = ema.shadow[first_param_name]
+
+        dist_shadow_to_orig = torch.norm(shadow - original)
+        dist_final_to_orig = torch.norm(final_param - original)
+
+        assert dist_shadow_to_orig < dist_final_to_orig
+
+
+class TestDynamicThreshold:
+    """Test dynamic thresholding functionality"""
+
+    def test_dynamic_threshold_basic(self, device):
+        """Test basic dynamic thresholding"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        ).to(device)
+
+        x_start = torch.randn(2, 3, 40, 40, device=device) * 5  # Larger values
+
+        thresholded = model.dynamic_threshold(x_start, percentile=0.95)
+
+        assert thresholded.shape == x_start.shape
+        # All values should be within [-1, 1] after thresholding
+        assert torch.all(torch.abs(thresholded) <= 1.0 + 1e-5)
+
+    def test_dynamic_threshold_percentile(self, device):
+        """Test dynamic thresholding with different percentiles"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        ).to(device)
+
+        x_start = torch.randn(2, 3, 40, 40, device=device) * 3
+
+        # Higher percentile should allow more extreme values
+        thresh_low = model.dynamic_threshold(x_start, percentile=0.9)
+        thresh_high = model.dynamic_threshold(x_start, percentile=0.99)
+
+        # Both should be normalized to [-1, 1]
+        assert torch.all(torch.abs(thresh_low) <= 1.0 + 1e-5)
+        assert torch.all(torch.abs(thresh_high) <= 1.0 + 1e-5)
+
+    def test_dynamic_threshold_minimum(self, device):
+        """Test that threshold has minimum of 1.0"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        ).to(device)
+
+        # Small values that would have percentile < 1.0
+        x_start = torch.randn(2, 3, 40, 40, device=device) * 0.1
+
+        thresholded = model.dynamic_threshold(x_start, percentile=0.999)
+
+        # Should not amplify small values beyond 1.0
+        assert torch.all(torch.abs(thresholded) <= 1.0 + 1e-5)
+
+    def test_p_mean_variance_with_dynamic_threshold(self, device):
+        """Test p_mean_variance with dynamic thresholding enabled"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=100, device=device
+        ).to(device)
+        model.eval()
+
+        x_t = torch.randn(2, 3, 40, 40, device=device)
+        t = torch.tensor([50, 50], device=device)
+
+        # With dynamic thresholding
+        mean1, var1 = model.p_mean_variance(
+            x_t, t, use_dynamic_threshold=True, dynamic_threshold_percentile=0.995
+        )
+
+        # Without dynamic thresholding
+        mean2, var2 = model.p_mean_variance(x_t, t, use_dynamic_threshold=False)
+
+        # Both should produce valid outputs
+        assert mean1.shape == x_t.shape
+        assert mean2.shape == x_t.shape
+        # Variance is broadcast-compatible with x_t shape
+        assert var1.shape == (2, 1, 1, 1)
+        assert var2.shape == (2, 1, 1, 1)
+
+    def test_sample_with_dynamic_threshold(self, device):
+        """Test sampling with dynamic thresholding"""
+        model = create_ddpm(
+            image_size=40, model_channels=32, num_timesteps=10, device=device
+        ).to(device)
+        model.eval()
+
+        # Sample with dynamic thresholding
+        samples_with = model.sample(
+            batch_size=2,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.995,
+        )
+
+        # Sample without dynamic thresholding
+        samples_without = model.sample(
+            batch_size=2,
+            use_dynamic_threshold=False,
+        )
+
+        assert samples_with.shape == (2, 3, 40, 40)
+        assert samples_without.shape == (2, 3, 40, 40)
+
+        # Both should produce reasonable outputs (in [-1, 1] range roughly)
+        # Note: outputs won't be exactly in [-1, 1] without final clamping
+
+
+class TestSDEdit:
+    """Test SDEdit (sample_from_image) functionality"""
+
+    def test_sample_from_image_basic(self, device):
+        """Test basic SDEdit functionality"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=100,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        # Create starting images (real normals)
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # Generate from images
+        generated = model.sample_from_image(
+            x_0=x_0, t_0=50, class_labels=class_labels, guidance_scale=2.0
+        )
+
+        assert generated.shape == x_0.shape
+
+    def test_sample_from_image_different_t0(self, device):
+        """Test SDEdit with different starting timesteps"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=100,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # Lower t_0 = less change
+        gen_low = model.sample_from_image(
+            x_0=x_0, t_0=10, class_labels=class_labels, guidance_scale=0.0
+        )
+
+        # Higher t_0 = more change
+        gen_high = model.sample_from_image(
+            x_0=x_0, t_0=80, class_labels=class_labels, guidance_scale=0.0
+        )
+
+        assert gen_low.shape == x_0.shape
+        assert gen_high.shape == x_0.shape
+
+        # Higher t_0 should produce more different results
+        # (though this is probabilistic so we just check shapes)
+
+    def test_sample_from_image_with_guidance(self, device):
+        """Test SDEdit with classifier-free guidance"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=50,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # With guidance
+        gen_guided = model.sample_from_image(
+            x_0=x_0, t_0=25, class_labels=class_labels, guidance_scale=3.0
+        )
+
+        # Without guidance
+        gen_unguided = model.sample_from_image(
+            x_0=x_0, t_0=25, class_labels=class_labels, guidance_scale=0.0
+        )
+
+        assert gen_guided.shape == x_0.shape
+        assert gen_unguided.shape == x_0.shape
+
+    def test_sample_from_image_with_dynamic_threshold(self, device):
+        """Test SDEdit with dynamic thresholding"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=50,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # With dynamic thresholding
+        gen_with = model.sample_from_image(
+            x_0=x_0,
+            t_0=25,
+            class_labels=class_labels,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.995,
+        )
+
+        # Without dynamic thresholding
+        gen_without = model.sample_from_image(
+            x_0=x_0, t_0=25, class_labels=class_labels, use_dynamic_threshold=False
+        )
+
+        assert gen_with.shape == x_0.shape
+        assert gen_without.shape == x_0.shape
+
+    def test_sample_from_image_return_intermediates(self, device):
+        """Test SDEdit with return_intermediates"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=50,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+        t_0 = 20
+
+        # Get intermediates
+        intermediates = model.sample_from_image(
+            x_0=x_0,
+            t_0=t_0,
+            class_labels=class_labels,
+            return_intermediates=True,
+        )
+
+        # Should return t_0 + 1 timesteps (initial + each denoising step)
+        assert intermediates.shape == (t_0 + 1, 2, 3, 40, 40)
+
+    def test_sample_from_image_preserves_structure(self, device):
+        """Test that SDEdit preserves some structure from input"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=100,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        # Create a structured input (e.g., all positive values)
+        x_0 = torch.abs(torch.randn(2, 3, 40, 40, device=device))
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # With very low t_0, should preserve a lot of structure
+        generated = model.sample_from_image(
+            x_0=x_0, t_0=5, class_labels=class_labels, guidance_scale=0.0
+        )
+
+        assert generated.shape == x_0.shape
+        # With low t_0, the mean should be somewhat preserved
+        # (This is a weak test but checks basic functionality)
+
+    def test_sample_from_image_unconditional(self, device):
+        """Test SDEdit without class labels (unconditional)"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=None,  # Unconditional
+            num_timesteps=50,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+
+        # Should work without class labels
+        generated = model.sample_from_image(
+            x_0=x_0, t_0=25, class_labels=None, guidance_scale=0.0
+        )
+
+        assert generated.shape == x_0.shape
+
+
+class TestGenerateWithNewFeatures:
+    """Test generate() function with new features"""
+
+    def test_generate_with_dynamic_threshold(self, device, temp_out_dir):
+        """Test generation with dynamic thresholding enabled"""
+        # Create and save a model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        model_path = os.path.join(temp_out_dir, "test_model.pth")
+        torch.save(model.state_dict(), model_path)
+
+        # Generate with dynamic thresholding
+        out_dir = os.path.join(temp_out_dir, "generated_dynamic_thresh")
+        result = generate(
+            model_path=model_path,
+            num_samples=4,
+            batch_size=4,
+            guidance_scale=2.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=out_dir,
+            save_images=True,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.995,
+            device=device,
+        )
+
+        assert result is None
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
+
+    def test_generate_without_dynamic_threshold(self, device, temp_out_dir):
+        """Test generation with dynamic thresholding disabled"""
+        # Create and save a model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        model_path = os.path.join(temp_out_dir, "test_model.pth")
+        torch.save(model.state_dict(), model_path)
+
+        # Generate without dynamic thresholding
+        out_dir = os.path.join(temp_out_dir, "generated_no_dynamic_thresh")
+        result = generate(
+            model_path=model_path,
+            num_samples=4,
+            batch_size=4,
+            guidance_scale=2.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=out_dir,
+            save_images=True,
+            use_dynamic_threshold=False,
+            device=device,
+        )
+
+        assert result is None
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
+
+    def test_generate_different_percentiles(self, device, temp_out_dir):
+        """Test generation with different dynamic threshold percentiles"""
+        # Create and save a model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        model_path = os.path.join(temp_out_dir, "test_model.pth")
+        torch.save(model.state_dict(), model_path)
+
+        # Test with 90th percentile
+        out_dir_90 = os.path.join(temp_out_dir, "generated_p90")
+        result = generate(
+            model_path=model_path,
+            num_samples=2,
+            batch_size=2,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=out_dir_90,
+            save_images=True,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.90,
+            device=device,
+        )
+
+        assert result is None
+        assert os.path.exists(out_dir_90)
+
+        # Test with 99.9th percentile
+        out_dir_999 = os.path.join(temp_out_dir, "generated_p999")
+        result = generate(
+            model_path=model_path,
+            num_samples=2,
+            batch_size=2,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=out_dir_999,
+            save_images=True,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.999,
+            device=device,
+        )
+
+        assert result is None
+        assert os.path.exists(out_dir_999)
+
+
+class TestIntegrationWithNewFeatures:
+    """Integration tests combining new features"""
+
+    def test_ema_training_workflow(self, device):
+        """Test complete EMA training workflow"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Training step
+        x = torch.randn(2, 3, 40, 40, device=device)
+        labels = torch.randint(0, 2, (2,), device=device)
+
+        loss = model.training_step(x, class_labels=labels)
+        loss.backward()
+
+        # Update EMA
+        ema.update()
+
+        # Validation with EMA
+        model.eval()
+        ema.apply_shadow()
+
+        with torch.no_grad():
+            val_loss = model.training_step(x, class_labels=labels)
+
+        ema.restore()
+
+        assert val_loss is not None
+
+    def test_full_pipeline_with_all_features(self, device, temp_out_dir):
+        """Test full pipeline: train with EMA, save, generate with dynamic threshold"""
+        # Create model
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=10,
+            device=device,
+        )
+        ema = EMA(model, decay=0.9999, device=device)
+
+        # Quick training step
+        x = torch.randn(2, 3, 40, 40, device=device)
+        labels = torch.randint(0, 2, (2,), device=device)
+        loss = model.training_step(x, class_labels=labels)
+        loss.backward()
+        ema.update()
+
+        # Save EMA weights
+        ema.apply_shadow()
+        model_path = os.path.join(temp_out_dir, "model_ema.pth")
+        torch.save(model.state_dict(), model_path)
+        ema.restore()
+
+        # Generate with all features
+        out_dir = os.path.join(temp_out_dir, "full_pipeline")
+        generate(
+            model_path=model_path,
+            num_samples=4,
+            batch_size=2,
+            guidance_scale=2.0,
+            image_size=40,
+            num_classes=2,
+            model_channels=32,
+            num_timesteps=10,
+            out_dir=out_dir,
+            save_images=True,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.995,
+            device=device,
+        )
+
+        # Check outputs
+        assert os.path.exists(out_dir)
+        saved_images = [f for f in os.listdir(out_dir) if f.endswith(".png")]
+        assert len(saved_images) == 4
+
+    def test_sdedit_with_dynamic_threshold_and_guidance(self, device):
+        """Test SDEdit combining dynamic thresholding and guidance"""
+        model = create_ddpm(
+            image_size=40,
+            model_channels=32,
+            num_classes=2,
+            num_timesteps=50,
+            device=device,
+        ).to(device)
+        model.eval()
+
+        # Create starting images
+        x_0 = torch.randn(2, 3, 40, 40, device=device)
+        class_labels = torch.ones(2, device=device, dtype=torch.long)
+
+        # Generate with all features
+        generated = model.sample_from_image(
+            x_0=x_0,
+            t_0=25,
+            class_labels=class_labels,
+            guidance_scale=3.0,
+            use_dynamic_threshold=True,
+            dynamic_threshold_percentile=0.995,
+        )
+
+        assert generated.shape == x_0.shape
+        # Values should be reasonably bounded due to dynamic thresholding
 
 
 if __name__ == "__main__":

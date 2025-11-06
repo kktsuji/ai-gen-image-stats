@@ -31,5 +31,5 @@ docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id
 docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 ddpm.py
 
 # Test
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 -m pytest
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 -m pytest
 ```
