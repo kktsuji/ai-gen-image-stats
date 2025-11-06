@@ -1221,12 +1221,6 @@ def train():
 
             train_loss += loss.item()
             train_batches += 1
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-            train_batches += 1
 
             if (batch_idx + 1) % 10 == 0:
                 print(
