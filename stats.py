@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -29,7 +30,13 @@ def _make_dataloader(data_path, transform):
 def _extract_features(feature_extractor, dataloader):
     features_list = []
     class_name_list = []
+    image_paths_list = []
     total_batches = len(dataloader)
+
+    # Get all image paths from dataset
+    all_paths = [path for path, _ in dataloader.dataset.samples]
+
+    batch_size = dataloader.batch_size
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx % 10 == 0:
@@ -43,8 +50,14 @@ def _extract_features(feature_extractor, dataloader):
             features_list.append(feat.cpu().numpy())
             class_names = [dataloader.dataset.classes[label] for label in labels]
             class_name_list.extend(class_names)
+
+            # Get image paths for this batch
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + len(images), len(all_paths))
+            batch_paths = all_paths[start_idx:end_idx]
+            image_paths_list.extend(batch_paths)
         print("\n  - Completed.")
-    return np.concatenate(features_list, axis=0), class_name_list
+    return np.concatenate(features_list, axis=0), class_name_list, image_paths_list
 
 
 def _save_graph(
@@ -292,6 +305,61 @@ def filter_samples_by_domain_gap(
     return filtered_features, list(filtered_classes), kept_synth_original_indices
 
 
+def save_filtered_images(
+    image_paths: list,
+    classes,
+    kept_synth_indices: np.ndarray,
+    synth_class: str,
+    output_dir: str,
+):
+    """
+    Save filtered synthetic images to disk.
+
+    Parameters:
+    -----------
+    image_paths : list
+        List of all image paths
+    classes : list or array
+        Class labels for all samples
+    kept_synth_indices : np.ndarray
+        Original indices of kept synthetic samples
+    synth_class : str
+        Label for synthetic samples
+    output_dir : str
+        Output directory to save filtered images
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    classes = np.array(classes)
+
+    # Get all synthetic sample indices
+    synth_mask = classes == synth_class
+    synth_indices = np.where(synth_mask)[0]
+
+    print(
+        f"\n[Save] Copying {len(kept_synth_indices)} filtered images to {output_dir}..."
+    )
+
+    copied_count = 0
+    for idx in kept_synth_indices:
+        if idx < len(image_paths):
+            src_path = image_paths[idx]
+            if os.path.exists(src_path):
+                # Keep original filename
+                filename = os.path.basename(src_path)
+                dst_path = os.path.join(output_dir, filename)
+                shutil.copy2(src_path, dst_path)
+                copied_count += 1
+                if copied_count % 100 == 0:
+                    print(
+                        f"  - Copied {copied_count}/{len(kept_synth_indices)} images...",
+                        end="\r",
+                    )
+
+    print(f"\n[Save] Successfully copied {copied_count} images to {output_dir}")
+    return copied_count
+
+
 def compute_domain_classifier_auc(
     features: np.ndarray,
     classes,
@@ -476,7 +544,7 @@ if __name__ == "__main__":
         unique_classes = loader.dataset.classes
 
         print("\nExtract features...")
-        features, classes = _extract_features(feature_extractor, loader)
+        features, classes, image_paths = _extract_features(feature_extractor, loader)
 
         print("\nExtracted features:")
         print("  - features.shape:", features.shape)
@@ -488,12 +556,16 @@ if __name__ == "__main__":
         print(f"  - Saved classes to {OUT_DIR}/classes.npy")
         np.save(f"{OUT_DIR}/features.npy", features)
         print(f"  - Saved features to {OUT_DIR}/features.npy")
+        np.save(f"{OUT_DIR}/image_paths.npy", image_paths)
+        print(f"  - Saved image paths to {OUT_DIR}/image_paths.npy")
     else:
         print("\nLoading feature extractor...")
         classes = np.load(f"{OUT_DIR}/classes.npy", allow_pickle=True)
         features = np.load(f"{OUT_DIR}/features.npy", allow_pickle=True)
+        image_paths = np.load(f"{OUT_DIR}/image_paths.npy", allow_pickle=True).tolist()
         print(f"  - Loaded classes from {OUT_DIR}/classes.npy")
         print(f"  - Loaded features from {OUT_DIR}/features.npy")
+        print(f"  - Loaded image paths from {OUT_DIR}/image_paths.npy")
         unique_classes = np.unique(classes)
 
         print("\nLoaded features:")
@@ -622,6 +694,16 @@ if __name__ == "__main__":
         np.save(f"{OUT_DIR}/filtered_classes.npy", filtered_classes)
         print(f"  - Saved filtered features to {OUT_DIR}/filtered_features.npy")
         print(f"  - Saved filtered classes to {OUT_DIR}/filtered_classes.npy")
+
+        # Save filtered images to disk
+        filtered_images_dir = os.path.join(OUT_DIR, "filtered_images")
+        save_filtered_images(
+            image_paths,
+            classes,
+            kept_indices,
+            synth_class=SYNTH_CLASS,
+            output_dir=filtered_images_dir,
+        )
 
         # Re-run domain classifier on filtered data
         print("\nRunning domain classifier on filtered data...")
