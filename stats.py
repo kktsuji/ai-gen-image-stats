@@ -24,7 +24,7 @@ from wrn28_cifar10 import WRN28Cifar10FeatureExtractor
 
 def _make_dataloader(data_path, transform):
     dataset = datasets.ImageFolder(data_path, transform=transform)
-    return DataLoader(dataset, batch_size=16, shuffle=True)
+    return DataLoader(dataset, batch_size=16, shuffle=False)
 
 
 def _extract_features(feature_extractor, dataloader):
