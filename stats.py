@@ -187,6 +187,110 @@ def under_sample_features(features, num_samples):
     return features[indices]
 
 
+def filter_samples_by_domain_gap(
+    features: np.ndarray,
+    classes,
+    real_class: str = "1.Abnormal",
+    synth_class: str = "2.Synthesized_Abnormal",
+    threshold: float = 0.5,
+    keep_ratio=None,
+    random_state: int = 0,
+):
+    """
+    Filter synthetic samples based on domain gap. Keep only synthetic samples
+    that are hard to distinguish from real samples.
+
+    Parameters:
+    -----------
+    features : np.ndarray
+        Feature vectors for all samples
+    classes : list or array
+        Class labels for all samples
+    real_class : str
+        Label for real samples
+    synth_class : str
+        Label for synthetic samples
+    threshold : float
+        Probability threshold (0-1). Synthetic samples with predicted probability
+        below this threshold are kept. Lower = stricter filtering.
+    keep_ratio : float, optional
+        If provided, keep this ratio of synthetic samples with lowest domain gap.
+        Overrides threshold parameter.
+    random_state : int
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    filtered_features : np.ndarray
+        Features with filtered synthetic samples
+    filtered_classes : list
+        Classes with filtered synthetic samples
+    kept_synth_indices : np.ndarray
+        Original indices of kept synthetic samples
+    """
+    classes = np.array(classes)
+    mask = np.isin(classes, [real_class, synth_class])
+    X = features[mask]
+    y = (classes[mask] == synth_class).astype(int)  # 1: synthetic, 0: real
+    original_indices = np.where(mask)[0]
+
+    if X.shape[0] == 0 or y.sum() == 0:
+        print("[Filter] Not enough samples to filter.")
+        return features, classes, np.array([])
+
+    # Train domain classifier on all data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    # X_scaled = X
+
+    clf = LogisticRegression(
+        max_iter=1000, class_weight="balanced", random_state=random_state
+    )
+    clf.fit(X_scaled, y)
+
+    # Get prediction probabilities
+    probs = clf.predict_proba(X_scaled)[:, 1]  # Probability of being synthetic
+
+    # Identify synthetic samples
+    synth_mask = y == 1
+    synth_indices_in_subset = np.where(synth_mask)[0]
+    synth_probs = probs[synth_mask]
+
+    # Filter based on threshold or keep_ratio
+    if keep_ratio is not None:
+        n_keep = int(len(synth_probs) * keep_ratio)
+        threshold_idx = np.argsort(synth_probs)[:n_keep]
+        kept_synth_mask = np.zeros(len(synth_probs), dtype=bool)
+        kept_synth_mask[threshold_idx] = True
+        effective_threshold = np.max(synth_probs[threshold_idx]) if n_keep > 0 else 0.0
+    else:
+        kept_synth_mask = synth_probs < threshold
+        effective_threshold = threshold
+
+    n_total_synth = len(synth_probs)
+    n_kept_synth = kept_synth_mask.sum()
+
+    # Map back to original indices
+    kept_synth_indices_in_subset = synth_indices_in_subset[kept_synth_mask]
+    kept_synth_original_indices = original_indices[kept_synth_indices_in_subset]
+
+    # Keep all real samples and filtered synthetic samples
+    real_mask_full = ~np.isin(np.arange(len(features)), original_indices[synth_mask])
+    synth_mask_full = np.zeros(len(features), dtype=bool)
+    synth_mask_full[kept_synth_original_indices] = True
+
+    final_mask = real_mask_full | synth_mask_full
+    filtered_features = features[final_mask]
+    filtered_classes = classes[final_mask]
+
+    print(
+        f"[Filter] Synthetic samples: {n_total_synth} -> {n_kept_synth} "
+        f"({n_kept_synth/n_total_synth*100:.1f}% kept, threshold={effective_threshold:.3f})"
+    )
+
+    return filtered_features, list(filtered_classes), kept_synth_original_indices
+
+
 def compute_domain_classifier_auc(
     features: np.ndarray,
     classes,
@@ -197,6 +301,7 @@ def compute_domain_classifier_auc(
     repeats: int = 1,
     test_size: float = 0.3,
     random_state: int = 0,
+    filtered: bool = False,
 ):
     """
     Train a simple logistic regression to separate real vs synthetic within the Abnormal class.
@@ -260,6 +365,10 @@ def compute_domain_classifier_auc(
     # Save a brief report
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "domain_gap_abnormal_real_vs_synth.txt")
+    if filtered:
+        out_path = os.path.join(
+            out_dir, "domain_gap_abnormal_real_vs_synth_filtered.txt"
+        )
     with open(out_path, "w") as f:
         f.write("Domain classifier (Abnormal: real vs synthetic)\n")
         f.write(
@@ -289,7 +398,7 @@ if __name__ == "__main__":
     LOAD_FLAG = False
     GRAPH_FLAG = False
     STATS_FLAG = False
-    DOMAIN_GAP_FLAG = False
+    DOMAIN_GAP_FLAG = True
     REAL_CLASS = "1.Abnormal"
     FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
     FAKE_CLASS = FAKE_CLASS_LIST[0]
@@ -464,4 +573,39 @@ if __name__ == "__main__":
             repeats=5,
             test_size=0.3,
             random_state=0,
+        )
+
+        # Filter synthetic samples to keep only those with small domain gap
+        print("\nFiltering synthetic samples by domain gap...")
+        filtered_features, filtered_classes, kept_indices = (
+            filter_samples_by_domain_gap(
+                features,
+                classes,
+                real_class="1.Abnormal",
+                synth_class="2.Synthesized_Abnormal",
+                keep_ratio=0.03,  # Keep 50% of synthetic samples with smallest domain gap
+                # threshold=0.8,  # Alternative: use threshold instead of keep_ratio
+                random_state=0,
+            )
+        )
+
+        # Save filtered features and classes
+        np.save(f"{OUT_DIR}/filtered_features.npy", filtered_features)
+        np.save(f"{OUT_DIR}/filtered_classes.npy", filtered_classes)
+        print(f"  - Saved filtered features to {OUT_DIR}/filtered_features.npy")
+        print(f"  - Saved filtered classes to {OUT_DIR}/filtered_classes.npy")
+
+        # Re-run domain classifier on filtered data
+        print("\nRunning domain classifier on filtered data...")
+        compute_domain_classifier_auc(
+            filtered_features,
+            filtered_classes,
+            real_class="1.Abnormal",
+            synth_class="2.Synthesized_Abnormal",
+            out_dir=OUT_DIR,
+            balance_mode="downsample",
+            repeats=5,
+            test_size=0.3,
+            random_state=0,
+            filtered=True,
         )
