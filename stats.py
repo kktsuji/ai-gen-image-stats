@@ -18,6 +18,7 @@ from torchvision import datasets, transforms
 
 from inception_v3 import InceptionV3FeatureExtractor
 from resnet import ResNetFeatureExtractor
+from wrn28_cifar10 import WRN28Cifar10FeatureExtractor
 
 
 def _make_dataloader(data_path, transform):
@@ -385,11 +386,13 @@ def compute_domain_classifier_auc(
 if __name__ == "__main__":
     RESNET50 = "resnet50"
     INCEPTIONV3 = "inceptionv3"
-    MODEL_LIST = [RESNET50, INCEPTIONV3]
-    MODEL = MODEL_LIST[1]
+    WRN28_CIFAR10 = "wrn28_cifar10"
+    MODEL_LIST = [RESNET50, INCEPTIONV3, WRN28_CIFAR10]
+    MODEL = MODEL_LIST[2]
     IMG_SIZE_ORIGINAL = 40
     IMG_SIZE_RESNET = 224
     IMG_SIZE_INCEPTION = 299
+    IMG_SIZE_WRN28 = 40
     COLORS = ["blue", "red", "green"]
     ALPHAS = [0.3, 1.0, 0.3]
     FINETUNED_FLAG = False
@@ -409,11 +412,16 @@ if __name__ == "__main__":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {device}")
 
-        feature_extractor = (
-            ResNetFeatureExtractor(model_dir="./models/", resnet_variant="resnet50")
-            if MODEL == RESNET50
-            else InceptionV3FeatureExtractor(model_dir="./models/")
-        )
+        if MODEL == RESNET50:
+            feature_extractor = ResNetFeatureExtractor(
+                model_dir="./models/", resnet_variant="resnet50"
+            )
+        elif MODEL == INCEPTIONV3:
+            feature_extractor = InceptionV3FeatureExtractor(model_dir="./models/")
+        elif MODEL == WRN28_CIFAR10:
+            feature_extractor = WRN28Cifar10FeatureExtractor(model_dir="./models/")
+        else:
+            raise ValueError(f"Unknown model: {MODEL}")
 
         if FINETUNED_FLAG:
             print("\nLoading fine-tuned model...")
@@ -429,7 +437,26 @@ if __name__ == "__main__":
 
         feature_extractor.to(device)
         feature_extractor.eval()
-        img_size = IMG_SIZE_RESNET if MODEL == RESNET50 else IMG_SIZE_INCEPTION
+
+        if MODEL == RESNET50:
+            img_size = IMG_SIZE_RESNET
+            # ImageNet
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
+        elif MODEL == INCEPTIONV3:
+            img_size = IMG_SIZE_INCEPTION
+            # ImageNet
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
+        elif MODEL == WRN28_CIFAR10:
+            img_size = IMG_SIZE_WRN28
+            # CIFAR-10
+            mean = [0.4914, 0.4822, 0.4465]
+            std = [0.2023, 0.1994, 0.2010]
+
+        else:
+            raise ValueError(f"Unknown model: {MODEL}")
+
         print(f"Model: {MODEL}, Image Size: {img_size}")
 
         data_path = "./data/stats"
@@ -440,9 +467,7 @@ if __name__ == "__main__":
                 ),  # make the spacial frequency equal
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                transforms.Normalize(mean=mean, std=std),
             ]
         )
         loader = _make_dataloader(data_path, transform)
