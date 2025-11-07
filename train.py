@@ -135,7 +135,7 @@ def _make_dataloader(
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
-def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
+def train_inception(use_class_weights=False, use_weighted_sampling=False, suffix=""):
     EPOCHS = 10
     BATCH_SIZE = 16
     LEARNING_RATE = 0.00005
@@ -865,4 +865,4 @@ if __name__ == "__main__":
         (True, False, "_no-synth_imbalanced-val_seed0"),
         (False, True, "_no-synth_imbalanced-val_seed0"),
     ]:
-        train(use_class_weights=cw, use_weighted_sampling=ws, suffix=sf)
+        train_inception(use_class_weights=cw, use_weighted_sampling=ws, suffix=sf)
