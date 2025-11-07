@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 from inception_v3 import InceptionV3FeatureTrainer
+from wrn28_cifar10 import WRN28Cifar10Trainer
 
 
 class UnderSampledImageFolder(datasets.ImageFolder):
@@ -135,7 +136,12 @@ def _make_dataloader(
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
-def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
+def train(
+    use_class_weights=False,
+    use_weighted_sampling=False,
+    suffix="",
+    model_type="inception_v3",
+):
     EPOCHS = 10
     BATCH_SIZE = 16
     LEARNING_RATE = 0.00005
@@ -144,9 +150,17 @@ def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
     UNDER_SAMPLING = False
     # USE_CLASS_WEIGHTS = True
     # USE_WEIGHTED_SAMPLING = False
-    IMG_SIZE = 299  # InceptionV3 input size
+
+    # Set IMG_SIZE based on model type
+    if model_type == "wrn28_cifar10":
+        IMG_SIZE = 40  # WRN28 uses 40x40 input size
+        MODEL_NAME = "wrn28"
+    else:
+        IMG_SIZE = 299  # InceptionV3 input size
+        MODEL_NAME = "inception_v3"
+
     # SUFFIX = "_no-synth_imbalanced-val_seed0"
-    OUT_DIR = f"./out/train{suffix}" + (
+    OUT_DIR = f"./out/train{suffix}_{MODEL_NAME}" + (
         "-us"
         if UNDER_SAMPLING
         else ("_cw" if use_class_weights else ("-ws" if use_weighted_sampling else ""))
@@ -157,12 +171,27 @@ def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Using model: {model_type}")
 
-    trainer = InceptionV3FeatureTrainer(model_dir="./models", num_classes=NUM_CLASSES)
-    if not ONLY_LAST_LAYER:
-        # Make Mixed_7c (last layer before fc) trainable
-        for param in trainer.Mixed_7c.parameters():
-            param.requires_grad = True
+    # Initialize model based on type
+    if model_type == "wrn28_cifar10":
+        # ImageNet
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        trainer = WRN28Cifar10Trainer(model_dir="./models", dropout_rate=0.3)
+        # WRN28 doesn't have Mixed_7c layer
+    else:
+        # CIFAR-10
+        mean = [0.4914, 0.4822, 0.4465]
+        std = [0.2023, 0.1994, 0.2010]
+        trainer = InceptionV3FeatureTrainer(
+            model_dir="./models", num_classes=NUM_CLASSES
+        )
+        if not ONLY_LAST_LAYER:
+            # Make Mixed_7c (last layer before fc) trainable
+            for param in trainer.Mixed_7c.parameters():
+                param.requires_grad = True
+
     trainer = trainer.to(device)
     print("Model initialized successfully.")
 
@@ -184,7 +213,7 @@ def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
             transforms.RandomRotation(15),
             transforms.ColorJitter(brightness=0.1, contrast=0.1),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=mean, std=std),
         ]
     )
 
@@ -195,7 +224,7 @@ def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
             ),  # make the spacial frequency equal
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=mean, std=std),
         ]
     )
 
@@ -799,7 +828,7 @@ def train(use_class_weights=False, use_weighted_sampling=False, suffix=""):
     plt.close()
     print(f"ROC-AUC plot saved to {roc_auc_plot_path}")
 
-    save_path = f"{OUT_DIR}/inception_v3_trained.pth"
+    save_path = f"{OUT_DIR}/{MODEL_NAME}_trained.pth"
     torch.save(trainer.state_dict(), save_path)
     print(f"Model saved to {save_path}")
 
@@ -865,4 +894,17 @@ if __name__ == "__main__":
         (True, False, "_no-synth_imbalanced-val_seed0"),
         (False, True, "_no-synth_imbalanced-val_seed0"),
     ]:
-        train(use_class_weights=cw, use_weighted_sampling=ws, suffix=sf)
+        # Train with InceptionV3
+        train(
+            use_class_weights=cw,
+            use_weighted_sampling=ws,
+            suffix=sf,
+            model_type="inception_v3",
+        )
+        # Train with WRN28-CIFAR10
+        train(
+            use_class_weights=cw,
+            use_weighted_sampling=ws,
+            suffix=sf,
+            model_type="wrn28_cifar10",
+        )
