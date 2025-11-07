@@ -46,7 +46,7 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
         with torch.no_grad():
             output = model(x)
 
-        self.assertEqual(output.shape, (self.batch_size, 1))
+        self.assertEqual(output.shape, (self.batch_size, 2))
         self.assertTrue(torch.isfinite(output).all())
 
     def test_forward_pass_40x40(self):
@@ -58,7 +58,7 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
         with torch.no_grad():
             output = model(x)
 
-        self.assertEqual(output.shape, (self.batch_size, 1))
+        self.assertEqual(output.shape, (self.batch_size, 2))
         self.assertTrue(torch.isfinite(output).all())
 
     def test_output_shape(self):
@@ -70,7 +70,7 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
         with torch.no_grad():
             output = model(x)
 
-        self.assertEqual(output.shape, (1, 1))
+        self.assertEqual(output.shape, (1, 2))
 
     def test_frozen_backbone(self):
         """Test that backbone features are frozen"""
@@ -107,11 +107,11 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
 
         # Trainable params should be much less than total params
         # fc1: feature_dim * 128 + 128 (bias)
-        # fc2: 128 * 1 + 1 (bias)
-        # Approximately: 640*128 + 128 + 128*1 + 1 = 82,177
+        # fc2: 128 * 2 + 2 (bias)
+        # Approximately: 640*128 + 128 + 128*2 + 2 = 82,306
         self.assertLess(trainable_params, total_params)
-        self.assertGreater(trainable_params, 80000)  # At least ~80K params
-        self.assertLess(trainable_params, 100000)  # Less than 100K params
+        self.assertGreater(trainable_params, 82000)  # At least ~82K params
+        self.assertLess(trainable_params, 83000)  # Less than 83K params
 
     def test_training_mode(self):
         """Test model can be set to training mode"""
@@ -121,7 +121,7 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
         x = torch.randn(*self.input_size_40)
         output = model(x)
 
-        self.assertEqual(output.shape, (self.batch_size, 1))
+        self.assertEqual(output.shape, (self.batch_size, 2))
         self.assertTrue(output.requires_grad)
 
     def test_backward_pass(self):
@@ -130,10 +130,10 @@ class TestWRN28Cifar10Trainer(unittest.TestCase):
         model.train()
 
         x = torch.randn(2, 3, 40, 40)
-        labels = torch.tensor([[1.0], [0.0]])
+        labels = torch.tensor([1, 0])
 
         output = model(x)
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.CrossEntropyLoss()
         loss = criterion(output, labels)
         loss.backward()
 
@@ -381,14 +381,14 @@ class TestModelIntegration(unittest.TestCase):
 
         # Create dummy dataset
         x = torch.randn(8, 3, 40, 40)
-        y = torch.randint(0, 2, (8, 1)).float()
+        y = torch.randint(0, 2, (8,))
 
         # Forward pass
         logits = model(x)
-        self.assertEqual(logits.shape, (8, 1))
+        self.assertEqual(logits.shape, (8, 2))
 
         # Compute loss
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.CrossEntropyLoss()
         loss = criterion(logits, y)
 
         # Backward pass

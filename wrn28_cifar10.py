@@ -15,7 +15,7 @@ class WRN28Cifar10Trainer(nn.Module):
     2. Global Average Pooling (parameter-free spatial pooling)
     3. Dense(128) with ReLU (bottleneck layer for task-specific feature mapping)
     4. Dropout (regularization to prevent overfitting with small positive samples)
-    5. Dense(1) output (single logit for BCEWithLogitsLoss)
+    5. Dense(2) output (two logits for CrossEntropyLoss with softmax)
 
     Benefits:
     - Minimizes trainable parameters for stability with limited positive samples
@@ -68,7 +68,7 @@ class WRN28Cifar10Trainer(nn.Module):
         self.fc1 = nn.Linear(feature_dim, 128)  # Bottleneck layer
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=dropout_rate)
-        self.fc2 = nn.Linear(128, 1)  # Single output for binary classification
+        self.fc2 = nn.Linear(128, 2)  # Two outputs for binary classification
 
         # Only the new head layers have requires_grad=True
         for param in self.fc1.parameters():
@@ -84,7 +84,7 @@ class WRN28Cifar10Trainer(nn.Module):
             x: Input tensor [B, 3, H, W]
 
         Returns:
-            logits: [B, 1] raw logits (use with BCEWithLogitsLoss)
+            logits: [B, 2] raw logits (use with CrossEntropyLoss, softmax applied automatically)
         """
         # Step 1: Feature extraction (frozen backbone)
         x = self.features(x)  # [B, C, H', W']
@@ -101,8 +101,8 @@ class WRN28Cifar10Trainer(nn.Module):
         # Step 4: Dropout for regularization
         x = self.dropout(x)
 
-        # Step 5: Output layer (single logit)
-        x = self.fc2(x)  # [B, 1]
+        # Step 5: Output layer (two logits)
+        x = self.fc2(x)  # [B, 2]
 
         return x
 
