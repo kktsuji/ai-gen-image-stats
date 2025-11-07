@@ -241,7 +241,6 @@ def filter_samples_by_domain_gap(
     # Train domain classifier on all data
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    # X_scaled = X
 
     clf = LogisticRegression(
         max_iter=1000, class_weight="balanced", random_state=random_state
@@ -476,9 +475,11 @@ if __name__ == "__main__":
         print("  - unique classes:", unique_classes)
 
     if GRAPH_FLAG:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(features)
         print("\nProcessing t-SNE...")
         tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-        tsne_results = tsne.fit_transform(features)
+        tsne_results = tsne.fit_transform(X_scaled)
         _save_graph(
             tsne_results,
             classes,
@@ -491,7 +492,7 @@ if __name__ == "__main__":
 
         print("\nProcessing UMAP...")
         reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
-        umap_results = reducer.fit_transform(features)
+        umap_results = reducer.fit_transform(X_scaled)
         _save_graph(
             umap_results,
             classes,
