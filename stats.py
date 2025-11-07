@@ -283,9 +283,10 @@ def filter_samples_by_domain_gap(
     filtered_features = features[final_mask]
     filtered_classes = classes[final_mask]
 
+    mode = "keep_ratio" if keep_ratio is not None else "threshold"
     print(
         f"[Filter] Synthetic samples: {n_total_synth} -> {n_kept_synth} "
-        f"({n_kept_synth/n_total_synth*100:.1f}% kept, threshold={effective_threshold:.3f})"
+        f"({n_kept_synth/n_total_synth*100:.1f}% kept, mode={mode}, effective_threshold={effective_threshold:.3f})"
     )
 
     return filtered_features, list(filtered_classes), kept_synth_original_indices
@@ -388,7 +389,7 @@ if __name__ == "__main__":
     INCEPTIONV3 = "inceptionv3"
     WRN28_CIFAR10 = "wrn28_cifar10"
     MODEL_LIST = [RESNET50, INCEPTIONV3, WRN28_CIFAR10]
-    MODEL = MODEL_LIST[2]
+    MODEL = MODEL_LIST[1]
     IMG_SIZE_ORIGINAL = 40
     IMG_SIZE_RESNET = 224
     IMG_SIZE_INCEPTION = 299
@@ -405,6 +406,7 @@ if __name__ == "__main__":
     FAKE_CLASS_LIST = ["0.Normal", "2.Synthesized_Abnormal"]
     FAKE_CLASS = FAKE_CLASS_LIST[0]
     NUM_OF_AVERAGE = 10
+    SYNTH_CLASS = "2.Synthesized_Abnormal"
     OUT_DIR = "./out/stats"
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -587,13 +589,13 @@ if __name__ == "__main__":
             )
         print(f"\nResults saved to {output_file}")
 
-    if DOMAIN_GAP_FLAG and ("2.Synthesized_Abnormal" in unique_classes):
+    if DOMAIN_GAP_FLAG and (SYNTH_CLASS in unique_classes):
         print("\nRunning domain classifier (Abnormal: real vs synthetic)...")
         compute_domain_classifier_auc(
             features,
             classes,
             real_class="1.Abnormal",
-            synth_class="2.Synthesized_Abnormal",
+            synth_class=SYNTH_CLASS,
             out_dir=OUT_DIR,
             balance_mode="downsample",
             repeats=5,
@@ -608,7 +610,7 @@ if __name__ == "__main__":
                 features,
                 classes,
                 real_class="1.Abnormal",
-                synth_class="2.Synthesized_Abnormal",
+                synth_class=SYNTH_CLASS,
                 keep_ratio=0.03,  # Keep 50% of synthetic samples with smallest domain gap
                 # threshold=0.8,  # Alternative: use threshold instead of keep_ratio
                 random_state=0,
@@ -627,7 +629,7 @@ if __name__ == "__main__":
             filtered_features,
             filtered_classes,
             real_class="1.Abnormal",
-            synth_class="2.Synthesized_Abnormal",
+            synth_class=SYNTH_CLASS,
             out_dir=OUT_DIR,
             balance_mode="downsample",
             repeats=5,
