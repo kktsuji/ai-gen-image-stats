@@ -179,7 +179,11 @@ def train(
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         trainer = WRN28Cifar10Trainer(model_dir="./models", dropout_rate=0.3)
-        # WRN28 doesn't have Mixed_7c layer
+        if not ONLY_LAST_LAYER:
+            # Make post_activ (last layer before fc) trainable
+            for param in trainer.features.post_activ.parameters():
+                param.requires_grad = True
+
     else:
         # CIFAR-10
         mean = [0.4914, 0.4822, 0.4465]
