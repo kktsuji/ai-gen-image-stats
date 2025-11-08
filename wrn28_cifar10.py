@@ -11,24 +11,25 @@ class WRN28Cifar10Trainer(nn.Module):
     WideResNet-28-10 model pre-trained on CIFAR-10 for binary classification fine-tuning.
 
     Architecture:
-    1. Frozen backbone (feature extractor from pre-trained WRN-28-10)
+    1. Frozen backbone (feature extractor from pre-trained WRN-28-10, always in eval mode)
     2. Global Average Pooling (parameter-free spatial pooling)
-    3. Dense(128) with ReLU (bottleneck layer for task-specific feature mapping)
+    3. Dense(256) with ReLU (bottleneck layer for task-specific feature mapping)
     4. Dropout (regularization to prevent overfitting with small positive samples)
     5. Dense(2) output (two logits for CrossEntropyLoss with softmax)
 
     Benefits:
-    - Minimizes trainable parameters for stability with limited positive samples
+    - Frozen features in eval mode prevent BatchNorm instability
     - GAP prevents parameter explosion and allows variable input sizes
-    - Intermediate Dense(128) creates appropriate bottleneck for task adaptation
-    - Dropout suppresses overfitting
+    - Larger bottleneck (256) preserves more information through dropout
+    - Proper weight initialization for faster convergence
+    - Lower dropout rate (0.2) for better minority class learning
     """
 
-    def __init__(self, model_dir: str = "./models/", dropout_rate: float = 0.3):
+    def __init__(self, model_dir: str = "./models/", dropout_rate: float = 0.2):
         """
         Args:
             model_dir: Directory to save/load pre-trained model
-            dropout_rate: Dropout probability (0.2-0.5 recommended for small datasets)
+            dropout_rate: Dropout probability (0.1-0.3 recommended for small datasets, default 0.2)
         """
         super(WRN28Cifar10Trainer, self).__init__()
 
@@ -51,6 +52,9 @@ class WRN28Cifar10Trainer(nn.Module):
         for param in self.features.parameters():
             param.requires_grad = False
 
+        # Set features to eval mode to freeze BatchNorm statistics
+        self.features.eval()
+
         # Determine feature dimension by forward pass
         # WideResNet-28-10 typically outputs 640 channels
         # Using 40x40 input size instead of CIFAR-10's 32x32
@@ -65,10 +69,17 @@ class WRN28Cifar10Trainer(nn.Module):
 
         # Build custom classification head (trainable)
         # GAP is applied in forward(), no parameters needed here
-        self.fc1 = nn.Linear(feature_dim, 128)  # Bottleneck layer
+        # Increased bottleneck size for better feature preservation
+        self.fc1 = nn.Linear(feature_dim, 256)  # Bottleneck layer (increased from 128)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=dropout_rate)
-        self.fc2 = nn.Linear(128, 2)  # Two outputs for binary classification
+        self.fc2 = nn.Linear(256, 2)  # Two outputs for binary classification
+
+        # Initialize new layers with proper initialization
+        nn.init.kaiming_normal_(self.fc1.weight, mode="fan_out", nonlinearity="relu")
+        nn.init.constant_(self.fc1.bias, 0)
+        nn.init.xavier_normal_(self.fc2.weight)
+        nn.init.constant_(self.fc2.bias, 0)
 
         # Only the new head layers have requires_grad=True
         for param in self.fc1.parameters():
@@ -86,8 +97,9 @@ class WRN28Cifar10Trainer(nn.Module):
         Returns:
             logits: [B, 2] raw logits (use with CrossEntropyLoss, softmax applied automatically)
         """
-        # Step 1: Feature extraction (frozen backbone)
-        x = self.features(x)  # [B, C, H', W']
+        # Step 1: Feature extraction (frozen backbone, always in eval mode)
+        with torch.no_grad():
+            x = self.features(x)  # [B, C, H', W']
 
         # Step 2: Global Average Pooling (parameter-free)
         # Spatial dimensions (H', W') -> (1, 1)
@@ -95,7 +107,7 @@ class WRN28Cifar10Trainer(nn.Module):
         x = x.view(x.size(0), -1)  # [B, C]
 
         # Step 3: Bottleneck layer with ReLU
-        x = self.fc1(x)  # [B, 128]
+        x = self.fc1(x)  # [B, 256]
         x = self.relu(x)
 
         # Step 4: Dropout for regularization
