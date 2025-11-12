@@ -13,25 +13,25 @@ Execute the following commands on WSL.
 
 ```bash
 # Check compatibility for your system
-docker pull pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
+docker pull pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime
 
 # Build the docker image
-docker build -t kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 .
+docker build -t kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 .
 
 # Evaluate
 # Avoid Numba cache issue and Matplotlib config issue by setting environment variables
 # Mount external directory
-#-v /mnt/w/your/path:/work/path
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 stats.py
+# -v /mnt/w/your/path:/work/path
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 stats.py
 
 # Cleansing
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 cleansing.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 cleansing.py
 
 # Train
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 prepare_dataset.py
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 train.py
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 ddpm.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 prepare_dataset.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 train.py
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 ddpm.py
 
 # Test
-docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-1.7.1-cuda11.0-cudnn8 python3 -m pytest
+docker run --rm -it --gpus all --network=host -v $PWD:/work -w /work --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1 -e MPLCONFIGDIR=/tmp/mpl -e HOME=/tmp -e XDG_CACHE_HOME=/tmp kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 python3 -m pytest
 ```
