@@ -26,7 +26,7 @@ class InceptionV3FeatureTrainer(nn.Module):
             inception = inception_v3(pretrained=True, transform_input=False)
             torch.save(inception, _model_path)
         else:
-            inception = torch.load(_model_path)
+            inception = torch.load(_model_path, weights_only=False)
 
         # Extract feature extractor layers (same as InceptionV3FeatureExtractor)
         self.Conv2d_1a_3x3 = inception.Conv2d_1a_3x3
