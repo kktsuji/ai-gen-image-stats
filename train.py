@@ -141,6 +141,7 @@ def train(
     use_weighted_sampling=False,
     suffix="",
     model_type="inception_v3",
+    seed=0,
 ):
     EPOCHS = 10
     BATCH_SIZE = 16
@@ -150,6 +151,8 @@ def train(
     UNDER_SAMPLING = False
     # USE_CLASS_WEIGHTS = True
     # USE_WEIGHTED_SAMPLING = False
+    random.seed(seed)
+    torch.manual_seed(seed)
 
     # Set IMG_SIZE based on model type
     if model_type == "wrn28_cifar10":
@@ -160,12 +163,11 @@ def train(
         MODEL_NAME = "inception_v3"
 
     # SUFFIX = "_no-synth_imbalanced-val_seed0"
-    OUT_DIR = f"./out/train{suffix}_{MODEL_NAME}" + (
+    OUT_DIR = f"./out/train-manual-cleansing/train{suffix}_{MODEL_NAME}_seed{seed}" + (
         "-us"
         if UNDER_SAMPLING
         else ("_cw" if use_class_weights else ("-ws" if use_weighted_sampling else ""))
     )
-    SEED = 0
     ONLY_LAST_LAYER = False
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -175,9 +177,9 @@ def train(
 
     # Initialize model based on type
     if model_type == "wrn28_cifar10":
-        # ImageNet
-        mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]
+        # CIFAR-10
+        mean = [0.4914, 0.4822, 0.4465]
+        std = [0.2023, 0.1994, 0.2010]
         trainer = WRN28Cifar10Trainer(model_dir="./models", dropout_rate=0.3)
         if not ONLY_LAST_LAYER:
             # Make post_activ (last layer before fc) trainable
@@ -185,14 +187,43 @@ def train(
                 param.requires_grad = True
 
     else:
-        # CIFAR-10
-        mean = [0.4914, 0.4822, 0.4465]
-        std = [0.2023, 0.1994, 0.2010]
+        # ImageNet
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
         trainer = InceptionV3FeatureTrainer(
             model_dir="./models", num_classes=NUM_CLASSES
         )
         if not ONLY_LAST_LAYER:
-            # Make Mixed_7c (last layer before fc) trainable
+            for param in trainer.Conv2d_1a_3x3.parameters():
+                param.requires_grad = True
+            for param in trainer.Conv2d_2a_3x3.parameters():
+                param.requires_grad = True
+            for param in trainer.Conv2d_2b_3x3.parameters():
+                param.requires_grad = True
+            for param in trainer.Conv2d_3b_1x1.parameters():
+                param.requires_grad = True
+            for param in trainer.Conv2d_4a_3x3.parameters():
+                param.requires_grad = True
+            for param in trainer.Mixed_5b.parameters():
+                param.requires_grad = True
+            for param in trainer.Mixed_5c.parameters():
+                param.requires_grad = True
+            for param in trainer.Mixed_5d.parameters():
+                param.requires_grad = True
+            # for param in trainer.Mixed_6a.parameters():
+            #     param.requires_grad = True
+            # for param in trainer.Mixed_6b.parameters():
+            #     param.requires_grad = True
+            # for param in trainer.Mixed_6c.parameters():
+            #     param.requires_grad = True
+            # for param in trainer.Mixed_6d.parameters():
+            #     param.requires_grad = True
+            # for param in trainer.Mixed_6e.parameters():
+            #     param.requires_grad = True
+            for param in trainer.Mixed_7a.parameters():
+                param.requires_grad = True
+            for param in trainer.Mixed_7b.parameters():
+                param.requires_grad = True
             for param in trainer.Mixed_7c.parameters():
                 param.requires_grad = True
 
@@ -204,8 +235,10 @@ def train(
         print("  -", param.shape)
 
     # Data paths
-    train_data_path = f"./out/train{suffix}"
-    val_data_path = f"./out/val{suffix}"
+    train_data_path = f"./out/train-manual-cleansing/data/train{suffix}"
+    val_data_path = (
+        "./out/train-manual-cleansing/data/val_no-synth_imbalanced-val_seed0"
+    )
 
     train_transform = transforms.Compose(
         [
@@ -242,7 +275,6 @@ def train(
         BATCH_SIZE,
         under_sampling=UNDER_SAMPLING,
         min_samples_per_class=None,
-        seed=SEED,
         use_weighted_sampling=use_weighted_sampling,
     )
     print("  - Number of batches:", len(train_loader))
@@ -257,7 +289,6 @@ def train(
         BATCH_SIZE,
         under_sampling=False,
         min_samples_per_class=None,
-        seed=SEED,
     )
     print("  - Number of batches:", len(val_loader))
     print("  - Total samples:", len(val_loader.dataset))
@@ -315,6 +346,9 @@ def train(
     # Training loop
     print("\nStarting training...")
     training_start_time = time.time()
+
+    random.seed(seed)
+    torch.manual_seed(seed)
 
     for epoch in range(EPOCHS):
         # Training phase
@@ -893,6 +927,7 @@ def train(
 
 
 if __name__ == "__main__":
+    SEED = 0
     for cw, ws, sf in [
         (False, False, "_no-synth_imbalanced-val_seed0"),
         (True, False, "_no-synth_imbalanced-val_seed0"),
@@ -904,6 +939,7 @@ if __name__ == "__main__":
             use_weighted_sampling=ws,
             suffix=sf,
             model_type="inception_v3",
+            seed=SEED,
         )
         # Train with WRN28-CIFAR10
         train(
@@ -911,4 +947,5 @@ if __name__ == "__main__":
             use_weighted_sampling=ws,
             suffix=sf,
             model_type="wrn28_cifar10",
+            seed=SEED,
         )
