@@ -1198,6 +1198,8 @@ def train():
     val_losses = []
 
     for epoch in range(EPOCHS):
+        epoch_start_time = time.time()
+
         # Training phase
         model.train()
         train_loss = 0.0
@@ -1260,8 +1262,13 @@ def train():
             torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}_ema.pth")
             ema.restore()
 
+        epoch_end_time = time.time()
+        epoch_elapsed = epoch_end_time - epoch_start_time
+        epoch_minutes = int(epoch_elapsed // 60)
+        epoch_seconds = int(epoch_elapsed % 60)
+
         print(
-            f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+            f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Time: {epoch_minutes:02d}:{epoch_seconds:02d}"
         )
 
     print("\n=== Training Completed ===")
