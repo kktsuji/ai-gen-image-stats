@@ -1,7 +1,35 @@
+import argparse
 import os
 import random
 import shutil
 from glob import glob
+
+
+def split_dataset_into_train_val_by_ratio(
+    dir_path: str,
+    train_dir: str,
+    val_dir: str,
+    val_ratio: float,
+) -> tuple[int, int]:
+    # 1. Glob normal and abnormal images
+    images = glob(os.path.join(dir_path, "*.png"))
+
+    # 2. Shuffle them
+    random.shuffle(images)
+
+    # 3. Split them into train and val
+    val_count = int(len(images) * val_ratio)
+    val = images[:val_count]
+    train = images[val_count:]
+
+    # 4. Copy images to new folders
+    for img in train:
+        shutil.copy(img, train_dir)
+
+    for img in val:
+        shutil.copy(img, val_dir)
+
+    return len(train), len(val)
 
 
 def prepare_dataset():
@@ -144,17 +172,6 @@ def copy_synthesized_images():
     print(f"Copied {len(synth_images)} synthesized images to {DEST_DIR}")
 
 
-def split_dataset_into_train_val_by_ratio(data_dir, val_ratio):
-    all_images = glob(os.path.join(data_dir, "*.png"))
-    random.shuffle(all_images)
-
-    val_count = int(len(all_images) * val_ratio)
-    val_images = all_images[:val_count]
-    train_images = all_images[val_count:]
-
-    return train_images, val_images
-
-
 def split_dataset_into_train_val_by_count(data_dir, val_count):
     all_images = glob(os.path.join(data_dir, "*.png"))
     random.shuffle(all_images)
@@ -166,5 +183,81 @@ def split_dataset_into_train_val_by_count(data_dir, val_count):
 
 
 if __name__ == "__main__":
-    prepare_dataset()
-    copy_synthesized_images()
+    parser = argparse.ArgumentParser(
+        description="Split dataset into train and validation sets"
+    )
+    parser.add_argument(
+        "--normal-dir",
+        type=str,
+        required=True,
+        help="Path to directory containing normal images",
+    )
+    parser.add_argument(
+        "--abnormal-dir",
+        type=str,
+        required=True,
+        help="Path to directory containing abnormal images",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        required=True,
+        help="Random seed for reproducibility",
+    )
+    parser.add_argument(
+        "--split-ratio",
+        type=float,
+        required=True,
+        help="Validation split ratio (e.g., 0.2 for 20%% validation)",
+    )
+    parser.add_argument(
+        "--train-normal-dir",
+        type=str,
+        default="out/data/train/normal",
+        help="Path to the directory for training normal images (default: out/data/train/normal)",
+    )
+    parser.add_argument(
+        "--train-abnormal-dir",
+        type=str,
+        default="out/data/train/abnormal",
+        help="Path to the directory for training abnormal images (default: out/data/train/abnormal)",
+    )
+    parser.add_argument(
+        "--val-normal-dir",
+        type=str,
+        default="out/data/val/normal",
+        help="Path to the directory for validation normal images (default: out/data/val/normal)",
+    )
+    parser.add_argument(
+        "--val-abnormal-dir",
+        type=str,
+        default="out/data/val/abnormal",
+        help="Path to the directory for validation abnormal images (default: out/data/val/abnormal)",
+    )
+
+    args = parser.parse_args()
+    random.seed(args.seed)
+
+    train_normal, val_normal = split_dataset_into_train_val_by_ratio(
+        args.normal_dir, args.train_normal_dir, args.val_normal_dir, args.split_ratio
+    )
+    train_abnormal, val_abnormal = split_dataset_into_train_val_by_ratio(
+        args.abnormal_dir,
+        args.train_abnormal_dir,
+        args.val_abnormal_dir,
+        args.split_ratio,
+    )
+
+    print("\nDataset split completed:")
+    print(f"  - Seed: {args.seed}")
+    print(f"  - Split ratio: {args.split_ratio}")
+    print(f"  - Normal - Train: {train_normal}, Val: {val_normal}")
+    print(f"  - Abnormal - Train: {train_abnormal}, Val: {val_abnormal}")
+    print("  - Output directories:")
+    print(f"    - Train Normal:   {args.train_normal_dir}")
+    print(f"    - Train Abnormal: {args.train_abnormal_dir}")
+    print(f"    - Val Normal:     {args.val_normal_dir}")
+    print(f"    - Val Abnormal:   {args.val_abnormal_dir}")
+
+    # prepare_dataset()
+    # copy_synthesized_images()
