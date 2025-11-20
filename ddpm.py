@@ -1049,41 +1049,35 @@ def create_ddpm(
     return model.to(device)
 
 
-def train():
+def train(
+    epochs: int = 200,
+    batch_size: int = 8,
+    learning_rate: float = 0.00005,
+    num_classes: int = 2,
+    img_size: int = 40,
+    num_timesteps: int = 1000,
+    model_channels: int = 64,
+    beta_schedule: str = "cosine",
+    beta_start: float = 0.0001,
+    beta_end: float = 0.02,
+    class_dropout_prob: float = 0.3,
+    use_weighted_sampling: bool = True,
+    train_data_path: str = "./data/train",
+    val_data_path: str = "./data/val",
+    out_dir: str = "./out/ddpm",
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+):
     """Training function for DDPM."""
     import os
 
     from torch.utils.data import DataLoader, WeightedRandomSampler
     from torchvision import datasets, transforms
 
-    # Training configuration
-    EPOCHS = 200
-    BATCH_SIZE = 8
-    LEARNING_RATE = 0.00005
-    NUM_CLASSES = 2  # 0: Normal, 1: Abnormal
-    IMG_SIZE = 40
-    NUM_TIMESTEPS = 1000
-    MODEL_CHANNELS = 64
-    BETA_SCHEDULE = "cosine"  # Options: 'linear', 'cosine', 'quadratic', 'sigmoid'
-    BETA_START = 0.0001  # Starting beta value (for linear, quadratic, sigmoid)
-    BETA_END = 0.02  # Ending beta value (for linear, quadratic, sigmoid)
-    CLASS_DROPOUT_PROB = 0.3  # For classifier-free guidance
-    USE_WEIGHTED_SAMPLING = True  # Enable/disable weighted sampling for class imbalance
-    OUT_DIR = "./out/ddpm"
-
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-
     # Data paths
-    train_data_path = "./data/stats"
-    val_data_path = "./data/stats"
-
     # Data transforms (normalize to [-1, 1] for DDPM)
     train_transform = transforms.Compose(
         [
-            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.Resize((img_size, img_size)),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(15),
             transforms.ColorJitter(brightness=0.1, contrast=0.1),
@@ -1096,7 +1090,7 @@ def train():
 
     val_transform = transforms.Compose(
         [
-            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
@@ -1110,7 +1104,7 @@ def train():
     train_dataset = datasets.ImageFolder(train_data_path, transform=train_transform)
 
     # Calculate class distribution
-    class_counts = [0] * NUM_CLASSES
+    class_counts = [0] * num_classes
     for _, label in train_dataset.samples:
         class_counts[label] += 1
 
@@ -1122,7 +1116,7 @@ def train():
         )
 
     # Setup weighted sampling if enabled
-    if USE_WEIGHTED_SAMPLING:
+    if use_weighted_sampling:
         print(f"\n  - Weighted sampling: ENABLED")
         # Calculate weights for each class (inverse frequency)
         num_samples = sum(class_counts)
@@ -1138,18 +1132,18 @@ def train():
         )
 
         # Use sampler (don't use shuffle with sampler)
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
     else:
         print(f"\n  - Weighted sampling: DISABLED (using random sampling)")
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     print(f"  - Number of batches: {len(train_loader)}")
-    print(f"  - Batch size: {BATCH_SIZE}")
+    print(f"  - Batch size: {batch_size}")
     print(f"  - Classes: {train_dataset.classes}")
 
     # Validation dataset
     val_dataset = datasets.ImageFolder(val_data_path, transform=val_transform)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     print(f"\nValidation set: {len(val_dataset)} images")
     print(f"  - Number of batches: {len(val_loader)}")
     print(f"  - Classes: {val_dataset.classes}")
@@ -1157,24 +1151,24 @@ def train():
     if train_dataset.classes != val_dataset.classes:
         raise ValueError("Training and validation datasets have different classes.")
 
-    if len(train_dataset.classes) != NUM_CLASSES:
+    if len(train_dataset.classes) != num_classes:
         raise ValueError(
-            f"Expected {NUM_CLASSES} classes, but found {len(train_dataset.classes)}"
+            f"Expected {num_classes} classes, but found {len(train_dataset.classes)}"
         )
 
     # Create class-conditional DDPM model
     print("\n=== Creating Class-Conditional DDPM ===")
-    print(f"Using beta schedule: {BETA_SCHEDULE}")
+    print(f"Using beta schedule: {beta_schedule}")
     model = create_ddpm(
-        image_size=IMG_SIZE,
+        image_size=img_size,
         in_channels=3,
-        model_channels=MODEL_CHANNELS,
-        num_classes=NUM_CLASSES,
-        num_timesteps=NUM_TIMESTEPS,
-        beta_schedule=BETA_SCHEDULE,
-        beta_start=BETA_START,
-        beta_end=BETA_END,
-        class_dropout_prob=CLASS_DROPOUT_PROB,
+        model_channels=model_channels,
+        num_classes=num_classes,
+        num_timesteps=num_timesteps,
+        beta_schedule=beta_schedule,
+        beta_start=beta_start,
+        beta_end=beta_end,
+        class_dropout_prob=class_dropout_prob,
         device=device,
     )
 
@@ -1189,7 +1183,7 @@ def train():
     print(f"EMA decay rate: 0.9999")
 
     # Setup optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
     # Training loop
@@ -1197,7 +1191,7 @@ def train():
     train_losses = []
     val_losses = []
 
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         epoch_start_time = time.time()
 
         # Training phase
@@ -1225,7 +1219,7 @@ def train():
 
             if (batch_idx + 1) % 10 == 0:
                 print(
-                    f"  - Epoch [{epoch+1}/{EPOCHS}], Step [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}",
+                    f"  - Epoch [{epoch+1}/{epochs}], Step [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}",
                     end="\r",
                 )
 
@@ -1257,9 +1251,9 @@ def train():
 
         if (epoch + 1) % 20 == 0:
             # Save both regular and EMA weights
-            torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}.pth")
+            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}.pth")
             ema.apply_shadow()
-            torch.save(model.state_dict(), f"{OUT_DIR}/ddpm_epoch{epoch+1}_ema.pth")
+            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}_ema.pth")
             ema.restore()
 
         epoch_end_time = time.time()
@@ -1268,30 +1262,30 @@ def train():
         epoch_seconds = int(epoch_elapsed % 60)
 
         print(
-            f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Time: {epoch_minutes:02d}:{epoch_seconds:02d}"
+            f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Time: {epoch_minutes:02d}:{epoch_seconds:02d}"
         )
 
     print("\n=== Training Completed ===")
 
     # Save model (both regular and EMA weights)
-    model_path = f"{OUT_DIR}/ddpm_model.pth"
+    model_path = f"{out_dir}/ddpm_model.pth"
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
 
     # Save EMA model
     ema.apply_shadow()
-    ema_model_path = f"{OUT_DIR}/ddpm_model_ema.pth"
+    ema_model_path = f"{out_dir}/ddpm_model_ema.pth"
     torch.save(model.state_dict(), ema_model_path)
     print(f"EMA model saved to {ema_model_path}")
     ema.restore()
 
     # Save EMA state dict separately for resuming training
-    ema_state_path = f"{OUT_DIR}/ema_state.pth"
+    ema_state_path = f"{out_dir}/ema_state.pth"
     torch.save(ema.state_dict(), ema_state_path)
     print(f"EMA state saved to {ema_state_path}")
 
     # Save training history to CSV
-    history_path = f"{OUT_DIR}/training_history.csv"
+    history_path = f"{out_dir}/training_history.csv"
     with open(history_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "val_loss"])
@@ -1308,8 +1302,8 @@ def train():
 
     # Plot loss
     plt.subplot(1, 2, 1)
-    plt.plot(range(1, EPOCHS + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, EPOCHS + 1), val_losses, label="Val Loss", marker="o")
+    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Training and Validation Loss")
@@ -1318,8 +1312,8 @@ def train():
 
     # Plot loss (log scale) if useful
     plt.subplot(1, 2, 2)
-    plt.plot(range(1, EPOCHS + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, EPOCHS + 1), val_losses, label="Val Loss", marker="o")
+    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
     plt.xlabel("Epoch")
     plt.ylabel("Loss (log scale)")
     plt.title("Training and Validation Loss (Log Scale)")
@@ -1328,7 +1322,7 @@ def train():
     plt.grid(True)
 
     plt.tight_layout()
-    plot_path = f"{OUT_DIR}/training_curves.png"
+    plot_path = f"{out_dir}/training_curves.png"
     plt.savefig(plot_path, dpi=150)
     print(f"Training curves saved to {plot_path}")
     plt.close()
@@ -1469,15 +1463,109 @@ def generate(
 
 
 if __name__ == "__main__":
+    import argparse
     import time
 
-    TRAIN = False
-    GEN = True
+    parser = argparse.ArgumentParser(description="DDPM Training and Generation")
+    parser.add_argument("--train", action="store_true", help="Run training")
+    parser.add_argument("--gen", action="store_true", help="Run generation")
+    parser.add_argument(
+        "--epochs", type=int, default=200, help="Number of training epochs"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=8, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=0.00005, help="Learning rate"
+    )
+    parser.add_argument(
+        "--num-classes",
+        type=int,
+        default=2,
+        help="Number of classes (0: Normal, 1: Abnormal)",
+    )
+    parser.add_argument("--img-size", type=int, default=40, help="Image size (square)")
+    parser.add_argument(
+        "--num-timesteps", type=int, default=1000, help="Number of diffusion timesteps"
+    )
+    parser.add_argument(
+        "--model-channels",
+        type=int,
+        default=64,
+        help="Base number of channels in U-Net",
+    )
+    parser.add_argument(
+        "--beta-schedule",
+        type=str,
+        default="cosine",
+        choices=["linear", "cosine", "quadratic", "sigmoid"],
+        help="Type of noise schedule",
+    )
+    parser.add_argument(
+        "--beta-start", type=float, default=0.0001, help="Starting beta value"
+    )
+    parser.add_argument(
+        "--beta-end", type=float, default=0.02, help="Ending beta value"
+    )
+    parser.add_argument(
+        "--class-dropout-prob",
+        type=float,
+        default=0.3,
+        help="Class dropout probability for classifier-free guidance",
+    )
+    parser.add_argument(
+        "--use-weighted-sampling",
+        action="store_true",
+        default=True,
+        help="Enable weighted sampling for class imbalance",
+    )
+    parser.add_argument(
+        "--train-data-path", type=str, default="./data/stats", help="Training data path"
+    )
+    parser.add_argument(
+        "--val-data-path", type=str, default="./data/stats", help="Validation data path"
+    )
+    parser.add_argument(
+        "--out-dir", type=str, default="./out/ddpm", help="Output directory"
+    )
 
-    if TRAIN:
+    args = parser.parse_args()
+    # Print all arguments
+    print("\nDDPM Script Started")
+    print("\n=== Arguments ===")
+    for arg, value in vars(args).items():
+        print(f"{arg}: {value}")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # Check if output directory exists
+    if not os.path.exists(args.out_dir):
+        print(f"\nError: Output directory '{args.out_dir}' does not exist.")
+        print("Please create the directory first or specify a valid output directory.")
+        exit(1)
+
+    if args.train:
         start_time = time.time()
 
-        train()
+        train(
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            num_classes=args.num_classes,
+            img_size=args.img_size,
+            num_timesteps=args.num_timesteps,
+            model_channels=args.model_channels,
+            beta_schedule=args.beta_schedule,
+            beta_start=args.beta_start,
+            beta_end=args.beta_end,
+            class_dropout_prob=args.class_dropout_prob,
+            use_weighted_sampling=args.use_weighted_sampling,
+            train_data_path=args.train_data_path,
+            val_data_path=args.val_data_path,
+            out_dir=args.out_dir,
+            device=device,
+        )
 
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -1488,7 +1576,7 @@ if __name__ == "__main__":
             f"\nTotal execution time for training: {hours:02d}:{minutes:02d}:{seconds:02d}"
         )
 
-    if GEN:
+    if args.gen:
         import torch
 
         start_time = time.time()
