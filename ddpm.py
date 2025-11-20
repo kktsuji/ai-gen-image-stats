@@ -1049,285 +1049,6 @@ def create_ddpm(
     return model.to(device)
 
 
-def train(
-    epochs: int = 200,
-    batch_size: int = 8,
-    learning_rate: float = 0.00005,
-    num_classes: int = 2,
-    img_size: int = 40,
-    num_timesteps: int = 1000,
-    model_channels: int = 64,
-    beta_schedule: str = "cosine",
-    beta_start: float = 0.0001,
-    beta_end: float = 0.02,
-    class_dropout_prob: float = 0.3,
-    use_weighted_sampling: bool = True,
-    train_data_path: str = "./data/train",
-    val_data_path: str = "./data/val",
-    out_dir: str = "./out/ddpm",
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
-):
-    """Training function for DDPM."""
-    import os
-
-    from torch.utils.data import DataLoader, WeightedRandomSampler
-    from torchvision import datasets, transforms
-
-    # Data paths
-    # Data transforms (normalize to [-1, 1] for DDPM)
-    train_transform = transforms.Compose(
-        [
-            transforms.Resize((img_size, img_size)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(15),
-            transforms.ColorJitter(brightness=0.1, contrast=0.1),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
-            ),  # Scale to [-1, 1]
-        ]
-    )
-
-    val_transform = transforms.Compose(
-        [
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
-            ),  # Scale to [-1, 1]
-        ]
-    )
-
-    print("\nLoading datasets...")
-
-    # Training dataset
-    train_dataset = datasets.ImageFolder(train_data_path, transform=train_transform)
-
-    # Calculate class distribution
-    class_counts = [0] * num_classes
-    for _, label in train_dataset.samples:
-        class_counts[label] += 1
-
-    print(f"Training set: {len(train_dataset)} images")
-    print(f"  - Class distribution:")
-    for idx, (class_name, count) in enumerate(zip(train_dataset.classes, class_counts)):
-        print(
-            f"    - {class_name}: {count} images ({count/len(train_dataset)*100:.2f}%)"
-        )
-
-    # Setup weighted sampling if enabled
-    if use_weighted_sampling:
-        print(f"\n  - Weighted sampling: ENABLED")
-        # Calculate weights for each class (inverse frequency)
-        num_samples = sum(class_counts)
-        class_weights = [num_samples / count for count in class_counts]
-        print(f"    - Class weights: {[f'{w:.3f}' for w in class_weights]}")
-
-        # Assign weight to each sample based on its class
-        sample_weights = [class_weights[label] for _, label in train_dataset.samples]
-
-        # Create weighted sampler
-        sampler = WeightedRandomSampler(
-            weights=sample_weights, num_samples=len(train_dataset), replacement=True
-        )
-
-        # Use sampler (don't use shuffle with sampler)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
-    else:
-        print(f"\n  - Weighted sampling: DISABLED (using random sampling)")
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    print(f"  - Number of batches: {len(train_loader)}")
-    print(f"  - Batch size: {batch_size}")
-    print(f"  - Classes: {train_dataset.classes}")
-
-    # Validation dataset
-    val_dataset = datasets.ImageFolder(val_data_path, transform=val_transform)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    print(f"\nValidation set: {len(val_dataset)} images")
-    print(f"  - Number of batches: {len(val_loader)}")
-    print(f"  - Classes: {val_dataset.classes}")
-
-    if train_dataset.classes != val_dataset.classes:
-        raise ValueError("Training and validation datasets have different classes.")
-
-    if len(train_dataset.classes) != num_classes:
-        raise ValueError(
-            f"Expected {num_classes} classes, but found {len(train_dataset.classes)}"
-        )
-
-    # Create class-conditional DDPM model
-    print("\n=== Creating Class-Conditional DDPM ===")
-    print(f"Using beta schedule: {beta_schedule}")
-    model = create_ddpm(
-        image_size=img_size,
-        in_channels=3,
-        model_channels=model_channels,
-        num_classes=num_classes,
-        num_timesteps=num_timesteps,
-        beta_schedule=beta_schedule,
-        beta_start=beta_start,
-        beta_end=beta_end,
-        class_dropout_prob=class_dropout_prob,
-        device=device,
-    )
-
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-
-    # Setup EMA for improved sampling quality
-    print("\n=== Setting up EMA ===")
-    ema = EMA(model, decay=0.9999, device=device)
-    print(f"EMA decay rate: 0.9999")
-
-    # Setup optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss()
-
-    # Training loop
-    print("\n=== Starting Training ===")
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        epoch_start_time = time.time()
-
-        # Training phase
-        model.train()
-        train_loss = 0.0
-        train_batches = 0
-
-        for batch_idx, (images, labels) in enumerate(train_loader):
-            images = images.to(device)
-            labels = labels.to(device)
-
-            # Forward pass
-            loss = model.training_step(images, class_labels=labels, criterion=criterion)
-
-            # Backward pass
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            # Update EMA
-            ema.update()
-
-            train_loss += loss.item()
-            train_batches += 1
-
-            if (batch_idx + 1) % 10 == 0:
-                print(
-                    f"  - Epoch [{epoch+1}/{epochs}], Step [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}",
-                    end="\r",
-                )
-
-        avg_train_loss = train_loss / train_batches
-        train_losses.append(avg_train_loss)
-
-        # Validation phase (use EMA weights)
-        model.eval()
-        ema.apply_shadow()  # Switch to EMA weights for validation
-
-        val_loss = 0.0
-        val_batches = 0
-
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images = images.to(device)
-                labels = labels.to(device)
-
-                predicted_noise, noise = model(images, class_labels=labels)
-                loss = criterion(predicted_noise, noise)
-
-                val_loss += loss.item()
-                val_batches += 1
-
-        ema.restore()  # Restore training weights
-
-        avg_val_loss = val_loss / val_batches
-        val_losses.append(avg_val_loss)
-
-        if (epoch + 1) % 20 == 0:
-            # Save both regular and EMA weights
-            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}.pth")
-            ema.apply_shadow()
-            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}_ema.pth")
-            ema.restore()
-
-        epoch_end_time = time.time()
-        epoch_elapsed = epoch_end_time - epoch_start_time
-        epoch_minutes = int(epoch_elapsed // 60)
-        epoch_seconds = int(epoch_elapsed % 60)
-
-        print(
-            f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Time: {epoch_minutes:02d}:{epoch_seconds:02d}"
-        )
-
-    print("\n=== Training Completed ===")
-
-    # Save model (both regular and EMA weights)
-    model_path = f"{out_dir}/ddpm_model.pth"
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
-
-    # Save EMA model
-    ema.apply_shadow()
-    ema_model_path = f"{out_dir}/ddpm_model_ema.pth"
-    torch.save(model.state_dict(), ema_model_path)
-    print(f"EMA model saved to {ema_model_path}")
-    ema.restore()
-
-    # Save EMA state dict separately for resuming training
-    ema_state_path = f"{out_dir}/ema_state.pth"
-    torch.save(ema.state_dict(), ema_state_path)
-    print(f"EMA state saved to {ema_state_path}")
-
-    # Save training history to CSV
-    history_path = f"{out_dir}/training_history.csv"
-    with open(history_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["epoch", "train_loss", "val_loss"])
-        for epoch, (train_loss, val_loss) in enumerate(
-            zip(train_losses, val_losses), 1
-        ):
-            writer.writerow([epoch, train_loss, val_loss])
-    print(f"Training history saved to {history_path}")
-
-    # Plot training curves
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(12, 5))
-
-    # Plot loss
-    plt.subplot(1, 2, 1)
-    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training and Validation Loss")
-    plt.legend()
-    plt.grid(True)
-
-    # Plot loss (log scale) if useful
-    plt.subplot(1, 2, 2)
-    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss (log scale)")
-    plt.title("Training and Validation Loss (Log Scale)")
-    plt.yscale("log")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plot_path = f"{out_dir}/training_curves.png"
-    plt.savefig(plot_path, dpi=150)
-    print(f"Training curves saved to {plot_path}")
-    plt.close()
-
-
 def generate(
     model_path: str,
     num_samples: int = 16,
@@ -1466,33 +1187,40 @@ if __name__ == "__main__":
     import argparse
     import time
 
-    parser = argparse.ArgumentParser(description="DDPM Training and Generation")
-    parser.add_argument("--train", action="store_true", help="Run training")
-    parser.add_argument("--gen", action="store_true", help="Run generation")
+    parser = argparse.ArgumentParser(description="DDPM Generation")
     parser.add_argument(
-        "--epochs", type=int, default=200, help="Number of training epochs"
+        "--num-samples", type=int, default=1000, help="Number of samples to generate"
     )
     parser.add_argument(
-        "--batch-size", type=int, default=8, help="Batch size for training"
+        "--batch-size", type=int, default=500, help="Batch size for generation"
     )
     parser.add_argument(
-        "--learning-rate", type=float, default=0.00005, help="Learning rate"
+        "--class-label",
+        type=int,
+        default=1,
+        help="Class label to generate (0: Normal, 1: Abnormal)",
     )
+    parser.add_argument(
+        "--guidance-scale",
+        type=float,
+        default=2.0,
+        help="Classifier-free guidance scale",
+    )
+    parser.add_argument("--img-size", type=int, default=40, help="Image size (square)")
     parser.add_argument(
         "--num-classes",
         type=int,
         default=2,
-        help="Number of classes (0: Normal, 1: Abnormal)",
-    )
-    parser.add_argument("--img-size", type=int, default=40, help="Image size (square)")
-    parser.add_argument(
-        "--num-timesteps", type=int, default=1000, help="Number of diffusion timesteps"
+        help="Number of classes",
     )
     parser.add_argument(
         "--model-channels",
         type=int,
         default=64,
         help="Base number of channels in U-Net",
+    )
+    parser.add_argument(
+        "--num-timesteps", type=int, default=1000, help="Number of diffusion timesteps"
     )
     parser.add_argument(
         "--beta-schedule",
@@ -1502,36 +1230,28 @@ if __name__ == "__main__":
         help="Type of noise schedule",
     )
     parser.add_argument(
-        "--beta-start", type=float, default=0.0001, help="Starting beta value"
+        "--model-path",
+        type=str,
+        default="./out/ddpm/ddpm_model_ema.pth",
+        help="Path to model checkpoint",
     )
     parser.add_argument(
-        "--beta-end", type=float, default=0.02, help="Ending beta value"
+        "--out-dir",
+        type=str,
+        default="./out/ddpm/samples",
+        help="Output directory for generated images",
     )
     parser.add_argument(
-        "--class-dropout-prob",
-        type=float,
-        default=0.3,
-        help="Class dropout probability for classifier-free guidance",
-    )
-    parser.add_argument(
-        "--use-weighted-sampling",
+        "--use-dynamic-threshold",
         action="store_true",
         default=True,
-        help="Enable weighted sampling for class imbalance",
-    )
-    parser.add_argument(
-        "--train-data-path", type=str, default="./data/stats", help="Training data path"
-    )
-    parser.add_argument(
-        "--val-data-path", type=str, default="./data/stats", help="Validation data path"
-    )
-    parser.add_argument(
-        "--out-dir", type=str, default="./out/ddpm", help="Output directory"
+        help="Enable dynamic thresholding",
     )
 
     args = parser.parse_args()
+
     # Print all arguments
-    print("\nDDPM Script Started")
+    print("\nDDPM Generation Script Started")
     print("\n=== Arguments ===")
     for arg, value in vars(args).items():
         print(f"{arg}: {value}")
@@ -1539,85 +1259,40 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # Check if output directory exists
-    if not os.path.exists(args.out_dir):
-        print(f"\nError: Output directory '{args.out_dir}' does not exist.")
-        print("Please create the directory first or specify a valid output directory.")
-        exit(1)
+    start_time = time.time()
 
-    if args.train:
-        start_time = time.time()
+    os.makedirs(args.out_dir, exist_ok=True)
 
-        train(
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.learning_rate,
-            num_classes=args.num_classes,
-            img_size=args.img_size,
-            num_timesteps=args.num_timesteps,
-            model_channels=args.model_channels,
-            beta_schedule=args.beta_schedule,
-            beta_start=args.beta_start,
-            beta_end=args.beta_end,
-            class_dropout_prob=args.class_dropout_prob,
-            use_weighted_sampling=args.use_weighted_sampling,
-            train_data_path=args.train_data_path,
-            val_data_path=args.val_data_path,
-            out_dir=args.out_dir,
-            device=device,
-        )
+    generate(
+        model_path=args.model_path,
+        num_samples=args.num_samples,
+        batch_size=args.batch_size,
+        class_labels=[args.class_label] * args.num_samples,
+        guidance_scale=args.guidance_scale,
+        image_size=args.img_size,
+        num_classes=args.num_classes,
+        model_channels=args.model_channels,
+        num_timesteps=args.num_timesteps,
+        beta_schedule=args.beta_schedule,
+        out_dir=args.out_dir,
+        save_images=True,
+        use_dynamic_threshold=args.use_dynamic_threshold,
+        dynamic_threshold_percentile=0.995,
+        device=device,
+    )
 
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        hours = int(elapsed_time // 3600)
-        minutes = int((elapsed_time % 3600) // 60)
-        seconds = int(elapsed_time % 60)
-        print(
-            f"\nTotal execution time for training: {hours:02d}:{minutes:02d}:{seconds:02d}"
-        )
-
-    if args.gen:
-        import torch
-
-        start_time = time.time()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        num_samples = 1000
-        # Use EMA weights for generation (recommended for better quality)
-        model_path = "./out/ddpm/ddpm_model_ema.pth"  # Use EMA weights if available
-        # Fallback: model_path = "./out/ddpm/ddpm_model.pth"  # Regular weights
-        out_dir = "./out/ddpm/samples_class1"
-        os.makedirs(out_dir, exist_ok=True)
-
-        generate(
-            model_path=model_path,
-            num_samples=num_samples,
-            batch_size=500,
-            class_labels=[1] * num_samples,
-            guidance_scale=2.0,
-            image_size=40,
-            num_classes=2,
-            model_channels=64,
-            num_timesteps=1000,
-            beta_schedule="cosine",
-            out_dir=out_dir,
-            save_images=True,
-            use_dynamic_threshold=True,  # Enable dynamic thresholding
-            dynamic_threshold_percentile=0.995,  # 99.5th percentile
-            device=device,
-        )
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        hours = int(elapsed_time // 3600)
-        minutes = int((elapsed_time % 3600) // 60)
-        seconds = int(elapsed_time % 60)
-        print(
-            f"\nTotal execution time for generation: {hours:02d}:{minutes:02d}:{seconds:02d}"
-        )
-        time_per_sample = elapsed_time / num_samples
-        minutes_per_sample = int(time_per_sample // 60)
-        seconds_per_sample = time_per_sample % 60
-        print(f"Time per sample: {minutes_per_sample:02d}:{seconds_per_sample:05.2f}")
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+    print(
+        f"\nTotal execution time for generation: {hours:02d}:{minutes:02d}:{seconds:02d}"
+    )
+    time_per_sample = elapsed_time / args.num_samples
+    minutes_per_sample = int(time_per_sample // 60)
+    seconds_per_sample = time_per_sample % 60
+    print(f"Time per sample: {minutes_per_sample:02d}:{seconds_per_sample:05.2f}")
 
 
 # Example usage for SDEdit (image-to-image generation):

@@ -94,14 +94,13 @@ if __name__ == "__main__":
         os.makedirs(output_dir_ddpm, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
-            command = shlex.split(docker_cmd) + ["ddpm.py"]
+            command = shlex.split(docker_cmd) + ["ddpm_train.py"]
         else:
-            command = [sys.executable, "ddpm.py"]
+            command = [sys.executable, "ddpm_train.py"]
 
         # Add common arguments
         command.extend(
             [
-                "--train",
                 "--epochs",
                 EPOCHS,
                 "--batch-size",
