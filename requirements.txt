@@ -4,3 +4,4 @@ numba
 umap-learn
 matplotlib
 pytest
+dotenv
