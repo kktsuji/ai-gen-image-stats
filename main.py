@@ -12,6 +12,7 @@ if __name__ == "__main__":
         os.getenv("ENABLE_DATASET_PREPARATION", "false").lower() == "true"
     )
     ENABLE_DDPM_TRAINING = os.getenv("ENABLE_DDPM_TRAINING", "true").lower() == "true"
+    ENABLE_DDPM_SAMPLING = os.getenv("ENABLE_DDPM_SAMPLING", "true").lower() == "true"
 
     # Data configuration
     DATA_NORMAL_DIR_PATH = os.getenv("DATA_NORMAL_DIR_PATH")
@@ -70,23 +71,24 @@ if __name__ == "__main__":
         docker_cmd = docker_cmd.replace("$(id -u)", str(os.getuid()))
         docker_cmd = docker_cmd.replace("$(id -g)", str(os.getgid()))
 
+    NUM_CLASSES = os.getenv("NUM_CLASSES", "2")
+    IMG_SIZE = os.getenv("IMG_SIZE", "40")
+    NUM_TIMESTEPS = os.getenv("NUM_TIMESTEPS", "1000")
+    MODEL_CHANNELS = os.getenv("MODEL_CHANNELS", "64")
+    BETA_SCHEDULE = os.getenv("BETA_SCHEDULE", "cosine")
+    OUTPUT_DIR_DDPM = os.getenv("OUTPUT_DIR_DDPM", "ddpm")
+
     if ENABLE_DDPM_TRAINING:
         # DDPM training configuration
         EPOCHS = os.getenv("EPOCHS", "200")
         BATCH_SIZE = os.getenv("BATCH_SIZE", "8")
         LEARNING_RATE = os.getenv("LEARNING_RATE", "0.00005")
-        NUM_CLASSES = os.getenv("NUM_CLASSES", "2")
-        IMG_SIZE = os.getenv("IMG_SIZE", "40")
-        NUM_TIMESTEPS = os.getenv("NUM_TIMESTEPS", "1000")
-        MODEL_CHANNELS = os.getenv("MODEL_CHANNELS", "64")
-        BETA_SCHEDULE = os.getenv("BETA_SCHEDULE", "cosine")
         BETA_START = os.getenv("BETA_START", "0.0001")
         BETA_END = os.getenv("BETA_END", "0.02")
         CLASS_DROPOUT_PROB = os.getenv("CLASS_DROPOUT_PROB", "0.3")
         USE_WEIGHTED_SAMPLING = (
             os.getenv("USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
-        OUTPUT_DIR_DDPM = os.getenv("OUTPUT_DIR_DDPM", "ddpm")
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
         output_dir_ddpm = os.path.join(work_dir, OUTPUT_DIR_DDPM)
@@ -137,3 +139,60 @@ if __name__ == "__main__":
             command.append("--use-weighted-sampling")
 
         result = subprocess.run(command, check=True, shell=False)
+    else:
+        print("\nDDPM training is disabled. Skipping.")
+
+    if ENABLE_DDPM_SAMPLING:
+        # DDPM sampling configuration
+        NUM_SAMPLES = os.getenv("NUM_SAMPLES", "20")
+        GEN_BATCH_SIZE = os.getenv("GEN_BATCH_SIZE", "4")
+        CLASS_LABEL = os.getenv("CLASS_LABEL", "1")  # e.g., "0" or "1"
+        MODEL_NAME_DDPM = os.getenv("MODEL_NAME_DDPM", "ddpm_model_ema.pth")
+        GUIDANCE_SCALE = os.getenv("GUIDANCE_SCALE", "2.0")
+        USE_DYNAMIC_THRESHOLD = (
+            os.getenv("USE_DYNAMIC_THRESHOLD", "true").lower() == "true"
+        )
+        model_path = os.path.join(work_dir, OUTPUT_DIR_DDPM, MODEL_NAME_DDPM)
+        out_dir = os.path.join(work_dir, OUTPUT_DIR_DDPM, "samples")
+
+        os.makedirs(out_dir, exist_ok=True)
+
+        if DOCKER_COMMAND_PREFIX:
+            command = shlex.split(docker_cmd) + ["ddpm_gen.py"]
+        else:
+            command = [sys.executable, "ddpm_gen.py"]
+
+        # Add arguments
+        command.extend(
+            [
+                "--num-samples",
+                NUM_SAMPLES,
+                "--batch-size",
+                GEN_BATCH_SIZE,
+                "--class-label",
+                CLASS_LABEL,
+                "--guidance-scale",
+                GUIDANCE_SCALE,
+                "--img-size",
+                IMG_SIZE,
+                "--num-classes",
+                NUM_CLASSES,
+                "--model-channels",
+                MODEL_CHANNELS,
+                "--num-timesteps",
+                NUM_TIMESTEPS,
+                "--beta-schedule",
+                BETA_SCHEDULE,
+                "--model-path",
+                model_path,
+                "--out-dir",
+                out_dir,
+            ]
+        )
+
+        if USE_DYNAMIC_THRESHOLD:
+            command.append("--use-dynamic-threshold")
+
+        result = subprocess.run(command, check=True, shell=False)
+    else:
+        print("\nDDPM sampling is disabled. Skipping.")
