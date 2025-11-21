@@ -6,10 +6,12 @@ Training script for DDPM models with class-conditional generation support.
 import argparse
 import csv
 import os
+import random
 import time
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
@@ -34,9 +36,22 @@ def train(
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./out/ddpm",
+    seed: Optional[int] = None,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     """Training function for DDPM."""
+
+    # Set random seeds for reproducibility
+    if seed is not None:
+        print(f"\nSetting random seed: {seed}")
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
     # Data transforms (normalize to [-1, 1] for DDPM)
     train_transform = transforms.Compose(
@@ -351,6 +366,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out-dir", type=str, default="./out/ddpm", help="Output directory"
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility (default: None)",
+    )
 
     args = parser.parse_args()
 
@@ -387,6 +408,7 @@ if __name__ == "__main__":
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
+        seed=args.seed,
         device=device,
     )
 

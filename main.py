@@ -133,6 +133,8 @@ if __name__ == "__main__":
                 train_data_path,
                 "--val-data-path",
                 val_data_path,
+                "--seed",
+                SEED,
             ]
         )
 
@@ -190,6 +192,8 @@ if __name__ == "__main__":
                 model_path,
                 "--out-dir",
                 out_dir,
+                "--seed",
+                SEED,
             ]
         )
 

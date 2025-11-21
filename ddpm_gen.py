@@ -5,9 +5,11 @@ Generation script for DDPM models with class-conditional sampling support.
 
 import argparse
 import os
+import random
 import time
 from typing import Optional
 
+import numpy as np
 import torch
 from torchvision.utils import save_image
 
@@ -31,6 +33,7 @@ def generate(
     save_images: bool = True,
     use_dynamic_threshold: bool = True,
     dynamic_threshold_percentile: float = 0.995,
+    seed: Optional[int] = None,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> None:
     """Generate samples using a trained DDPM model.
@@ -54,8 +57,21 @@ def generate(
         save_images: Whether to save images to disk
         use_dynamic_threshold: Whether to apply dynamic thresholding (default: True)
         dynamic_threshold_percentile: Percentile for dynamic thresholding (default: 0.995)
+        seed: Random seed for reproducibility (default: None)
         device: Device to run generation on
     """
+    # Set random seeds for reproducibility
+    if seed is not None:
+        print(f"\nSetting random seed: {seed}")
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
     print(f"Loading model from {model_path}...")
 
     # Create model
@@ -205,6 +221,12 @@ if __name__ == "__main__":
         default=True,
         help="Enable dynamic thresholding",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility (default: None)",
+    )
 
     args = parser.parse_args()
 
@@ -244,6 +266,7 @@ if __name__ == "__main__":
         save_images=True,
         use_dynamic_threshold=args.use_dynamic_threshold,
         dynamic_threshold_percentile=0.995,
+        seed=args.seed,
         device=device,
     )
 
