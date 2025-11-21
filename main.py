@@ -31,6 +31,7 @@ if __name__ == "__main__":
     val_normal_dir = os.path.join(work_dir, "data/val", normal_dir_name)
     val_abnormal_dir = os.path.join(work_dir, "data/val", abnormal_dir_name)
 
+    print("\n" + "=" * 60)
     if ENABLE_DATASET_PREPARATION:
         result = subprocess.run(
             [
@@ -78,6 +79,7 @@ if __name__ == "__main__":
     BETA_SCHEDULE = os.getenv("BETA_SCHEDULE", "cosine")
     OUTPUT_DIR_DDPM = os.getenv("OUTPUT_DIR_DDPM", "ddpm")
 
+    print("\n" + "=" * 60)
     if ENABLE_DDPM_TRAINING:
         # DDPM training configuration
         EPOCHS = os.getenv("EPOCHS", "200")
@@ -142,6 +144,7 @@ if __name__ == "__main__":
     else:
         print("\nDDPM training is disabled. Skipping.")
 
+    print("\n" + "=" * 60)
     if ENABLE_DDPM_SAMPLING:
         # DDPM sampling configuration
         NUM_SAMPLES = os.getenv("NUM_SAMPLES", "20")
