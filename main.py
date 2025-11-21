@@ -72,28 +72,31 @@ if __name__ == "__main__":
         docker_cmd = docker_cmd.replace("$(id -u)", str(os.getuid()))
         docker_cmd = docker_cmd.replace("$(id -g)", str(os.getgid()))
 
-    NUM_CLASSES = os.getenv("NUM_CLASSES", "2")
-    IMG_SIZE = os.getenv("IMG_SIZE", "40")
-    NUM_TIMESTEPS = os.getenv("NUM_TIMESTEPS", "1000")
-    MODEL_CHANNELS = os.getenv("MODEL_CHANNELS", "64")
-    BETA_SCHEDULE = os.getenv("BETA_SCHEDULE", "cosine")
-    OUTPUT_DIR_DDPM = os.getenv("OUTPUT_DIR_DDPM", "ddpm")
+    # Common DDPM configuration
+    DDPM_NUM_CLASSES = os.getenv("DDPM_NUM_CLASSES", "2")
+    DDPM_IMG_SIZE = os.getenv("DDPM_IMG_SIZE", "40")
+    DDPM_NUM_TIMESTEPS = os.getenv("DDPM_NUM_TIMESTEPS", "1000")
+    DDPM_MODEL_CHANNELS = os.getenv("DDPM_MODEL_CHANNELS", "64")
+    DDPM_BETA_SCHEDULE = os.getenv("DDPM_BETA_SCHEDULE", "cosine")
+    DDPM_OUTPUT_DIR = os.getenv("DDPM_OUTPUT_DIR", "ddpm")
 
     print("\n" + "=" * 60)
     if ENABLE_DDPM_TRAINING:
         # DDPM training configuration
-        EPOCHS = os.getenv("EPOCHS", "200")
-        BATCH_SIZE = os.getenv("BATCH_SIZE", "8")
-        LEARNING_RATE = os.getenv("LEARNING_RATE", "0.00005")
-        BETA_START = os.getenv("BETA_START", "0.0001")
-        BETA_END = os.getenv("BETA_END", "0.02")
-        CLASS_DROPOUT_PROB = os.getenv("CLASS_DROPOUT_PROB", "0.3")
-        USE_WEIGHTED_SAMPLING = (
-            os.getenv("USE_WEIGHTED_SAMPLING", "true").lower() == "true"
+        DDPM_TRAIN_EPOCHS = os.getenv("DDPM_TRAIN_EPOCHS", "200")
+        DDPM_TRAIN_BATCH_SIZE = os.getenv("DDPM_TRAIN_BATCH_SIZE", "8")
+        DDPM_TRAIN_LEARNING_RATE = os.getenv("DDPM_TRAIN_LEARNING_RATE", "0.00005")
+        DDPM_TRAIN_BETA_START = os.getenv("DDPM_TRAIN_BETA_START", "0.0001")
+        DDPM_TRAIN_BETA_END = os.getenv("DDPM_TRAIN_BETA_END", "0.02")
+        DDPM_TRAIN_CLASS_DROPOUT_PROB = os.getenv(
+            "DDPM_TRAIN_CLASS_DROPOUT_PROB", "0.3"
+        )
+        DDPM_TRAIN_USE_WEIGHTED_SAMPLING = (
+            os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
-        output_dir_ddpm = os.path.join(work_dir, OUTPUT_DIR_DDPM)
+        output_dir_ddpm = os.path.join(work_dir, DDPM_OUTPUT_DIR)
 
         os.makedirs(output_dir_ddpm, exist_ok=True)
 
@@ -106,27 +109,27 @@ if __name__ == "__main__":
         command.extend(
             [
                 "--epochs",
-                EPOCHS,
+                DDPM_TRAIN_EPOCHS,
                 "--batch-size",
-                BATCH_SIZE,
+                DDPM_TRAIN_BATCH_SIZE,
                 "--learning-rate",
-                LEARNING_RATE,
+                DDPM_TRAIN_LEARNING_RATE,
                 "--num-classes",
-                NUM_CLASSES,
+                DDPM_NUM_CLASSES,
                 "--img-size",
-                IMG_SIZE,
+                DDPM_IMG_SIZE,
                 "--num-timesteps",
-                NUM_TIMESTEPS,
+                DDPM_NUM_TIMESTEPS,
                 "--model-channels",
-                MODEL_CHANNELS,
+                DDPM_MODEL_CHANNELS,
                 "--beta-schedule",
-                BETA_SCHEDULE,
+                DDPM_BETA_SCHEDULE,
                 "--beta-start",
-                BETA_START,
+                DDPM_TRAIN_BETA_START,
                 "--beta-end",
-                BETA_END,
+                DDPM_TRAIN_BETA_END,
                 "--class-dropout-prob",
-                CLASS_DROPOUT_PROB,
+                DDPM_TRAIN_CLASS_DROPOUT_PROB,
                 "--out-dir",
                 output_dir_ddpm,
                 "--train-data-path",
@@ -139,7 +142,7 @@ if __name__ == "__main__":
         )
 
         # Add optional flag
-        if USE_WEIGHTED_SAMPLING:
+        if DDPM_TRAIN_USE_WEIGHTED_SAMPLING:
             command.append("--use-weighted-sampling")
 
         result = subprocess.run(command, check=True, shell=False)
@@ -149,16 +152,18 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     if ENABLE_DDPM_SAMPLING:
         # DDPM sampling configuration
-        NUM_SAMPLES = os.getenv("NUM_SAMPLES", "20")
-        GEN_BATCH_SIZE = os.getenv("GEN_BATCH_SIZE", "4")
-        CLASS_LABEL = os.getenv("CLASS_LABEL", "1")  # e.g., "0" or "1"
-        MODEL_NAME_DDPM = os.getenv("MODEL_NAME_DDPM", "ddpm_model_ema.pth")
-        GUIDANCE_SCALE = os.getenv("GUIDANCE_SCALE", "2.0")
-        USE_DYNAMIC_THRESHOLD = (
-            os.getenv("USE_DYNAMIC_THRESHOLD", "true").lower() == "true"
+        DDPM_GEN_NUM_SAMPLES = os.getenv("DDPM_GEN_NUM_SAMPLES", "20")
+        DDPM_GEN_BATCH_SIZE = os.getenv("DDPM_GEN_BATCH_SIZE", "4")
+        DDPM_GEN_CLASS_LABEL = os.getenv(
+            "DDPM_GEN_CLASS_LABEL", "1"
+        )  # e.g., "0" or "1"
+        DDPM_GEN_MODEL_NAME = os.getenv("DDPM_GEN_MODEL_NAME", "ddpm_model_ema.pth")
+        DDPM_GEN_GUIDANCE_SCALE = os.getenv("DDPM_GEN_GUIDANCE_SCALE", "2.0")
+        DDPM_GEN_USE_DYNAMIC_THRESHOLD = (
+            os.getenv("DDPM_GEN_USE_DYNAMIC_THRESHOLD", "true").lower() == "true"
         )
-        model_path = os.path.join(work_dir, OUTPUT_DIR_DDPM, MODEL_NAME_DDPM)
-        out_dir = os.path.join(work_dir, OUTPUT_DIR_DDPM, "samples")
+        model_path = os.path.join(work_dir, DDPM_OUTPUT_DIR, DDPM_GEN_MODEL_NAME)
+        out_dir = os.path.join(work_dir, DDPM_OUTPUT_DIR, "samples")
 
         os.makedirs(out_dir, exist_ok=True)
 
@@ -171,23 +176,23 @@ if __name__ == "__main__":
         command.extend(
             [
                 "--num-samples",
-                NUM_SAMPLES,
+                DDPM_GEN_NUM_SAMPLES,
                 "--batch-size",
-                GEN_BATCH_SIZE,
+                DDPM_GEN_BATCH_SIZE,
                 "--class-label",
-                CLASS_LABEL,
+                DDPM_GEN_CLASS_LABEL,
                 "--guidance-scale",
-                GUIDANCE_SCALE,
+                DDPM_GEN_GUIDANCE_SCALE,
                 "--img-size",
-                IMG_SIZE,
+                DDPM_IMG_SIZE,
                 "--num-classes",
-                NUM_CLASSES,
+                DDPM_NUM_CLASSES,
                 "--model-channels",
-                MODEL_CHANNELS,
+                DDPM_MODEL_CHANNELS,
                 "--num-timesteps",
-                NUM_TIMESTEPS,
+                DDPM_NUM_TIMESTEPS,
                 "--beta-schedule",
-                BETA_SCHEDULE,
+                DDPM_BETA_SCHEDULE,
                 "--model-path",
                 model_path,
                 "--out-dir",
@@ -197,7 +202,7 @@ if __name__ == "__main__":
             ]
         )
 
-        if USE_DYNAMIC_THRESHOLD:
+        if DDPM_GEN_USE_DYNAMIC_THRESHOLD:
             command.append("--use-dynamic-threshold")
 
         result = subprocess.run(command, check=True, shell=False)
