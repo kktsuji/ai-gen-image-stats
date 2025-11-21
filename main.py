@@ -6,7 +6,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def post_requests(text, webhook_url):
+    import json
+
+    import requests
+
+    message = {"text": text}
+    requests.post(webhook_url, data=json.dumps(message), timeout=5.0)
+
+
 if __name__ == "__main__":
+    # General settings
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
     # Enable or disable specific functionalities
     ENABLE_DATASET_PREPARATION = (
         os.getenv("ENABLE_DATASET_PREPARATION", "false").lower() == "true"
@@ -208,3 +221,9 @@ if __name__ == "__main__":
         result = subprocess.run(command, check=True, shell=False)
     else:
         print("\nDDPM sampling is disabled. Skipping.")
+        print("\nDDPM sampling is disabled. Skipping.")
+
+    if WEBHOOK_URL:
+        post_requests(
+            "AI-generated Image Statistics pipeline has completed.", WEBHOOK_URL
+        )
