@@ -1,3 +1,4 @@
+import argparse
 import csv
 import os
 import random
@@ -142,15 +143,13 @@ def train(
     suffix="",
     model_type="inception_v3",
     seed=0,
+    epochs=10,
+    batch_size=16,
+    learning_rate=0.00005,
+    num_classes=2,
+    img_size_original=40,
+    under_sampling=False,
 ):
-    EPOCHS = 10
-    BATCH_SIZE = 16
-    LEARNING_RATE = 0.00005
-    NUM_CLASSES = 2
-    IMG_SIZE_ORIGINAL = 40
-    UNDER_SAMPLING = False
-    # USE_CLASS_WEIGHTS = True
-    # USE_WEIGHTED_SAMPLING = False
     random.seed(seed)
     torch.manual_seed(seed)
 
@@ -165,7 +164,7 @@ def train(
     # SUFFIX = "_no-synth_imbalanced-val_seed0"
     OUT_DIR = f"./out/train-manual-cleansing/train{suffix}_{MODEL_NAME}_seed{seed}" + (
         "-us"
-        if UNDER_SAMPLING
+        if under_sampling
         else ("_cw" if use_class_weights else ("-ws" if use_weighted_sampling else ""))
     )
     ONLY_LAST_LAYER = False
@@ -191,7 +190,7 @@ def train(
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         trainer = InceptionV3FeatureTrainer(
-            model_dir="./models", num_classes=NUM_CLASSES
+            model_dir="./models", num_classes=num_classes
         )
         if not ONLY_LAST_LAYER:
             for param in trainer.Conv2d_1a_3x3.parameters():
@@ -243,7 +242,7 @@ def train(
     train_transform = transforms.Compose(
         [
             transforms.Resize(
-                (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
+                (img_size_original, img_size_original)
             ),  # make the spacial frequency equal
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
             transforms.RandomHorizontalFlip(p=0.5),
@@ -257,7 +256,7 @@ def train(
     val_transform = transforms.Compose(
         [
             transforms.Resize(
-                (IMG_SIZE_ORIGINAL, IMG_SIZE_ORIGINAL)
+                (img_size_original, img_size_original)
             ),  # make the spacial frequency equal
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
             transforms.ToTensor(),
@@ -272,13 +271,13 @@ def train(
     train_loader = _make_dataloader(
         train_data_path,
         train_transform,
-        BATCH_SIZE,
-        under_sampling=UNDER_SAMPLING,
+        batch_size,
+        under_sampling=under_sampling,
         min_samples_per_class=None,
         use_weighted_sampling=use_weighted_sampling,
     )
     print("  - Number of batches:", len(train_loader))
-    print("  - Batch size:", BATCH_SIZE)
+    print("  - Batch size:", batch_size)
     print("  - Unique classes:", train_loader.dataset.classes)
 
     # Validation dataloader (no under-sampling for validation)
@@ -286,7 +285,7 @@ def train(
     val_loader = _make_dataloader(
         val_data_path,
         val_transform,
-        BATCH_SIZE,
+        batch_size,
         under_sampling=False,
         min_samples_per_class=None,
     )
@@ -296,8 +295,8 @@ def train(
 
     if train_loader.dataset.classes != val_loader.dataset.classes:
         raise ValueError("Train and validation datasets have different classes!")
-    if len(train_loader.dataset.classes) != NUM_CLASSES:
-        raise ValueError("Number of classes does not match NUM_CLASSES!")
+    if len(train_loader.dataset.classes) != num_classes:
+        raise ValueError("Number of classes does not match num_classes!")
 
     unique_classes = train_loader.dataset.classes
 
@@ -305,7 +304,7 @@ def train(
     class_weights = None
     if use_class_weights:
         # Count samples per class in training set
-        class_sample_count = torch.zeros(NUM_CLASSES)
+        class_sample_count = torch.zeros(num_classes)
         for _, label in train_loader.dataset.samples:
             class_sample_count[label] += 1
 
@@ -315,15 +314,15 @@ def train(
         total_samples = class_sample_count.sum()
         class_weights = total_samples / class_sample_count
 
-        # Normalize weights so they sum to NUM_CLASSES
-        class_weights = class_weights / class_weights.sum() * NUM_CLASSES
+        # Normalize weights so they sum to num_classes
+        class_weights = class_weights / class_weights.sum() * num_classes
         class_weights = class_weights.to(device)
 
         print(f"\nClass sample distribution: {class_sample_count.tolist()}")
         print(f"Class weights applied: {class_weights.tolist()}")
 
     # Setup optimizer to only train the final layer
-    optimizer = torch.optim.Adam(trainer.get_trainable_parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(trainer.get_trainable_parameters(), lr=learning_rate)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     train_loss_list = []
@@ -350,7 +349,7 @@ def train(
     random.seed(seed)
     torch.manual_seed(seed)
 
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         # Training phase
         trainer.train()
         running_loss = 0.0
@@ -716,7 +715,7 @@ def train(
     # Plot training and validation loss
     print("\nGenerating loss plot...")
     plt.figure(figsize=(12, 6))
-    epochs_range = range(1, EPOCHS + 1)
+    epochs_range = range(1, epochs + 1)
 
     plt.subplot(1, 2, 1)
     plt.plot(epochs_range, train_loss_list, "b-", label="Training Loss", linewidth=2)
@@ -873,7 +872,7 @@ def train(
     csv_path = f"{OUT_DIR}/training_results.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["epoch"] + list(range(1, EPOCHS + 1)))
+        writer.writerow(["epoch"] + list(range(1, epochs + 1)))
         writer.writerow(["train_loss"] + [f"{loss:.4f}" for loss in train_loss_list])
         writer.writerow(["train_accuracy"] + [f"{acc:.2f}" for acc in train_acc_list])
         writer.writerow(
@@ -927,25 +926,62 @@ def train(
 
 
 if __name__ == "__main__":
-    SEED = 0
-    for cw, ws, sf in [
-        (False, False, "_no-synth_imbalanced-val_seed0"),
-        (True, False, "_no-synth_imbalanced-val_seed0"),
-        (False, True, "_no-synth_imbalanced-val_seed0"),
-    ]:
-        # Train with InceptionV3
-        train(
-            use_class_weights=cw,
-            use_weighted_sampling=ws,
-            suffix=sf,
-            model_type="inception_v3",
-            seed=SEED,
-        )
-        # Train with WRN28-CIFAR10
-        train(
-            use_class_weights=cw,
-            use_weighted_sampling=ws,
-            suffix=sf,
-            model_type="wrn28_cifar10",
-            seed=SEED,
-        )
+    parser = argparse.ArgumentParser(description="Train image classification models")
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of training epochs"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=16, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=0.00005, help="Learning rate"
+    )
+    parser.add_argument("--num-classes", type=int, default=2, help="Number of classes")
+    parser.add_argument(
+        "--img-size-original",
+        type=int,
+        default=40,
+        help="Original image size for resizing",
+    )
+    parser.add_argument(
+        "--under-sampling", action="store_true", help="Enable under-sampling"
+    )
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default="all",
+        choices=["inception_v3", "wrn28_cifar10", "all"],
+        help="Model type to train",
+    )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default="_no-synth_imbalanced-val_seed0",
+        help="Suffix for output directory",
+    )
+    parser.add_argument(
+        "--use-class-weights",
+        action="store_true",
+        help="Use class weights in loss function",
+    )
+    parser.add_argument(
+        "--use-weighted-sampling",
+        action="store_true",
+        help="Use weighted sampling in data loader",
+    )
+    args = parser.parse_args()
+
+    train(
+        use_class_weights=args.use_class_weights,
+        use_weighted_sampling=args.use_weighted_sampling,
+        suffix=args.suffix,
+        model_type=args.model_type,
+        seed=args.seed,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        num_classes=args.num_classes,
+        img_size_original=args.img_size_original,
+        under_sampling=args.under_sampling,
+    )
