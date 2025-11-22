@@ -138,20 +138,32 @@ def _make_dataloader(
 
 
 def train(
-    use_class_weights=False,
-    use_weighted_sampling=False,
-    suffix="",
-    model_type="inception_v3",
-    seed=0,
-    epochs=10,
-    batch_size=16,
-    learning_rate=0.00005,
-    num_classes=2,
-    img_size_original=40,
-    under_sampling=False,
+    use_class_weights: bool = False,
+    use_weighted_sampling: bool = False,
+    model_type: str = "inception_v3",
+    seed: int = 0,
+    epochs: int = 10,
+    batch_size: int = 16,
+    learning_rate: float = 0.00005,
+    num_classes: int = 2,
+    img_size_original: int = 40,
+    under_sampling: bool = False,
+    train_data_path: str = "./data/train",
+    val_data_path: str = "./data/val",
+    out_dir: str = "./output",
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
-    random.seed(seed)
-    torch.manual_seed(seed)
+    # Set random seeds for reproducibility
+    if seed is not None:
+        print(f"\nSetting random seed: {seed}")
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
     # Set IMG_SIZE based on model type
     if model_type == "wrn28_cifar10":
@@ -161,16 +173,8 @@ def train(
         IMG_SIZE = 299  # InceptionV3 input size
         MODEL_NAME = "inception_v3"
 
-    # SUFFIX = "_no-synth_imbalanced-val_seed0"
-    OUT_DIR = f"./out/train-manual-cleansing/train{suffix}_{MODEL_NAME}_seed{seed}" + (
-        "-us"
-        if under_sampling
-        else ("_cw" if use_class_weights else ("-ws" if use_weighted_sampling else ""))
-    )
     ONLY_LAST_LAYER = False
-    os.makedirs(OUT_DIR, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     print(f"Using model: {model_type}")
 
@@ -232,12 +236,6 @@ def train(
     print("\nTrainable parameters:")
     for param in trainer.get_trainable_parameters():
         print("  -", param.shape)
-
-    # Data paths
-    train_data_path = f"./out/train-manual-cleansing/data/train{suffix}"
-    val_data_path = (
-        "./out/train-manual-cleansing/data/val_no-synth_imbalanced-val_seed0"
-    )
 
     train_transform = transforms.Compose(
         [
@@ -344,10 +342,6 @@ def train(
 
     # Training loop
     print("\nStarting training...")
-    training_start_time = time.time()
-
-    random.seed(seed)
-    torch.manual_seed(seed)
 
     for epoch in range(epochs):
         # Training phase
@@ -540,12 +534,6 @@ def train(
         val_pr_auc_list.append(val_pr_auc)
         val_roc_auc_list.append(val_roc_auc)
 
-    total_training_time = time.time() - training_start_time
-    hours = int(total_training_time // 3600)
-    minutes = int((total_training_time % 3600) // 60)
-    seconds = int(total_training_time % 60)
-    print(f"\nTraining completed! Total time: {hours:02d}:{minutes:02d}:{seconds:02d}")
-
     # Calculate precision-recall curve for the last epoch
     print("\nCalculating precision-recall curve for final epoch...")
     precision_train, recall_train, thresholds_train = precision_recall_curve(
@@ -575,7 +563,7 @@ def train(
     )
 
     # Save precision-recall curve data
-    pr_curve_train_path = f"{OUT_DIR}/pr_curve_train.csv"
+    pr_curve_train_path = f"{out_dir}/pr_curve_train.csv"
     with open(pr_curve_train_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["precision", "recall", "threshold"])
@@ -591,7 +579,7 @@ def train(
             )
     print(f"\nTraining PR curve saved to {pr_curve_train_path}")
 
-    pr_curve_val_path = f"{OUT_DIR}/pr_curve_val.csv"
+    pr_curve_val_path = f"{out_dir}/pr_curve_val.csv"
     with open(pr_curve_val_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["precision", "recall", "threshold"])
@@ -607,7 +595,7 @@ def train(
     print(f"Validation PR curve saved to {pr_curve_val_path}")
 
     # Save ROC curve data
-    roc_curve_train_path = f"{OUT_DIR}/roc_curve_train.csv"
+    roc_curve_train_path = f"{out_dir}/roc_curve_train.csv"
     with open(roc_curve_train_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["fpr", "tpr", "threshold"])
@@ -624,7 +612,7 @@ def train(
             )
     print(f"Training ROC curve saved to {roc_curve_train_path}")
 
-    roc_curve_val_path = f"{OUT_DIR}/roc_curve_val.csv"
+    roc_curve_val_path = f"{out_dir}/roc_curve_val.csv"
     with open(roc_curve_val_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["fpr", "tpr", "threshold"])
@@ -669,7 +657,7 @@ def train(
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
 
-    pr_curve_plot_path = f"{OUT_DIR}/pr_curve.png"
+    pr_curve_plot_path = f"{out_dir}/pr_curve.png"
     plt.savefig(pr_curve_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"PR curve plot saved to {pr_curve_plot_path}")
@@ -707,7 +695,7 @@ def train(
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
 
-    roc_curve_plot_path = f"{OUT_DIR}/roc_curve.png"
+    roc_curve_plot_path = f"{out_dir}/roc_curve.png"
     plt.savefig(roc_curve_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"ROC curve plot saved to {roc_curve_plot_path}")
@@ -762,7 +750,7 @@ def train(
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    loss_plot_path = f"{OUT_DIR}/loss_plot.png"
+    loss_plot_path = f"{out_dir}/loss_plot.png"
     plt.savefig(loss_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Loss plot saved to {loss_plot_path}")
@@ -818,7 +806,7 @@ def train(
     plt.ylim([0, 100])
 
     plt.tight_layout()
-    accuracy_plot_path = f"{OUT_DIR}/accuracy_plot.png"
+    accuracy_plot_path = f"{out_dir}/accuracy_plot.png"
     plt.savefig(accuracy_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Accuracy plot saved to {accuracy_plot_path}")
@@ -839,7 +827,7 @@ def train(
     plt.grid(True, alpha=0.3)
     plt.ylim([0, 1.05])
 
-    pr_auc_plot_path = f"{OUT_DIR}/pr_auc_plot.png"
+    pr_auc_plot_path = f"{out_dir}/pr_auc_plot.png"
     plt.savefig(pr_auc_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"PR-AUC plot saved to {pr_auc_plot_path}")
@@ -860,16 +848,16 @@ def train(
     plt.grid(True, alpha=0.3)
     plt.ylim([0, 1.05])
 
-    roc_auc_plot_path = f"{OUT_DIR}/roc_auc_plot.png"
+    roc_auc_plot_path = f"{out_dir}/roc_auc_plot.png"
     plt.savefig(roc_auc_plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"ROC-AUC plot saved to {roc_auc_plot_path}")
 
-    save_path = f"{OUT_DIR}/{MODEL_NAME}_trained.pth"
+    save_path = f"{out_dir}/{MODEL_NAME}_trained.pth"
     torch.save(trainer.state_dict(), save_path)
     print(f"Model saved to {save_path}")
 
-    csv_path = f"{OUT_DIR}/training_results.csv"
+    csv_path = f"{out_dir}/training_results.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch"] + list(range(1, epochs + 1)))
@@ -955,12 +943,6 @@ if __name__ == "__main__":
         help="Model type to train",
     )
     parser.add_argument(
-        "--suffix",
-        type=str,
-        default="_no-synth_imbalanced-val_seed0",
-        help="Suffix for output directory",
-    )
-    parser.add_argument(
         "--use-class-weights",
         action="store_true",
         help="Use class weights in loss function",
@@ -970,12 +952,46 @@ if __name__ == "__main__":
         action="store_true",
         help="Use weighted sampling in data loader",
     )
+    parser.add_argument(
+        "--train-data-path",
+        type=str,
+        default="./data/train",
+        help="Path to training data directory",
+    )
+    parser.add_argument(
+        "--val-data-path",
+        type=str,
+        default="./data/val",
+        help="Path to validation data directory",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=str,
+        default="./output",
+        help="Output directory for results",
+    )
     args = parser.parse_args()
+
+    # Print all arguments
+    print("\nDDPM Training Script Started")
+    print("\n=== Arguments ===")
+    for arg, value in vars(args).items():
+        print(f"{arg}: {value}")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # Check if output directory exists
+    if not os.path.exists(args.out_dir):
+        print(f"\nError: Output directory '{args.out_dir}' does not exist.")
+        print("Please create the directory first or specify a valid output directory.")
+        exit(1)
+
+    start_time = time.time()
 
     train(
         use_class_weights=args.use_class_weights,
         use_weighted_sampling=args.use_weighted_sampling,
-        suffix=args.suffix,
         model_type=args.model_type,
         seed=args.seed,
         epochs=args.epochs,
@@ -984,4 +1000,17 @@ if __name__ == "__main__":
         num_classes=args.num_classes,
         img_size_original=args.img_size_original,
         under_sampling=args.under_sampling,
+        train_data_path=args.train_data_path,
+        val_data_path=args.val_data_path,
+        out_dir=args.out_dir,
+        device=device,
+    )
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+    print(
+        f"\nTotal execution time for training: {hours:02d}:{minutes:02d}:{seconds:02d}"
     )
