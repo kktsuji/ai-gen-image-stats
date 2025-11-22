@@ -5,6 +5,7 @@ import random
 import time
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from sklearn.metrics import (
     auc,
@@ -860,55 +861,52 @@ def train(
     csv_path = f"{out_dir}/training_results.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["epoch"] + list(range(1, epochs + 1)))
-        writer.writerow(["train_loss"] + [f"{loss:.4f}" for loss in train_loss_list])
-        writer.writerow(["train_accuracy"] + [f"{acc:.2f}" for acc in train_acc_list])
+        # Write header
         writer.writerow(
-            [f"train_{unique_classes[0]}_accuracy"]
-            + [f"{acc:.2f}" for acc in train_class0_acc_list]
+            [
+                "epoch",
+                "train_loss",
+                "train_accuracy",
+                f"train_{unique_classes[0]}_accuracy",
+                f"train_{unique_classes[1]}_accuracy",
+                f"train_{unique_classes[0]}_loss",
+                f"train_{unique_classes[1]}_loss",
+                "train_pr_auc",
+                "train_roc_auc",
+                "val_loss",
+                "val_accuracy",
+                f"val_{unique_classes[0]}_accuracy",
+                f"val_{unique_classes[1]}_accuracy",
+                f"val_{unique_classes[0]}_loss",
+                f"val_{unique_classes[1]}_loss",
+                "val_pr_auc",
+                "val_roc_auc",
+            ]
         )
-        writer.writerow(
-            [f"train_{unique_classes[1]}_accuracy"]
-            + [f"{acc:.2f}" for acc in train_class1_acc_list]
-        )
-        writer.writerow(
-            [f"train_{unique_classes[0]}_loss"]
-            + [f"{loss:.4f}" for loss in train_class0_loss_list]
-        )
-        writer.writerow(
-            [f"train_{unique_classes[1]}_loss"]
-            + [f"{loss:.4f}" for loss in train_class1_loss_list]
-        )
-        writer.writerow(
-            ["train_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in train_pr_auc_list]
-        )
-        writer.writerow(
-            ["train_roc_auc"] + [f"{roc_auc:.4f}" for roc_auc in train_roc_auc_list]
-        )
-        writer.writerow(["val_loss"] + [f"{loss:.4f}" for loss in val_loss_list])
-        writer.writerow(["val_accuracy"] + [f"{acc:.2f}" for acc in val_acc_list])
-        writer.writerow(
-            [f"val_{unique_classes[0]}_accuracy"]
-            + [f"{acc:.2f}" for acc in val_class0_acc_list]
-        )
-        writer.writerow(
-            [f"val_{unique_classes[1]}_accuracy"]
-            + [f"{acc:.2f}" for acc in val_class1_acc_list]
-        )
-        writer.writerow(
-            [f"val_{unique_classes[0]}_loss"]
-            + [f"{loss:.4f}" for loss in val_class0_loss_list]
-        )
-        writer.writerow(
-            [f"val_{unique_classes[1]}_loss"]
-            + [f"{loss:.4f}" for loss in val_class1_loss_list]
-        )
-        writer.writerow(
-            ["val_pr_auc"] + [f"{pr_auc:.4f}" for pr_auc in val_pr_auc_list]
-        )
-        writer.writerow(
-            ["val_roc_auc"] + [f"{roc_auc:.4f}" for roc_auc in val_roc_auc_list]
-        )
+
+        # Write data rows (one row per epoch)
+        for i in range(epochs):
+            writer.writerow(
+                [
+                    i + 1,
+                    f"{train_loss_list[i]:.4f}",
+                    f"{train_acc_list[i]:.2f}",
+                    f"{train_class0_acc_list[i]:.2f}",
+                    f"{train_class1_acc_list[i]:.2f}",
+                    f"{train_class0_loss_list[i]:.4f}",
+                    f"{train_class1_loss_list[i]:.4f}",
+                    f"{train_pr_auc_list[i]:.4f}",
+                    f"{train_roc_auc_list[i]:.4f}",
+                    f"{val_loss_list[i]:.4f}",
+                    f"{val_acc_list[i]:.2f}",
+                    f"{val_class0_acc_list[i]:.2f}",
+                    f"{val_class1_acc_list[i]:.2f}",
+                    f"{val_class0_loss_list[i]:.4f}",
+                    f"{val_class1_loss_list[i]:.4f}",
+                    f"{val_pr_auc_list[i]:.4f}",
+                    f"{val_roc_auc_list[i]:.4f}",
+                ]
+            )
 
     print(f"Training results saved to {csv_path}")
 
