@@ -26,6 +26,7 @@ if __name__ == "__main__":
     )
     ENABLE_DDPM_TRAINING = os.getenv("ENABLE_DDPM_TRAINING", "true").lower() == "true"
     ENABLE_DDPM_SAMPLING = os.getenv("ENABLE_DDPM_SAMPLING", "true").lower() == "true"
+    ENABLE_TRAINING = os.getenv("ENABLE_TRAINING", "true").lower() == "true"
 
     # Data configuration
     DATA_NORMAL_DIR_PATH = os.getenv("DATA_NORMAL_DIR_PATH")
@@ -178,6 +179,10 @@ if __name__ == "__main__":
         model_path = os.path.join(work_dir, DDPM_OUTPUT_DIR, DDPM_GEN_MODEL_NAME)
         out_dir = os.path.join(work_dir, DDPM_OUTPUT_DIR, "samples")
 
+        # Update train and val paths to include generated samples
+        train_abnormal_dir_with_gen = os.path.join(out_dir, "train", abnormal_dir_name)
+        val_abnormal_dir_with_gen = os.path.join(out_dir, "val", abnormal_dir_name)
+
         os.makedirs(out_dir, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
@@ -221,6 +226,82 @@ if __name__ == "__main__":
         result = subprocess.run(command, check=True, shell=False)
     else:
         print("\nDDPM sampling is disabled. Skipping.")
+        train_abnormal_dir_with_gen = train_abnormal_dir
+        val_abnormal_dir_with_gen = val_abnormal_dir
+
+    print("\n" + "=" * 60)
+    if ENABLE_TRAINING:
+        # Training configuration
+        TRAIN_MODEL_TYPE = os.getenv("TRAIN_MODEL_TYPE", "inception_v3")
+        TRAIN_EPOCHS = os.getenv("TRAIN_EPOCHS", "10")
+        TRAIN_BATCH_SIZE = os.getenv("TRAIN_BATCH_SIZE", "16")
+        TRAIN_LEARNING_RATE = os.getenv("TRAIN_LEARNING_RATE", "0.00005")
+        TRAIN_NUM_CLASSES = os.getenv("TRAIN_NUM_CLASSES", "2")
+        TRAIN_IMG_SIZE_ORIGINAL = os.getenv("TRAIN_IMG_SIZE_ORIGINAL", "40")
+        TRAIN_UNDER_SAMPLING = (
+            os.getenv("TRAIN_UNDER_SAMPLING", "false").lower() == "true"
+        )
+        TRAIN_USE_CLASS_WEIGHTS = (
+            os.getenv("TRAIN_USE_CLASS_WEIGHTS", "true").lower() == "true"
+        )
+        TRAIN_USE_WEIGHTED_SAMPLING = (
+            os.getenv("TRAIN_USE_WEIGHTED_SAMPLING", "false").lower() == "true"
+        )
+        TRAIN_SEEDS = os.getenv("TRAIN_SEEDS", "0").split(",")
+        TRAIN_OUTPUT_DIR = "train"
+
+        train_data_path = os.path.join(work_dir, "data/train")
+        val_data_path = os.path.join(work_dir, "data/val")
+        out_dir = os.path.join(work_dir, TRAIN_OUTPUT_DIR)
+        os.makedirs(out_dir, exist_ok=True)
+
+        if DOCKER_COMMAND_PREFIX:
+            command = shlex.split(docker_cmd) + ["train.py"]
+        else:
+            command = [sys.executable, "train.py"]
+
+        for train_seed in TRAIN_SEEDS:
+            print(f"\n--- Training with seed {train_seed} ---\n")
+            output_dir_train = os.path.join(out_dir, f"seed_{train_seed}")
+            os.makedirs(output_dir_train, exist_ok=True)
+
+            # Add arguments
+            command.extend(
+                [
+                    "--epochs",
+                    TRAIN_EPOCHS,
+                    "--batch-size",
+                    TRAIN_BATCH_SIZE,
+                    "--learning-rate",
+                    TRAIN_LEARNING_RATE,
+                    "--num-classes",
+                    TRAIN_NUM_CLASSES,
+                    "--img-size-original",
+                    TRAIN_IMG_SIZE_ORIGINAL,
+                    "--model-type",
+                    TRAIN_MODEL_TYPE,
+                    "--seed",
+                    train_seed,
+                    "--train-data-path",
+                    train_data_path,
+                    "--val-data-path",
+                    val_data_path,
+                    "--out-dir",
+                    output_dir_train,
+                ]
+            )
+
+            # Add optional flags
+            if TRAIN_UNDER_SAMPLING:
+                command.append("--under-sampling")
+            if TRAIN_USE_CLASS_WEIGHTS:
+                command.append("--use-class-weights")
+            if TRAIN_USE_WEIGHTED_SAMPLING:
+                command.append("--use-weighted-sampling")
+
+            result = subprocess.run(command, check=True, shell=False)
+    else:
+        print("\nTraining is disabled. Skipping.")
 
     if WEBHOOK_URL:
         post_requests(
