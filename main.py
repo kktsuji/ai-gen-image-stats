@@ -114,9 +114,12 @@ if __name__ == "__main__":
         DDPM_TRAIN_USE_WEIGHTED_SAMPLING = (
             os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
+        DDPM_TRAIN_USE_ATTENTION = os.getenv("DDPM_TRAIN_USE_ATTENTION", "0,0,0,0")
+        prefix = f"ddpm-{DDPM_TRAIN_USE_ATTENTION.replace(',', '')}/"
+
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
-        output_dir_ddpm = os.path.join(work_dir, DDPM_OUTPUT_DIR)
+        output_dir_ddpm = os.path.join(work_dir, prefix + DDPM_OUTPUT_DIR)
 
         os.makedirs(output_dir_ddpm, exist_ok=True)
 
@@ -156,6 +159,8 @@ if __name__ == "__main__":
                 train_data_path,
                 "--val-data-path",
                 val_data_path,
+                "--use-attention",
+                DDPM_TRAIN_USE_ATTENTION,
                 "--seed",
                 SEED,
                 "--num-workers",

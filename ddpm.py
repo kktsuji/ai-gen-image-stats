@@ -486,6 +486,7 @@ class DDPM(nn.Module):
         beta_start: float = 0.0001,
         beta_end: float = 0.02,
         class_dropout_prob: float = 0.1,
+        use_attention: Tuple[bool, ...] = (False, False, True),
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         super().__init__()
@@ -506,6 +507,7 @@ class DDPM(nn.Module):
             channel_multipliers=channel_multipliers,
             num_res_blocks=num_res_blocks,
             num_classes=num_classes,
+            use_attention=use_attention,
         )
 
         # EMA for improved sampling quality
@@ -1012,6 +1014,7 @@ def create_ddpm(
     beta_start: float = 0.0001,
     beta_end: float = 0.02,
     class_dropout_prob: float = 0.1,
+    use_attention: Tuple[bool, ...] = (False, False, True),
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> DDPM:
     """Factory function to create a DDPM model.
@@ -1041,6 +1044,7 @@ def create_ddpm(
         beta_start=beta_start,
         beta_end=beta_end,
         class_dropout_prob=class_dropout_prob,
+        use_attention=use_attention,
         device=device,
     )
     return model.to(device)
