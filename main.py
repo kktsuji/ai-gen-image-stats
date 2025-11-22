@@ -221,7 +221,6 @@ if __name__ == "__main__":
         result = subprocess.run(command, check=True, shell=False)
     else:
         print("\nDDPM sampling is disabled. Skipping.")
-        print("\nDDPM sampling is disabled. Skipping.")
 
     if WEBHOOK_URL:
         post_requests(
