@@ -257,11 +257,7 @@ if __name__ == "__main__":
         )
         TRAIN_SEEDS = os.getenv("TRAIN_SEEDS", "0").split(",")
         TRAIN_USE_SYNTH = os.getenv("TRAIN_USE_SYNTH", "true").lower() == "true"
-        TRAIN_OUTPUT_DIR = (
-            os.getenv("TRAIN_OUTPUT_DIR", "train")
-            if not TRAIN_USE_SYNTH
-            else os.getenv("TRAIN_OUTPUT_DIR", "train") + "-synth"
-        )
+        TRAIN_OUTPUT_DIR = os.getenv("TRAIN_OUTPUT_DIR", "train")
         TRAIN_LAYERS = os.getenv("TRAIN_LAYERS", "0,0,0,0")
 
         prefix = f"train-{TRAIN_LAYERS.replace(',', '')}/"
