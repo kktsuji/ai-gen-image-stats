@@ -5,3 +5,4 @@ umap-learn
 matplotlib
 pytest
 dotenv
+requests
