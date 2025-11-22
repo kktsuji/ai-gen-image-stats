@@ -256,7 +256,12 @@ if __name__ == "__main__":
             os.getenv("TRAIN_USE_WEIGHTED_SAMPLING", "false").lower() == "true"
         )
         TRAIN_SEEDS = os.getenv("TRAIN_SEEDS", "0").split(",")
-        TRAIN_OUTPUT_DIR = "train"
+        TRAIN_USE_SYNTH = os.getenv("TRAIN_USE_SYNTH", "true").lower() == "true"
+        TRAIN_OUTPUT_DIR = (
+            os.getenv("TRAIN_OUTPUT_DIR", "train")
+            if not TRAIN_USE_SYNTH
+            else os.getenv("TRAIN_OUTPUT_DIR", "train") + "-synth"
+        )
 
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
