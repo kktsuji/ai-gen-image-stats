@@ -19,6 +19,7 @@ def post_requests(text, webhook_url):
 if __name__ == "__main__":
     # General settings
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    NUM_WORKERS = os.getenv("NUM_WORKERS", "4")
 
     # Enable or disable specific functionalities
     ENABLE_DATASET_PREPARATION = (
@@ -152,6 +153,8 @@ if __name__ == "__main__":
                 val_data_path,
                 "--seed",
                 SEED,
+                "--num-workers",
+                NUM_WORKERS,
             ]
         )
 
@@ -288,6 +291,8 @@ if __name__ == "__main__":
                     val_data_path,
                     "--out-dir",
                     output_dir_train,
+                    "--num-workers",
+                    NUM_WORKERS,
                 ]
             )
 

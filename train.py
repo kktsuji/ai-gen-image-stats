@@ -96,6 +96,7 @@ def _make_dataloader(
     min_samples_per_class=None,
     seed=None,
     use_weighted_sampling=False,
+    num_workers=4,
 ):
     if under_sampling:
         if seed is not None:
@@ -132,10 +133,26 @@ def _make_dataloader(
         )
 
         # Use sampler (don't use shuffle with sampler)
-        return DataLoader(dataset, batch_size=batch_size, sampler=sampler)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
     else:
         print(f"  - Weighted sampling: DISABLED (using random sampling)")
-        return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
 
 
 def train(
@@ -152,6 +169,7 @@ def train(
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./output",
+    num_workers: int = 4,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     # Set random seeds for reproducibility
@@ -163,8 +181,10 @@ def train(
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+            # Enable cuDNN benchmark for performance (fixed input size)
+            torch.backends.cudnn.benchmark = True
+            # Only use deterministic for strict reproducibility (slower)
+            # torch.backends.cudnn.deterministic = True
 
     # Set IMG_SIZE based on model type
     if model_type == "wrn28_cifar10":
@@ -274,6 +294,7 @@ def train(
         under_sampling=under_sampling,
         min_samples_per_class=None,
         use_weighted_sampling=use_weighted_sampling,
+        num_workers=num_workers,
     )
     print("  - Number of batches:", len(train_loader))
     print("  - Batch size:", batch_size)
@@ -287,6 +308,7 @@ def train(
         batch_size,
         under_sampling=False,
         min_samples_per_class=None,
+        num_workers=num_workers,
     )
     print("  - Number of batches:", len(val_loader))
     print("  - Total samples:", len(val_loader.dataset))
@@ -968,6 +990,12 @@ if __name__ == "__main__":
         default="./output",
         help="Output directory for results",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="Number of DataLoader workers for parallel data loading (default: 4)",
+    )
     args = parser.parse_args()
 
     # Print all arguments
@@ -1001,6 +1029,7 @@ if __name__ == "__main__":
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
+        num_workers=args.num_workers,
         device=device,
     )
 

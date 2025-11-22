@@ -36,6 +36,7 @@ def train(
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./out/ddpm",
+    num_workers: int = 4,
     seed: Optional[int] = None,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
@@ -50,8 +51,10 @@ def train(
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+            # Enable cuDNN benchmark for performance (fixed input size)
+            torch.backends.cudnn.benchmark = True
+            # Only use deterministic for strict reproducibility (slower)
+            # torch.backends.cudnn.deterministic = True
 
     # Data transforms (normalize to [-1, 1] for DDPM)
     train_transform = transforms.Compose(
@@ -111,10 +114,26 @@ def train(
         )
 
         # Use sampler (don't use shuffle with sampler)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
     else:
         print(f"\n  - Weighted sampling: DISABLED (using random sampling)")
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
 
     print(f"  - Number of batches: {len(train_loader)}")
     print(f"  - Batch size: {batch_size}")
@@ -122,7 +141,15 @@ def train(
 
     # Validation dataset
     val_dataset = datasets.ImageFolder(val_data_path, transform=val_transform)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True if num_workers > 0 else False,
+        prefetch_factor=2 if num_workers > 0 else None,
+    )
     print(f"\nValidation set: {len(val_dataset)} images")
     print(f"  - Number of batches: {len(val_loader)}")
     print(f"  - Classes: {val_dataset.classes}")
@@ -372,6 +399,12 @@ if __name__ == "__main__":
         default=None,
         help="Random seed for reproducibility (default: None)",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="Number of DataLoader workers for parallel data loading (default: 4)",
+    )
 
     args = parser.parse_args()
 
@@ -408,6 +441,7 @@ if __name__ == "__main__":
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
+        num_workers=args.num_workers,
         seed=args.seed,
         device=device,
     )
