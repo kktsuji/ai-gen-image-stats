@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 from inception_v3 import InceptionV3FeatureTrainer
+from util import save_args
 from wrn28_cifar10 import WRN28Cifar10Trainer
 
 
@@ -1006,6 +1007,8 @@ if __name__ == "__main__":
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
+
+    save_args(args, args.out_dir)
 
     # Check if output directory exists
     if not os.path.exists(args.out_dir):

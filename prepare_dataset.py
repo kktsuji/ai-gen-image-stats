@@ -4,6 +4,8 @@ import random
 import shutil
 from glob import glob
 
+from util import save_args
+
 
 def split_dataset_into_train_val_by_ratio(
     dir_path: str,
@@ -237,6 +239,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     random.seed(args.seed)
+
+    parent_dir = os.path.dirname(args.train_normal_dir)
+    while parent_dir and not parent_dir.endswith(("data")):
+        parent_dir = os.path.dirname(parent_dir)
+    if parent_dir:
+        save_args(args, parent_dir)
+    else:
+        save_args(args, args.train_normal_dir)
 
     train_normal, val_normal = split_dataset_into_train_val_by_ratio(
         args.normal_dir, args.train_normal_dir, args.val_normal_dir, args.split_ratio

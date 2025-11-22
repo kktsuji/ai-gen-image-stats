@@ -14,6 +14,7 @@ import torch
 from torchvision.utils import save_image
 
 from ddpm import create_ddpm
+from util import save_args
 
 
 def generate(
@@ -238,6 +239,9 @@ if __name__ == "__main__":
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
+
+    # Save arguments
+    save_args(args, args.out_dir)
 
     # Check if model and output directory exist
     if not os.path.exists(args.model_path):

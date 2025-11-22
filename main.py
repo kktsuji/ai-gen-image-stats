@@ -46,6 +46,11 @@ if __name__ == "__main__":
     val_normal_dir = os.path.join(work_dir, "data/val", normal_dir_name)
     val_abnormal_dir = os.path.join(work_dir, "data/val", abnormal_dir_name)
 
+    os.makedirs(train_normal_dir, exist_ok=True)
+    os.makedirs(train_abnormal_dir, exist_ok=True)
+    os.makedirs(val_normal_dir, exist_ok=True)
+    os.makedirs(val_abnormal_dir, exist_ok=True)
+
     print("\n" + "=" * 60)
     if ENABLE_DATASET_PREPARATION:
         result = subprocess.run(
