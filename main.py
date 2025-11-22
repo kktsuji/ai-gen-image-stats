@@ -262,10 +262,13 @@ if __name__ == "__main__":
             if not TRAIN_USE_SYNTH
             else os.getenv("TRAIN_OUTPUT_DIR", "train") + "-synth"
         )
+        TRAIN_LAYERS = os.getenv("TRAIN_LAYERS", "0,0,0,0")
 
-        train_data_path = os.path.join(work_dir, "data/train")
+        prefix = f"train-{TRAIN_LAYERS.replace(',', '')}/"
+        suffix = "-synth" if TRAIN_USE_SYNTH else ""
+        train_data_path = os.path.join(work_dir, "data/train" + suffix)
         val_data_path = os.path.join(work_dir, "data/val")
-        out_dir = os.path.join(work_dir, TRAIN_OUTPUT_DIR)
+        out_dir = os.path.join(work_dir, prefix + TRAIN_OUTPUT_DIR + suffix)
         os.makedirs(out_dir, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
@@ -303,6 +306,8 @@ if __name__ == "__main__":
                     output_dir_train,
                     "--num-workers",
                     NUM_WORKERS,
+                    "--train-layers",
+                    TRAIN_LAYERS,
                 ]
             )
 

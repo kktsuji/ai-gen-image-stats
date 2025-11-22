@@ -3,6 +3,7 @@ import csv
 import os
 import random
 import time
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -172,6 +173,7 @@ def train(
     out_dir: str = "./output",
     num_workers: int = 4,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    train_layers: Tuple[bool, ...] = (False, True, True),
 ):
     # Set random seeds for reproducibility
     if seed is not None:
@@ -219,38 +221,46 @@ def train(
             model_dir="./models", num_classes=num_classes
         )
         if not ONLY_LAST_LAYER:
-            for param in trainer.Conv2d_1a_3x3.parameters():
-                param.requires_grad = True
-            for param in trainer.Conv2d_2a_3x3.parameters():
-                param.requires_grad = True
-            for param in trainer.Conv2d_2b_3x3.parameters():
-                param.requires_grad = True
-            for param in trainer.Conv2d_3b_1x1.parameters():
-                param.requires_grad = True
-            for param in trainer.Conv2d_4a_3x3.parameters():
-                param.requires_grad = True
-            for param in trainer.Mixed_5b.parameters():
-                param.requires_grad = True
-            for param in trainer.Mixed_5c.parameters():
-                param.requires_grad = True
-            for param in trainer.Mixed_5d.parameters():
-                param.requires_grad = True
-            # for param in trainer.Mixed_6a.parameters():
-            #     param.requires_grad = True
-            # for param in trainer.Mixed_6b.parameters():
-            #     param.requires_grad = True
-            # for param in trainer.Mixed_6c.parameters():
-            #     param.requires_grad = True
-            # for param in trainer.Mixed_6d.parameters():
-            #     param.requires_grad = True
-            # for param in trainer.Mixed_6e.parameters():
-            #     param.requires_grad = True
-            for param in trainer.Mixed_7a.parameters():
-                param.requires_grad = True
-            for param in trainer.Mixed_7b.parameters():
-                param.requires_grad = True
-            for param in trainer.Mixed_7c.parameters():
-                param.requires_grad = True
+            if train_layers[0]:
+                print("  - Fine-tuning: Conv layers up to Mixed_5d")
+                for param in trainer.Conv2d_1a_3x3.parameters():
+                    param.requires_grad = True
+                for param in trainer.Conv2d_2a_3x3.parameters():
+                    param.requires_grad = True
+                for param in trainer.Conv2d_2b_3x3.parameters():
+                    param.requires_grad = True
+                for param in trainer.Conv2d_3b_1x1.parameters():
+                    param.requires_grad = True
+                for param in trainer.Conv2d_4a_3x3.parameters():
+                    param.requires_grad = True
+            if train_layers[1]:
+                print("  - Fine-tuning: Mixed_5b, Mixed_5c, Mixed_5d")
+                for param in trainer.Mixed_5b.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_5c.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_5d.parameters():
+                    param.requires_grad = True
+            if train_layers[2]:
+                print("  - Fine-tuning: Mixed_6a to Mixed_6e")
+                for param in trainer.Mixed_6a.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_6b.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_6c.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_6d.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_6e.parameters():
+                    param.requires_grad = True
+            if train_layers[3]:
+                print("  - Fine-tuning: Mixed_7a to Mixed_7c")
+                for param in trainer.Mixed_7a.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_7b.parameters():
+                    param.requires_grad = True
+                for param in trainer.Mixed_7c.parameters():
+                    param.requires_grad = True
 
     trainer = trainer.to(device)
     print("Model initialized successfully.")
@@ -997,6 +1007,14 @@ if __name__ == "__main__":
         default=4,
         help="Number of DataLoader workers for parallel data loading (default: 4)",
     )
+    parser.add_argument(
+        "--train-layers",
+        type=str,
+        default="0,0,0,0",
+        help="Comma-separated boolean values for which layer groups to train (e.g., '0,1,1' for InceptionV3). "
+        "For InceptionV3: [0]=Conv layers to Mixed_5d, [1]=Mixed_5b-5d, [2]=Mixed_6a-6e, [3]=Mixed_7a-7c",
+    )
+
     args = parser.parse_args()
 
     # Print all arguments
@@ -1016,6 +1034,9 @@ if __name__ == "__main__":
         print("Please create the directory first or specify a valid output directory.")
         exit(1)
 
+    # Parse train_layers argument
+    train_layers = tuple(bool(int(x)) for x in args.train_layers.split(","))
+
     start_time = time.time()
 
     train(
@@ -1034,6 +1055,7 @@ if __name__ == "__main__":
         out_dir=args.out_dir,
         num_workers=args.num_workers,
         device=device,
+        train_layers=train_layers,
     )
 
     end_time = time.time()
