@@ -119,21 +119,46 @@ transforms.Compose([
 
 ### Priority 4: Architecture Improvements
 
+**For 40×40 (Current - Already Optimal):**
+```python
+channel_multipliers = (1, 2, 4)  # 3 stages
+base_channels = 64
+num_res_blocks = 2
+use_attention = (False, False, True)  # Only at 10×10 bottleneck
+```
+
+**Why this is optimal for 40×40:**
+- ✅ Attention at 10×10 (100 pixels) - manageable cost
+- ❌ Attention at 20×20 would be 16x more expensive (400 pixels)
+- ❌ Attention at 40×40 would be 256x more expensive (1,600 pixels)
+- Self-attention cost scales as O(n²) where n = spatial resolution
+- Current configuration balances effectiveness with efficiency
+
 **For 128×128:**
 ```python
 channel_multipliers = (1, 2, 2, 4, 8)  # 5 stages
 base_channels = 64
 num_res_blocks = 2
-use_attention = (False, False, False, True, True)
+use_attention = (False, False, False, True, True)  # At 16×16 and 8×8
 ```
+
+**Why this works for 128×128:**
+- Attention at 8×8 (64 pixels) and 16×16 (256 pixels)
+- Skip low-res stages (128×128, 64×64, 32×32) where attention is too expensive
+- Focus attention on bottleneck layers where it's most effective
 
 **For 256×256:**
 ```python
 channel_multipliers = (1, 2, 2, 4, 4, 8)  # 6 stages
 base_channels = 64
 num_res_blocks = 2
-use_attention = (False, False, False, False, True, True)
+use_attention = (False, False, False, False, True, True)  # At 16×16 and 8×8
 ```
+
+**Attention Layer Guidelines:**
+- **Good:** 8×8 to 16×16 (64-256 pixels)
+- **Expensive:** 32×32+ (1,024+ pixels)
+- **Rule of thumb:** Only apply attention when spatial size ≤ 16×16
 
 **Expected Impact:** 5-10% improvement
 
