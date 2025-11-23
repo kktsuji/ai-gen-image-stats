@@ -201,6 +201,8 @@ if __name__ == "__main__":
             command.append("--use-lr-scheduler")
         if DDPM_TRAIN_SAMPLE_IMAGES:
             command.append("--sample-images")
+        else:
+            command.append("--no-sample-images")
 
         result = subprocess.run(command, check=True, shell=False)
     else:
