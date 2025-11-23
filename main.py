@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -8,8 +9,6 @@ load_dotenv()
 
 
 def post_requests(text, webhook_url):
-    import json
-
     import requests
 
     message = {"text": text}
@@ -98,6 +97,7 @@ if __name__ == "__main__":
     DDPM_NUM_TIMESTEPS = os.getenv("DDPM_NUM_TIMESTEPS", "1000")
     DDPM_MODEL_CHANNELS = os.getenv("DDPM_MODEL_CHANNELS", "64")
     DDPM_BETA_SCHEDULE = os.getenv("DDPM_BETA_SCHEDULE", "cosine")
+    DDPM_USE_ATTENTION = os.getenv("DDPM_USE_ATTENTION", "0,0,0,0")
     DDPM_OUTPUT_DIR = os.getenv("DDPM_OUTPUT_DIR", "ddpm")
 
     print("\n" + "=" * 60)
@@ -114,8 +114,7 @@ if __name__ == "__main__":
         DDPM_TRAIN_USE_WEIGHTED_SAMPLING = (
             os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
-        DDPM_TRAIN_USE_ATTENTION = os.getenv("DDPM_TRAIN_USE_ATTENTION", "0,0,0,0")
-        prefix = f"ddpm-{DDPM_TRAIN_USE_ATTENTION.replace(',', '')}/"
+        prefix = f"ddpm-{DDPM_USE_ATTENTION.replace(',', '')}/"
 
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
@@ -160,7 +159,7 @@ if __name__ == "__main__":
                 "--val-data-path",
                 val_data_path,
                 "--use-attention",
-                DDPM_TRAIN_USE_ATTENTION,
+                DDPM_USE_ATTENTION,
                 "--seed",
                 SEED,
                 "--num-workers",
@@ -230,6 +229,8 @@ if __name__ == "__main__":
                 out_dir,
                 "--seed",
                 SEED,
+                "--use-attention",
+                DDPM_USE_ATTENTION,
             ]
         )
 

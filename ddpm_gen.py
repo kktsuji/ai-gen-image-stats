@@ -34,6 +34,7 @@ def generate(
     save_images: bool = True,
     use_dynamic_threshold: bool = True,
     dynamic_threshold_percentile: float = 0.995,
+    use_attention: tuple = (False, False, True),
     seed: Optional[int] = None,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> None:
@@ -85,6 +86,7 @@ def generate(
         beta_schedule=beta_schedule,
         beta_start=beta_start,
         beta_end=beta_end,
+        use_attention=use_attention,
         device=device,
     )
 
@@ -223,6 +225,12 @@ if __name__ == "__main__":
         help="Enable dynamic thresholding",
     )
     parser.add_argument(
+        "--use-attention",
+        type=str,
+        default="0,0,1",
+        help="Comma-separated boolean values (0 or 1) for attention layers (must match training config)",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -253,6 +261,8 @@ if __name__ == "__main__":
         print("Please create the directory first or specify a valid output directory.")
         exit(1)
 
+    use_attention = tuple(bool(int(x)) for x in args.use_attention.split(","))
+
     start_time = time.time()
 
     generate(
@@ -270,6 +280,7 @@ if __name__ == "__main__":
         save_images=True,
         use_dynamic_threshold=args.use_dynamic_threshold,
         dynamic_threshold_percentile=0.995,
+        use_attention=use_attention,
         seed=args.seed,
         device=device,
     )
