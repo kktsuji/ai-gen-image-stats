@@ -272,8 +272,17 @@ def train(
         epoch_minutes = int(epoch_elapsed // 60)
         epoch_seconds = int(epoch_elapsed % 60)
 
+        # Calculate remaining time estimate
+        remaining_epochs = epochs - (epoch + 1)
+        estimated_remaining = epoch_elapsed * remaining_epochs
+        remaining_hours = int(estimated_remaining // 3600)
+        remaining_minutes = int((estimated_remaining % 3600) // 60)
+        remaining_seconds = int(estimated_remaining % 60)
+
         print(
-            f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Time: {epoch_minutes:02d}:{epoch_seconds:02d}"
+            f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
+            f"Time: {epoch_minutes:02d}:{epoch_seconds:02d}, "
+            f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}"
         )
 
     print("\n=== Training Completed ===")
