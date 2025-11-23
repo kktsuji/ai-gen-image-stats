@@ -290,8 +290,11 @@ class UpBlock(nn.Module):
             self.attention = None
 
         if upsample:
-            self.upsample_conv = nn.ConvTranspose2d(
-                out_channels, out_channels, kernel_size=4, stride=2, padding=1
+            # Use bilinear interpolation + Conv2d instead of ConvTranspose2d
+            # This eliminates checkerboard artifacts and produces smoother boundaries
+            self.upsample_conv = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
             )
         else:
             self.upsample_conv = None

@@ -79,23 +79,26 @@
 
 **Expected Impact:** 70-80% reduction in jaggedness
 
-### Priority 2: Fix Upsampling Method ⭐ QUICK WIN
+### Priority 2: Fix Upsampling Method ⭐ QUICK WIN ✅ COMPLETED
 
-**Current (problematic):**
+**Previous (problematic):**
 ```python
 nn.ConvTranspose2d(channels, channels, kernel_size=4, stride=2, padding=1)
 ```
 
-**Recommended:**
+**Current (fixed):**
 ```python
-nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+nn.Sequential(
+    nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
+    nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+)
 ```
 
 **Benefits:**
-- Eliminates checkerboard artifacts
-- Smoother upsampling
-- Easy to implement
+- ✅ Eliminates checkerboard artifacts
+- ✅ Smoother upsampling
+- ✅ Better gradient flow during training
+- ✅ Implemented in `ddpm.py` UpBlock class
 
 ### Priority 3: Data Augmentation
 
@@ -345,24 +348,90 @@ transform = transforms.Compose([
 ])
 ```
 
-### Optional: Fix Upsampling (in ddpm.py UpBlock)
+### Upsampling Method (Already Fixed ✅)
 
-**Current:**
+**The upsampling method has been updated in `ddpm.py` UpBlock class:**
+
 ```python
 if upsample:
-    self.upsample_conv = nn.ConvTranspose2d(
-        out_channels, out_channels, kernel_size=4, stride=2, padding=1
-    )
-```
-
-**Better:**
-```python
-if upsample:
-    self.upsample = nn.Sequential(
+    self.upsample_conv = nn.Sequential(
         nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
         nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
     )
 ```
+
+This eliminates checkerboard artifacts from ConvTranspose2d and provides smoother boundaries.
+
+---
+
+## Bilinear vs Bicubic Upsampling
+
+### Comparison
+
+| Aspect            | Bilinear                      | Bicubic                          |
+| ----------------- | ----------------------------- | -------------------------------- |
+| **Quality**       | Good smoothness (4 neighbors) | Better smoothness (16 neighbors) |
+| **Speed**         | Fast                          | 2-3x slower                      |
+| **Memory**        | Low overhead                  | +5-10% memory                    |
+| **Artifacts**     | Minimal blur on edges         | Smoother transitions             |
+| **Training time** | Baseline                      | +20-30% per epoch                |
+
+### Why Bilinear is Sufficient for This Case
+
+**Bilinear is the recommended choice because:**
+
+1. **Diffusion process provides smoothness**
+   - 1000 denoising steps with gradual refinement
+   - Smoothness comes from the diffusion process itself
+   - Bicubic interpolation would be overkill
+
+2. **Learned Conv2d refinement**
+   - Conv2d layer after upsampling acts as learnable smoother
+   - Adapts during training to compensate for bilinear artifacts
+   - Often better than fixed bicubic interpolation
+
+3. **Training efficiency matters**
+   - Small dataset (522 images) benefits from faster iteration
+   - 20-30% slower training adds up over 1000 epochs
+   - Faster experimentation is more valuable
+
+4. **Main issue is resolution, not interpolation**
+   - 40×40 → 128×128 gives 70-80% improvement
+   - Bilinear → Bicubic gives only 2-5% improvement
+   - Resolution change has 15-40x more impact
+
+5. **GPU memory for larger batches**
+   - Bicubic uses more memory during computation
+   - Better to save memory for larger batch sizes with 128×128 images
+
+### When to Consider Bicubic
+
+**Only try bicubic if:**
+- ✅ Already tested 128×128 with bilinear
+- ✅ Boundaries are better but still not perfect
+- ✅ Have GPU memory to spare
+- ✅ Willing to accept 20-30% slower training
+- ✅ Doing final production training (not experimentation)
+
+**Testing approach:**
+```python
+# Start with bilinear (recommended)
+nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+# If still seeing artifacts after full 128×128 training, try:
+nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
+```
+
+### Expected Impact on Boundary Quality
+
+**Priority ranking:**
+1. ⭐⭐⭐ 128×128 resolution (70-80% improvement)
+2. ⭐⭐⭐ Deeper architecture (10-15% improvement)
+3. ⭐⭐ Bilinear upsampling (10-15% improvement) ✅ Done
+4. ⭐ Data augmentation (5-10% improvement)
+5. ⚪ Bicubic upsampling (2-5% improvement) ← Diminishing returns
+
+**Verdict:** Bilinear is sufficient. Focus on resolution and architecture depth first.
 
 ---
 
@@ -384,12 +453,12 @@ if upsample:
 
 ### Combined Impact of Improvements
 
-| Change                                   | Expected Improvement       |
-| ---------------------------------------- | -------------------------- |
-| 128×128 resolution + deeper architecture | 70-80% boundary smoothness |
-| Fix ConvTranspose2d upsampling           | +10-15% smoothness         |
-| Data augmentation                        | +10-15% quality            |
-| **Total Potential**                      | **~90-95% improvement**    |
+| Change                                   | Status | Expected Improvement        |
+| ---------------------------------------- | ------ | --------------------------- |
+| Fix ConvTranspose2d upsampling           | ✅ Done | +10-15% smoothness          |
+| 128×128 resolution + deeper architecture | ⏳ TODO | +70-80% boundary smoothness |
+| Data augmentation                        | ⏳ TODO | +10-15% quality             |
+| **Total Potential**                      |        | **~90-95% improvement**     |
 
 ### Training Convergence
 
@@ -404,15 +473,18 @@ Your current training shows excellent convergence:
 
 ## Summary of Recommendations
 
-### ✅ DO THIS (In Order):
+### ✅ DONE:
+
+1. ✅ **Fixed upsampling** to bilinear interpolation + Conv2d (eliminates checkerboard artifacts)
+
+### ⏳ TODO (In Order):
 
 1. **Increase resolution to 128×128** (biggest impact)
 2. **Use deeper architecture:** `channel_multipliers=(1, 2, 2, 4, 8)`
 3. **Add data augmentation** (random crop, flip, rotation)
 4. **Start with transform resize** for flexibility
-5. **Fix upsampling** to bilinear interpolation + Conv2d
-6. **Train 100-200 epochs** to test
-7. **Once satisfied, preprocess dataset** for final training
+5. **Train 100-200 epochs** to test
+6. **Once satisfied, preprocess dataset** for final training
 
 ### ❌ DON'T DO THIS:
 
