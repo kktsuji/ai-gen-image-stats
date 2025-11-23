@@ -116,6 +116,7 @@ if __name__ == "__main__":
         DDPM_TRAIN_USE_WEIGHTED_SAMPLING = (
             os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
+        DDPM_TRAIN_SNAPSHOT_INTERVAL = os.getenv("DDPM_TRAIN_SNAPSHOT_INTERVAL", "20")
 
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
@@ -163,6 +164,8 @@ if __name__ == "__main__":
                 val_data_path,
                 "--use-attention",
                 DDPM_USE_ATTENTION,
+                "--snapshot-interval",
+                DDPM_TRAIN_SNAPSHOT_INTERVAL,
                 "--seed",
                 SEED,
                 "--num-workers",

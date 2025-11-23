@@ -41,6 +41,7 @@ def train(
     num_workers: int = 4,
     seed: Optional[int] = None,
     use_attention: Tuple[bool, ...] = (False, False, True),
+    snapshot_interval: Optional[int] = 20,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     """Training function for DDPM."""
@@ -258,7 +259,7 @@ def train(
         avg_val_loss = val_loss / val_batches
         val_losses.append(avg_val_loss)
 
-        if (epoch + 1) % 20 == 0:
+        if snapshot_interval is not None and (epoch + 1) % snapshot_interval == 0:
             # Save both regular and EMA weights
             torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}.pth")
             ema.apply_shadow()
@@ -433,6 +434,12 @@ if __name__ == "__main__":
         "Default '0,0,1' enables attention only at the coarsest resolution for better feature capture with minimal overhead. "
         "Example: '1,1,1' enables attention at all levels (more computation, potentially better quality).",
     )
+    parser.add_argument(
+        "--snapshot-interval",
+        type=int,
+        default=20,
+        help="Interval (in epochs) for saving model snapshots during training. Set to None or 0 to disable snapshot saving (default: 20)",
+    )
 
     args = parser.parse_args()
 
@@ -456,6 +463,7 @@ if __name__ == "__main__":
 
     use_attention = tuple(bool(int(x)) for x in args.use_attention.split(","))
     channel_multipliers = tuple(int(x) for x in args.channel_multipliers.split(","))
+    snapshot_interval = args.snapshot_interval if args.snapshot_interval > 0 else None
 
     start_time = time.time()
 
@@ -478,6 +486,7 @@ if __name__ == "__main__":
         out_dir=args.out_dir,
         num_workers=args.num_workers,
         use_attention=use_attention,
+        snapshot_interval=snapshot_interval,
         seed=args.seed,
         device=device,
     )
