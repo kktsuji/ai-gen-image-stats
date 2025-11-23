@@ -845,12 +845,11 @@ class DDPM(nn.Module):
         intermediates = [x] if return_intermediates else None
 
         # Iteratively denoise
+        import time
+        start_time = time.time()
+        steps_completed = 0
+        
         for i in reversed(range(self.num_timesteps)):
-            if (i + 1) % 10 == 0:
-                print(
-                    f"  - Sampling timestep {i+1:04d}/{self.num_timesteps:04d}",
-                    end="\r",
-                )
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
                 x,
@@ -863,6 +862,21 @@ class DDPM(nn.Module):
 
             if return_intermediates:
                 intermediates.append(x)
+            
+            steps_completed += 1
+            if (i + 1) % 10 == 0:
+                elapsed = time.time() - start_time
+                steps_remaining = i
+                if steps_completed > 0:
+                    avg_time_per_step = elapsed / steps_completed
+                    estimated_remaining = avg_time_per_step * steps_remaining
+                    remaining_minutes = int(estimated_remaining // 60)
+                    remaining_seconds = int(estimated_remaining % 60)
+                    print(
+                        f"  - Sampling timestep {i+1:04d}/{self.num_timesteps:04d}, "
+                        f"Remaining Time: {remaining_minutes:02d}:{remaining_seconds:02d}",
+                        end="\r",
+                    )
 
         if return_intermediates:
             return torch.stack(intermediates)
@@ -912,13 +926,12 @@ class DDPM(nn.Module):
         intermediates = [x_t] if return_intermediates else None
 
         # Denoise from t_0 down to 0
+        import time
+        start_time = time.time()
+        steps_completed = 0
+        
         x = x_t
         for i in reversed(range(t_0)):
-            if (i + 1) % 10 == 0:
-                print(
-                    f"  - Sampling timestep {i+1:04d}/{t_0:04d}",
-                    end="\r",
-                )
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
                 x,
@@ -931,6 +944,21 @@ class DDPM(nn.Module):
 
             if return_intermediates:
                 intermediates.append(x)
+            
+            steps_completed += 1
+            if (i + 1) % 10 == 0:
+                elapsed = time.time() - start_time
+                steps_remaining = i
+                if steps_completed > 0:
+                    avg_time_per_step = elapsed / steps_completed
+                    estimated_remaining = avg_time_per_step * steps_remaining
+                    remaining_minutes = int(estimated_remaining // 60)
+                    remaining_seconds = int(estimated_remaining % 60)
+                    print(
+                        f"  - Sampling timestep {i+1:04d}/{t_0:04d}, "
+                        f"Remaining Time: {remaining_minutes:02d}:{remaining_seconds:02d}",
+                        end="\r",
+                    )
 
         if return_intermediates:
             return torch.stack(intermediates)

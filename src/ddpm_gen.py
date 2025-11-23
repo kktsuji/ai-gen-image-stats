@@ -128,6 +128,8 @@ def generate(
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
+            batch_start_time = time.time()
+
             start_idx = batch_idx * batch_size
             end_idx = min(start_idx + batch_size, num_samples)
             current_batch_size = end_idx - start_idx
@@ -156,10 +158,26 @@ def generate(
                     sample_normalized = (sample + 1.0) / 2.0
                     save_image(sample_normalized, sample_path, normalize=False)
 
+            batch_end_time = time.time()
+            batch_elapsed = batch_end_time - batch_start_time
+            batch_minutes = int(batch_elapsed // 60)
+            batch_seconds = int(batch_elapsed % 60)
+
+            # Calculate remaining time estimate
+            remaining_batches = num_batches - (batch_idx + 1)
+            estimated_remaining = batch_elapsed * remaining_batches
+            remaining_hours = int(estimated_remaining // 3600)
+            remaining_minutes = int((estimated_remaining % 3600) // 60)
+            remaining_seconds = int(estimated_remaining % 60)
+
             print(
-                f"  - Batch {batch_idx + 1}/{num_batches}: Generated {current_batch_size} samples",
+                f"Batch [{batch_idx + 1}/{num_batches}] - Generated {current_batch_size} samples, "
+                f"Time: {batch_minutes:02d}:{batch_seconds:02d}, "
+                f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}",
+                end="\r",
             )
-    print("\nGeneration completed.")
+
+    print("\n\nGeneration completed.")
 
     if save_images:
         print(f"  Saved {num_samples} individual images to {out_dir}")
