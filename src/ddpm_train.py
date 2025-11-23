@@ -228,12 +228,6 @@ def train(
             train_loss += loss.item()
             train_batches += 1
 
-            if (batch_idx + 1) % 10 == 0:
-                print(
-                    f"  - Epoch [{epoch+1}/{epochs}], Step [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}",
-                    end="\r",
-                )
-
         avg_train_loss = train_loss / train_batches
         train_losses.append(avg_train_loss)
 
@@ -283,9 +277,10 @@ def train(
             f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
             f"Time: {epoch_minutes:02d}:{epoch_seconds:02d}, "
             f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}"
+            end="\r",
         )
 
-    print("\n=== Training Completed ===")
+    print("\n\n=== Training Completed ===")
 
     # Save model (both regular and EMA weights)
     model_path = f"{out_dir}/ddpm_model.pth"
