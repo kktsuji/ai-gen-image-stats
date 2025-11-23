@@ -26,6 +26,7 @@ def generate(
     image_size: int = 40,
     num_classes: int = 2,
     model_channels: int = 64,
+    channel_multipliers: tuple = (1, 2, 4),
     num_timesteps: int = 1000,
     beta_schedule: str = "linear",
     beta_start: float = 0.0001,
@@ -81,6 +82,7 @@ def generate(
         image_size=image_size,
         in_channels=3,
         model_channels=model_channels,
+        channel_multipliers=channel_multipliers,
         num_classes=num_classes,
         num_timesteps=num_timesteps,
         beta_schedule=beta_schedule,
@@ -197,6 +199,12 @@ if __name__ == "__main__":
         help="Base number of channels in U-Net",
     )
     parser.add_argument(
+        "--channel-multipliers",
+        type=str,
+        default="1,2,4",
+        help="Comma-separated channel multipliers for each U-Net stage (must match training config)",
+    )
+    parser.add_argument(
         "--num-timesteps", type=int, default=1000, help="Number of diffusion timesteps"
     )
     parser.add_argument(
@@ -262,6 +270,7 @@ if __name__ == "__main__":
         exit(1)
 
     use_attention = tuple(bool(int(x)) for x in args.use_attention.split(","))
+    channel_multipliers = tuple(int(x) for x in args.channel_multipliers.split(","))
 
     start_time = time.time()
 
@@ -274,6 +283,7 @@ if __name__ == "__main__":
         image_size=args.img_size,
         num_classes=args.num_classes,
         model_channels=args.model_channels,
+        channel_multipliers=channel_multipliers,
         num_timesteps=args.num_timesteps,
         beta_schedule=args.beta_schedule,
         out_dir=args.out_dir,

@@ -29,6 +29,7 @@ def train(
     img_size: int = 40,
     num_timesteps: int = 1000,
     model_channels: int = 64,
+    channel_multipliers: Tuple[int, ...] = (1, 2, 4),
     beta_schedule: str = "cosine",
     beta_start: float = 0.0001,
     beta_end: float = 0.02,
@@ -171,6 +172,7 @@ def train(
         image_size=img_size,
         in_channels=3,
         model_channels=model_channels,
+        channel_multipliers=channel_multipliers,
         num_classes=num_classes,
         num_timesteps=num_timesteps,
         beta_schedule=beta_schedule,
@@ -363,6 +365,12 @@ if __name__ == "__main__":
         help="Base number of channels in U-Net",
     )
     parser.add_argument(
+        "--channel-multipliers",
+        type=str,
+        default="1,2,4",
+        help="Comma-separated channel multipliers for each U-Net stage (e.g., '1,2,4' for 3 stages, '1,2,2,4,8' for 5 stages)",
+    )
+    parser.add_argument(
         "--beta-schedule",
         type=str,
         default="cosine",
@@ -439,6 +447,7 @@ if __name__ == "__main__":
         exit(1)
 
     use_attention = tuple(bool(int(x)) for x in args.use_attention.split(","))
+    channel_multipliers = tuple(int(x) for x in args.channel_multipliers.split(","))
 
     start_time = time.time()
 
@@ -450,6 +459,7 @@ if __name__ == "__main__":
         img_size=args.img_size,
         num_timesteps=args.num_timesteps,
         model_channels=args.model_channels,
+        channel_multipliers=channel_multipliers,
         beta_schedule=args.beta_schedule,
         beta_start=args.beta_start,
         beta_end=args.beta_end,

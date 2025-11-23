@@ -1011,6 +1011,7 @@ def create_ddpm(
     image_size: int = 40,
     in_channels: int = 3,
     model_channels: int = 64,
+    channel_multipliers: Tuple[int, ...] = (1, 2, 4),
     num_classes: Optional[int] = None,
     num_timesteps: int = 1000,
     beta_schedule: str = "cosine",
@@ -1026,6 +1027,7 @@ def create_ddpm(
         image_size: Size of input images (assumes square)
         in_channels: Number of input channels
         model_channels: Base number of channels in U-Net
+        channel_multipliers: Channel multipliers for each U-Net stage (e.g., (1,2,4) for 3 stages)
         num_classes: Number of classes for conditional generation (None for unconditional)
         num_timesteps: Number of diffusion timesteps
         beta_schedule: Type of noise schedule ('linear', 'cosine', 'quadratic', 'sigmoid')
@@ -1041,6 +1043,7 @@ def create_ddpm(
         image_size=image_size,
         in_channels=in_channels,
         model_channels=model_channels,
+        channel_multipliers=channel_multipliers,
         num_classes=num_classes,
         num_timesteps=num_timesteps,
         beta_schedule=beta_schedule,

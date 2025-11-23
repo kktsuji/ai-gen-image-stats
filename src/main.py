@@ -96,8 +96,9 @@ if __name__ == "__main__":
     DDPM_IMG_SIZE = os.getenv("DDPM_IMG_SIZE", "40")
     DDPM_NUM_TIMESTEPS = os.getenv("DDPM_NUM_TIMESTEPS", "1000")
     DDPM_MODEL_CHANNELS = os.getenv("DDPM_MODEL_CHANNELS", "64")
+    DDPM_CHANNEL_MULTIPLIERS = os.getenv("DDPM_CHANNEL_MULTIPLIERS", "1,2,4")
     DDPM_BETA_SCHEDULE = os.getenv("DDPM_BETA_SCHEDULE", "cosine")
-    DDPM_USE_ATTENTION = os.getenv("DDPM_USE_ATTENTION", "0,0,0,0")
+    DDPM_USE_ATTENTION = os.getenv("DDPM_USE_ATTENTION", "0,0,1")
     DDPM_OUTPUT_DIR = os.getenv("DDPM_OUTPUT_DIR", "ddpm")
     prefix = f"ddpm-{DDPM_USE_ATTENTION.replace(',', '')}/"
 
@@ -144,6 +145,8 @@ if __name__ == "__main__":
                 DDPM_NUM_TIMESTEPS,
                 "--model-channels",
                 DDPM_MODEL_CHANNELS,
+                "--channel-multipliers",
+                DDPM_CHANNEL_MULTIPLIERS,
                 "--beta-schedule",
                 DDPM_BETA_SCHEDULE,
                 "--beta-start",
@@ -217,6 +220,8 @@ if __name__ == "__main__":
                 DDPM_NUM_CLASSES,
                 "--model-channels",
                 DDPM_MODEL_CHANNELS,
+                "--channel-multipliers",
+                DDPM_CHANNEL_MULTIPLIERS,
                 "--num-timesteps",
                 DDPM_NUM_TIMESTEPS,
                 "--beta-schedule",
