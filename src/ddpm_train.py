@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, transforms
 
@@ -25,6 +26,9 @@ def train(
     epochs: int = 200,
     batch_size: int = 8,
     learning_rate: float = 0.00005,
+    use_lr_scheduler: bool = True,
+    lr_warmup_epochs: int = 10,
+    lr_min: float = 0.000001,
     num_classes: int = 2,
     img_size: int = 40,
     num_timesteps: int = 1000,
@@ -198,10 +202,40 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
+    # Setup learning rate scheduler
+    scheduler = None
+    if use_lr_scheduler:
+        print("\n=== Setting up Learning Rate Scheduler ===")
+        print(f"Warmup epochs: {lr_warmup_epochs}")
+        print(f"Initial LR: {learning_rate}")
+        print(f"Minimum LR: {lr_min}")
+
+        # Warmup scheduler: linearly increase LR from 0 to initial LR
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=0.01,  # Start at 1% of initial LR
+            end_factor=1.0,
+            total_iters=lr_warmup_epochs,
+        )
+
+        # Main scheduler: cosine annealing from initial LR to minimum LR
+        main_scheduler = CosineAnnealingLR(
+            optimizer, T_max=epochs - lr_warmup_epochs, eta_min=lr_min
+        )
+
+        # Sequential scheduler: warmup followed by cosine annealing
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, main_scheduler],
+            milestones=[lr_warmup_epochs],
+        )
+        print(f"Using warmup ({lr_warmup_epochs} epochs) + cosine annealing scheduler")
+
     # Training loop
     print("\n=== Starting Training ===")
     train_losses = []
     val_losses = []
+    learning_rates = []
 
     for epoch in range(epochs):
         epoch_start_time = time.time()
@@ -236,6 +270,10 @@ def train(
         avg_train_loss = train_loss / train_batches
         train_losses.append(avg_train_loss)
 
+        # Store current learning rate
+        current_lr = optimizer.param_groups[0]["lr"]
+        learning_rates.append(current_lr)
+
         # Validation phase (use EMA weights)
         model.eval()
         ema.apply_shadow()  # Switch to EMA weights for validation
@@ -259,6 +297,10 @@ def train(
         avg_val_loss = val_loss / val_batches
         val_losses.append(avg_val_loss)
 
+        # Step the learning rate scheduler
+        if scheduler is not None:
+            scheduler.step()
+
         if snapshot_interval is not None and (epoch + 1) % snapshot_interval == 0:
             # Save both regular and EMA weights
             torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}.pth")
@@ -278,8 +320,10 @@ def train(
         remaining_minutes = int((estimated_remaining % 3600) // 60)
         remaining_seconds = int(estimated_remaining % 60)
 
+        lr_info = f"LR: {current_lr:.2e}, " if scheduler is not None else ""
         print(
             f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
+            f"{lr_info}"
             f"Time: {epoch_minutes:02d}:{epoch_seconds:02d}, "
             f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}",
             end="\r",
@@ -308,18 +352,26 @@ def train(
     history_path = f"{out_dir}/training_history.csv"
     with open(history_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["epoch", "train_loss", "val_loss"])
-        for epoch, (train_loss, val_loss) in enumerate(
-            zip(train_losses, val_losses), 1
-        ):
-            writer.writerow([epoch, train_loss, val_loss])
+        if scheduler is not None:
+            writer.writerow(["epoch", "train_loss", "val_loss", "learning_rate"])
+            for epoch, (train_loss, val_loss, lr) in enumerate(
+                zip(train_losses, val_losses, learning_rates), 1
+            ):
+                writer.writerow([epoch, train_loss, val_loss, lr])
+        else:
+            writer.writerow(["epoch", "train_loss", "val_loss"])
+            for epoch, (train_loss, val_loss) in enumerate(
+                zip(train_losses, val_losses), 1
+            ):
+                writer.writerow([epoch, train_loss, val_loss])
     print(f"Training history saved to {history_path}")
 
     # Plot training curves
-    plt.figure(figsize=(12, 5))
+    num_plots = 3 if scheduler is not None else 2
+    plt.figure(figsize=(6 * num_plots, 5))
 
     # Plot loss
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, num_plots, 1)
     plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
     plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
     plt.xlabel("Epoch")
@@ -329,7 +381,7 @@ def train(
     plt.grid(True)
 
     # Plot loss (log scale) if useful
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, num_plots, 2)
     plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
     plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
     plt.xlabel("Epoch")
@@ -338,6 +390,23 @@ def train(
     plt.yscale("log")
     plt.legend()
     plt.grid(True)
+
+    # Plot learning rate schedule if scheduler is used
+    if scheduler is not None:
+        plt.subplot(1, num_plots, 3)
+        plt.plot(
+            range(1, epochs + 1),
+            learning_rates,
+            label="Learning Rate",
+            marker="o",
+            color="green",
+        )
+        plt.xlabel("Epoch")
+        plt.ylabel("Learning Rate")
+        plt.title("Learning Rate Schedule")
+        plt.legend()
+        plt.grid(True)
+        plt.yscale("log")
 
     plt.tight_layout()
     plot_path = f"{out_dir}/training_curves.png"
@@ -356,6 +425,24 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--learning-rate", type=float, default=0.00005, help="Learning rate"
+    )
+    parser.add_argument(
+        "--use-lr-scheduler",
+        action="store_true",
+        default=True,
+        help="Enable learning rate scheduler with warmup and cosine annealing (default: True)",
+    )
+    parser.add_argument(
+        "--lr-warmup-epochs",
+        type=int,
+        default=10,
+        help="Number of warmup epochs for learning rate scheduler (default: 10)",
+    )
+    parser.add_argument(
+        "--lr-min",
+        type=float,
+        default=0.000001,
+        help="Minimum learning rate for cosine annealing scheduler (default: 1e-6)",
     )
     parser.add_argument(
         "--num-classes",
@@ -471,6 +558,9 @@ if __name__ == "__main__":
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        use_lr_scheduler=args.use_lr_scheduler,
+        lr_warmup_epochs=args.lr_warmup_epochs,
+        lr_min=args.lr_min,
         num_classes=args.num_classes,
         img_size=args.img_size,
         num_timesteps=args.num_timesteps,

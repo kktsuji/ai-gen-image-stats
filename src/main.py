@@ -108,6 +108,11 @@ if __name__ == "__main__":
         DDPM_TRAIN_EPOCHS = os.getenv("DDPM_TRAIN_EPOCHS", "200")
         DDPM_TRAIN_BATCH_SIZE = os.getenv("DDPM_TRAIN_BATCH_SIZE", "8")
         DDPM_TRAIN_LEARNING_RATE = os.getenv("DDPM_TRAIN_LEARNING_RATE", "0.00005")
+        DDPM_TRAIN_USE_LR_SCHEDULER = (
+            os.getenv("DDPM_TRAIN_USE_LR_SCHEDULER", "true").lower() == "true"
+        )
+        DDPM_TRAIN_LR_WARMUP_EPOCHS = os.getenv("DDPM_TRAIN_LR_WARMUP_EPOCHS", "10")
+        DDPM_TRAIN_LR_MIN = os.getenv("DDPM_TRAIN_LR_MIN", "0.000001")
         DDPM_TRAIN_BETA_START = os.getenv("DDPM_TRAIN_BETA_START", "0.0001")
         DDPM_TRAIN_BETA_END = os.getenv("DDPM_TRAIN_BETA_END", "0.02")
         DDPM_TRAIN_CLASS_DROPOUT_PROB = os.getenv(
@@ -138,6 +143,10 @@ if __name__ == "__main__":
                 DDPM_TRAIN_BATCH_SIZE,
                 "--learning-rate",
                 DDPM_TRAIN_LEARNING_RATE,
+                "--lr-warmup-epochs",
+                DDPM_TRAIN_LR_WARMUP_EPOCHS,
+                "--lr-min",
+                DDPM_TRAIN_LR_MIN,
                 "--num-classes",
                 DDPM_NUM_CLASSES,
                 "--img-size",
@@ -173,9 +182,11 @@ if __name__ == "__main__":
             ]
         )
 
-        # Add optional flag
+        # Add optional flags
         if DDPM_TRAIN_USE_WEIGHTED_SAMPLING:
             command.append("--use-weighted-sampling")
+        if DDPM_TRAIN_USE_LR_SCHEDULER:
+            command.append("--use-lr-scheduler")
 
         result = subprocess.run(command, check=True, shell=False)
     else:
