@@ -39,6 +39,7 @@ def train(
     beta_end: float = 0.02,
     class_dropout_prob: float = 0.3,
     use_weighted_sampling: bool = True,
+    use_amp: bool = True,
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./out/ddpm",
@@ -202,6 +203,20 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
+    # Setup mixed precision training
+    scaler = None
+    if use_amp and device == "cuda":
+        print("\n=== Setting up Automatic Mixed Precision (AMP) ===")
+        scaler = torch.cuda.amp.GradScaler()
+        print("AMP enabled: Training will use float16 for faster computation")
+    elif use_amp and device != "cuda":
+        print("\n=== AMP Warning ===")
+        print("AMP requested but not available (requires CUDA). Training with float32.")
+        use_amp = False
+    else:
+        print("\n=== Mixed Precision ===")
+        print("AMP disabled: Training with full float32 precision")
+
     # Setup learning rate scheduler
     scheduler = None
     if use_lr_scheduler:
@@ -249,17 +264,33 @@ def train(
             images = images.to(device)
             labels = labels.to(device)
 
-            # Forward pass
-            loss = model.training_step(images, class_labels=labels, criterion=criterion)
-
-            # Backward pass
             optimizer.zero_grad()
-            loss.backward()
 
-            # Gradient clipping to prevent gradient explosion
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # Forward pass with automatic mixed precision
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    loss = model.training_step(
+                        images, class_labels=labels, criterion=criterion
+                    )
 
-            optimizer.step()
+                # Backward pass with gradient scaling
+                scaler.scale(loss).backward()
+
+                # Gradient clipping (unscale first for accurate clipping)
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+                # Optimizer step with scaling
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Standard float32 training
+                loss = model.training_step(
+                    images, class_labels=labels, criterion=criterion
+                )
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
 
             # Update EMA
             ema.update()
@@ -286,8 +317,14 @@ def train(
                 images = images.to(device)
                 labels = labels.to(device)
 
-                predicted_noise, noise = model(images, class_labels=labels)
-                loss = criterion(predicted_noise, noise)
+                # Use autocast for validation too (faster, no quality loss)
+                if use_amp:
+                    with torch.cuda.amp.autocast():
+                        predicted_noise, noise = model(images, class_labels=labels)
+                        loss = criterion(predicted_noise, noise)
+                else:
+                    predicted_noise, noise = model(images, class_labels=labels)
+                    loss = criterion(predicted_noise, noise)
 
                 val_loss += loss.item()
                 val_batches += 1
@@ -492,6 +529,17 @@ if __name__ == "__main__":
         help="Enable weighted sampling for class imbalance",
     )
     parser.add_argument(
+        "--use-amp",
+        action="store_true",
+        default=True,
+        help="Enable Automatic Mixed Precision (AMP) training for faster computation and lower memory usage (requires CUDA, default: True)",
+    )
+    parser.add_argument(
+        "--no-amp",
+        action="store_true",
+        help="Disable Automatic Mixed Precision training (use full float32 precision)",
+    )
+    parser.add_argument(
         "--train-data-path", type=str, default="./data/stats", help="Training data path"
     )
     parser.add_argument(
@@ -552,6 +600,9 @@ if __name__ == "__main__":
     channel_multipliers = tuple(int(x) for x in args.channel_multipliers.split(","))
     snapshot_interval = args.snapshot_interval if args.snapshot_interval > 0 else None
 
+    # Handle AMP flags (--no-amp takes precedence)
+    use_amp = args.use_amp and not args.no_amp
+
     start_time = time.time()
 
     train(
@@ -571,6 +622,7 @@ if __name__ == "__main__":
         beta_end=args.beta_end,
         class_dropout_prob=args.class_dropout_prob,
         use_weighted_sampling=args.use_weighted_sampling,
+        use_amp=use_amp,
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
