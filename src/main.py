@@ -55,7 +55,7 @@ if __name__ == "__main__":
         result = subprocess.run(
             [
                 sys.executable,
-                "prepare_dataset.py",
+                "src/prepare_dataset.py",
                 "--normal-dir",
                 DATA_NORMAL_DIR_PATH,
                 "--abnormal-dir",
@@ -99,6 +99,7 @@ if __name__ == "__main__":
     DDPM_BETA_SCHEDULE = os.getenv("DDPM_BETA_SCHEDULE", "cosine")
     DDPM_USE_ATTENTION = os.getenv("DDPM_USE_ATTENTION", "0,0,0,0")
     DDPM_OUTPUT_DIR = os.getenv("DDPM_OUTPUT_DIR", "ddpm")
+    prefix = f"ddpm-{DDPM_USE_ATTENTION.replace(',', '')}/"
 
     print("\n" + "=" * 60)
     if ENABLE_DDPM_TRAINING:
@@ -114,7 +115,6 @@ if __name__ == "__main__":
         DDPM_TRAIN_USE_WEIGHTED_SAMPLING = (
             os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
-        prefix = f"ddpm-{DDPM_USE_ATTENTION.replace(',', '')}/"
 
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
@@ -123,9 +123,9 @@ if __name__ == "__main__":
         os.makedirs(output_dir_ddpm, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
-            command = shlex.split(docker_cmd) + ["ddpm_train.py"]
+            command = shlex.split(docker_cmd) + ["src/ddpm_train.py"]
         else:
-            command = [sys.executable, "ddpm_train.py"]
+            command = [sys.executable, "src/ddpm_train.py"]
 
         # Add common arguments
         command.extend(
@@ -188,15 +188,17 @@ if __name__ == "__main__":
         DDPM_GEN_USE_DYNAMIC_THRESHOLD = (
             os.getenv("DDPM_GEN_USE_DYNAMIC_THRESHOLD", "true").lower() == "true"
         )
-        model_path = os.path.join(work_dir, DDPM_OUTPUT_DIR, DDPM_GEN_MODEL_NAME)
-        out_dir = os.path.join(work_dir, DDPM_OUTPUT_DIR, "samples")
+        model_path = os.path.join(
+            work_dir, prefix + DDPM_OUTPUT_DIR, DDPM_GEN_MODEL_NAME
+        )
+        out_dir = os.path.join(work_dir, prefix + DDPM_OUTPUT_DIR, "samples")
 
         os.makedirs(out_dir, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
-            command = shlex.split(docker_cmd) + ["ddpm_gen.py"]
+            command = shlex.split(docker_cmd) + ["src/ddpm_gen.py"]
         else:
-            command = [sys.executable, "ddpm_gen.py"]
+            command = [sys.executable, "src/ddpm_gen.py"]
 
         # Add arguments
         command.extend(
@@ -268,9 +270,9 @@ if __name__ == "__main__":
         os.makedirs(out_dir, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
-            command = shlex.split(docker_cmd) + ["train.py"]
+            command = shlex.split(docker_cmd) + ["src/train.py"]
         else:
-            command = [sys.executable, "train.py"]
+            command = [sys.executable, "src/train.py"]
 
         for train_seed in TRAIN_SEEDS:
             print(f"\n--- Training with seed {train_seed} ---\n")
