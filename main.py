@@ -191,10 +191,6 @@ if __name__ == "__main__":
         model_path = os.path.join(work_dir, DDPM_OUTPUT_DIR, DDPM_GEN_MODEL_NAME)
         out_dir = os.path.join(work_dir, DDPM_OUTPUT_DIR, "samples")
 
-        # Update train and val paths to include generated samples
-        train_abnormal_dir_with_gen = os.path.join(out_dir, "train", abnormal_dir_name)
-        val_abnormal_dir_with_gen = os.path.join(out_dir, "val", abnormal_dir_name)
-
         os.makedirs(out_dir, exist_ok=True)
 
         if DOCKER_COMMAND_PREFIX:
@@ -240,8 +236,6 @@ if __name__ == "__main__":
         result = subprocess.run(command, check=True, shell=False)
     else:
         print("\nDDPM sampling is disabled. Skipping.")
-        train_abnormal_dir_with_gen = train_abnormal_dir
-        val_abnormal_dir_with_gen = val_abnormal_dir
 
     print("\n" + "=" * 60)
     if ENABLE_TRAINING:
