@@ -276,7 +276,7 @@ def train(
         print(
             f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
             f"Time: {epoch_minutes:02d}:{epoch_seconds:02d}, "
-            f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}"
+            f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}",
             end="\r",
         )
 
