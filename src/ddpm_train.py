@@ -40,6 +40,7 @@ def train(
     class_dropout_prob: float = 0.3,
     use_weighted_sampling: bool = True,
     use_amp: bool = True,
+    resume_from: Optional[str] = None,
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./out/ddpm",
@@ -246,13 +247,60 @@ def train(
         )
         print(f"Using warmup ({lr_warmup_epochs} epochs) + cosine annealing scheduler")
 
-    # Training loop
-    print("\n=== Starting Training ===")
+    # Load checkpoint if resuming
+    start_epoch = 0
     train_losses = []
     val_losses = []
     learning_rates = []
 
-    for epoch in range(epochs):
+    if resume_from is not None:
+        print(f"\n=== Resuming from Checkpoint ===")
+        print(f"Loading checkpoint: {resume_from}")
+
+        if not os.path.exists(resume_from):
+            raise FileNotFoundError(f"Checkpoint file not found: {resume_from}")
+
+        checkpoint = torch.load(resume_from, map_location=device)
+
+        # Load model state
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print("✓ Model state loaded")
+
+        # Load optimizer state
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        print("✓ Optimizer state loaded")
+
+        # Load scheduler state if it exists and is being used
+        if scheduler is not None and "scheduler_state_dict" in checkpoint:
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            print("✓ Scheduler state loaded")
+
+        # Load EMA state
+        if "ema_state_dict" in checkpoint:
+            ema.load_state_dict(checkpoint["ema_state_dict"])
+            print("✓ EMA state loaded")
+
+        # Load scaler state for AMP
+        if use_amp and scaler is not None and "scaler_state_dict" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            print("✓ GradScaler state loaded")
+
+        # Load training progress
+        start_epoch = checkpoint["epoch"] + 1  # Continue from next epoch
+        train_losses = checkpoint.get("train_losses", [])
+        val_losses = checkpoint.get("val_losses", [])
+        learning_rates = checkpoint.get("learning_rates", [])
+
+        print(f"\nResuming from epoch {start_epoch}/{epochs}")
+        print(
+            f"Previous best validation loss: {min(val_losses) if val_losses else 'N/A'}"
+        )
+        print(f"Training history loaded: {len(train_losses)} epochs")
+
+    # Training loop
+    print("\n=== Starting Training ===")
+
+    for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()
 
         # Training phase
@@ -339,8 +387,30 @@ def train(
             scheduler.step()
 
         if snapshot_interval is not None and (epoch + 1) % snapshot_interval == 0:
-            # Save both regular and EMA weights
-            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}.pth")
+            # Save comprehensive checkpoint for resumption
+            checkpoint = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "train_losses": train_losses,
+                "val_losses": val_losses,
+                "learning_rates": learning_rates,
+            }
+
+            # Add optional states
+            if scheduler is not None:
+                checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+
+            if scaler is not None:
+                checkpoint["scaler_state_dict"] = scaler.state_dict()
+
+            checkpoint["ema_state_dict"] = ema.state_dict()
+
+            checkpoint_path = f"{out_dir}/checkpoint_epoch{epoch+1}.pth"
+            torch.save(checkpoint, checkpoint_path)
+            print(f"\nCheckpoint saved: {checkpoint_path}")
+
+            # Also save EMA model weights separately for easy inference
             ema.apply_shadow()
             torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}_ema.pth")
             ema.restore()
@@ -367,6 +437,28 @@ def train(
         )
 
     print("\n\n=== Training Completed ===")
+
+    # Save final comprehensive checkpoint
+    final_checkpoint = {
+        "epoch": epochs - 1,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "learning_rates": learning_rates,
+    }
+
+    if scheduler is not None:
+        final_checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+
+    if scaler is not None:
+        final_checkpoint["scaler_state_dict"] = scaler.state_dict()
+
+    final_checkpoint["ema_state_dict"] = ema.state_dict()
+
+    final_checkpoint_path = f"{out_dir}/checkpoint_final.pth"
+    torch.save(final_checkpoint, final_checkpoint_path)
+    print(f"Final checkpoint saved to {final_checkpoint_path}")
 
     # Save model (both regular and EMA weights)
     model_path = f"{out_dir}/ddpm_model.pth"
@@ -540,6 +632,12 @@ if __name__ == "__main__":
         help="Disable Automatic Mixed Precision training (use full float32 precision)",
     )
     parser.add_argument(
+        "--resume-from",
+        type=str,
+        default=None,
+        help="Path to checkpoint file to resume training from (e.g., './out/ddpm/checkpoint_epoch20.pth')",
+    )
+    parser.add_argument(
         "--train-data-path", type=str, default="./data/stats", help="Training data path"
     )
     parser.add_argument(
@@ -623,6 +721,7 @@ if __name__ == "__main__":
         class_dropout_prob=args.class_dropout_prob,
         use_weighted_sampling=args.use_weighted_sampling,
         use_amp=use_amp,
+        resume_from=args.resume_from,
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
