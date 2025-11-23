@@ -122,6 +122,12 @@ if __name__ == "__main__":
             os.getenv("DDPM_TRAIN_USE_WEIGHTED_SAMPLING", "true").lower() == "true"
         )
         DDPM_TRAIN_SNAPSHOT_INTERVAL = os.getenv("DDPM_TRAIN_SNAPSHOT_INTERVAL", "20")
+        DDPM_TRAIN_SAMPLE_IMAGES = (
+            os.getenv("DDPM_TRAIN_SAMPLE_IMAGES", "true").lower() == "true"
+        )
+        DDPM_TRAIN_SAMPLE_INTERVAL = os.getenv("DDPM_TRAIN_SAMPLE_INTERVAL", "20")
+        DDPM_TRAIN_SAMPLES_PER_CLASS = os.getenv("DDPM_TRAIN_SAMPLES_PER_CLASS", "2")
+        DDPM_TRAIN_GUIDANCE_SCALE = os.getenv("DDPM_TRAIN_GUIDANCE_SCALE", "3.0")
 
         train_data_path = os.path.join(work_dir, "data/train")
         val_data_path = os.path.join(work_dir, "data/val")
@@ -175,6 +181,12 @@ if __name__ == "__main__":
                 DDPM_USE_ATTENTION,
                 "--snapshot-interval",
                 DDPM_TRAIN_SNAPSHOT_INTERVAL,
+                "--sample-interval",
+                DDPM_TRAIN_SAMPLE_INTERVAL,
+                "--samples-per-class",
+                DDPM_TRAIN_SAMPLES_PER_CLASS,
+                "--guidance-scale",
+                DDPM_TRAIN_GUIDANCE_SCALE,
                 "--seed",
                 SEED,
                 "--num-workers",
@@ -187,6 +199,8 @@ if __name__ == "__main__":
             command.append("--use-weighted-sampling")
         if DDPM_TRAIN_USE_LR_SCHEDULER:
             command.append("--use-lr-scheduler")
+        if DDPM_TRAIN_SAMPLE_IMAGES:
+            command.append("--sample-images")
 
         result = subprocess.run(command, check=True, shell=False)
     else:

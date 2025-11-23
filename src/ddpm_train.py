@@ -41,6 +41,10 @@ def train(
     use_weighted_sampling: bool = True,
     use_amp: bool = True,
     resume_from: Optional[str] = None,
+    sample_images: bool = True,
+    sample_interval: int = 20,
+    samples_per_class: int = 2,
+    guidance_scale: float = 3.0,
     train_data_path: str = "./data/train",
     val_data_path: str = "./data/val",
     out_dir: str = "./out/ddpm",
@@ -91,6 +95,12 @@ def train(
     )
 
     print("\nLoading datasets...")
+
+    # Create samples directory if sampling is enabled
+    if sample_images:
+        samples_dir = f"{out_dir}/samples-train"
+        os.makedirs(samples_dir, exist_ok=True)
+        print(f"Samples will be saved to: {samples_dir}")
 
     # Training dataset
     train_dataset = datasets.ImageFolder(train_data_path, transform=train_transform)
@@ -415,6 +425,96 @@ def train(
             torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}_ema.pth")
             ema.restore()
 
+        # Generate sample images to monitor quality
+        if sample_images and (epoch + 1) % sample_interval == 0:
+            print(f"\n\n=== Generating Sample Images (Epoch {epoch+1}) ===")
+            model.eval()
+            ema.apply_shadow()  # Use EMA weights for better quality
+
+            # Generate samples for each class
+            all_samples = []
+            class_names = train_dataset.classes
+
+            for class_idx in range(num_classes):
+                print(
+                    f"Generating {samples_per_class} samples for class '{class_names[class_idx]}'..."
+                )
+                class_labels = torch.full(
+                    (samples_per_class,), class_idx, device=device, dtype=torch.long
+                )
+
+                # Generate samples with classifier-free guidance
+                with torch.no_grad():
+                    if use_amp:
+                        with torch.cuda.amp.autocast():
+                            samples = model.sample(
+                                batch_size=samples_per_class,
+                                class_labels=class_labels,
+                                guidance_scale=guidance_scale,
+                            )
+                    else:
+                        samples = model.sample(
+                            batch_size=samples_per_class,
+                            class_labels=class_labels,
+                            guidance_scale=guidance_scale,
+                        )
+
+                all_samples.append(samples)
+
+            ema.restore()  # Restore training weights
+
+            # Denormalize samples from [-1, 1] to [0, 1]
+            all_samples = torch.cat(all_samples, dim=0)
+            all_samples = (all_samples + 1) / 2  # Scale to [0, 1]
+            all_samples = torch.clamp(all_samples, 0, 1)
+
+            # Create visualization grid
+            fig, axes = plt.subplots(
+                num_classes,
+                samples_per_class,
+                figsize=(samples_per_class * 2, num_classes * 2),
+            )
+
+            # Handle single row/column edge cases
+            if num_classes == 1 and samples_per_class == 1:
+                axes = np.array([[axes]])
+            elif num_classes == 1:
+                axes = axes.reshape(1, -1)
+            elif samples_per_class == 1:
+                axes = axes.reshape(-1, 1)
+
+            for class_idx in range(num_classes):
+                for sample_idx in range(samples_per_class):
+                    img_idx = class_idx * samples_per_class + sample_idx
+                    img = all_samples[img_idx].cpu().permute(1, 2, 0).numpy()
+
+                    axes[class_idx, sample_idx].imshow(img)
+                    axes[class_idx, sample_idx].axis("off")
+
+                    if sample_idx == 0:
+                        axes[class_idx, sample_idx].set_ylabel(
+                            f"{class_names[class_idx]}",
+                            fontsize=12,
+                            rotation=0,
+                            ha="right",
+                            va="center",
+                        )
+
+            plt.suptitle(
+                f"Generated Samples - Epoch {epoch+1} (Guidance Scale: {guidance_scale})",
+                fontsize=14,
+                y=0.98,
+            )
+            plt.tight_layout()
+
+            # Save the visualization
+            sample_path = f"{samples_dir}/epoch_{epoch+1:04d}.png"
+            plt.savefig(sample_path, dpi=150, bbox_inches="tight")
+            print(f"Sample images saved to: {sample_path}")
+            plt.close()
+
+            print("=" * 60)
+
         epoch_end_time = time.time()
         epoch_elapsed = epoch_end_time - epoch_start_time
         epoch_minutes = int(epoch_elapsed // 60)
@@ -638,6 +738,35 @@ if __name__ == "__main__":
         help="Path to checkpoint file to resume training from (e.g., './out/ddpm/checkpoint_epoch20.pth')",
     )
     parser.add_argument(
+        "--sample-images",
+        action="store_true",
+        default=True,
+        help="Generate sample images during training to monitor quality (default: True)",
+    )
+    parser.add_argument(
+        "--no-sample-images",
+        action="store_true",
+        help="Disable sample image generation during training",
+    )
+    parser.add_argument(
+        "--sample-interval",
+        type=int,
+        default=20,
+        help="Interval (in epochs) for generating sample images (default: 20)",
+    )
+    parser.add_argument(
+        "--samples-per-class",
+        type=int,
+        default=2,
+        help="Number of samples to generate per class for visualization (default: 2)",
+    )
+    parser.add_argument(
+        "--guidance-scale",
+        type=float,
+        default=3.0,
+        help="Classifier-free guidance scale for sample generation (0.0=no guidance, 3.0-7.0 typical, default: 3.0)",
+    )
+    parser.add_argument(
         "--train-data-path", type=str, default="./data/stats", help="Training data path"
     )
     parser.add_argument(
@@ -701,6 +830,9 @@ if __name__ == "__main__":
     # Handle AMP flags (--no-amp takes precedence)
     use_amp = args.use_amp and not args.no_amp
 
+    # Handle sample images flags (--no-sample-images takes precedence)
+    sample_images = args.sample_images and not args.no_sample_images
+
     start_time = time.time()
 
     train(
@@ -722,6 +854,10 @@ if __name__ == "__main__":
         use_weighted_sampling=args.use_weighted_sampling,
         use_amp=use_amp,
         resume_from=args.resume_from,
+        sample_images=sample_images,
+        sample_interval=args.sample_interval,
+        samples_per_class=args.samples_per_class,
+        guidance_scale=args.guidance_scale,
         train_data_path=args.train_data_path,
         val_data_path=args.val_data_path,
         out_dir=args.out_dir,
