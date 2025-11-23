@@ -218,7 +218,7 @@ def train(
     scaler = None
     if use_amp and device == "cuda":
         print("\n=== Setting up Automatic Mixed Precision (AMP) ===")
-        scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.amp.GradScaler(device)
         print("AMP enabled: Training will use float16 for faster computation")
     elif use_amp and device != "cuda":
         print("\n=== AMP Warning ===")
@@ -326,7 +326,7 @@ def train(
 
             # Forward pass with automatic mixed precision
             if use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast(device):
                     loss = model.training_step(
                         images, class_labels=labels, criterion=criterion
                     )
@@ -377,7 +377,7 @@ def train(
 
                 # Use autocast for validation too (faster, no quality loss)
                 if use_amp:
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast(device):
                         predicted_noise, noise = model(images, class_labels=labels)
                         loss = criterion(predicted_noise, noise)
                 else:
@@ -446,7 +446,7 @@ def train(
                 # Generate samples with classifier-free guidance
                 with torch.no_grad():
                     if use_amp:
-                        with torch.cuda.amp.autocast():
+                        with torch.amp.autocast("cuda"):
                             samples = model.sample(
                                 batch_size=samples_per_class,
                                 class_labels=class_labels,
