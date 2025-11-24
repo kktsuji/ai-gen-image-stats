@@ -145,6 +145,112 @@ def print_gradient_explosion_stop_message(
     print(f"   Emergency checkpoint saved to: {checkpoint_path}")
 
 
+def save_training_history_csv(
+    out_dir: str,
+    train_losses: list,
+    val_losses: list,
+    learning_rates: list,
+    use_scheduler: bool = False,
+) -> str:
+    """Save training history to CSV file.
+
+    Args:
+        out_dir: Output directory
+        train_losses: Training loss history
+        val_losses: Validation loss history
+        learning_rates: Learning rate history
+        use_scheduler: Whether learning rate scheduler was used
+
+    Returns:
+        Path to saved CSV file
+    """
+    history_path = f"{out_dir}/training_history.csv"
+    with open(history_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        if use_scheduler and learning_rates:
+            writer.writerow(["epoch", "train_loss", "val_loss", "learning_rate"])
+            for epoch, (train_loss, val_loss, lr) in enumerate(
+                zip(train_losses, val_losses, learning_rates), 1
+            ):
+                writer.writerow([epoch, train_loss, val_loss, lr])
+        else:
+            writer.writerow(["epoch", "train_loss", "val_loss"])
+            for epoch, (train_loss, val_loss) in enumerate(
+                zip(train_losses, val_losses), 1
+            ):
+                writer.writerow([epoch, train_loss, val_loss])
+    return history_path
+
+
+def plot_training_curves(
+    out_dir: str,
+    train_losses: list,
+    val_losses: list,
+    learning_rates: list,
+    use_scheduler: bool = False,
+) -> str:
+    """Plot and save training curves.
+
+    Args:
+        out_dir: Output directory
+        train_losses: Training loss history
+        val_losses: Validation loss history
+        learning_rates: Learning rate history
+        use_scheduler: Whether learning rate scheduler was used
+
+    Returns:
+        Path to saved plot file
+    """
+    num_epochs = len(train_losses)
+    num_plots = 3 if use_scheduler and learning_rates else 2
+    plt.figure(figsize=(6 * num_plots, 5))
+
+    # Plot loss
+    plt.subplot(1, num_plots, 1)
+    plt.plot(range(1, num_epochs + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, num_epochs + 1), val_losses, label="Val Loss", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # Plot loss (log scale)
+    plt.subplot(1, num_plots, 2)
+    plt.plot(range(1, num_epochs + 1), train_losses, label="Train Loss", marker="o")
+    plt.plot(range(1, num_epochs + 1), val_losses, label="Val Loss", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (log scale)")
+    plt.title("Training and Validation Loss (Log Scale)")
+    plt.yscale("log")
+    plt.legend()
+    plt.grid(True)
+
+    # Plot learning rate schedule if scheduler is used
+    if use_scheduler and learning_rates:
+        plt.subplot(1, num_plots, 3)
+        plt.plot(
+            range(1, num_epochs + 1),
+            learning_rates,
+            label="Learning Rate",
+            marker="o",
+            color="green",
+        )
+        plt.xlabel("Epoch")
+        plt.ylabel("Learning Rate")
+        plt.title("Learning Rate Schedule")
+        plt.legend()
+        plt.grid(True)
+        plt.yscale("log")
+
+    plt.tight_layout()
+    plot_path = f"{out_dir}/training_curves.png"
+    plt.savefig(plot_path, dpi=150)
+    plt.close()
+
+    return plot_path
+
+
 def train(
     epochs: int = 200,
     batch_size: int = 8,
@@ -499,6 +605,27 @@ def train(
                             scaler=scaler,
                             ema=ema,
                         )
+
+                        # Save training history and plots up to this point
+                        if train_losses and val_losses:
+                            history_path = save_training_history_csv(
+                                out_dir=out_dir,
+                                train_losses=train_losses,
+                                val_losses=val_losses,
+                                learning_rates=learning_rates,
+                                use_scheduler=scheduler is not None,
+                            )
+                            print(f"   Training history saved to: {history_path}")
+
+                            plot_path = plot_training_curves(
+                                out_dir=out_dir,
+                                train_losses=train_losses,
+                                val_losses=val_losses,
+                                learning_rates=learning_rates,
+                                use_scheduler=scheduler is not None,
+                            )
+                            print(f"   Training curves saved to: {plot_path}")
+
                         print_gradient_explosion_stop_message(
                             explosion_count=gradient_explosion_count,
                             learning_rate=learning_rate,
@@ -555,6 +682,27 @@ def train(
                             scaler=scaler,
                             ema=ema,
                         )
+
+                        # Save training history and plots up to this point
+                        if train_losses and val_losses:
+                            history_path = save_training_history_csv(
+                                out_dir=out_dir,
+                                train_losses=train_losses,
+                                val_losses=val_losses,
+                                learning_rates=learning_rates,
+                                use_scheduler=scheduler is not None,
+                            )
+                            print(f"   Training history saved to: {history_path}")
+
+                            plot_path = plot_training_curves(
+                                out_dir=out_dir,
+                                train_losses=train_losses,
+                                val_losses=val_losses,
+                                learning_rates=learning_rates,
+                                use_scheduler=scheduler is not None,
+                            )
+                            print(f"   Training curves saved to: {plot_path}")
+
                         print_gradient_explosion_stop_message(
                             explosion_count=gradient_explosion_count,
                             learning_rate=learning_rate,
@@ -796,70 +944,24 @@ def train(
     print(f"EMA state saved to {ema_state_path}")
 
     # Save training history to CSV
-    history_path = f"{out_dir}/training_history.csv"
-    with open(history_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        if scheduler is not None:
-            writer.writerow(["epoch", "train_loss", "val_loss", "learning_rate"])
-            for epoch, (train_loss, val_loss, lr) in enumerate(
-                zip(train_losses, val_losses, learning_rates), 1
-            ):
-                writer.writerow([epoch, train_loss, val_loss, lr])
-        else:
-            writer.writerow(["epoch", "train_loss", "val_loss"])
-            for epoch, (train_loss, val_loss) in enumerate(
-                zip(train_losses, val_losses), 1
-            ):
-                writer.writerow([epoch, train_loss, val_loss])
+    history_path = save_training_history_csv(
+        out_dir=out_dir,
+        train_losses=train_losses,
+        val_losses=val_losses,
+        learning_rates=learning_rates,
+        use_scheduler=scheduler is not None,
+    )
     print(f"Training history saved to {history_path}")
 
     # Plot training curves
-    num_plots = 3 if scheduler is not None else 2
-    plt.figure(figsize=(6 * num_plots, 5))
-
-    # Plot loss
-    plt.subplot(1, num_plots, 1)
-    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training and Validation Loss")
-    plt.legend()
-    plt.grid(True)
-
-    # Plot loss (log scale) if useful
-    plt.subplot(1, num_plots, 2)
-    plt.plot(range(1, epochs + 1), train_losses, label="Train Loss", marker="o")
-    plt.plot(range(1, epochs + 1), val_losses, label="Val Loss", marker="o")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss (log scale)")
-    plt.title("Training and Validation Loss (Log Scale)")
-    plt.yscale("log")
-    plt.legend()
-    plt.grid(True)
-
-    # Plot learning rate schedule if scheduler is used
-    if scheduler is not None:
-        plt.subplot(1, num_plots, 3)
-        plt.plot(
-            range(1, epochs + 1),
-            learning_rates,
-            label="Learning Rate",
-            marker="o",
-            color="green",
-        )
-        plt.xlabel("Epoch")
-        plt.ylabel("Learning Rate")
-        plt.title("Learning Rate Schedule")
-        plt.legend()
-        plt.grid(True)
-        plt.yscale("log")
-
-    plt.tight_layout()
-    plot_path = f"{out_dir}/training_curves.png"
-    plt.savefig(plot_path, dpi=150)
+    plot_path = plot_training_curves(
+        out_dir=out_dir,
+        train_losses=train_losses,
+        val_losses=val_losses,
+        learning_rates=learning_rates,
+        use_scheduler=scheduler is not None,
+    )
     print(f"Training curves saved to {plot_path}")
-    plt.close()
 
 
 if __name__ == "__main__":
