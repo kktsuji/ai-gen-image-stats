@@ -119,7 +119,7 @@ transforms.Compose([
 
 ### Priority 4: Architecture Improvements
 
-**For 40×40 (Current - Already Optimal):**
+**For 40×40 (Original Configuration):**
 ```python
 channel_multipliers = (1, 2, 4)  # 3 stages
 base_channels = 64
@@ -133,6 +133,40 @@ use_attention = (False, False, True)  # Only at 10×10 bottleneck
 - ❌ Attention at 40×40 would be 256x more expensive (1,600 pixels)
 - Self-attention cost scales as O(n²) where n = spatial resolution
 - Current configuration balances effectiveness with efficiency
+
+**For 96×96 (Middle-Ground Strategy - Recommended):** ⭐
+```python
+channel_multipliers = (1, 2, 2, 4)  # 4 stages
+base_channels = 64
+num_res_blocks = 2
+use_attention = (False, False, True, True)  # At 24×24 and 12×12
+```
+
+**Why this is the sweet spot:**
+- ✅ 5.76× more pixels than 40×40 (9,216 vs 1,600 pixels)
+- ✅ Balanced computational cost vs quality improvement
+- ✅ 12×12 bottleneck (144 pixels) - optimal for information preservation
+- ✅ Attention at 24×24 (576 pixels) and 12×12 (144 pixels) - manageable overhead
+- ✅ ~30-35M parameters - good capacity without overfitting risk
+- ✅ Better GPU memory efficiency than 128×128
+- ✅ Can use batch_size=6-8 on 8GB GPU
+- ✅ Faster experimentation than full 128×128
+
+**Architecture flow for 96×96:**
+```
+Input: 96×96 (9,216 pixels)
+├─ Down1: 96×96 → 96×96 (64 channels, no downsample)
+├─ Down2: 96×96 → 48×48 (64 → 128, downsample)
+├─ Down3: 48×48 → 24×24 (128 → 128, downsample) ← Attention here
+├─ Down4: 24×24 → 12×12 (128 → 256, downsample) ← Attention here
+├─ Middle: 12×12 (256 channels) ← Good bottleneck!
+├─ Up1-4: Reverse process
+Output: 96×96
+
+Parameters: ~30-35M
+Bottleneck: 12×12 = 144 pixels ✓
+Training time: ~2-2.5x baseline
+```
 
 **For 128×128:**
 ```python
@@ -462,15 +496,44 @@ nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
 
 ## Memory and Training Considerations
 
-| Resolution | Stages | Params  | Batch Size | GPU Memory | Training Time |
-| ---------- | ------ | ------- | ---------- | ---------- | ------------- |
-| 40×40      | 3      | ~15-20M | 8          | ~2GB       | 1x (baseline) |
-| 128×128    | 5      | ~40-50M | 4-6        | ~6-8GB     | ~3-4x         |
-| 256×256    | 6      | ~50-60M | 2-4        | ~10-14GB   | ~8-10x        |
+| Resolution | Stages | Params  | Batch Size | GPU Memory | Training Time | Notes                    |
+| ---------- | ------ | ------- | ---------- | ---------- | ------------- | ------------------------ |
+| 40×40      | 3      | ~15-20M | 8          | ~2GB       | 1x (baseline) | Original config          |
+| 96×96      | 4      | ~30-35M | 6-8        | ~4-5GB     | ~2-2.5x       | ⭐ Recommended sweet spot |
+| 128×128    | 5      | ~40-50M | 4-6        | ~6-8GB     | ~3-4x         | High quality             |
+| 256×256    | 6      | ~50-60M | 2-4        | ~10-14GB   | ~8-10x        | Maximum quality          |
 
 **GPU Requirements:**
-- 8GB VRAM: Safe for 128×128 with batch_size=4
+- 8GB VRAM: 
+  - ✅ 96×96 with batch_size=6-8 (comfortable)
+  - ✅ 128×128 with batch_size=4 (tight but works)
 - 16GB+ VRAM: Can do 256×256 with batch_size=2-4
+
+### Why 96×96 with 4 Layers is the Sweet Spot
+
+**Advantages over 40×40:**
+- 5.76× more pixels for smoother boundaries
+- Deeper architecture (4 vs 3 layers) for better feature learning
+- Larger receptive field for context understanding
+- 12×12 bottleneck vs 10×10 (44% more information preserved)
+
+**Advantages over 128×128:**
+- 2× faster training iterations
+- Lower GPU memory requirements (can use larger batch sizes)
+- Easier to experiment and iterate
+- Still provides significant quality improvement
+
+**Best for:**
+- Experimentation and rapid prototyping
+- 8GB GPU users who want good quality without memory pressure
+- Projects where training time matters
+- Datasets with 500-2000 images
+
+**When to use 128×128 instead:**
+- Need maximum quality
+- Have 16GB+ GPU
+- Willing to wait longer for training
+- Preparing for production deployment
 
 ---
 
@@ -504,8 +567,13 @@ Your current training shows excellent convergence:
 
 ### ⏳ TODO (In Order):
 
-1. **Increase resolution to 128×128** (biggest impact)
-2. **Use deeper architecture:** `channel_multipliers=(1, 2, 2, 4, 8)`
+1. **Increase resolution to 96×96** (recommended starting point) ⭐
+   - Good balance between quality and training speed
+   - Use `channel_multipliers=(1, 2, 2, 4)` for 4 layers
+   - Use `use_attention=(0, 0, 1, 1)` for attention at 24×24 and 12×12
+2. **Alternative: 128×128** (if you need maximum quality)
+   - Use deeper architecture: `channel_multipliers=(1, 2, 2, 4, 8)` for 5 layers
+   - Use `use_attention=(0, 0, 0, 1, 1)` for attention at 16×16 and 8×8
 3. **Add data augmentation** (random crop, flip, rotation)
 4. **Start with transform resize** for flexibility
 5. **Train 100-200 epochs** to test
@@ -544,6 +612,21 @@ Your jaggy boundary issue is primarily due to:
 2. **Shallow architecture** - insufficient multi-scale feature learning
 3. **ConvTranspose2d artifacts** - known to cause checkerboard patterns
 
-**Solution is straightforward:** Increase to 128×128 with deeper architecture (5 stages). This is much simpler and more effective than pursuing Latent Diffusion Models.
+**Recommended solution:** Start with 96×96 and 4-layer architecture as a sweet spot between quality and efficiency. This provides:
+- 5.76× more pixels for smoother boundaries
+- Deeper network (4 stages) for better feature learning
+- Manageable GPU memory and training time
+- ~50-60% improvement in boundary quality expected
+
+**Alternative solution:** Use 128×128 with 5-layer architecture for maximum quality. This is much simpler and more effective than pursuing Latent Diffusion Models.
 
 The deeper network with more parameters will **help, not hurt** - your current model is likely underfitting, and the additional capacity will enable better feature learning and smoother boundaries.
+
+**Quick Start:**
+```bash
+# For 96×96 (recommended starting point)
+python src/ddpm_train.py --img-size 96 --channel-multipliers 1,2,2,4 --use-attention 0,0,1,1 --batch-size 6
+
+# For 128×128 (maximum quality)
+python src/ddpm_train.py --img-size 128 --channel-multipliers 1,2,2,4,8 --use-attention 0,0,0,1,1 --batch-size 4
+```
