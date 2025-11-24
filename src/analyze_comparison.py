@@ -22,7 +22,7 @@ def load_results(base_path, experiment_name):
     return pd.concat(results, ignore_index=True)
 
 
-base_path = "./out/split-ratio0.2_seed0"
+base_path = "./out/split-ratio0.2_seed0/train-1111"
 train_normal = load_results(base_path, "train")
 train_synth = load_results(base_path, "train-synth")
 
@@ -200,6 +200,8 @@ for idx, (metric, title) in enumerate(metrics_to_plot):
     ax.set_xlabel("Epoch")
     ax.set_ylabel(title)
     ax.set_title(title)
+    ax.set_xlim(0.0, 10.0)
+    ax.set_ylim(0.0, 1.0)
     ax.legend()
     ax.grid(True, alpha=0.3)
 
