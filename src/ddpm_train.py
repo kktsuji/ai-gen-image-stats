@@ -251,6 +251,93 @@ def plot_training_curves(
     return plot_path
 
 
+def handle_gradient_explosion_stop(
+    out_dir: str,
+    epoch: int,
+    batch_idx: int,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    train_losses: list,
+    val_losses: list,
+    learning_rates: list,
+    explosion_count: int,
+    grad_norm: float,
+    learning_rate: float,
+    batch_size: int,
+    beta_schedule: str,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+    scaler: Optional[torch.amp.GradScaler] = None,
+    ema: Optional[EMA] = None,
+) -> None:
+    """Handle training stop due to gradient explosion.
+
+    Saves emergency checkpoint, training history, and plots, then prints diagnostic message.
+
+    Args:
+        out_dir: Output directory
+        epoch: Current epoch
+        batch_idx: Current batch index
+        model: Model to save
+        optimizer: Optimizer to save
+        train_losses: Training loss history
+        val_losses: Validation loss history
+        learning_rates: Learning rate history
+        explosion_count: Number of gradient explosions
+        grad_norm: Final gradient norm that triggered stop
+        learning_rate: Current learning rate
+        batch_size: Current batch size
+        beta_schedule: Current beta schedule
+        scheduler: Optional learning rate scheduler
+        scaler: Optional gradient scaler (for AMP)
+        ema: Optional EMA state
+    """
+    # Save emergency checkpoint
+    checkpoint_path = save_emergency_checkpoint(
+        out_dir=out_dir,
+        epoch=epoch,
+        batch_idx=batch_idx,
+        model=model,
+        optimizer=optimizer,
+        train_losses=train_losses,
+        val_losses=val_losses,
+        learning_rates=learning_rates,
+        explosion_count=explosion_count,
+        grad_norm=grad_norm,
+        scheduler=scheduler,
+        scaler=scaler,
+        ema=ema,
+    )
+
+    # Save training history and plots up to this point
+    if train_losses and val_losses:
+        history_path = save_training_history_csv(
+            out_dir=out_dir,
+            train_losses=train_losses,
+            val_losses=val_losses,
+            learning_rates=learning_rates,
+            use_scheduler=scheduler is not None,
+        )
+        print(f"   Training history saved to: {history_path}")
+
+        plot_path = plot_training_curves(
+            out_dir=out_dir,
+            train_losses=train_losses,
+            val_losses=val_losses,
+            learning_rates=learning_rates,
+            use_scheduler=scheduler is not None,
+        )
+        print(f"   Training curves saved to: {plot_path}")
+
+    # Print diagnostic message
+    print_gradient_explosion_stop_message(
+        explosion_count=explosion_count,
+        learning_rate=learning_rate,
+        batch_size=batch_size,
+        beta_schedule=beta_schedule,
+        checkpoint_path=checkpoint_path,
+    )
+
+
 def train(
     epochs: int = 200,
     batch_size: int = 8,
@@ -570,77 +657,6 @@ def train(
 
                 # Gradient clipping (unscale first for accurate clipping)
                 scaler.unscale_(optimizer)
-
-                # Check for gradient explosion before clipping
-                total_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), max_norm=float("inf")
-                )
-
-                if total_grad_norm > gradient_explosion_threshold:
-                    gradient_explosion_count += 1
-                    should_stop = check_gradient_explosion(
-                        grad_norm=total_grad_norm,
-                        threshold=gradient_explosion_threshold,
-                        explosion_count=gradient_explosion_count,
-                        max_explosions=max_gradient_explosions,
-                        epoch=epoch,
-                        total_epochs=epochs,
-                        batch_idx=batch_idx,
-                        total_batches=len(train_loader),
-                    )
-
-                    if should_stop:
-                        checkpoint_path = save_emergency_checkpoint(
-                            out_dir=out_dir,
-                            epoch=epoch,
-                            batch_idx=batch_idx,
-                            model=model,
-                            optimizer=optimizer,
-                            train_losses=train_losses,
-                            val_losses=val_losses,
-                            learning_rates=learning_rates,
-                            explosion_count=gradient_explosion_count,
-                            grad_norm=total_grad_norm.item(),
-                            scheduler=scheduler,
-                            scaler=scaler,
-                            ema=ema,
-                        )
-
-                        # Save training history and plots up to this point
-                        if train_losses and val_losses:
-                            history_path = save_training_history_csv(
-                                out_dir=out_dir,
-                                train_losses=train_losses,
-                                val_losses=val_losses,
-                                learning_rates=learning_rates,
-                                use_scheduler=scheduler is not None,
-                            )
-                            print(f"   Training history saved to: {history_path}")
-
-                            plot_path = plot_training_curves(
-                                out_dir=out_dir,
-                                train_losses=train_losses,
-                                val_losses=val_losses,
-                                learning_rates=learning_rates,
-                                use_scheduler=scheduler is not None,
-                            )
-                            print(f"   Training curves saved to: {plot_path}")
-
-                        print_gradient_explosion_stop_message(
-                            explosion_count=gradient_explosion_count,
-                            learning_rate=learning_rate,
-                            batch_size=batch_size,
-                            beta_schedule=beta_schedule,
-                            checkpoint_path=checkpoint_path,
-                        )
-                        return  # Exit training
-
-                # Apply gradient clipping
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
-                # Optimizer step with scaling
-                scaler.step(optimizer)
-                scaler.update()
             else:
                 # Standard float32 training
                 loss = model.training_step(
@@ -648,72 +664,53 @@ def train(
                 )
                 loss.backward()
 
-                # Check for gradient explosion before clipping
-                total_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), max_norm=float("inf")
+            # Check for gradient explosion before clipping (applies to both AMP and non-AMP)
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=float("inf")
+            )
+
+            if total_grad_norm > gradient_explosion_threshold:
+                gradient_explosion_count += 1
+                should_stop = check_gradient_explosion(
+                    grad_norm=total_grad_norm,
+                    threshold=gradient_explosion_threshold,
+                    explosion_count=gradient_explosion_count,
+                    max_explosions=max_gradient_explosions,
+                    epoch=epoch,
+                    total_epochs=epochs,
+                    batch_idx=batch_idx,
+                    total_batches=len(train_loader),
                 )
 
-                if total_grad_norm > gradient_explosion_threshold:
-                    gradient_explosion_count += 1
-                    should_stop = check_gradient_explosion(
-                        grad_norm=total_grad_norm,
-                        threshold=gradient_explosion_threshold,
-                        explosion_count=gradient_explosion_count,
-                        max_explosions=max_gradient_explosions,
+                if should_stop:
+                    handle_gradient_explosion_stop(
+                        out_dir=out_dir,
                         epoch=epoch,
-                        total_epochs=epochs,
                         batch_idx=batch_idx,
-                        total_batches=len(train_loader),
+                        model=model,
+                        optimizer=optimizer,
+                        train_losses=train_losses,
+                        val_losses=val_losses,
+                        learning_rates=learning_rates,
+                        explosion_count=gradient_explosion_count,
+                        grad_norm=total_grad_norm.item(),
+                        learning_rate=learning_rate,
+                        batch_size=batch_size,
+                        beta_schedule=beta_schedule,
+                        scheduler=scheduler,
+                        scaler=scaler,
+                        ema=ema,
                     )
+                    return  # Exit training
 
-                    if should_stop:
-                        checkpoint_path = save_emergency_checkpoint(
-                            out_dir=out_dir,
-                            epoch=epoch,
-                            batch_idx=batch_idx,
-                            model=model,
-                            optimizer=optimizer,
-                            train_losses=train_losses,
-                            val_losses=val_losses,
-                            learning_rates=learning_rates,
-                            explosion_count=gradient_explosion_count,
-                            grad_norm=total_grad_norm.item(),
-                            scheduler=scheduler,
-                            scaler=scaler,
-                            ema=ema,
-                        )
+            # Apply gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
-                        # Save training history and plots up to this point
-                        if train_losses and val_losses:
-                            history_path = save_training_history_csv(
-                                out_dir=out_dir,
-                                train_losses=train_losses,
-                                val_losses=val_losses,
-                                learning_rates=learning_rates,
-                                use_scheduler=scheduler is not None,
-                            )
-                            print(f"   Training history saved to: {history_path}")
-
-                            plot_path = plot_training_curves(
-                                out_dir=out_dir,
-                                train_losses=train_losses,
-                                val_losses=val_losses,
-                                learning_rates=learning_rates,
-                                use_scheduler=scheduler is not None,
-                            )
-                            print(f"   Training curves saved to: {plot_path}")
-
-                        print_gradient_explosion_stop_message(
-                            explosion_count=gradient_explosion_count,
-                            learning_rate=learning_rate,
-                            batch_size=batch_size,
-                            beta_schedule=beta_schedule,
-                            checkpoint_path=checkpoint_path,
-                        )
-                        return  # Exit training
-
-                # Apply gradient clipping
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # Optimizer step
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
                 optimizer.step()
 
             # Update EMA
