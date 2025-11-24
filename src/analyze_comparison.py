@@ -22,7 +22,7 @@ def load_results(base_path, experiment_name):
     return pd.concat(results, ignore_index=True)
 
 
-_base_path = "./out/split-ratio0.2_seed0_all/train-*"
+_base_path = "./out/split-ratio0.2_seed0_all/train-0001"
 for base_path in sorted(glob(_base_path)):
 
     train_normal = load_results(base_path, "train")
