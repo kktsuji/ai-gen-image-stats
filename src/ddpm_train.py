@@ -245,9 +245,9 @@ def train(
         )
 
         # Main scheduler: cosine annealing from initial LR to minimum LR
-        main_scheduler = CosineAnnealingLR(
-            optimizer, T_max=epochs - lr_warmup_epochs, eta_min=lr_min
-        )
+        # Ensure T_max is at least 1 to avoid division by zero
+        T_max = max(1, epochs - lr_warmup_epochs)
+        main_scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=lr_min)
 
         # Sequential scheduler: warmup followed by cosine annealing
         scheduler = SequentialLR(
