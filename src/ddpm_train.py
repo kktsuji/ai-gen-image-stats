@@ -658,8 +658,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-lr-scheduler",
         action="store_true",
-        default=True,
-        help="Enable learning rate scheduler with warmup and cosine annealing (default: True)",
+        default=False,
+        help="Enable learning rate scheduler with warmup and cosine annealing (default: False)",
     )
     parser.add_argument(
         "--lr-warmup-epochs",
