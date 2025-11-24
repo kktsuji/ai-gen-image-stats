@@ -1,4 +1,5 @@
 import os
+from glob import glob
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,11 +9,13 @@ import pandas as pd
 # Load all training results
 def load_results(base_path, experiment_name):
     results = []
-    for seed in range(5):
-        csv_path = os.path.join(
-            base_path, experiment_name, f"seed_{seed}", "training_results.csv"
-        )
+    pattern = os.path.join(base_path, experiment_name, "seed_*", "training_results.csv")
+    csv_paths = sorted(glob(pattern))
+
+    for csv_path in csv_paths:
         df = pd.read_csv(csv_path)
+        # Extract seed number from path
+        seed = int(csv_path.split("seed_")[1].split(os.sep)[0])
         df["seed"] = seed
         df["experiment"] = experiment_name
         results.append(df)
