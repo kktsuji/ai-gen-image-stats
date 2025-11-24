@@ -368,6 +368,7 @@ def train(
     seed: Optional[int] = None,
     use_attention: Tuple[bool, ...] = (False, False, True),
     snapshot_interval: Optional[int] = 20,
+    check_gradient_explosion: bool = False,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     """Training function for DDPM."""
@@ -664,44 +665,47 @@ def train(
                 )
                 loss.backward()
 
-            # Check for gradient explosion before clipping (applies to both AMP and non-AMP)
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), max_norm=float("inf")
-            )
-
-            if total_grad_norm > gradient_explosion_threshold:
-                gradient_explosion_count += 1
-                should_stop = check_gradient_explosion(
-                    grad_norm=total_grad_norm,
-                    threshold=gradient_explosion_threshold,
-                    explosion_count=gradient_explosion_count,
-                    max_explosions=max_gradient_explosions,
-                    epoch=epoch,
-                    total_epochs=epochs,
-                    batch_idx=batch_idx,
-                    total_batches=len(train_loader),
+            if check_gradient_explosion:
+                # Check for gradient explosion before clipping (applies to both AMP and non-AMP)
+                total_grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=float("inf")
                 )
 
-                if should_stop:
-                    handle_gradient_explosion_stop(
-                        out_dir=out_dir,
-                        epoch=epoch,
-                        batch_idx=batch_idx,
-                        model=model,
-                        optimizer=optimizer,
-                        train_losses=train_losses,
-                        val_losses=val_losses,
-                        learning_rates=learning_rates,
+                if total_grad_norm > gradient_explosion_threshold:
+                    gradient_explosion_count += 1
+                    should_stop = check_gradient_explosion(
+                        grad_norm=total_grad_norm,
+                        threshold=gradient_explosion_threshold,
                         explosion_count=gradient_explosion_count,
-                        grad_norm=total_grad_norm.item(),
-                        learning_rate=learning_rate,
-                        batch_size=batch_size,
-                        beta_schedule=beta_schedule,
-                        scheduler=scheduler,
-                        scaler=scaler,
-                        ema=ema,
+                        max_explosions=max_gradient_explosions,
+                        epoch=epoch,
+                        total_epochs=epochs,
+                        batch_idx=batch_idx,
+                        total_batches=len(train_loader),
                     )
-                    return  # Exit training
+
+                    if should_stop:
+                        handle_gradient_explosion_stop(
+                            out_dir=out_dir,
+                            epoch=epoch,
+                            batch_idx=batch_idx,
+                            model=model,
+                            optimizer=optimizer,
+                            train_losses=train_losses,
+                            val_losses=val_losses,
+                            learning_rates=learning_rates,
+                            explosion_count=gradient_explosion_count,
+                            grad_norm=total_grad_norm.item(),
+                            learning_rate=learning_rate,
+                            batch_size=batch_size,
+                            beta_schedule=beta_schedule,
+                            scheduler=scheduler,
+                            scaler=scaler,
+                            ema=ema,
+                        )
+                        raise RuntimeError(
+                            "Training stopped due to gradient explosion."
+                        )
 
             # Apply gradient clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
