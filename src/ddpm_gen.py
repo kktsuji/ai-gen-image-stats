@@ -173,8 +173,7 @@ def generate(
             print(
                 f"Batch [{batch_idx + 1}/{num_batches}] - Generated {current_batch_size} samples, "
                 f"Time: {batch_minutes:02d}:{batch_seconds:02d}, "
-                f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}",
-                end="\r",
+                f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}"
             )
 
     print("\n\nGeneration completed.")
