@@ -22,11 +22,15 @@ def load_results(base_path, experiment_name):
     return pd.concat(results, ignore_index=True)
 
 
-_base_path = "./out/split-ratio0.2_seed0_all/train-0001"
+# Experiment names
+EXPERIMENT_BASELINE = "train"
+EXPERIMENT_SYNTH = "train-synth-ddpm-0011"
+
+_base_path = "./out/split-ratio0.2_seed0_all/train/train-*"
 for base_path in sorted(glob(_base_path)):
 
-    train_normal = load_results(base_path, "train")
-    train_synth = load_results(base_path, "train-synth")
+    train_normal = load_results(base_path, EXPERIMENT_BASELINE)
+    train_synth = load_results(base_path, EXPERIMENT_SYNTH)
 
     # Combine all results
     all_results = pd.concat([train_normal, train_synth], ignore_index=True)
@@ -57,10 +61,10 @@ for base_path in sorted(glob(_base_path)):
 
     comparison_data = []
     for metric in metrics_to_compare:
-        normal_values = final_results[final_results["experiment"] == "train"][
-            metric
-        ].values
-        synth_values = final_results[final_results["experiment"] == "train-synth"][
+        normal_values = final_results[
+            final_results["experiment"] == EXPERIMENT_BASELINE
+        ][metric].values
+        synth_values = final_results[final_results["experiment"] == EXPERIMENT_SYNTH][
             metric
         ].values
 
@@ -111,13 +115,13 @@ for base_path in sorted(glob(_base_path)):
             print(f"  ✗ {metric_name}: {row['improvement_%']:.2f}% (decreased)")
 
     # Analyze abnormal class specifically
-    print("\n" + "-" * 80)
+    print("-" * 80)
     print("ABNORMAL CLASS DETECTION (Most Important for Imbalanced Dataset)")
     print("-" * 80)
-    abnormal_normal = final_results[final_results["experiment"] == "train"][
+    abnormal_normal = final_results[final_results["experiment"] == EXPERIMENT_BASELINE][
         "val_1.Abnormal_accuracy"
     ].values
-    abnormal_synth = final_results[final_results["experiment"] == "train-synth"][
+    abnormal_synth = final_results[final_results["experiment"] == EXPERIMENT_SYNTH][
         "val_1.Abnormal_accuracy"
     ].values
 
@@ -132,12 +136,14 @@ for base_path in sorted(glob(_base_path)):
     )
 
     # Training stability
-    print("\n" + "-" * 80)
+    print("-" * 80)
     print("TRAINING STABILITY (Lower std = more stable)")
     print("-" * 80)
     for metric in ["val_accuracy", "val_pr_auc", "val_roc_auc"]:
-        normal_std = final_results[final_results["experiment"] == "train"][metric].std()
-        synth_std = final_results[final_results["experiment"] == "train-synth"][
+        normal_std = final_results[final_results["experiment"] == EXPERIMENT_BASELINE][
+            metric
+        ].std()
+        synth_std = final_results[final_results["experiment"] == EXPERIMENT_SYNTH][
             metric
         ].std()
         print(f"\n{metric}:")
@@ -164,11 +170,11 @@ for base_path in sorted(glob(_base_path)):
     )
 
     print("\nEarly Epochs (1-3) vs Final (10):")
-    for exp in ["train", "train-synth"]:
+    for exp in [EXPERIMENT_BASELINE, EXPERIMENT_SYNTH]:
         exp_data = all_results[all_results["experiment"] == exp]
         early_acc = exp_data[exp_data["epoch"] <= 3]["val_accuracy"].mean()
         final_acc = exp_data[exp_data["epoch"] == 10]["val_accuracy"].mean()
-        exp_name = "Normal" if exp == "train" else "Synth"
+        exp_name = "Normal" if exp == EXPERIMENT_BASELINE else "Synth"
         print(f"\n{exp_name}:")
         print(f"  Epochs 1-3: {early_acc:.2f}%")
         print(f"  Epoch 10:   {final_acc:.2f}%")
@@ -177,7 +183,7 @@ for base_path in sorted(glob(_base_path)):
     # Visualization
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     fig.suptitle(
-        "Training Comparison: Normal vs. Synth (with 30 synthetic abnormal samples)",
+        "Training Comparison: Baseline vs. Baseline + Synth (with 30 synthetic abnormal samples)",
         fontsize=14,
         fontweight="bold",
     )
@@ -195,8 +201,8 @@ for base_path in sorted(glob(_base_path)):
         ax = axes[idx // 3, idx % 3]
 
         for exp, label, color in [
-            ("train", "Normal (437+85)", "blue"),
-            ("train-synth", "Synth (437+85+30)", "red"),
+            (EXPERIMENT_BASELINE, "Baseline (Normal vs. Abnormal)", "blue"),
+            (EXPERIMENT_SYNTH, "Baseline + Synth (Normal vs. Abnormal + Synth)", "red"),
         ]:
             exp_data = all_results[all_results["experiment"] == exp]
             grouped = exp_data.groupby("epoch")[metric].agg(["mean", "std"])
