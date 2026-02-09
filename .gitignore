@@ -194,7 +194,26 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 
-# Workspace
-out
-data
-models
+# Project Specific
+# Training outputs (checkpoints, logs, generated samples)
+outputs/
+out/
+
+# Dataset folders (large files, not for version control)
+data/
+
+# Pre-trained model weights (large files, download separately)
+models/
+
+# PyTorch specific
+*.pt
+*.pth
+*.ckpt
+
+# TensorBoard logs
+runs/
+tb_logs/
+
+# Temporary experiment files
+experiments_temp/
+tmp/
