@@ -1,0 +1,467 @@
+# Refactoring Implementation Plan
+
+This document outlines a step-by-step implementation plan to refactor the codebase according to the [Architecture Specification](../standards/architecture.md). Each step is designed to be small enough for a single feature branch.
+
+## Overview
+
+The refactoring follows a **Vertical Slice + Base Class** architecture pattern with:
+
+- Self-contained experiment types (GAN, Diffusion, Classifier)
+- Shared base classes for common functionality
+- Four-tier testing strategy (unit, component, integration, smoke)
+- Configuration-driven experiments with CLI support
+
+## Implementation Phases
+
+### Phase 1: Project Foundation
+
+#### Step 1: Initial Project Setup
+
+- [ ] Create repository structure (root folders only)
+- [ ] Add `.gitignore` for Python, PyTorch, outputs
+- [ ] Create `requirements.txt` with core dependencies
+- [ ] Create `requirements-dev.txt` with test dependencies
+- [ ] Add basic `README.md` with project overview
+
+#### Step 2: Base Directory Structure
+
+- [ ] Create `src/` folder with `__init__.py`
+- [ ] Create `src/base/` folder with `__init__.py`
+- [ ] Create `src/utils/` folder with `__init__.py`
+- [ ] Create `src/data/` folder with `__init__.py`
+- [ ] Create `src/experiments/` folder with `__init__.py`
+
+#### Step 3: Test Infrastructure Setup
+
+- [ ] Create `tests/` folder with `conftest.py`
+- [ ] Create `tests/fixtures/` for test data
+- [ ] Configure pytest markers in `pytest.ini`
+- [ ] Add test running documentation to README
+
+### Phase 2: Utilities Layer
+
+#### Step 4: Device Management Utility
+
+- [ ] Implement `src/utils/device.py` with CPU/GPU detection
+- [ ] Add `tests/utils/test_device.py` with unit tests
+- [ ] Ensure CPU-only testing works
+
+#### Step 5: Configuration Management
+
+- [ ] Implement `src/utils/config.py` for JSON loading
+- [ ] Add config merging logic (file → defaults)
+- [ ] Create `tests/fixtures/configs/` with sample configs
+- [ ] Add `tests/utils/test_config.py` with unit tests
+
+#### Step 6: CLI Argument Parsing
+
+- [ ] Implement `src/utils/cli.py` with argument parser
+- [ ] Add CLI override logic (CLI → config → defaults)
+- [ ] Add `tests/utils/test_cli.py` with unit tests
+
+#### Step 7: Common Metrics
+
+- [ ] Implement `src/utils/metrics.py` with basic metrics
+- [ ] Add FID, IS, PR-AUC, ROC-AUC placeholders
+- [ ] Add `tests/utils/test_metrics.py` with unit tests
+
+### Phase 3: Data Layer
+
+#### Step 8: Data Transforms
+
+- [ ] Implement `src/data/transforms.py` with common augmentations
+- [ ] Add normalization utilities
+- [ ] Add `tests/data/test_transforms.py` with unit tests
+
+#### Step 9: Dataset Implementations
+
+- [ ] Implement `src/data/datasets.py` with base dataset class
+- [ ] Add image folder dataset implementation
+- [ ] Add `tests/data/test_datasets.py` with component tests
+- [ ] Create mock data in `tests/fixtures/mock_data/`
+
+#### Step 10: Custom Samplers
+
+- [ ] Implement `src/data/samplers.py` (if needed)
+- [ ] Add tests for samplers
+- [ ] Document sampler usage
+
+### Phase 4: Base Classes
+
+#### Step 11: Base Model Interface
+
+- [ ] Implement `src/base/model.py` as ABC
+- [ ] Define required methods (forward, loss, save, load)
+- [ ] Add `tests/base/test_model.py` with interface tests
+
+#### Step 12: Base DataLoader Interface
+
+- [ ] Implement `src/base/dataloader.py` as ABC
+- [ ] Define required methods (get_train_loader, get_val_loader)
+- [ ] Add `tests/base/test_dataloader.py` with interface tests
+
+#### Step 13: Base Logger Interface
+
+- [ ] Implement `src/base/logger.py` as ABC
+- [ ] Define logging methods (log_metrics, log_images)
+- [ ] Add `tests/base/test_logger.py` with unit tests
+
+#### Step 14: Base Trainer
+
+- [ ] Implement `src/base/trainer.py` with abstract training loop
+- [ ] Add checkpoint save/load logic
+- [ ] Add validation loop structure
+- [ ] Add `tests/base/test_trainer.py` with component tests
+
+### Phase 5: First Experiment Slice (Classifier)
+
+#### Step 15: Classifier Experiment Structure
+
+- [ ] Create `src/experiments/classifier/` folder
+- [ ] Add `__init__.py` and structure files
+- [ ] Create `tests/experiments/classifier/` folder
+
+#### Step 16: Classifier Models - InceptionV3
+
+- [ ] Create `src/experiments/classifier/models/` folder
+- [ ] Implement `inceptionv3.py` wrapper
+- [ ] Add model instantiation logic
+- [ ] Add `tests/experiments/classifier/test_models.py` with unit tests
+
+#### Step 17: Classifier Models - ResNet
+
+- [ ] Implement `src/experiments/classifier/models/resnet.py`
+- [ ] Add ResNet50, ResNet101 variants
+- [ ] Add tests for ResNet models
+
+#### Step 18: Classifier DataLoader
+
+- [ ] Implement `src/experiments/classifier/dataloader.py`
+- [ ] Inherit from base dataloader
+- [ ] Add classification-specific preprocessing
+- [ ] Add `tests/experiments/classifier/test_dataloader.py`
+
+#### Step 19: Classifier Logger
+
+- [ ] Implement `src/experiments/classifier/logger.py`
+- [ ] Add classification metrics logging
+- [ ] Add confusion matrix logging
+- [ ] Add tests for logger
+
+#### Step 20: Classifier Trainer
+
+- [ ] Implement `src/experiments/classifier/trainer.py`
+- [ ] Inherit from base trainer
+- [ ] Add classification training loop
+- [ ] Add `tests/experiments/classifier/test_trainer.py`
+
+#### Step 21: Classifier Configuration
+
+- [ ] Create `src/experiments/classifier/config.py` with defaults
+- [ ] Create `configs/classifier/baseline.json`
+- [ ] Create `configs/classifier/inceptionv3.json`
+- [ ] Add config validation tests
+
+#### Step 22: Classifier Analysis Tools
+
+- [ ] Implement `src/experiments/classifier/analyze_comparison.py`
+- [ ] Port analysis logic from old codebase
+- [ ] Add tests for analysis tools
+
+### Phase 6: Main Entry Point
+
+#### Step 23: CLI Entry Point
+
+- [ ] Implement `src/main.py` with experiment dispatcher
+- [ ] Add experiment selection logic
+- [ ] Wire up classifier experiment
+- [ ] Add integration tests for CLI
+
+#### Step 24: End-to-End Classifier Test
+
+- [ ] Create `tests/integration/test_classifier_pipeline.py`
+- [ ] Test full workflow: config → train → checkpoint
+- [ ] Use tiny dataset (10-20 images)
+
+### Phase 7: Second Experiment Slice (Diffusion)
+
+#### Step 25: Diffusion Experiment Structure
+
+- [ ] Create `src/experiments/diffusion/` folder structure
+- [ ] Create `tests/experiments/diffusion/` folder
+
+#### Step 26: Diffusion Model
+
+- [ ] Implement `src/experiments/diffusion/model.py`
+- [ ] Port DDPM logic from old codebase
+- [ ] Add `tests/experiments/diffusion/test_model.py`
+
+#### Step 27: Diffusion DataLoader
+
+- [ ] Implement `src/experiments/diffusion/dataloader.py`
+- [ ] Add diffusion-specific preprocessing
+- [ ] Add tests
+
+#### Step 28: Diffusion Logger
+
+- [ ] Implement `src/experiments/diffusion/logger.py`
+- [ ] Add generated image logging
+- [ ] Add diffusion metrics logging
+- [ ] Add tests
+
+#### Step 29: Diffusion Trainer
+
+- [ ] Implement `src/experiments/diffusion/trainer.py`
+- [ ] Add diffusion training loop
+- [ ] Add generation mode logic
+- [ ] Add tests
+
+#### Step 30: Diffusion Configuration
+
+- [ ] Create `src/experiments/diffusion/config.py`
+- [ ] Create `configs/diffusion/default.json`
+- [ ] Add config tests
+
+#### Step 31: Wire Diffusion to Main
+
+- [ ] Add diffusion experiment to `src/main.py`
+- [ ] Add integration test
+- [ ] Test generation mode
+
+### Phase 8: Third Experiment Slice (GAN)
+
+#### Step 32: GAN Experiment Structure
+
+- [ ] Create `src/experiments/gan/` folder structure
+- [ ] Create `tests/experiments/gan/` folder
+
+#### Step 33: GAN Models
+
+- [ ] Implement `src/experiments/gan/model.py`
+- [ ] Add Generator and Discriminator
+- [ ] Add tests
+
+#### Step 34: GAN DataLoader
+
+- [ ] Implement `src/experiments/gan/dataloader.py`
+- [ ] Add tests
+
+#### Step 35: GAN Logger
+
+- [ ] Implement `src/experiments/gan/logger.py`
+- [ ] Add GAN-specific metrics
+- [ ] Add tests
+
+#### Step 36: GAN Trainer
+
+- [ ] Implement `src/experiments/gan/trainer.py`
+- [ ] Add adversarial training loop
+- [ ] Add tests
+
+#### Step 37: GAN Configuration
+
+- [ ] Create `src/experiments/gan/config.py`
+- [ ] Create `configs/gan/default.json`
+- [ ] Add config tests
+
+#### Step 38: Wire GAN to Main
+
+- [ ] Add GAN experiment to `src/main.py`
+- [ ] Add integration test
+
+### Phase 9: Documentation & Polish
+
+#### Step 39: Comprehensive Documentation
+
+- [ ] Document all CLI commands with examples
+- [ ] Add architecture diagram to README
+- [ ] Document testing strategy in README
+- [ ] Add contribution guidelines
+
+#### Step 40: Example Workflows
+
+- [ ] Create example workflow scripts
+- [ ] Document typical research workflow
+- [ ] Add quickstart guide
+
+#### Step 41: Smoke Tests (Optional)
+
+- [ ] Create `tests/smoke/test_gpu_training.py`
+- [ ] Add performance benchmarks
+- [ ] Document GPU testing procedures
+
+#### Step 42: Migration Documentation
+
+- [ ] Document migration from old codebase
+- [ ] Create migration scripts if needed
+- [ ] Archive old code in `src/old/`
+
+### Phase 10: Final Integration
+
+#### Step 43: Pre-trained Model Integration
+
+- [ ] Document model weight loading
+- [ ] Add weight download scripts
+- [ ] Test weight compatibility
+
+#### Step 44: Output Management
+
+- [ ] Create `.gitignore` entries for `outputs/`
+- [ ] Document output structure
+- [ ] Add output cleanup utilities
+
+#### Step 45: CI/CD Setup (Optional)
+
+- [ ] Create GitHub Actions workflow
+- [ ] Configure pytest runs on PR
+- [ ] Add linting and formatting checks
+
+#### Step 46: Final Testing & Validation
+
+- [ ] Run all test tiers
+- [ ] Verify CPU-only testing works
+- [ ] Test on actual GPU (smoke tests)
+- [ ] Validate all experiments work end-to-end
+
+## Timeline Estimates
+
+- **Phases 1-2**: ~1 week (foundation + utilities)
+- **Phases 3-4**: ~1 week (data + base classes)
+- **Phase 5**: ~2 weeks (first complete experiment)
+- **Phase 6**: ~3 days (main entry point)
+- **Phase 7**: ~1 week (second experiment)
+- **Phase 8**: ~1 week (third experiment)
+- **Phases 9-10**: ~1 week (polish + integration)
+
+**Total: ~7-8 weeks** for complete implementation
+
+## Branching Strategy
+
+Each step should be implemented in a separate feature branch following this naming convention:
+
+```
+refactor/<phase>-<step>-<short-description>
+
+Examples:
+- refactor/phase1-step1-project-setup
+- refactor/phase2-step4-device-management
+- refactor/phase5-step16-classifier-inceptionv3
+```
+
+### Branch Workflow
+
+1. Create feature branch from `main`
+2. Implement the step with tests
+3. Ensure all tests pass (`pytest -m "unit or component"`)
+4. Create pull request
+5. Review and merge to `main`
+6. Delete feature branch
+
+## Testing Requirements
+
+Each step must include appropriate tests based on the four-tier strategy:
+
+### Unit Tests (Required for all steps)
+
+- Fast (< 100ms per test)
+- CPU only
+- No external dependencies
+- Test pure logic and interfaces
+
+### Component Tests (Required for model/trainer steps)
+
+- Medium speed (1-5 seconds)
+- CPU with small data
+- Test integration points
+- Verify shapes and basic behavior
+
+### Integration Tests (Required for experiment completion)
+
+- Slower (10-60 seconds)
+- Mini workflows
+- Test end-to-end pipelines
+- Use tiny datasets (10-20 samples)
+
+### Smoke Tests (Optional, run manually)
+
+- Very slow (5-15 minutes)
+- GPU required
+- Real hardware validation
+- Performance benchmarks
+
+## Success Criteria
+
+Each step is considered complete when:
+
+1. ✅ All code is implemented according to architecture spec
+2. ✅ All appropriate tests are written and passing
+3. ✅ Code follows project style guidelines
+4. ✅ Documentation is updated (docstrings, README)
+5. ✅ Pull request is reviewed and approved
+6. ✅ No regressions in existing functionality
+7. ✅ Tests can run on CPU without GPU
+
+## Dependencies Between Steps
+
+### Critical Path
+
+Steps must be completed in order within each phase, but phases can overlap:
+
+- **Phase 1** must complete before any other phase
+- **Phase 2** must complete before Phase 3-4
+- **Phase 3-4** must complete before Phase 5
+- **Phase 5** must complete before Phase 6
+- **Phase 6** must complete before Phase 7-8
+
+### Parallelization Opportunities
+
+These can be worked on in parallel:
+
+- **Phase 7 and Phase 8** (Diffusion and GAN) can be done simultaneously
+- **Steps within Phase 5** (Classifier components) can be parallelized if multiple developers
+- **Documentation (Phase 9)** can start as soon as Phase 6 completes
+
+## Risk Mitigation
+
+### Potential Blockers
+
+1. **Old Code Compatibility**: May need to refactor old code significantly
+   - Mitigation: Keep `src/old/` as reference, port incrementally
+
+2. **Test Data Requirements**: Need appropriate test datasets
+   - Mitigation: Create synthetic/mock data in `tests/fixtures/`
+
+3. **GPU Testing**: Limited GPU access for smoke tests
+   - Mitigation: Focus on CPU tests, run smoke tests manually/weekly
+
+4. **Configuration Complexity**: Managing config merging might be tricky
+   - Mitigation: Implement config utilities early (Step 5)
+
+### Quality Gates
+
+Before merging any step:
+
+1. All unit tests pass on CI
+2. Code coverage >= 80% for new code
+3. No lint errors
+4. Documentation updated
+5. Peer review completed
+
+## Notes
+
+- Each step should take 1-3 days of focused work
+- Tests are not optional - they're part of the step definition
+- Keep commits atomic and well-documented
+- Update this document as the refactor progresses
+- Archive old code rather than deleting it
+- Reference existing code in `src/old/` for logic to port
+
+## Progress Tracking
+
+Current Phase: **Not Started**  
+Completed Steps: 0/46  
+Last Updated: 2026-02-10
+
+---
+
+For detailed architecture specifications, see [Architecture Specification](../standards/architecture.md).
