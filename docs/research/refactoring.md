@@ -48,10 +48,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 5: Configuration Management
 
-- [ ] Implement `src/utils/config.py` for JSON loading
-- [ ] Add config merging logic (file → defaults)
-- [ ] Create `tests/fixtures/configs/` with sample configs
-- [ ] Add `tests/utils/test_config.py` with unit tests
+- [x] Implement `src/utils/config.py` for JSON loading
+- [x] Add config merging logic (file → defaults)
+- [x] Create `tests/fixtures/configs/` with sample configs
+- [x] Add `tests/utils/test_config.py` with unit tests
 
 #### Step 6: CLI Argument Parsing
 
