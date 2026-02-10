@@ -55,9 +55,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 6: CLI Argument Parsing
 
-- [ ] Implement `src/utils/cli.py` with argument parser
-- [ ] Add CLI override logic (CLI → config → defaults)
-- [ ] Add `tests/utils/test_cli.py` with unit tests
+- [x] Implement `src/utils/cli.py` with argument parser
+- [x] Add CLI override logic (CLI → config → defaults)
+- [x] Add `tests/utils/test_cli.py` with unit tests
 
 #### Step 7: Common Metrics
 
@@ -458,8 +458,8 @@ Before merging any step:
 
 ## Progress Tracking
 
-Current Phase: **Phase 1: Project Foundation**  
-Completed Steps: 2/46  
+Current Phase: **Phase 2: Utilities Layer**  
+Completed Steps: 6/46  
 Last Updated: 2026-02-10
 
 ---
