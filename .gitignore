@@ -221,3 +221,7 @@ tmp/
 # Ignore all data folders except for those in src/data/ and tests/data/
 !src/data/
 !tests/data/
+
+# Test fixtures
+tests/fixtures/mock_data/train/
+tests/fixtures/mock_data/val/
