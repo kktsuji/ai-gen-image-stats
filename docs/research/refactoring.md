@@ -82,9 +82,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 10: Custom Samplers
 
-- [ ] Implement `src/data/samplers.py` (if needed)
-- [ ] Add tests for samplers
-- [ ] Document sampler usage
+- [x] Implement `src/data/samplers.py` (if needed)
+- [x] Add tests for samplers
+- [x] Document sampler usage
 
 ### Phase 4: Base Classes
 
