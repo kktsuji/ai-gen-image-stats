@@ -93,34 +93,174 @@ python -m src.main --experiment diffusion --mode generate \
 
 ## Testing
 
-Our testing strategy uses four tiers:
+This project uses a comprehensive **four-tier testing strategy** that balances speed, coverage, and practical validation needs. All code is testable on CPU without GPU requirements.
 
-- **Unit Tests**: Fast (< 100ms), CPU-only, pure logic
-- **Component Tests**: Medium (1-5s), CPU with small data
-- **Integration Tests**: Slow (10-60s), mini workflows
-- **Smoke Tests**: Very slow (5-15min), GPU validation
+### Test Tiers
+
+Our testing hierarchy from fastest to slowest:
+
+#### Tier 1: Unit Tests (< 100ms per test)
+
+- **Purpose**: Immediate feedback during development
+- **Scope**: Pure logic, configuration parsing, utility functions, model instantiation
+- **Requirements**: CPU only, no heavy dependencies
+- **When to Run**: On every file save, every commit
+
+#### Tier 2: Component Tests (1-5 seconds per test)
+
+- **Purpose**: Validate component behavior with minimal computation
+- **Scope**: Model forward passes, loss calculations, single training steps
+- **Requirements**: CPU with tiny batches (2-3 samples)
+- **When to Run**: Before push, on pull requests
+
+#### Tier 3: Integration Tests (10-60 seconds per test)
+
+- **Purpose**: Verify components work together in realistic workflows
+- **Scope**: Mini training loops (2-3 epochs), end-to-end pipelines
+- **Requirements**: CPU or GPU optional, mini datasets (10-20 images)
+- **When to Run**: CI pipeline, before merging
+
+#### Tier 4: Smoke Tests (5-15 minutes per test)
+
+- **Purpose**: Catch GPU-specific issues and performance regressions
+- **Scope**: Real GPU training, memory usage validation, quality checks
+- **Requirements**: GPU required
+- **When to Run**: Manually, weekly, before releases
+
+### Running Tests
 
 ```bash
-# Fast feedback during development
+# Fast feedback during development (< 10 seconds total)
 pytest -m unit
 
-# Pre-commit validation
+# Pre-commit validation (< 1 minute)
 pytest -m "unit or component"
 
-# CI pipeline (all except smoke tests)
+# CI pipeline - all except smoke tests (< 5 minutes)
 pytest -m "not smoke"
 
-# Full validation with GPU
-pytest -m smoke --gpu
+# Full validation with GPU (weekly/manual)
+pytest -m smoke
+
+# Run all tests
+pytest
+
+# Run tests for specific module
+pytest tests/utils/
+pytest tests/experiments/classifier/
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
+
+# Run with verbose output
+pytest -v -s
+
+# Run specific test file
+pytest tests/utils/test_config.py
+
+# Run tests matching pattern
+pytest -k "test_model"
 ```
+
+### Test Organization
+
+Tests mirror the `src/` directory structure for easy navigation:
+
+```
+tests/
+├── conftest.py              # Shared fixtures and configuration
+├── fixtures/                # Test data and configurations
+│   ├── configs/            # Sample config files
+│   └── mock_data/          # Mock datasets (auto-generated)
+├── base/                    # Tests for src/base/
+├── experiments/             # Tests for src/experiments/
+│   ├── classifier/
+│   ├── diffusion/
+│   └── gan/
+├── utils/                   # Tests for src/utils/
+└── data/                    # Tests for src/data/
+```
+
+### Writing New Tests
+
+When adding new code, follow these guidelines:
+
+1. **Mirror the structure**: Place tests in `tests/` mirroring the `src/` path
+2. **Use appropriate markers**: Tag tests with `@pytest.mark.unit`, `@pytest.mark.component`, etc.
+3. **Start with unit tests**: Write fast unit tests first, then component tests
+4. **Use fixtures**: Leverage shared fixtures from `conftest.py`
+5. **Keep tests fast**: Unit tests < 100ms, component tests < 5s
+6. **Test on CPU**: Ensure tests work without GPU (use `device_cpu` fixture)
+
+Example test structure:
+
+```python
+import pytest
+import torch
+
+@pytest.mark.unit
+def test_model_instantiation():
+    """Unit test: Fast, no GPU required."""
+    from src.experiments.classifier.models import ResNet50
+    model = ResNet50(num_classes=2)
+    assert model is not None
+
+@pytest.mark.component
+def test_model_forward_pass(device_cpu, mock_batch_tensor):
+    """Component test: Small data, single forward pass."""
+    from src.experiments.classifier.models import ResNet50
+    model = ResNet50(num_classes=2).to(device_cpu)
+    output = model(mock_batch_tensor.to(device_cpu))
+    assert output.shape == (2, 2)  # batch_size=2, num_classes=2
+
+@pytest.mark.integration
+def test_training_loop(tmp_output_dir, mock_dataset_small):
+    """Integration test: Mini training loop."""
+    # Test 2-3 epochs with small dataset
+    pass
+```
+
+### Available Fixtures
+
+See [tests/conftest.py](tests/conftest.py) for all available fixtures:
+
+- **Device fixtures**: `device_cpu`, `device_gpu`, `device_auto`
+- **Data fixtures**: `mock_image_tensor`, `mock_batch_tensor`, `mock_dataset_small`, `mock_dataset_medium`
+- **Directory fixtures**: `tmp_output_dir`, `tmp_data_dir`
+- **Config fixtures**: `mock_config_classifier`, `mock_config_diffusion`, `mock_config_gan`
+
+### Continuous Integration
+
+Our CI pipeline runs tests in stages:
+
+1. **Fast Check** (< 30s): Unit tests only
+2. **Standard Check** (< 5min): Unit + Component + Integration tests
+3. **Full Check** (manual): All tests including smoke tests on GPU
+
+### Test Coverage
+
+We prioritize coverage for:
+
+- ✅ All base classes and interfaces (100% coverage goal)
+- ✅ Configuration loading and CLI parsing
+- ✅ Data transformations and loading
+- ✅ Model instantiation and forward passes
+- 🎯 Training loops and optimization logic
+- 🎯 Metrics and evaluation code
 
 ## Project Status
 
 **Current Phase**: Phase 1 - Project Foundation  
-**Completed Steps**: 1/46  
+**Completed Steps**: 3/46  
 **Last Updated**: 2026-02-10
 
 This project is undergoing active refactoring according to the plan in [docs/research/refactor.md](docs/research/refactor.md).
+
+### Recently Completed
+
+- ✅ Step 1: Initial Project Setup
+- ✅ Step 2: Base Directory Structure
+- ✅ Step 3: Test Infrastructure Setup
 
 ## Documentation
 

@@ -33,10 +33,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 3: Test Infrastructure Setup
 
-- [ ] Create `tests/` folder with `conftest.py`
-- [ ] Create `tests/fixtures/` for test data
-- [ ] Configure pytest markers in `pytest.ini`
-- [ ] Add test running documentation to README
+- [x] Create `tests/` folder with `conftest.py`
+- [x] Create `tests/fixtures/` for test data
+- [x] Configure pytest markers in `pytest.ini`
+- [x] Add test running documentation to README
 
 ### Phase 2: Utilities Layer
 
