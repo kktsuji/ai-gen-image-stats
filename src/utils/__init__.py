@@ -4,16 +4,24 @@ This module provides cross-cutting utilities for CLI parsing,
 configuration management, device handling, and metrics computation.
 """
 
-from src.utils.cli import parse_args
-from src.utils.config import load_config, merge_configs
-from src.utils.device import get_device, set_device
-from src.utils.metrics import compute_metrics
+# Import only modules that have been implemented
+# Other imports will be added as the refactoring progresses
+from src.utils.device import (
+    DeviceManager,
+    get_cuda_device_count,
+    get_device,
+    get_device_info,
+    get_device_manager,
+    is_cuda_available,
+    to_device,
+)
 
 __all__ = [
+    "DeviceManager",
+    "get_device_manager",
     "get_device",
-    "set_device",
-    "load_config",
-    "merge_configs",
-    "parse_args",
-    "compute_metrics",
+    "is_cuda_available",
+    "get_cuda_device_count",
+    "to_device",
+    "get_device_info",
 ]

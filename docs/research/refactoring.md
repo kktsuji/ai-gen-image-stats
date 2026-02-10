@@ -42,9 +42,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 4: Device Management Utility
 
-- [ ] Implement `src/utils/device.py` with CPU/GPU detection
-- [ ] Add `tests/utils/test_device.py` with unit tests
-- [ ] Ensure CPU-only testing works
+- [x] Implement `src/utils/device.py` with CPU/GPU detection
+- [x] Add `tests/utils/test_device.py` with unit tests
+- [x] Ensure CPU-only testing works
 
 #### Step 5: Configuration Management
 
