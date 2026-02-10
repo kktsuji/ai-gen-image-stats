@@ -61,9 +61,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 7: Common Metrics
 
-- [ ] Implement `src/utils/metrics.py` with basic metrics
-- [ ] Add FID, IS, PR-AUC, ROC-AUC placeholders
-- [ ] Add `tests/utils/test_metrics.py` with unit tests
+- [x] Implement `src/utils/metrics.py` with basic metrics
+- [x] Add FID, IS, PR-AUC, ROC-AUC placeholders
+- [x] Add `tests/utils/test_metrics.py` with unit tests
 
 ### Phase 3: Data Layer
 
@@ -459,7 +459,7 @@ Before merging any step:
 ## Progress Tracking
 
 Current Phase: **Phase 2: Utilities Layer**  
-Completed Steps: 6/46  
+Completed Steps: 7/46  
 Last Updated: 2026-02-10
 
 ---
