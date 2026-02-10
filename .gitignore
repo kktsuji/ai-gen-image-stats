@@ -217,3 +217,7 @@ tb_logs/
 # Temporary experiment files
 experiments_temp/
 tmp/
+
+# Ignore all data folders except for those in src/data/ and tests/data/
+!src/data/
+!tests/data/
