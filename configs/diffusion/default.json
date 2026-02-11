@@ -1,5 +1,7 @@
 {
   "experiment": "diffusion",
+  "mode": "train",
+  "checkpoint": null,
   "model": {
     "image_size": 40,
     "in_channels": 3,
@@ -42,6 +44,7 @@
       "eta_min": 1e-06
     },
     "device": "cuda",
+    "seed": null,
     "use_ema": true,
     "ema_decay": 0.9999,
     "use_amp": false,
@@ -51,7 +54,9 @@
     "sample_images": true,
     "sample_interval": 10,
     "samples_per_class": 2,
-    "guidance_scale": 3.0
+    "guidance_scale": 3.0,
+    "num_samples": 100,
+    "output_dir": null
   },
   "output": {
     "checkpoint_dir": "outputs/checkpoints",

@@ -20,6 +20,8 @@ def get_default_config() -> Dict[str, Any]:
     """
     return {
         "experiment": "diffusion",
+        "mode": "train",  # Options: train, generate
+        "checkpoint": None,  # Path to checkpoint for generation mode
         "model": {
             "image_size": 40,  # Size of generated images
             "in_channels": 3,  # Number of input channels (RGB)
@@ -62,6 +64,7 @@ def get_default_config() -> Dict[str, Any]:
                 "eta_min": 1e-6,  # For cosine
             },
             "device": "cuda",  # Options: cuda, cpu
+            "seed": None,  # Random seed for reproducibility
             "use_ema": True,  # Use exponential moving average
             "ema_decay": 0.9999,  # EMA decay rate
             "use_amp": False,  # Use automatic mixed precision
@@ -72,6 +75,8 @@ def get_default_config() -> Dict[str, Any]:
             "sample_interval": 10,  # Generate every N epochs
             "samples_per_class": 2,  # Samples per class for conditional models
             "guidance_scale": 3.0,  # Classifier-free guidance scale
+            "num_samples": 100,  # Number of samples to generate in generation mode
+            "output_dir": None,  # Output directory for generated images (defaults to log_dir/generated)
         },
         "output": {
             "checkpoint_dir": "outputs/checkpoints",
