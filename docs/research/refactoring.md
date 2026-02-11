@@ -215,9 +215,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 26: Diffusion Model
 
-- [ ] Implement `src/experiments/diffusion/model.py`
-- [ ] Port DDPM logic from old codebase
-- [ ] Add `tests/experiments/diffusion/test_model.py`
+- [x] Implement `src/experiments/diffusion/model.py`
+- [x] Port DDPM logic from old codebase
+- [x] Add `tests/experiments/diffusion/test_model.py`
 
 #### Step 27: Diffusion DataLoader
 
