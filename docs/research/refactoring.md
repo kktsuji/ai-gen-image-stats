@@ -96,9 +96,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 12: Base DataLoader Interface
 
-- [ ] Implement `src/base/dataloader.py` as ABC
-- [ ] Define required methods (get_train_loader, get_val_loader)
-- [ ] Add `tests/base/test_dataloader.py` with interface tests
+- [x] Implement `src/base/dataloader.py` as ABC
+- [x] Define required methods (get_train_loader, get_val_loader)
+- [x] Add `tests/base/test_dataloader.py` with interface tests
 
 #### Step 13: Base Logger Interface
 
