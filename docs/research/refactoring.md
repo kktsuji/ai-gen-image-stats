@@ -117,9 +117,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 15: Classifier Experiment Structure
 
-- [ ] Create `src/experiments/classifier/` folder
-- [ ] Add `__init__.py` and structure files
-- [ ] Create `tests/experiments/classifier/` folder
+- [x] Create `src/experiments/classifier/` folder
+- [x] Add `__init__.py` and structure files
+- [x] Create `tests/experiments/classifier/` folder
 
 #### Step 16: Classifier Models - InceptionV3
 
