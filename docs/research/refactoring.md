@@ -182,10 +182,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 23: CLI Entry Point
 
-- [ ] Implement `src/main.py` with experiment dispatcher
-- [ ] Add experiment selection logic
-- [ ] Wire up classifier experiment
-- [ ] Add integration tests for CLI
+- [x] Implement `src/main.py` with experiment dispatcher
+- [x] Add experiment selection logic
+- [x] Wire up classifier experiment
+- [x] Add integration tests for CLI
 
 #### Step 24: End-to-End Classifier Test
 
