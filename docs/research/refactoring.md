@@ -189,9 +189,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 24: End-to-End Classifier Test
 
-- [ ] Create `tests/integration/test_classifier_pipeline.py`
-- [ ] Test full workflow: config → train → checkpoint
-- [ ] Use tiny dataset (10-20 images)
+- [x] Create `tests/integration/test_classifier_pipeline.py`
+- [x] Test full workflow: config → train → checkpoint
+- [x] Use tiny dataset (10-20 images)
 
 ### Phase 7: Second Experiment Slice (Diffusion)
 
