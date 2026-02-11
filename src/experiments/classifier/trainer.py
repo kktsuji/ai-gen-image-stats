@@ -5,7 +5,8 @@ It inherits from BaseTrainer and provides classification-specific
 training and validation logic.
 """
 
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -60,6 +61,7 @@ class ClassifierTrainer(BaseTrainer):
         logger: BaseLogger,
         device: str = "cpu",
         show_progress: bool = True,
+        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
     ):
         """Initialize the classifier trainer.
 
@@ -70,6 +72,7 @@ class ClassifierTrainer(BaseTrainer):
             logger: Logger for recording metrics and checkpoints
             device: Device to run training on ('cpu' or 'cuda')
             show_progress: Whether to show progress bars during training
+            scheduler: Optional learning rate scheduler
         """
         super().__init__()
         self.model = model
@@ -78,6 +81,7 @@ class ClassifierTrainer(BaseTrainer):
         self.logger = logger
         self.device = device
         self.show_progress = show_progress
+        self.scheduler = scheduler
 
         # Move model to device
         self.model.to(self.device)
@@ -158,6 +162,111 @@ class ClassifierTrainer(BaseTrainer):
             "loss": avg_loss,
             "accuracy": accuracy,
         }
+
+    def train(
+        self,
+        num_epochs: int,
+        checkpoint_dir: Optional[Union[str, Path]] = None,
+        checkpoint_frequency: int = 1,
+        validate_frequency: int = 1,
+        save_best: bool = True,
+        best_metric: str = "loss",
+        best_metric_mode: str = "min",
+    ) -> None:
+        """Main training loop with scheduler support.
+
+        Overrides base trainer's train() to add learning rate scheduler stepping.
+
+        Args:
+            num_epochs: Number of epochs to train
+            checkpoint_dir: Directory to save checkpoints (None to disable)
+            checkpoint_frequency: Save checkpoint every N epochs
+            validate_frequency: Validate every N epochs (0 to disable)
+            save_best: Whether to save the best model separately
+            best_metric: Metric name to use for best model selection
+            best_metric_mode: 'min' or 'max' for best metric comparison
+        """
+        if checkpoint_dir is not None:
+            checkpoint_dir = Path(checkpoint_dir)
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        self._best_metric_name = best_metric
+        logger = self.get_logger()
+
+        for epoch in range(num_epochs):
+            self._current_epoch = epoch + 1
+
+            # Training epoch
+            train_metrics = self.train_epoch()
+
+            # Step the scheduler if provided
+            if self.scheduler is not None:
+                self.scheduler.step()
+
+            # Log training metrics
+            logger.log_metrics(
+                train_metrics, step=self._global_step, epoch=self._current_epoch
+            )
+
+            # Validation
+            val_metrics = None
+            if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
+                val_metrics = self.validate_epoch()
+                if val_metrics is not None:
+                    logger.log_metrics(
+                        val_metrics, step=self._global_step, epoch=self._current_epoch
+                    )
+
+            # Determine current metric value for best model tracking
+            current_metric_value = None
+            if save_best:
+                # Try validation metrics first, then training metrics
+                metrics_to_check = val_metrics if val_metrics else train_metrics
+                current_metric_value = metrics_to_check.get(best_metric)
+
+                if current_metric_value is not None:
+                    is_best = self._is_best_metric(
+                        current_metric_value, best_metric_mode
+                    )
+
+                    if is_best:
+                        self._best_metric = current_metric_value
+                        if checkpoint_dir is not None:
+                            best_path = checkpoint_dir / "best_model.pth"
+                            self.save_checkpoint(
+                                best_path,
+                                epoch=self._current_epoch,
+                                is_best=True,
+                                metrics={
+                                    **train_metrics,
+                                    **(val_metrics if val_metrics else {}),
+                                },
+                            )
+
+            # Regular checkpoint saving
+            if checkpoint_dir is not None:
+                if (epoch + 1) % checkpoint_frequency == 0:
+                    checkpoint_path = (
+                        checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
+                    )
+                    self.save_checkpoint(
+                        checkpoint_path,
+                        epoch=self._current_epoch,
+                        is_best=False,
+                        metrics={
+                            **train_metrics,
+                            **(val_metrics if val_metrics else {}),
+                        },
+                    )
+
+                # Always save latest checkpoint
+                latest_path = checkpoint_dir / "latest_checkpoint.pth"
+                self.save_checkpoint(
+                    latest_path,
+                    epoch=self._current_epoch,
+                    is_best=False,
+                    metrics={**train_metrics, **(val_metrics if val_metrics else {})},
+                )
 
     def validate_epoch(self) -> Optional[Dict[str, float]]:
         """Execute one validation epoch.

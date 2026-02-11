@@ -195,16 +195,16 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 24.5: Fix Integration Test Issues
 
-- [ ] Add scheduler parameter support to `ClassifierTrainer.__init__()`
-- [ ] Fix trainer initialization in all failing test cases
-- [ ] Update test_checkpoint_save_and_load to fix variable scoping issues
-- [ ] Update test_training_resumption_from_checkpoint API usage
-- [ ] Fix test_pipeline_with_cosine_scheduler trainer initialization
-- [ ] Update test_validation_metrics_recorded to use correct train() signature
-- [ ] Fix test_pipeline_resnet101 and test_pipeline_with_different_optimizers
-- [ ] Update test_config_file_driven_pipeline metrics assertion logic
-- [ ] Verify all 10 integration tests pass on CPU
-- [ ] Run all integration tests on GPU to validate CUDA operations
+- [x] Add scheduler parameter support to `ClassifierTrainer.__init__()`
+- [x] Fix trainer initialization in all failing test cases
+- [x] Update test_checkpoint_save_and_load to fix variable scoping issues
+- [x] Update test_training_resumption_from_checkpoint API usage
+- [x] Fix test_pipeline_with_cosine_scheduler trainer initialization
+- [x] Update test_validation_metrics_recorded to use correct train() signature
+- [x] Fix test_pipeline_resnet101 and test_pipeline_with_different_optimizers
+- [x] Update test_config_file_driven_pipeline metrics assertion logic
+- [x] Verify all 10 integration tests pass on CPU
+- [x] Run all integration tests on GPU to validate CUDA operations
 
 ### Phase 7: Second Experiment Slice (Diffusion)
 
