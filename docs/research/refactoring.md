@@ -241,9 +241,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 30: Diffusion Configuration
 
-- [ ] Create `src/experiments/diffusion/config.py`
-- [ ] Create `configs/diffusion/default.json`
-- [ ] Add config tests
+- [x] Create `src/experiments/diffusion/config.py`
+- [x] Create `configs/diffusion/default.json`
+- [x] Add config tests
 
 #### Step 31: Wire Diffusion to Main
 
