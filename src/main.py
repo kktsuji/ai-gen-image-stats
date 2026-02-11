@@ -18,6 +18,7 @@ Usage:
     python -m src.main --experiment diffusion --mode generate --checkpoint path/to/model.pth
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -84,6 +85,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     print(f"Checkpoint directory: {checkpoint_dir}")
     print(f"Log directory: {log_dir}")
+
+    # Save configuration to log directory
+    config_save_path = log_dir / "config.json"
+    with open(config_save_path, "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"Configuration saved to: {config_save_path}")
 
     # Initialize dataloader
     data_config = config["data"]
@@ -297,6 +304,12 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
     print(f"Checkpoint directory: {checkpoint_dir}")
     print(f"Log directory: {log_dir}")
+
+    # Save configuration to log directory
+    config_save_path = log_dir / "config.json"
+    with open(config_save_path, "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"Configuration saved to: {config_save_path}")
 
     # Initialize model
     model_config = config["model"]
