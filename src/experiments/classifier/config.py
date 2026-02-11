@@ -77,6 +77,8 @@ def validate_config(config: Dict[str, Any]) -> None:
     """Validate classifier configuration.
 
     Checks that all required fields are present and have valid values.
+    Implements strict validation with no defaults or None values allowed
+    for required fields.
 
     Args:
         config: Configuration dictionary to validate
@@ -103,8 +105,15 @@ def validate_config(config: Dict[str, Any]) -> None:
             f"Invalid experiment type: {config['experiment']}. Must be 'classifier'"
         )
 
-    # Validate model configuration
+    # Validate model configuration - strict required fields
     model = config["model"]
+    required_model_fields = ["name", "pretrained", "num_classes", "freeze_backbone"]
+    for field in required_model_fields:
+        if field not in model:
+            raise KeyError(f"Missing required field: model.{field}")
+        if model[field] is None:
+            raise ValueError(f"model.{field} cannot be None")
+
     valid_models = ["resnet50", "resnet101", "resnet152", "inceptionv3"]
     if model["name"] not in valid_models:
         raise ValueError(
@@ -127,8 +136,21 @@ def validate_config(config: Dict[str, Any]) -> None:
         if not all(isinstance(layer, str) for layer in model["trainable_layers"]):
             raise ValueError("All trainable_layers must be strings")
 
-    # Validate data configuration
+    # Validate data configuration - strict required fields
     data = config["data"]
+    required_data_fields = [
+        "train_path",
+        "batch_size",
+        "num_workers",
+        "image_size",
+        "crop_size",
+    ]
+    for field in required_data_fields:
+        if field not in data:
+            raise KeyError(f"Missing required field: data.{field}")
+        if data[field] is None:
+            raise ValueError(f"data.{field} cannot be None")
+
     if not isinstance(data["batch_size"], int) or data["batch_size"] < 1:
         raise ValueError("batch_size must be a positive integer")
 
@@ -142,14 +164,21 @@ def validate_config(config: Dict[str, Any]) -> None:
         raise ValueError("crop_size must be a positive integer")
 
     valid_normalize = ["imagenet", "cifar10", "none", None]
-    if data["normalize"] not in valid_normalize:
+    if data.get("normalize") not in valid_normalize:
         raise ValueError(
-            f"Invalid normalize option: {data['normalize']}. "
+            f"Invalid normalize option: {data.get('normalize')}. "
             f"Must be one of {valid_normalize}"
         )
 
-    # Validate training configuration
+    # Validate training configuration - strict required fields
     training = config["training"]
+    required_training_fields = ["epochs", "learning_rate", "optimizer", "device"]
+    for field in required_training_fields:
+        if field not in training:
+            raise KeyError(f"Missing required field: training.{field}")
+        if training[field] is None:
+            raise ValueError(f"training.{field} cannot be None")
+
     if not isinstance(training["epochs"], int) or training["epochs"] < 1:
         raise ValueError("epochs must be a positive integer")
 
@@ -167,9 +196,9 @@ def validate_config(config: Dict[str, Any]) -> None:
         )
 
     valid_schedulers = ["cosine", "step", "plateau", "none", None]
-    if training["scheduler"] not in valid_schedulers:
+    if training.get("scheduler") not in valid_schedulers:
         raise ValueError(
-            f"Invalid scheduler: {training['scheduler']}. "
+            f"Invalid scheduler: {training.get('scheduler')}. "
             f"Must be one of {valid_schedulers}"
         )
 
@@ -179,13 +208,14 @@ def validate_config(config: Dict[str, Any]) -> None:
             f"Invalid device: {training['device']}. Must be one of {valid_devices}"
         )
 
-    # Validate output configuration
+    # Validate output configuration - strict required fields
     output = config["output"]
-    if "checkpoint_dir" not in output:
-        raise KeyError("Missing required output.checkpoint_dir")
-
-    if "log_dir" not in output:
-        raise KeyError("Missing required output.log_dir")
+    required_output_fields = ["checkpoint_dir", "log_dir"]
+    for field in required_output_fields:
+        if field not in output:
+            raise KeyError(f"Missing required field: output.{field}")
+        if output[field] is None:
+            raise ValueError(f"output.{field} cannot be None")
 
 
 def get_model_specific_config(model_name: str) -> Dict[str, Any]:

@@ -63,24 +63,24 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Set up test fixtures before making changes
 
-- [ ] 1.1 Create test config directory structure
+- [x] 1.1 Create test config directory structure
 
   ```bash
   mkdir -p tests/fixtures/configs/classifier tests/fixtures/configs/diffusion
   ```
 
-- [ ] 1.2 Create `tests/fixtures/configs/classifier/valid_minimal.json`
+- [x] 1.2 Create `tests/fixtures/configs/classifier/valid_minimal.json`
   - Copy from `configs/classifier/baseline.json`
   - Verify all required fields present
 
-- [ ] 1.3 Create `tests/fixtures/configs/classifier/invalid_missing_model.json`
+- [x] 1.3 Create `tests/fixtures/configs/classifier/invalid_missing_model.json`
   - Copy from valid config, remove `model` section
   - Use for error testing
 
-- [ ] 1.4 Create `tests/fixtures/configs/diffusion/valid_minimal.json`
+- [x] 1.4 Create `tests/fixtures/configs/diffusion/valid_minimal.json`
   - Copy from `configs/diffusion/default.json`
 
-- [ ] 1.5 Create `tests/fixtures/configs/diffusion/invalid_missing_data.json`
+- [x] 1.5 Create `tests/fixtures/configs/diffusion/invalid_missing_data.json`
   - Copy from valid config, remove `data.train_path` field
 
 **Validation:** Files exist and contain valid JSON
@@ -91,17 +91,17 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Make validation strict BEFORE changing CLI
 
-- [ ] 2.1 Update `src/experiments/classifier/config.py` `validate_config()`
+- [x] 2.1 Update `src/experiments/classifier/config.py` `validate_config()`
   - Add comprehensive required field checks for ALL nested sections
   - Provide clear error messages with field paths
   - Don't allow None for critical fields
   - See [Appendix B.3.1](#31-update-srcexperimentsclassifierconfigpy) for required fields list
 
-- [ ] 2.2 Update `src/experiments/diffusion/config.py` `validate_config()`
+- [x] 2.2 Update `src/experiments/diffusion/config.py` `validate_config()`
   - Similar structure to classifier
   - See [Appendix B.3.2](#32-update-srcexperimentsdiffusionconfigpy) for required fields list
 
-- [ ] 2.3 Test strict validation
+- [x] 2.3 Test strict validation
   ```bash
   pytest tests/experiments/classifier/test_config.py -v
   pytest tests/experiments/diffusion/test_config.py -v
@@ -115,24 +115,24 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Simplify CLI to accept only config file
 
-- [ ] 3.1 Backup: `cp src/utils/cli.py src/utils/cli.py.backup`
+- [x] 3.1 Backup: `cp src/utils/cli.py src/utils/cli.py.backup`
 
-- [ ] 3.2 Update `create_parser()` in `src/utils/cli.py`
+- [x] 3.2 Update `create_parser()` in `src/utils/cli.py`
   - Remove ALL 20+ specific parameter arguments
   - Add positional: `config_path` (required)
   - Remove `--experiment` (read from config)
   - See [Appendix B.1.1](#11-update-srcutilsclipy) for details
 
-- [ ] 3.3 Simplify/remove `args_to_dict()` (may not be needed)
+- [x] 3.3 Simplify/remove `args_to_dict()` (may not be needed)
 
-- [ ] 3.4 Update `parse_args()` in `src/utils/cli.py`
+- [x] 3.4 Update `parse_args()` in `src/utils/cli.py`
   - Get config_path from positional arg
   - Load with `load_config(config_path)`
   - Verify 'experiment' field exists
   - Validate experiment type (classifier/diffusion/gan)
   - Return config directly (NO merging)
 
-- [ ] 3.5 Update `validate_config()` if needed
+- [x] 3.5 Update `validate_config()` if needed
 
 **Validation:** `python -c "from src.utils.cli import parse_args; print('OK')"`
 
