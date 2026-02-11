@@ -210,8 +210,8 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 25: Diffusion Experiment Structure
 
-- [ ] Create `src/experiments/diffusion/` folder structure
-- [ ] Create `tests/experiments/diffusion/` folder
+- [x] Create `src/experiments/diffusion/` folder structure
+- [x] Create `tests/experiments/diffusion/` folder
 
 #### Step 26: Diffusion Model
 
