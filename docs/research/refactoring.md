@@ -108,10 +108,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 14: Base Trainer
 
-- [ ] Implement `src/base/trainer.py` with abstract training loop
-- [ ] Add checkpoint save/load logic
-- [ ] Add validation loop structure
-- [ ] Add `tests/base/test_trainer.py` with component tests
+- [x] Implement `src/base/trainer.py` with abstract training loop
+- [x] Add checkpoint save/load logic
+- [x] Add validation loop structure
+- [x] Add `tests/base/test_trainer.py` with component tests
 
 ### Phase 5: First Experiment Slice (Classifier)
 
