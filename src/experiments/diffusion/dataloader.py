@@ -1,0 +1,299 @@
+"""Diffusion DataLoader
+
+This module implements the dataloader for diffusion model experiments.
+It inherits from BaseDataLoader and provides diffusion-specific
+data loading and preprocessing functionality.
+"""
+
+from pathlib import Path
+from typing import Optional
+
+from torch.utils.data import DataLoader
+from torchvision import transforms
+
+from src.base.dataloader import BaseDataLoader
+from src.data.datasets import ImageFolderDataset
+from src.data.transforms import get_normalization_transform
+
+
+class DiffusionDataLoader(BaseDataLoader):
+    """DataLoader for diffusion model experiments.
+
+    This dataloader provides functionality for loading image datasets for
+    diffusion model training. Diffusion models typically require:
+    - Images normalized to [-1, 1] range (mean=0.5, std=0.5)
+    - Less aggressive augmentation compared to discriminative models
+    - Support for conditional generation (class labels)
+
+    Features:
+    - Automatic train/validation split support
+    - Diffusion-specific preprocessing (normalize to [-1, 1])
+    - Configurable augmentation (horizontal flip, rotation, color jitter)
+    - Support for conditional and unconditional generation
+    - Flexible batch size and worker configuration
+
+    Args:
+        train_path: Path to training data directory (ImageFolder structure)
+        val_path: Path to validation data directory (optional)
+        batch_size: Number of samples per batch (default: 32)
+        num_workers: Number of worker processes for data loading (default: 4)
+        image_size: Size to resize and crop images to (default: 64)
+        horizontal_flip: Whether to apply random horizontal flip during training (default: True)
+        rotation_degrees: Maximum rotation degrees for augmentation (default: 0)
+        color_jitter: Whether to apply color jittering during training (default: False)
+        color_jitter_strength: Strength of color jitter (brightness, contrast) (default: 0.1)
+        pin_memory: Whether to pin memory for faster GPU transfer (default: True)
+        drop_last: Whether to drop the last incomplete batch (default: False)
+        shuffle_train: Whether to shuffle training data (default: True)
+        return_labels: Whether to return class labels for conditional generation (default: True)
+
+    Example:
+        >>> # Unconditional diffusion model
+        >>> dataloader = DiffusionDataLoader(
+        ...     train_path="data/train",
+        ...     batch_size=128,
+        ...     image_size=64,
+        ...     return_labels=False
+        ... )
+        >>> train_loader = dataloader.get_train_loader()
+        >>> for images in train_loader:
+        ...     # Unconditional training loop
+        ...     pass
+        >>>
+        >>> # Conditional diffusion model
+        >>> dataloader = DiffusionDataLoader(
+        ...     train_path="data/train",
+        ...     val_path="data/val",
+        ...     batch_size=128,
+        ...     image_size=64,
+        ...     return_labels=True,
+        ...     rotation_degrees=15,
+        ...     color_jitter=True
+        ... )
+        >>> train_loader = dataloader.get_train_loader()
+        >>> for images, labels in train_loader:
+        ...     # Conditional training loop
+        ...     pass
+    """
+
+    def __init__(
+        self,
+        train_path: str,
+        val_path: Optional[str] = None,
+        batch_size: int = 32,
+        num_workers: int = 4,
+        image_size: int = 64,
+        horizontal_flip: bool = True,
+        rotation_degrees: int = 0,
+        color_jitter: bool = False,
+        color_jitter_strength: float = 0.1,
+        pin_memory: bool = True,
+        drop_last: bool = False,
+        shuffle_train: bool = True,
+        return_labels: bool = True,
+    ):
+        """Initialize the diffusion dataloader.
+
+        Args:
+            train_path: Path to training data directory
+            val_path: Path to validation data directory (optional)
+            batch_size: Number of samples per batch
+            num_workers: Number of worker processes for data loading
+            image_size: Size to resize and crop images to
+            horizontal_flip: Whether to apply random horizontal flip during training
+            rotation_degrees: Maximum rotation degrees for augmentation
+            color_jitter: Whether to apply color jittering during training
+            color_jitter_strength: Strength of color jitter (brightness, contrast)
+            pin_memory: Whether to pin memory for faster GPU transfer
+            drop_last: Whether to drop the last incomplete batch
+            shuffle_train: Whether to shuffle training data
+            return_labels: Whether to return class labels for conditional generation
+        """
+        self.train_path = str(train_path)
+        self.val_path = str(val_path) if val_path is not None else None
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.image_size = image_size
+        self.horizontal_flip = horizontal_flip
+        self.rotation_degrees = rotation_degrees
+        self.color_jitter = color_jitter
+        self.color_jitter_strength = color_jitter_strength
+        self.pin_memory = pin_memory
+        self.drop_last = drop_last
+        self.shuffle_train = shuffle_train
+        self.return_labels = return_labels
+
+        # Validate paths
+        if not Path(train_path).exists():
+            raise FileNotFoundError(f"Training data path not found: {train_path}")
+
+        if val_path is not None and not Path(val_path).exists():
+            raise FileNotFoundError(f"Validation data path not found: {val_path}")
+
+    def _get_train_transform(self):
+        """Get training transforms with augmentation.
+
+        Diffusion models typically use normalization to [-1, 1] range
+        with mean=0.5, std=0.5 for each channel.
+
+        Returns:
+            Composed transforms for training data
+        """
+        transform_list = [
+            transforms.Resize(self.image_size),
+            transforms.CenterCrop(self.image_size),
+        ]
+
+        # Add augmentation
+        if self.horizontal_flip:
+            transform_list.append(transforms.RandomHorizontalFlip(p=0.5))
+
+        if self.rotation_degrees > 0:
+            transform_list.append(transforms.RandomRotation(self.rotation_degrees))
+
+        if self.color_jitter:
+            transform_list.append(
+                transforms.ColorJitter(
+                    brightness=self.color_jitter_strength,
+                    contrast=self.color_jitter_strength,
+                )
+            )
+
+        # Convert to tensor
+        transform_list.append(transforms.ToTensor())
+
+        # Normalize to [-1, 1] range for diffusion models
+        # Using mean=0.5, std=0.5 scales [0, 1] to [-1, 1]
+        transform_list.append(
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
+
+        return transforms.Compose(transform_list)
+
+    def _get_val_transform(self):
+        """Get validation transforms without augmentation.
+
+        Returns:
+            Composed transforms for validation data
+        """
+        transform_list = [
+            transforms.Resize(self.image_size),
+            transforms.CenterCrop(self.image_size),
+            transforms.ToTensor(),
+            # Normalize to [-1, 1] range
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+
+        return transforms.Compose(transform_list)
+
+    def get_train_loader(self) -> DataLoader:
+        """Create and return the training data loader.
+
+        Creates a DataLoader for training data with augmentation and shuffling.
+
+        Returns:
+            DataLoader for training data. Returns (images, labels) if return_labels=True,
+            otherwise returns only images.
+
+        Raises:
+            FileNotFoundError: If training data path doesn't exist
+            ValueError: If no valid images found in training path
+
+        Example:
+            >>> train_loader = dataloader.get_train_loader()
+            >>> for batch in train_loader:
+            ...     if dataloader.return_labels:
+            ...         images, labels = batch
+            ...     else:
+            ...         images = batch
+            ...     # Training loop
+            ...     pass
+        """
+        transform = self._get_train_transform()
+
+        # Create dataset
+        train_dataset = ImageFolderDataset(
+            root=self.train_path,
+            transform=transform,
+            return_labels=self.return_labels,
+        )
+
+        # Create dataloader
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle_train,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=self.drop_last,
+        )
+
+        return train_loader
+
+    def get_val_loader(self) -> Optional[DataLoader]:
+        """Create and return the validation data loader.
+
+        Creates a DataLoader for validation data without augmentation.
+        Returns None if no validation path was specified.
+
+        Returns:
+            DataLoader for validation data, or None if val_path=None.
+            Returns (images, labels) if return_labels=True, otherwise returns only images.
+
+        Example:
+            >>> val_loader = dataloader.get_val_loader()
+            >>> if val_loader is not None:
+            ...     for batch in val_loader:
+            ...         if dataloader.return_labels:
+            ...             images, labels = batch
+            ...         else:
+            ...             images = batch
+            ...         # Validation loop
+            ...         pass
+        """
+        if self.val_path is None:
+            return None
+
+        transform = self._get_val_transform()
+
+        # Create dataset
+        val_dataset = ImageFolderDataset(
+            root=self.val_path,
+            transform=transform,
+            return_labels=self.return_labels,
+        )
+
+        # Create dataloader
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=False,
+        )
+
+        return val_loader
+
+    def get_num_classes(self) -> Optional[int]:
+        """Get the number of classes in the dataset.
+
+        Returns:
+            Number of classes if return_labels=True, None otherwise
+
+        Example:
+            >>> dataloader = DiffusionDataLoader(train_path="data/train", return_labels=True)
+            >>> num_classes = dataloader.get_num_classes()
+            >>> print(f"Training with {num_classes} classes")
+        """
+        if not self.return_labels:
+            return None
+
+        # Create a temporary dataset to get number of classes
+        temp_dataset = ImageFolderDataset(
+            root=self.train_path,
+            transform=None,
+            return_labels=True,
+        )
+
+        return len(temp_dataset.classes)

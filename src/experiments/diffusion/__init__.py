@@ -27,10 +27,12 @@ For more information, see the Architecture Specification at:
 docs/standards/architecture.md
 """
 
+from src.experiments.diffusion.dataloader import DiffusionDataLoader
+
 __all__ = [
     # Will be populated as components are implemented
     # 'DiffusionTrainer',
-    # 'DiffusionDataLoader',
+    "DiffusionDataLoader",
     # 'DiffusionLogger',
     # 'DDPMModel',
 ]

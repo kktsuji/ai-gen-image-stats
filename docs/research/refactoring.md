@@ -221,9 +221,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 27: Diffusion DataLoader
 
-- [ ] Implement `src/experiments/diffusion/dataloader.py`
-- [ ] Add diffusion-specific preprocessing
-- [ ] Add tests
+- [x] Implement `src/experiments/diffusion/dataloader.py`
+- [x] Add diffusion-specific preprocessing
+- [x] Add tests
 
 #### Step 28: Diffusion Logger
 

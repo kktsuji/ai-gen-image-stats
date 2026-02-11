@@ -87,6 +87,7 @@ class ImageFolderDataset(BaseDataset):
         target_transform: Optional transform to apply to targets
         extensions: Tuple of valid image extensions (default: common formats)
         is_valid_file: Optional function to filter files
+        return_labels: Whether to return labels with images (default: True)
     """
 
     def __init__(
@@ -96,8 +97,10 @@ class ImageFolderDataset(BaseDataset):
         target_transform: Optional[Callable] = None,
         extensions: Optional[Tuple[str, ...]] = None,
         is_valid_file: Optional[Callable[[str], bool]] = None,
+        return_labels: bool = True,
     ):
         self.root = Path(root)
+        self.return_labels = return_labels
 
         # Validate root directory exists
         if not self.root.exists():
@@ -151,9 +154,15 @@ class ImageFolderDataset(BaseDataset):
             index: Index of the sample
 
         Returns:
-            Tuple of (image, target) where target is the class index
+            Tuple of (image, target) where target is the class index if return_labels=True,
+            otherwise returns only the image tensor.
         """
-        return self._dataset[index]
+        image, label = self._dataset[index]
+
+        if self.return_labels:
+            return image, label
+        else:
+            return image
 
     def get_classes(self) -> List[str]:
         """
