@@ -247,9 +247,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 31: Wire Diffusion to Main
 
-- [ ] Add diffusion experiment to `src/main.py`
-- [ ] Add integration test
-- [ ] Test generation mode
+- [x] Add diffusion experiment to `src/main.py`
+- [x] Add integration test
+- [x] Test generation mode
 
 ### Phase 8: Third Experiment Slice (GAN)
 

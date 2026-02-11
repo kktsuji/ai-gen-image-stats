@@ -1,0 +1,1091 @@
+"""Integration tests for diffusion end-to-end pipeline.
+
+This module tests the complete diffusion workflow from configuration
+loading through training to checkpoint saving, restoration, and generation.
+Uses a tiny dataset (10-20 images) for fast validation of the full pipeline.
+
+Test Coverage:
+- Config loading and validation
+- Model initialization (DDPM)
+- Full training loop execution
+- Checkpoint saving and loading
+- Training resumption from checkpoint
+- Generation mode with unconditional and conditional models
+- Sample generation and saving
+- Validation loop execution
+- Metrics logging and CSV output
+- Optimizer and scheduler setup
+"""
+
+import json
+from pathlib import Path
+
+import pytest
+import torch
+from torchvision.utils import save_image
+
+from src.experiments.diffusion.config import get_default_config
+from src.experiments.diffusion.dataloader import DiffusionDataLoader
+from src.experiments.diffusion.logger import DiffusionLogger
+from src.experiments.diffusion.model import create_ddpm
+from src.experiments.diffusion.trainer import DiffusionTrainer
+
+# Dynamic device detection for testing
+TEST_DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
+
+
+class TestDiffusionPipelineBasic:
+    """Test basic diffusion pipeline with minimal configuration."""
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_full_pipeline_unconditional(self, tmp_path, mock_dataset_medium):
+        """Test complete diffusion pipeline with unconditional generation.
+
+        Tests:
+        - Model initialization
+        - Training for 2 epochs
+        - Checkpoint saving
+        - Metrics logging
+        """
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 2,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": True,
+                "ema_decay": 0.999,
+                "use_amp": False,
+            },
+            "generation": {
+                "sample_images": True,
+                "sample_interval": 1,
+                "samples_per_class": 2,
+                "guidance_scale": 0.0,
+            },
+            "output": {
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "log_dir": str(tmp_path / "logs"),
+                "save_best_only": False,
+                "save_frequency": 1,
+            },
+        }
+
+        # Initialize components
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        # Initialize trainer
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+            ema_decay=config["training"]["ema_decay"],
+            use_amp=config["training"]["use_amp"],
+            sample_images=config["generation"]["sample_images"],
+            sample_interval=config["generation"]["sample_interval"],
+            samples_per_class=config["generation"]["samples_per_class"],
+            guidance_scale=config["generation"]["guidance_scale"],
+        )
+
+        # Run training
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=config["output"]["checkpoint_dir"],
+            checkpoint_frequency=config["output"]["save_frequency"],
+        )
+
+        # Verify outputs
+        checkpoint_dir = Path(config["output"]["checkpoint_dir"])
+        log_dir = Path(config["output"]["log_dir"])
+
+        assert checkpoint_dir.exists(), "Checkpoint directory not created"
+        assert log_dir.exists(), "Log directory not created"
+
+        # Verify checkpoint files
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint files saved"
+
+        # Verify metrics CSV
+        metrics_csv = log_dir / "metrics.csv"
+        assert metrics_csv.exists(), "Metrics CSV not created"
+
+        # Read and verify metrics
+        with open(metrics_csv, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 1, "Metrics CSV is empty"
+            # Should have header + at least 2 epoch entries
+            assert len(lines) >= 3
+
+        # Verify generated samples
+        samples_dir = log_dir / "samples"
+        assert samples_dir.exists(), "Samples directory not created"
+        sample_files = list(samples_dir.glob("*.png"))
+        assert len(sample_files) > 0, "No sample images generated"
+
+        logger.close()
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_full_pipeline_conditional(self, tmp_path, mock_dataset_medium):
+        """Test complete diffusion pipeline with conditional generation.
+
+        Tests:
+        - Conditional model initialization
+        - Training with class labels
+        - Sample generation for each class
+        """
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": 2,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "class_dropout_prob": 0.1,
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": True,  # Important for conditional generation
+            },
+            "training": {
+                "epochs": 2,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": True,
+                "ema_decay": 0.999,
+                "use_amp": False,
+            },
+            "generation": {
+                "sample_images": True,
+                "sample_interval": 1,
+                "samples_per_class": 2,
+                "guidance_scale": 2.0,
+            },
+            "output": {
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "log_dir": str(tmp_path / "logs"),
+                "save_best_only": False,
+                "save_frequency": 1,
+            },
+        }
+
+        # Initialize components
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            class_dropout_prob=config["model"]["class_dropout_prob"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        # Initialize trainer
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+            ema_decay=config["training"]["ema_decay"],
+            use_amp=config["training"]["use_amp"],
+            sample_images=config["generation"]["sample_images"],
+            sample_interval=config["generation"]["sample_interval"],
+            samples_per_class=config["generation"]["samples_per_class"],
+            guidance_scale=config["generation"]["guidance_scale"],
+        )
+
+        # Run training
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=config["output"]["checkpoint_dir"],
+            checkpoint_frequency=config["output"]["save_frequency"],
+        )
+
+        # Verify outputs
+        checkpoint_dir = Path(config["output"]["checkpoint_dir"])
+        log_dir = Path(config["output"]["log_dir"])
+
+        assert checkpoint_dir.exists(), "Checkpoint directory not created"
+        assert log_dir.exists(), "Log directory not created"
+
+        # Verify checkpoint files
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint files saved"
+
+        # Verify metrics CSV
+        metrics_csv = log_dir / "metrics.csv"
+        assert metrics_csv.exists(), "Metrics CSV not created"
+
+        # Verify generated samples (should have samples for each class)
+        samples_dir = log_dir / "samples"
+        assert samples_dir.exists(), "Samples directory not created"
+        sample_files = list(samples_dir.glob("*.png"))
+        assert len(sample_files) > 0, "No sample images generated"
+
+        logger.close()
+
+
+class TestDiffusionPipelineCheckpoints:
+    """Test checkpoint saving and loading functionality."""
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_checkpoint_save_and_load(self, tmp_path, mock_dataset_medium):
+        """Test checkpoint saving and loading.
+
+        Tests:
+        - Checkpoint is saved during training
+        - Model can be loaded from checkpoint
+        - Loaded model produces same outputs
+        """
+        checkpoint_dir = tmp_path / "checkpoints"
+        log_dir = tmp_path / "logs"
+
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,  # Disable EMA for simpler test
+            },
+        }
+
+        # Train model
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=str(log_dir))
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+        )
+
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_frequency=1,
+        )
+
+        # Get saved state before loading
+        original_state = {k: v.clone() for k, v in model.state_dict().items()}
+
+        # Find checkpoint file
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint saved"
+
+        checkpoint_path = checkpoint_files[0]
+
+        # Create new model and load checkpoint
+        model_loaded = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        # Load checkpoint
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["training"]["device"]
+        )
+        model_loaded.load_state_dict(checkpoint["model_state_dict"])
+
+        # Verify loaded weights match original
+        loaded_state = model_loaded.state_dict()
+        for key in original_state:
+            assert torch.allclose(original_state[key], loaded_state[key], atol=1e-6), (
+                f"Mismatch in {key}"
+            )
+
+        logger.close()
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_training_resumption_from_checkpoint(self, tmp_path, mock_dataset_medium):
+        """Test training can be resumed from a checkpoint.
+
+        Tests:
+        - Training can resume from saved checkpoint
+        - Epoch counter continues correctly
+        - Optimizer state is restored
+        """
+        checkpoint_dir = tmp_path / "checkpoints"
+        log_dir = tmp_path / "logs"
+
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 2,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,
+            },
+        }
+
+        # Initial training
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=str(log_dir))
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+        )
+
+        # Train for 1 epoch
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_frequency=1,
+        )
+
+        logger.close()
+
+        # Find checkpoint
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint saved"
+        checkpoint_path = checkpoint_files[0]
+
+        # Resume training
+        model_resumed = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        logger_resumed = DiffusionLogger(log_dir=str(log_dir / "resumed"))
+
+        optimizer_resumed = torch.optim.Adam(
+            model_resumed.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        trainer_resumed = DiffusionTrainer(
+            model=model_resumed,
+            dataloader=dataloader,
+            optimizer=optimizer_resumed,
+            logger=logger_resumed,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+        )
+
+        # Load checkpoint and resume
+        trainer_resumed.load_checkpoint(str(checkpoint_path))
+
+        # Continue training
+        trainer_resumed.train(
+            num_epochs=2,  # Train to epoch 2 (starting from epoch 1)
+            checkpoint_dir=str(checkpoint_dir / "resumed"),
+            checkpoint_frequency=1,
+        )
+
+        # Verify resumed training created new checkpoints
+        resumed_checkpoints = list((checkpoint_dir / "resumed").glob("*.pth"))
+        assert len(resumed_checkpoints) > 0, "No checkpoints from resumed training"
+
+        logger_resumed.close()
+
+
+class TestDiffusionPipelineGeneration:
+    """Test generation mode functionality."""
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_generation_mode_unconditional(self, tmp_path, mock_dataset_medium):
+        """Test generation mode with unconditional model.
+
+        Tests:
+        - Train a model
+        - Load checkpoint for generation
+        - Generate samples
+        - Save samples to disk
+        """
+        checkpoint_dir = tmp_path / "checkpoints"
+        log_dir = tmp_path / "logs"
+        output_dir = tmp_path / "generated"
+
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,
+            },
+        }
+
+        # Train model
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=str(log_dir))
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+        )
+
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_frequency=1,
+        )
+
+        logger.close()
+
+        # Find checkpoint
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint saved"
+        checkpoint_path = checkpoint_files[0]
+
+        # Load checkpoint for generation
+        model_gen = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["training"]["device"]
+        )
+        model_gen.load_state_dict(checkpoint["model_state_dict"])
+
+        logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
+
+        optimizer_gen = torch.optim.Adam(model_gen.parameters(), lr=0.0001)
+
+        trainer_gen = DiffusionTrainer(
+            model=model_gen,
+            dataloader=dataloader,
+            optimizer=optimizer_gen,
+            logger=logger_gen,
+            device=config["training"]["device"],
+            use_ema=False,
+        )
+
+        # Generate samples
+        num_samples = 8
+        samples = trainer_gen.generate_samples(
+            num_samples=num_samples,
+            class_labels=None,
+            guidance_scale=0.0,
+            use_ema=False,
+        )
+
+        # Verify samples
+        assert samples.shape[0] == num_samples, f"Expected {num_samples} samples"
+        assert samples.shape[1:] == (
+            config["model"]["in_channels"],
+            config["model"]["image_size"],
+            config["model"]["image_size"],
+        ), "Sample shape mismatch"
+
+        # Save samples
+        output_dir.mkdir(parents=True, exist_ok=True)
+        save_image(
+            samples, output_dir / "generated_samples.png", nrow=4, normalize=True
+        )
+
+        # Verify saved file
+        assert (output_dir / "generated_samples.png").exists(), (
+            "Generated samples not saved"
+        )
+
+        logger_gen.close()
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_generation_mode_conditional(self, tmp_path, mock_dataset_medium):
+        """Test generation mode with conditional model.
+
+        Tests:
+        - Train a conditional model
+        - Generate samples for specific classes
+        - Use classifier-free guidance
+        """
+        checkpoint_dir = tmp_path / "checkpoints"
+        log_dir = tmp_path / "logs"
+        output_dir = tmp_path / "generated"
+
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": 2,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "class_dropout_prob": 0.1,
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": True,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,
+            },
+        }
+
+        # Train model
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            class_dropout_prob=config["model"]["class_dropout_prob"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=str(log_dir))
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            use_ema=config["training"]["use_ema"],
+        )
+
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_frequency=1,
+        )
+
+        logger.close()
+
+        # Find checkpoint
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint saved"
+        checkpoint_path = checkpoint_files[0]
+
+        # Load checkpoint for generation
+        model_gen = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            class_dropout_prob=config["model"]["class_dropout_prob"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["training"]["device"]
+        )
+        model_gen.load_state_dict(checkpoint["model_state_dict"])
+
+        logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
+
+        optimizer_gen = torch.optim.Adam(model_gen.parameters(), lr=0.0001)
+
+        trainer_gen = DiffusionTrainer(
+            model=model_gen,
+            dataloader=dataloader,
+            optimizer=optimizer_gen,
+            logger=logger_gen,
+            device=config["training"]["device"],
+            use_ema=False,
+        )
+
+        # Generate samples for each class
+        num_samples = 8
+        class_labels = torch.tensor([0, 1] * 4, device=config["training"]["device"])
+
+        samples = trainer_gen.generate_samples(
+            num_samples=num_samples,
+            class_labels=class_labels,
+            guidance_scale=2.0,  # Use classifier-free guidance
+            use_ema=False,
+        )
+
+        # Verify samples
+        assert samples.shape[0] == num_samples, f"Expected {num_samples} samples"
+        assert samples.shape[1:] == (
+            config["model"]["in_channels"],
+            config["model"]["image_size"],
+            config["model"]["image_size"],
+        ), "Sample shape mismatch"
+
+        # Save samples
+        output_dir.mkdir(parents=True, exist_ok=True)
+        save_image(
+            samples,
+            output_dir / "generated_samples_conditional.png",
+            nrow=4,
+            normalize=True,
+        )
+
+        # Verify saved file
+        assert (output_dir / "generated_samples_conditional.png").exists(), (
+            "Generated samples not saved"
+        )
+
+        logger_gen.close()
+
+
+class TestDiffusionPipelineAdvanced:
+    """Test advanced diffusion pipeline features."""
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_pipeline_with_cosine_scheduler(self, tmp_path, mock_dataset_medium):
+        """Test pipeline with learning rate scheduler.
+
+        Tests:
+        - Training with cosine annealing scheduler
+        - Learning rate is adjusted correctly
+        """
+        # Setup configuration
+        config = {
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 3,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,
+            },
+            "output": {
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "log_dir": str(tmp_path / "logs"),
+            },
+        }
+
+        model = create_ddpm(
+            image_size=config["model"]["image_size"],
+            in_channels=config["model"]["in_channels"],
+            model_channels=config["model"]["model_channels"],
+            channel_multipliers=tuple(config["model"]["channel_multipliers"]),
+            num_classes=config["model"]["num_classes"],
+            num_timesteps=config["model"]["num_timesteps"],
+            beta_schedule=config["model"]["beta_schedule"],
+            use_attention=tuple(config["model"]["use_attention"]),
+            device=config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=config["data"]["train_path"],
+            val_path=config["data"]["val_path"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=config["training"]["learning_rate"]
+        )
+
+        # Add cosine scheduler
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config["training"]["epochs"], eta_min=1e-6
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=config["training"]["device"],
+            scheduler=scheduler,
+            use_ema=config["training"]["use_ema"],
+        )
+
+        # Record initial learning rate
+        initial_lr = optimizer.param_groups[0]["lr"]
+
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            checkpoint_dir=config["output"]["checkpoint_dir"],
+        )
+
+        # Verify learning rate changed
+        final_lr = optimizer.param_groups[0]["lr"]
+        assert final_lr < initial_lr, (
+            "Learning rate should decrease with cosine annealing"
+        )
+
+        logger.close()
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_config_file_driven_pipeline(self, tmp_path, mock_dataset_medium):
+        """Test pipeline driven entirely by config file.
+
+        Tests:
+        - Load config from JSON file
+        - Use config to initialize all components
+        - Run complete training
+        """
+        # Create config file
+        config_file = tmp_path / "config.json"
+        config = {
+            "experiment": "diffusion",
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 32,
+                "channel_multipliers": [1, 2],
+                "num_classes": None,
+                "num_timesteps": 100,
+                "beta_schedule": "cosine",
+                "use_attention": [False, True],
+            },
+            "data": {
+                "train_path": str(mock_dataset_medium),
+                "val_path": str(mock_dataset_medium),
+                "batch_size": 4,
+                "num_workers": 0,
+                "image_size": 32,
+                "return_labels": False,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": TEST_DEVICE,
+                "use_ema": False,
+            },
+            "output": {
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "log_dir": str(tmp_path / "logs"),
+            },
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        # Load config from file
+        with open(config_file, "r") as f:
+            loaded_config = json.load(f)
+
+        # Initialize components from config
+        model = create_ddpm(
+            image_size=loaded_config["model"]["image_size"],
+            in_channels=loaded_config["model"]["in_channels"],
+            model_channels=loaded_config["model"]["model_channels"],
+            channel_multipliers=tuple(loaded_config["model"]["channel_multipliers"]),
+            num_classes=loaded_config["model"]["num_classes"],
+            num_timesteps=loaded_config["model"]["num_timesteps"],
+            beta_schedule=loaded_config["model"]["beta_schedule"],
+            use_attention=tuple(loaded_config["model"]["use_attention"]),
+            device=loaded_config["training"]["device"],
+        )
+
+        dataloader = DiffusionDataLoader(
+            train_path=loaded_config["data"]["train_path"],
+            val_path=loaded_config["data"]["val_path"],
+            batch_size=loaded_config["data"]["batch_size"],
+            num_workers=loaded_config["data"]["num_workers"],
+            image_size=loaded_config["data"]["image_size"],
+            return_labels=loaded_config["data"]["return_labels"],
+        )
+
+        logger = DiffusionLogger(log_dir=loaded_config["output"]["log_dir"])
+
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=loaded_config["training"]["learning_rate"]
+        )
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=loaded_config["training"]["device"],
+            use_ema=loaded_config["training"]["use_ema"],
+        )
+
+        # Run training
+        trainer.train(
+            num_epochs=loaded_config["training"]["epochs"],
+            checkpoint_dir=loaded_config["output"]["checkpoint_dir"],
+        )
+
+        # Verify outputs
+        assert Path(loaded_config["output"]["checkpoint_dir"]).exists()
+        assert Path(loaded_config["output"]["log_dir"]).exists()
+
+        logger.close()

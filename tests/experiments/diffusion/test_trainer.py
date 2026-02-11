@@ -155,13 +155,13 @@ class SimpleDiffusionLogger(BaseLogger):
     def log_images(
         self,
         images: torch.Tensor,
-        name: str,
+        tag: str,
         step: int,
         epoch: Optional[int] = None,
         **kwargs,
     ) -> None:
         self.logged_images.append(
-            {"images": images, "name": name, "step": step, "epoch": epoch, **kwargs}
+            {"images": images, "tag": tag, "step": step, "epoch": epoch, **kwargs}
         )
 
 
@@ -647,7 +647,7 @@ def test_diffusion_trainer_sample_generation_during_training():
     # Check sample properties
     for log_entry in logger.logged_images:
         assert "images" in log_entry
-        assert "name" in log_entry
+        assert "tag" in log_entry
         assert log_entry["images"].shape[1] == 3  # RGB
 
 

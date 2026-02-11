@@ -669,7 +669,7 @@ class DiffusionTrainer(BaseTrainer):
             # Log samples
             logger.log_images(
                 all_samples,
-                name=f"samples_epoch_{self._current_epoch}",
+                tag=f"samples_epoch_{self._current_epoch}",
                 step=step,
                 class_labels=class_labels_list,
             )
@@ -683,7 +683,7 @@ class DiffusionTrainer(BaseTrainer):
 
             # Log samples
             logger.log_images(
-                samples, name=f"samples_epoch_{self._current_epoch}", step=step
+                samples, tag=f"samples_epoch_{self._current_epoch}", step=step
             )
 
     def get_model(self) -> BaseModel:

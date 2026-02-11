@@ -72,19 +72,6 @@ class TestMainEntryPoint:
             assert config["data"]["batch_size"] == 2
 
     @pytest.mark.integration
-    def test_main_dispatcher_diffusion_not_implemented(self):
-        """Test that diffusion experiment raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Diffusion experiment"):
-            main(
-                [
-                    "--experiment",
-                    "diffusion",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                ]
-            )
-
-    @pytest.mark.integration
     def test_main_dispatcher_gan_not_implemented(self):
         """Test that GAN experiment raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="GAN experiment"):
@@ -461,8 +448,8 @@ class TestExperimentDispatcher:
 
     @pytest.mark.unit
     def test_dispatcher_routes_to_diffusion(self):
-        """Test that dispatcher correctly routes to diffusion (not implemented)."""
-        with pytest.raises(NotImplementedError):
+        """Test that dispatcher correctly routes to diffusion."""
+        with patch("src.main.setup_experiment_diffusion") as mock_diffusion:
             main(
                 [
                     "--experiment",
@@ -471,6 +458,8 @@ class TestExperimentDispatcher:
                     "tests/fixtures/mock_data/train",
                 ]
             )
+
+            mock_diffusion.assert_called_once()
 
     @pytest.mark.unit
     def test_dispatcher_routes_to_gan(self):
