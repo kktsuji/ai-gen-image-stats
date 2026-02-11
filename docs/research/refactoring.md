@@ -234,10 +234,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 29: Diffusion Trainer
 
-- [ ] Implement `src/experiments/diffusion/trainer.py`
-- [ ] Add diffusion training loop
-- [ ] Add generation mode logic
-- [ ] Add tests
+- [x] Implement `src/experiments/diffusion/trainer.py`
+- [x] Add diffusion training loop
+- [x] Add generation mode logic
+- [x] Add tests
 
 #### Step 30: Diffusion Configuration
 
