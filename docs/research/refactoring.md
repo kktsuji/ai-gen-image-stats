@@ -167,10 +167,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 21: Classifier Configuration
 
-- [ ] Create `src/experiments/classifier/config.py` with defaults
-- [ ] Create `configs/classifier/baseline.json`
-- [ ] Create `configs/classifier/inceptionv3.json`
-- [ ] Add config validation tests
+- [x] Create `src/experiments/classifier/config.py` with defaults
+- [x] Create `configs/classifier/baseline.json`
+- [x] Create `configs/classifier/inceptionv3.json`
+- [x] Add config validation tests
 
 #### Step 22: Classifier Analysis Tools
 
