@@ -140,9 +140,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 17: Classifier Models - ResNet
 
-- [ ] Implement `src/experiments/classifier/models/resnet.py`
-- [ ] Add ResNet50, ResNet101 variants
-- [ ] Add tests for ResNet models
+- [x] Implement `src/experiments/classifier/models/resnet.py`
+- [x] Add ResNet50, ResNet101, ResNet152 variants
+- [x] Add tests for ResNet models
 
 #### Step 18: Classifier DataLoader
 
