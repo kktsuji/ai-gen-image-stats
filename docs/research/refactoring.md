@@ -146,10 +146,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 18: Classifier DataLoader
 
-- [ ] Implement `src/experiments/classifier/dataloader.py`
-- [ ] Inherit from base dataloader
-- [ ] Add classification-specific preprocessing
-- [ ] Add `tests/experiments/classifier/test_dataloader.py`
+- [x] Implement `src/experiments/classifier/dataloader.py`
+- [x] Inherit from base dataloader
+- [x] Add classification-specific preprocessing
+- [x] Add `tests/experiments/classifier/test_dataloader.py`
 
 #### Step 19: Classifier Logger
 
