@@ -160,10 +160,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 20: Classifier Trainer
 
-- [ ] Implement `src/experiments/classifier/trainer.py`
-- [ ] Inherit from base trainer
-- [ ] Add classification training loop
-- [ ] Add `tests/experiments/classifier/test_trainer.py`
+- [x] Implement `src/experiments/classifier/trainer.py`
+- [x] Inherit from base trainer
+- [x] Add classification training loop
+- [x] Add `tests/experiments/classifier/test_trainer.py`
 
 #### Step 21: Classifier Configuration
 
