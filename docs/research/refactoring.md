@@ -102,9 +102,9 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 13: Base Logger Interface
 
-- [ ] Implement `src/base/logger.py` as ABC
-- [ ] Define logging methods (log_metrics, log_images)
-- [ ] Add `tests/base/test_logger.py` with unit tests
+- [x] Implement `src/base/logger.py` as ABC
+- [x] Define logging methods (log_metrics, log_images)
+- [x] Add `tests/base/test_logger.py` with unit tests
 
 #### Step 14: Base Trainer
 
