@@ -123,10 +123,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 16: Classifier Models - InceptionV3
 
-- [ ] Create `src/experiments/classifier/models/` folder
-- [ ] Implement `inceptionv3.py` wrapper
-- [ ] Add model instantiation logic
-- [ ] Add `tests/experiments/classifier/test_models.py` with unit tests
+- [x] Create `src/experiments/classifier/models/` folder
+- [x] Implement `inceptionv3.py` wrapper
+- [x] Add model instantiation logic
+- [x] Add `tests/experiments/classifier/models/test_inceptionv3.py` with unit tests
 
 #### Step 17: Classifier Models - ResNet
 

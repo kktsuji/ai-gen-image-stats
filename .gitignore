@@ -222,6 +222,10 @@ tmp/
 !src/data/
 !tests/data/
 
+# Ignore all model folders except for those in src/experiments/classifier/models/ and tests/experiments/classifier/models/
+!src/experiments/classifier/models/
+!tests/experiments/classifier/models/
+
 # Test fixtures
 tests/fixtures/mock_data/train/
 tests/fixtures/mock_data/val/
