@@ -227,10 +227,10 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 
 #### Step 28: Diffusion Logger
 
-- [ ] Implement `src/experiments/diffusion/logger.py`
-- [ ] Add generated image logging
-- [ ] Add diffusion metrics logging
-- [ ] Add tests
+- [x] Implement `src/experiments/diffusion/logger.py`
+- [x] Add generated image logging
+- [x] Add diffusion metrics logging
+- [x] Add tests
 
 #### Step 29: Diffusion Trainer
 
