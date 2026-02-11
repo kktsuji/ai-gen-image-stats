@@ -128,6 +128,16 @@ The refactoring follows a **Vertical Slice + Base Class** architecture pattern w
 - [x] Add model instantiation logic
 - [x] Add `tests/experiments/classifier/models/test_inceptionv3.py` with unit tests
 
+#### Step 16.5: InceptionV3 Selective Layer Freezing
+
+- [x] Add `set_trainable_layers()` method to InceptionV3Classifier
+- [x] Support layer name patterns for selective unfreezing (e.g., "Mixed_5", "Mixed_6")
+- [x] Add `trainable_layers` parameter to model initialization
+- [x] Update model to handle both `freeze_backbone` and `trainable_layers` configuration
+- [x] Add unit tests for selective layer freezing
+- [x] Add component tests verifying gradient flow through selected layers
+- [x] Update model documentation with selective freezing examples
+
 #### Step 17: Classifier Models - ResNet
 
 - [ ] Implement `src/experiments/classifier/models/resnet.py`

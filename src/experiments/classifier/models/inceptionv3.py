@@ -6,11 +6,12 @@ The model supports:
 - Custom classification head for target task
 - Feature extraction mode
 - Frozen feature extractor with trainable head
+- Selective layer unfreezing for fine-tuning
 """
 
-import os
+import fnmatch
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -30,14 +31,18 @@ class InceptionV3Classifier(BaseModel):
     - Optional feature extraction (frozen backbone)
     - Flexible fine-tuning strategies
 
-    The model can operate in two modes:
+    The model can operate in three modes:
     1. Feature extraction: All layers frozen except final classification head
-    2. Fine-tuning: All layers trainable (or selective unfreezing)
+    2. Fine-tuning: All layers trainable
+    3. Selective unfreezing: Specific layers unfrozen based on patterns
 
     Args:
         num_classes: Number of output classes for classification
         pretrained: Whether to load pretrained ImageNet weights (default: True)
         freeze_backbone: Whether to freeze all layers except classification head (default: True)
+        trainable_layers: List of layer name patterns to unfreeze (default: None)
+                         Patterns support wildcards (e.g., "Mixed_7*", "Mixed_6*")
+                         When provided, overrides freeze_backbone for matched layers
         model_dir: Directory to cache pretrained weights (default: "./models/")
         dropout: Dropout probability for classification head (default: 0.5)
 
@@ -49,6 +54,13 @@ class InceptionV3Classifier(BaseModel):
         >>> # Multi-class with fine-tuning
         >>> model = InceptionV3Classifier(num_classes=10, freeze_backbone=False)
         >>> loss = model.compute_loss(output, targets)
+        >>>
+        >>> # Selective unfreezing: only train Mixed_7* layers and head
+        >>> model = InceptionV3Classifier(num_classes=2, freeze_backbone=True,
+        ...                               trainable_layers=["Mixed_7*"])
+        >>> # Or unfreeze multiple layer groups
+        >>> model = InceptionV3Classifier(num_classes=2, freeze_backbone=True,
+        ...                               trainable_layers=["Mixed_6*", "Mixed_7*"])
     """
 
     def __init__(
@@ -56,6 +68,7 @@ class InceptionV3Classifier(BaseModel):
         num_classes: int,
         pretrained: bool = True,
         freeze_backbone: bool = True,
+        trainable_layers: Optional[List[str]] = None,
         model_dir: str = "./models/",
         dropout: float = 0.5,
     ):
@@ -64,6 +77,7 @@ class InceptionV3Classifier(BaseModel):
         self.num_classes = num_classes
         self.pretrained = pretrained
         self.freeze_backbone = freeze_backbone
+        self.trainable_layers = trainable_layers
         self.model_dir = Path(model_dir)
         self.dropout = dropout
 
@@ -79,6 +93,10 @@ class InceptionV3Classifier(BaseModel):
         # Apply freezing strategy
         if self.freeze_backbone:
             self._freeze_backbone_layers()
+
+        # Apply selective unfreezing if specified
+        if self.trainable_layers is not None:
+            self.set_trainable_layers(self.trainable_layers)
 
     def _load_inception_backbone(self):
         """Load InceptionV3 backbone with optional pretrained weights.
@@ -148,6 +166,82 @@ class InceptionV3Classifier(BaseModel):
             param.requires_grad = True
         for param in self.dropout_layer.parameters():
             param.requires_grad = True
+
+    def set_trainable_layers(self, layer_patterns: List[str]):
+        """Selectively unfreeze layers matching the given patterns.
+
+        This method allows fine-grained control over which layers are trainable,
+        enabling strategies like:
+        - Unfreezing only the top layers (e.g., "Mixed_7*")
+        - Unfreezing multiple layer groups (e.g., ["Mixed_6*", "Mixed_7*"])
+        - Unfreezing specific layers (e.g., ["Mixed_7a", "Mixed_7b"])
+
+        Layer patterns support Unix-style wildcards:
+        - '*' matches any sequence of characters
+        - '?' matches any single character
+        - '[seq]' matches any character in seq
+
+        Available layer names in InceptionV3:
+        - Conv2d_1a_3x3, Conv2d_2a_3x3, Conv2d_2b_3x3
+        - Conv2d_3b_1x1, Conv2d_4a_3x3
+        - Mixed_5b, Mixed_5c, Mixed_5d
+        - Mixed_6a, Mixed_6b, Mixed_6c, Mixed_6d, Mixed_6e
+        - Mixed_7a, Mixed_7b, Mixed_7c
+        - fc (classification head - always trainable)
+
+        Args:
+            layer_patterns: List of layer name patterns to unfreeze
+                          Examples: ["Mixed_7*"], ["Mixed_6*", "Mixed_7*"]
+
+        Example:
+            >>> model = InceptionV3Classifier(num_classes=2, freeze_backbone=True)
+            >>> # Unfreeze only the top inception block
+            >>> model.set_trainable_layers(["Mixed_7*"])
+            >>>
+            >>> # Unfreeze multiple blocks
+            >>> model.set_trainable_layers(["Mixed_6*", "Mixed_7*"])
+            >>>
+            >>> # Unfreeze specific layers
+            >>> model.set_trainable_layers(["Mixed_7a", "Mixed_7b", "Mixed_7c"])
+        """
+        # Get all layer names that correspond to named modules
+        layer_names = [
+            "Conv2d_1a_3x3",
+            "Conv2d_2a_3x3",
+            "Conv2d_2b_3x3",
+            "Conv2d_3b_1x1",
+            "Conv2d_4a_3x3",
+            "Mixed_5b",
+            "Mixed_5c",
+            "Mixed_5d",
+            "Mixed_6a",
+            "Mixed_6b",
+            "Mixed_6c",
+            "Mixed_6d",
+            "Mixed_6e",
+            "Mixed_7a",
+            "Mixed_7b",
+            "Mixed_7c",
+            "fc",
+            "dropout_layer",
+        ]
+
+        # Find layers matching the patterns
+        layers_to_unfreeze = []
+        for pattern in layer_patterns:
+            for layer_name in layer_names:
+                if fnmatch.fnmatch(layer_name, pattern):
+                    layers_to_unfreeze.append(layer_name)
+
+        # Remove duplicates while preserving order
+        layers_to_unfreeze = list(dict.fromkeys(layers_to_unfreeze))
+
+        # Unfreeze matched layers
+        for layer_name in layers_to_unfreeze:
+            if hasattr(self, layer_name):
+                layer = getattr(self, layer_name)
+                for param in layer.parameters():
+                    param.requires_grad = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through InceptionV3.

@@ -134,6 +134,130 @@ class TestInceptionV3FreezeStrategy:
 
 
 @pytest.mark.unit
+class TestInceptionV3SelectiveLayerFreezing:
+    """Test selective layer freezing functionality."""
+
+    def test_set_trainable_layers_single_pattern(self):
+        """Test unfreezing layers with a single pattern."""
+        model = InceptionV3Classifier(
+            num_classes=2, freeze_backbone=True, pretrained=False
+        )
+
+        # Initially, only fc and dropout should be trainable
+        assert model.fc.weight.requires_grad
+        # Check a parameter from Mixed_7c exists and is frozen
+        mixed_7c_params = list(model.Mixed_7c.parameters())
+        assert len(mixed_7c_params) > 0
+        assert not mixed_7c_params[0].requires_grad
+
+        # Unfreeze Mixed_7* layers
+        model.set_trainable_layers(["Mixed_7*"])
+
+        # Now Mixed_7* layers should be trainable
+        assert any(p.requires_grad for p in model.Mixed_7a.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7b.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7c.parameters())
+
+        # But Mixed_6* should still be frozen
+        assert not any(p.requires_grad for p in model.Mixed_6e.parameters())
+
+    def test_set_trainable_layers_multiple_patterns(self):
+        """Test unfreezing layers with multiple patterns."""
+        model = InceptionV3Classifier(
+            num_classes=2, freeze_backbone=True, pretrained=False
+        )
+
+        # Unfreeze both Mixed_6* and Mixed_7* layers
+        model.set_trainable_layers(["Mixed_6*", "Mixed_7*"])
+
+        # Both groups should be trainable
+        assert any(p.requires_grad for p in model.Mixed_6a.parameters())
+        assert any(p.requires_grad for p in model.Mixed_6e.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7a.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7c.parameters())
+
+        # But earlier layers should still be frozen
+        assert not any(p.requires_grad for p in model.Mixed_5d.parameters())
+        assert not any(p.requires_grad for p in model.Conv2d_1a_3x3.parameters())
+
+    def test_set_trainable_layers_specific_layers(self):
+        """Test unfreezing specific named layers without wildcards."""
+        model = InceptionV3Classifier(
+            num_classes=2, freeze_backbone=True, pretrained=False
+        )
+
+        # Unfreeze only specific layers
+        model.set_trainable_layers(["Mixed_7a", "Mixed_7b"])
+
+        # Only specified layers should be trainable
+        assert any(p.requires_grad for p in model.Mixed_7a.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7b.parameters())
+
+        # Mixed_7c should still be frozen (not included in pattern)
+        assert not any(p.requires_grad for p in model.Mixed_7c.parameters())
+
+        # Earlier layers should still be frozen
+        assert not any(p.requires_grad for p in model.Mixed_6e.parameters())
+
+    def test_trainable_layers_param_in_init(self):
+        """Test that trainable_layers parameter works in __init__."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_7*"],
+            pretrained=False,
+        )
+
+        # Mixed_7* layers should be trainable from initialization
+        assert any(p.requires_grad for p in model.Mixed_7a.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7b.parameters())
+        assert any(p.requires_grad for p in model.Mixed_7c.parameters())
+
+        # Earlier layers should be frozen
+        assert not any(p.requires_grad for p in model.Mixed_6e.parameters())
+
+        # Classification head should remain trainable
+        assert model.fc.weight.requires_grad
+
+    def test_trainable_layers_overrides_freeze_backbone(self):
+        """Test that trainable_layers properly extends freeze_backbone."""
+        # freeze_backbone=True with trainable_layers should unfreeze specified layers
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_6*"],
+            pretrained=False,
+        )
+
+        # Mixed_6* should be trainable
+        assert any(p.requires_grad for p in model.Mixed_6e.parameters())
+
+        # But Mixed_5* should still be frozen
+        assert not any(p.requires_grad for p in model.Mixed_5d.parameters())
+
+    def test_set_trainable_layers_empty_list(self):
+        """Test that empty trainable_layers list doesn't change anything."""
+        model = InceptionV3Classifier(
+            num_classes=2, freeze_backbone=True, pretrained=False
+        )
+
+        # Record initial state
+        initial_fc_trainable = model.fc.weight.requires_grad
+        initial_mixed7c_trainable = any(
+            p.requires_grad for p in model.Mixed_7c.parameters()
+        )
+
+        # Apply empty list
+        model.set_trainable_layers([])
+
+        # State should remain unchanged
+        assert model.fc.weight.requires_grad == initial_fc_trainable
+        assert (
+            any(p.requires_grad for p in model.Mixed_7c.parameters())
+        ) == initial_mixed7c_trainable
+
+
+@pytest.mark.unit
 class TestInceptionV3ModelDir:
     """Test model directory and weight caching."""
 
@@ -143,7 +267,7 @@ class TestInceptionV3ModelDir:
             model_dir = Path(tmpdir) / "nonexistent" / "models"
             assert not model_dir.exists()
 
-            model = InceptionV3Classifier(
+            InceptionV3Classifier(
                 num_classes=2, pretrained=False, model_dir=str(model_dir)
             )
 
@@ -153,9 +277,7 @@ class TestInceptionV3ModelDir:
     def test_model_caching_not_pretrained(self):
         """Test that no cache file is created when pretrained=False."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            model = InceptionV3Classifier(
-                num_classes=2, pretrained=False, model_dir=tmpdir
-            )
+            InceptionV3Classifier(num_classes=2, pretrained=False, model_dir=tmpdir)
 
             cache_file = Path(tmpdir) / "inception_v3.pth"
             # Cache should not be created when pretrained=False
@@ -380,6 +502,168 @@ class TestInceptionV3FeatureExtraction:
 
 
 @pytest.mark.component
+class TestInceptionV3SelectiveLayerGradientFlow:
+    """Test gradient flow through selectively unfrozen layers."""
+
+    def test_gradient_flow_single_layer_group(self):
+        """Test that gradients flow only through unfrozen layers."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_7*"],
+            pretrained=False,
+        )
+        model.train()
+
+        x = torch.randn(2, 3, 299, 299)
+        targets = torch.tensor([0, 1])
+
+        # Forward and backward pass
+        output = model(x)
+        loss = model.compute_loss(output, targets)
+        loss.backward()
+
+        # Gradients should exist for unfrozen layers (Mixed_7*)
+        assert any(
+            p.grad is not None for p in model.Mixed_7a.parameters() if p.requires_grad
+        )
+        assert any(
+            p.grad is not None for p in model.Mixed_7b.parameters() if p.requires_grad
+        )
+        assert any(
+            p.grad is not None for p in model.Mixed_7c.parameters() if p.requires_grad
+        )
+
+        # Gradients should NOT exist for frozen layers
+        assert all(p.grad is None for p in model.Mixed_6e.parameters())
+        assert all(p.grad is None for p in model.Mixed_5d.parameters())
+
+        # Classification head should have gradients
+        assert model.fc.weight.grad is not None
+
+    def test_gradient_flow_multiple_layer_groups(self):
+        """Test gradient flow with multiple unfrozen layer groups."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_6*", "Mixed_7*"],
+            pretrained=False,
+        )
+        model.train()
+
+        x = torch.randn(2, 3, 299, 299)
+        targets = torch.tensor([0, 1])
+
+        # Forward and backward pass
+        output = model(x)
+        loss = model.compute_loss(output, targets)
+        loss.backward()
+
+        # Gradients should exist for both Mixed_6* and Mixed_7*
+        assert any(
+            p.grad is not None for p in model.Mixed_6a.parameters() if p.requires_grad
+        )
+        assert any(
+            p.grad is not None for p in model.Mixed_6e.parameters() if p.requires_grad
+        )
+        assert any(
+            p.grad is not None for p in model.Mixed_7a.parameters() if p.requires_grad
+        )
+        assert any(
+            p.grad is not None for p in model.Mixed_7c.parameters() if p.requires_grad
+        )
+
+        # Gradients should NOT exist for frozen layers (Mixed_5*)
+        assert all(p.grad is None for p in model.Mixed_5d.parameters())
+
+    def test_training_with_selective_unfreezing(self):
+        """Test complete training iteration with selective unfreezing."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_7*"],
+            pretrained=False,
+        )
+        model.train()
+
+        # Create optimizer with trainable parameters
+        optimizer = torch.optim.SGD(model.get_trainable_parameters(), lr=0.01)
+
+        x = torch.randn(2, 3, 299, 299)
+        targets = torch.tensor([0, 1])
+
+        # Training step
+        optimizer.zero_grad()
+        output = model(x)
+        loss = model.compute_loss(output, targets)
+        loss.backward()
+
+        # Get a trainable parameter from Mixed_7c to check weight updates
+        trainable_params = [p for p in model.Mixed_7c.parameters() if p.requires_grad]
+        assert len(trainable_params) > 0
+
+        # Store weights before optimizer step
+        test_param = trainable_params[0]
+        weights_before = test_param.data.clone()
+
+        optimizer.step()
+
+        # Weights should have changed for trainable layers
+        weights_after = test_param.data
+        assert not torch.allclose(weights_before, weights_after)
+
+        # Frozen layers should remain unchanged
+        frozen_params = list(model.Mixed_5d.parameters())
+        frozen_weights_initial = frozen_params[0].data.clone()
+
+        # Run another step
+        optimizer.zero_grad()
+        output = model(x)
+        loss = model.compute_loss(output, targets)
+        loss.backward()
+        optimizer.step()
+
+        frozen_weights_after = frozen_params[0].data
+        # Frozen layers remain exactly the same
+        assert torch.allclose(frozen_weights_initial, frozen_weights_after)
+
+    def test_gradient_accumulation_with_selective_unfreezing(self):
+        """Test that gradient accumulation works correctly with selective unfreezing."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            freeze_backbone=True,
+            trainable_layers=["Mixed_7c"],  # Only last layer
+            pretrained=False,
+        )
+        model.train()
+
+        x = torch.randn(2, 3, 299, 299)
+        targets = torch.tensor([0, 1])
+
+        # First forward-backward (without zero_grad)
+        output = model(x)
+        loss1 = model.compute_loss(output, targets)
+        loss1.backward()
+
+        # Get a trainable parameter
+        trainable_params = [p for p in model.Mixed_7c.parameters() if p.requires_grad]
+        assert len(trainable_params) > 0
+        test_param = trainable_params[0]
+
+        grad_after_first = test_param.grad.clone()
+
+        # Second forward-backward (gradients should accumulate)
+        output = model(x)
+        loss2 = model.compute_loss(output, targets)
+        loss2.backward()
+
+        grad_after_second = test_param.grad
+
+        # Gradients should have accumulated (not be equal to first pass)
+        assert not torch.allclose(grad_after_first, grad_after_second)
+
+
+@pytest.mark.component
 class TestInceptionV3Integration:
     """Test integration between components."""
 
@@ -423,9 +707,6 @@ class TestInceptionV3Integration:
                 output = model(x)
                 outputs.append(output.clone())
 
-        # At least some outputs should differ (dropout randomness)
-        # Note: This is a probabilistic test and could rarely fail
-        all_same = all(torch.allclose(outputs[0], out) for out in outputs[1:])
         # With high dropout, outputs should differ
         # But for determinism in tests, we just check the mode is correct
         assert model.dropout_layer.training  # Dropout is enabled in train mode
