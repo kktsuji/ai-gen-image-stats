@@ -299,46 +299,46 @@ def convert_json_to_yaml(json_path: Path):
 
 #### 7.1 Update `README.md`
 
-- [ ] 7.1.1 Update "Configuration Management" section:
+- [x] 7.1.1 Update "Configuration Management" section:
   - Line 23: "JSON-based configs" → "YAML-based configs"
 
-- [ ] 7.1.2 Update "Architecture" section:
+- [x] 7.1.2 Update "Architecture" section:
   - Line 40: "Experiment configurations (JSON)" → "Experiment configurations (YAML)"
 
-- [ ] 7.1.3 Update "Quick Start" section:
+- [x] 7.1.3 Update "Quick Start" section:
   - Line 77: `baseline.json` → `baseline.yaml`
   - Line 80: `inceptionv3.json` → `inceptionv3.yaml`
   - Line 87: `default.json` → `default.yaml`
 
-- [ ] 7.1.4 Update note about configuration:
+- [x] 7.1.4 Update note about configuration:
   - Change references from "JSON" to "YAML"
 
 #### 7.2 Update `docs/standards/architecture.md`
 
-- [ ] 7.2.1 Update "Configuration Driven" section:
+- [x] 7.2.1 Update "Configuration Driven" section:
   - Line 33: "via JSON files" → "via YAML files"
 
-- [ ] 7.2.2 Update "Directory Structure" section:
+- [x] 7.2.2 Update "Directory Structure" section:
   - Line 88: "Config loading (JSON/YAML)" → "Config loading (YAML)"
   - Lines 110-118: Change all `.json` → `.yaml`
 
-- [ ] 7.2.3 Update "CLI Interface" section:
+- [x] 7.2.3 Update "CLI Interface" section:
   - Line 181: "JSON configuration file" → "YAML configuration file"
   - Lines 196, 199, 202: Change `.json` → `.yaml` in examples
 
-- [ ] 7.2.4 Update error examples:
+- [x] 7.2.4 Update error examples:
   - Lines 213-214: `nonexistent.json` → `nonexistent.yaml`
   - Line 217: `incomplete_config.json` → `incomplete_config.yaml`
 
 #### 7.3 Update `docs/research/cli-migration-guide.md` (if exists)
 
-- [ ] 7.3.1 Update all `.json` → `.yaml` references
-- [ ] 7.3.2 Add note about JSON to YAML migration
+- [x] 7.3.1 Update all `.json` → `.yaml` references
+- [x] 7.3.2 Add note about JSON to YAML migration
 
 #### 7.4 Update `docs/research/cli-refactoring-plan.md`
 
-- [ ] 7.4.1 Add note at top indicating JSON→YAML migration completed
-- [ ] 7.4.2 Update references throughout (optional, as this is historical)
+- [x] 7.4.1 Add note at top indicating JSON→YAML migration completed
+- [x] 7.4.2 Update references throughout (optional, as this is historical)
 
 **Validation:** Review docs for consistency
 
@@ -350,7 +350,7 @@ def convert_json_to_yaml(json_path: Path):
 
 **Goal:** Create reusable script for JSON to YAML conversion
 
-- [ ] 8.1 Create `scripts/convert_json_to_yaml.py`:
+- [x] 8.1 Create `scripts/convert_json_to_yaml.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -486,9 +486,9 @@ if __name__ == "__main__":
     exit(main())
 ```
 
-- [ ] 8.2 Create `scripts/` directory if it doesn't exist
-- [ ] 8.3 Make script executable: `chmod +x scripts/convert_json_to_yaml.py`
-- [ ] 8.4 Test script: `python scripts/convert_json_to_yaml.py --file test.json`
+- [x] 8.2 Create `scripts/` directory if it doesn't exist
+- [x] 8.3 Make script executable: `chmod +x scripts/convert_json_to_yaml.py`
+- [x] 8.4 Test script: `python scripts/convert_json_to_yaml.py --file test.json`
 
 **Validation:** Script converts files correctly
 

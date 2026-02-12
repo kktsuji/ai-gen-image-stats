@@ -30,7 +30,7 @@ This repository follows a **Vertical Slice + Base Class** architecture pattern f
 
 ### 4. Configuration Driven
 
-- Experiments configured via JSON files (see [Configuration Management](#configuration-management))
+- Experiments configured via YAML files (see [Configuration Management](#configuration-management))
 - All configuration parameters must be specified in config files
 - No CLI parameter overrides or code defaults
 - Reproducible experiments through configuration version control
@@ -85,7 +85,7 @@ ai-gen-image-stats/
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── cli.py                       # CLI argument parsing
-│   │   ├── config.py                    # Config loading (JSON/YAML)
+│   │   ├── config.py                    # Config loading (YAML)
 │   │   ├── device.py                    # Device management (CPU/GPU)
 │   │   └── metrics.py                   # Common metrics (FID, IS, PR-AUC, ROC-AUC)
 │   │
@@ -107,15 +107,15 @@ ai-gen-image-stats/
 │
 ├── configs/                             # Production configs
 │   ├── gan/
-│   │   ├── default.json
-│   │   └── experiment_001.json
+│   │   ├── default.yaml
+│   │   └── experiment_001.yaml
 │   ├── diffusion/
-│   │   ├── default.json
-│   │   └── experiment_001.json
+│   │   ├── default.yaml
+│   │   └── experiment_001.yaml
 │   └── classifier/
-│       ├── baseline.json
-│       ├── with_synth.json
-│       └── inceptionv3.json
+│       ├── baseline.yaml
+│       ├── with_synth.yaml
+│       └── inceptionv3.yaml
 │
 ├── outputs/                             # Training outputs (gitignored)
 │   ├── checkpoints/
@@ -178,7 +178,7 @@ Each experiment module (GAN, Diffusion, Classifier) contains:
 python -m src.main <CONFIG_FILE>
 ```
 
-**Configuration:** All parameters must be specified in the JSON configuration file. The experiment type is read from the config file's `experiment` field.
+**Configuration:** All parameters must be specified in the YAML configuration file. The experiment type is read from the config file's `experiment` field.
 
 ### Strict Validation
 
@@ -193,13 +193,13 @@ The CLI enforces strict validation:
 
 ```bash
 # Train classifier
-python -m src.main configs/classifier/baseline.json
+python -m src.main configs/classifier/baseline.yaml
 
 # Train diffusion model
-python -m src.main configs/diffusion/default.json
+python -m src.main configs/diffusion/default.yaml
 
 # Train with custom config
-python -m src.main my_experiment_config.json
+python -m src.main my_experiment_config.yaml
 ```
 
 ### Error Handling
@@ -210,11 +210,11 @@ $ python -m src.main
 Error: config_path is required
 
 # File not found
-$ python -m src.main nonexistent.json
-Error: Config file not found: nonexistent.json
+$ python -m src.main nonexistent.yaml
+Error: Config file not found: nonexistent.yaml
 
 # Invalid config (missing required field)
-$ python -m src.main incomplete_config.json
+$ python -m src.main incomplete_config.yaml
 Error: Missing required field: model.name
 ```
 
@@ -483,33 +483,27 @@ pytest -m smoke --gpu
 
 ### Config File Format
 
-JSON format for configuration files with the following structure:
+YAML format for configuration files with the following structure:
 
-```json
-{
-  "experiment": "classifier",
-  "model": {
-    "name": "inceptionv3",
-    "pretrained": true,
-    "num_classes": 2
-  },
-  "data": {
-    "train_path": "data/train",
-    "val_path": "data/val",
-    "batch_size": 32,
-    "num_workers": 4
-  },
-  "training": {
-    "epochs": 10,
-    "learning_rate": 0.001,
-    "optimizer": "adam",
-    "scheduler": "cosine"
-  },
-  "output": {
-    "checkpoint_dir": "outputs/checkpoints",
-    "log_dir": "outputs/logs"
-  }
-}
+```yaml
+experiment: classifier
+model:
+  name: inceptionv3
+  pretrained: true
+  num_classes: 2
+data:
+  train_path: data/train
+  val_path: data/val
+  batch_size: 32
+  num_workers: 4
+training:
+  epochs: 10
+  learning_rate: 0.001
+  optimizer: adam
+  scheduler: cosine
+output:
+  checkpoint_dir: outputs/checkpoints
+  log_dir: outputs/logs
 ```
 
 ### Config Organization

@@ -20,7 +20,7 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
 
 - **Comprehensive Testing**: Four-tier strategy from fast unit tests to GPU smoke tests
 
-- **Configuration Management**: JSON-based configs with CLI overrides
+- **Configuration Management**: YAML-based configs with CLI overrides
 
 - **Metrics & Evaluation**: FID, IS, PR-AUC, ROC-AUC for model evaluation
 
@@ -37,7 +37,7 @@ src/
 └── data/             # Dataset implementations and transforms
 
 tests/                # Mirror of src/ structure with test tiers
-configs/              # Experiment configurations (JSON)
+configs/              # Experiment configurations (YAML)
 outputs/              # Training outputs (gitignored)
 ```
 
@@ -74,17 +74,17 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Train with config file
-python -m src.main configs/classifier/baseline.json
+python -m src.main configs/classifier/baseline.yaml
 
 # Train with InceptionV3
-python -m src.main configs/classifier/inceptionv3.json
+python -m src.main configs/classifier/inceptionv3.yaml
 ```
 
 ### Training a Diffusion Model
 
 ```bash
 # Train diffusion model
-python -m src.main configs/diffusion/default.json
+python -m src.main configs/diffusion/default.yaml
 ```
 
 **Note:** All parameters must be specified in the configuration file. The CLI accepts only the config file path as a positional argument. CLI parameter overrides are not supported.
