@@ -21,9 +21,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     Example:
         >>> parser = create_parser()
-        >>> args = parser.parse_args(['configs/classifier/baseline.json'])
+        >>> args = parser.parse_args(['configs/classifier/baseline.yaml'])
         >>> args.config_path
-        'configs/classifier/baseline.json'
+        'configs/classifier/baseline.yaml'
     """
     parser = argparse.ArgumentParser(
         description="AI Image Generation and Statistics Training Framework",
@@ -34,7 +34,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "config_path",
         type=str,
-        help="Path to JSON configuration file",
+        help="Path to YAML configuration file",
     )
 
     # Optional verbose flag
@@ -64,11 +64,11 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
 
     Raises:
         FileNotFoundError: If specified config file doesn't exist
-        json.JSONDecodeError: If config file is invalid JSON
+        yaml.YAMLError: If config file is invalid YAML
         ValueError: If experiment type is invalid or missing
 
     Example:
-        >>> config = parse_args(['configs/classifier/baseline.json'])
+        >>> config = parse_args(['configs/classifier/baseline.yaml'])
         >>> config['experiment']
         'classifier'
     """

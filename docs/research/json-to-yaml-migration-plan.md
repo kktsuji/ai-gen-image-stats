@@ -63,22 +63,22 @@ python -m src.main configs/diffusion/default.yaml
 
 #### 1.1 Update `src/utils/config.py`
 
-- [ ] 1.1.1 Change import statement:
+- [x] 1.1.1 Change import statement:
   - Remove: `import json`
   - Add: `import yaml`
 
-- [ ] 1.1.2 Update `load_config()` function:
+- [x] 1.1.2 Update `load_config()` function:
   - Update docstring: "JSON file" → "YAML file"
   - Change `json.load(f)` → `yaml.safe_load(f)`
   - Update exception handling: `json.JSONDecodeError` → `yaml.YAMLError`
   - Update docstring raises section
 
-- [ ] 1.1.3 Update `save_config()` function:
+- [x] 1.1.3 Update `save_config()` function:
   - Update docstring: "JSON file" → "YAML file"
   - Change `json.dump(config, f, indent=indent)` → `yaml.dump(config, f, default_flow_style=False, sort_keys=False)`
   - Update parameter docs
 
-- [ ] 1.1.4 Update `load_and_merge_configs()` docstring:
+- [x] 1.1.4 Update `load_and_merge_configs()` docstring:
   - Change "JSON configuration file" → "YAML configuration file"
 
 **Validation:** `python -c "from src.utils.config import load_config, save_config; print('OK')"`
@@ -93,11 +93,11 @@ python -m src.main configs/diffusion/default.yaml
 
 #### 2.1 Update `src/utils/cli.py`
 
-- [ ] 2.1.1 Update `create_parser()`:
+- [x] 2.1.1 Update `create_parser()`:
   - Change help text: "Path to JSON configuration file" → "Path to YAML configuration file"
   - Update docstring examples: `baseline.json` → `baseline.yaml`
 
-- [ ] 2.1.2 Update `parse_args()` function:
+- [x] 2.1.2 Update `parse_args()` function:
   - Update docstring examples: `baseline.json` → `baseline.yaml`
   - Update exception docstring: `json.JSONDecodeError` → `yaml.YAMLError`
 
@@ -113,11 +113,11 @@ python -m src.main configs/diffusion/default.yaml
 
 #### 3.1 Update `src/main.py`
 
-- [ ] 3.1.1 Change import statement:
+- [x] 3.1.1 Change import statement:
   - Remove: `import json`
   - Add: `import yaml`
 
-- [ ] 3.1.2 Update module docstring:
+- [x] 3.1.2 Update module docstring:
   - Change all `.json` → `.yaml` in usage examples
   - Line 9: `baseline.json` → `baseline.yaml`
   - Line 10: `inceptionv3.json` → `inceptionv3.yaml`
@@ -125,11 +125,11 @@ python -m src.main configs/diffusion/default.yaml
   - Line 16: `generate.json` → `generate.yaml`
   - Update note: "JSON config file" → "YAML config file"
 
-- [ ] 3.1.3 Update `setup_experiment_classifier()`:
+- [x] 3.1.3 Update `setup_experiment_classifier()`:
   - Line ~86: Change `config_save_path = log_dir / "config.json"` → `config.yaml`
   - Line ~88: Change `json.dump(config, f, indent=2)` → `yaml.dump(config, f, default_flow_style=False, sort_keys=False)`
 
-- [ ] 3.1.4 Update `setup_experiment_diffusion()`:
+- [x] 3.1.4 Update `setup_experiment_diffusion()`:
   - Line ~299: Change `config_save_path = log_dir / "config.json"` → `config.yaml`
   - Line ~301: Change `json.dump(config, f, indent=2)` → `yaml.dump(config, f, default_flow_style=False, sort_keys=False)`
 

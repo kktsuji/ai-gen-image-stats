@@ -6,26 +6,26 @@ appropriate experiment implementation based on the configuration.
 
 Usage:
     # Train classifier
-    python -m src.main configs/classifier/baseline.json
-    python -m src.main configs/classifier/inceptionv3.json
+    python -m src.main configs/classifier/baseline.yaml
+    python -m src.main configs/classifier/inceptionv3.yaml
 
     # Train diffusion model
-    python -m src.main configs/diffusion/default.json
+    python -m src.main configs/diffusion/default.yaml
 
     # Generate synthetic data (for diffusion experiments)
-    python -m src.main configs/diffusion/generate.json
+    python -m src.main configs/diffusion/generate.yaml
 
 Note:
-    All parameters must be specified in the JSON config file.
+    All parameters must be specified in the YAML config file.
     CLI parameter overrides are not supported.
 """
 
-import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
+import yaml
 
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
@@ -296,9 +296,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     print(f"Log directory: {log_dir}")
 
     # Save configuration to log directory
-    config_save_path = log_dir / "config.json"
+    config_save_path = log_dir / "config.yaml"
     with open(config_save_path, "w") as f:
-        json.dump(config, f, indent=2)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"Configuration saved to: {config_save_path}")
 
     # Initialize model

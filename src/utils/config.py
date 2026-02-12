@@ -4,23 +4,24 @@ This module provides utilities for loading and merging configuration files.
 Priority order: CLI arguments > Config file > Code defaults
 """
 
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import yaml
+
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load configuration from a JSON file.
+    """Load configuration from a YAML file.
 
     Args:
-        config_path: Path to the JSON configuration file
+        config_path: Path to the YAML configuration file
 
     Returns:
         Dictionary containing the configuration
 
     Raises:
         FileNotFoundError: If the config file doesn't exist
-        json.JSONDecodeError: If the config file is not valid JSON
+        yaml.YAMLError: If the config file is not valid YAML
         ValueError: If config_path is empty or None
     """
     if not config_path:
@@ -32,7 +33,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     with open(config_path, "r") as f:
-        config = json.load(f)
+        config = yaml.safe_load(f)
 
     return config
 
@@ -87,7 +88,7 @@ def load_and_merge_configs(
     Priority order: overrides > config_file > defaults
 
     Args:
-        config_path: Optional path to JSON configuration file
+        config_path: Optional path to YAML configuration file
         defaults: Optional dictionary of default values
         overrides: Optional dictionary of override values (highest priority)
 
@@ -97,7 +98,7 @@ def load_and_merge_configs(
     Example:
         >>> defaults = {"epochs": 10, "batch_size": 32}
         >>> config = load_and_merge_configs(
-        ...     config_path="experiment.json",
+        ...     config_path="experiment.yaml",
         ...     defaults=defaults,
         ...     overrides={"batch_size": 64}
         ... )
@@ -118,12 +119,12 @@ def load_and_merge_configs(
 
 
 def save_config(config: Dict[str, Any], output_path: str, indent: int = 2) -> None:
-    """Save configuration to a JSON file.
+    """Save configuration to a YAML file.
 
     Args:
         config: Configuration dictionary to save
-        output_path: Path where to save the JSON file
-        indent: Number of spaces for JSON indentation (default: 2)
+        output_path: Path where to save the YAML file
+        indent: Number of spaces for indentation (default: 2)
 
     Raises:
         ValueError: If config is None or output_path is empty
@@ -140,4 +141,4 @@ def save_config(config: Dict[str, Any], output_path: str, indent: int = 2) -> No
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "w") as f:
-        json.dump(config, f, indent=indent)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False, indent=indent)
