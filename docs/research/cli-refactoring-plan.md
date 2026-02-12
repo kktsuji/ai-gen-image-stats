@@ -142,19 +142,19 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Remove default config merging
 
-- [ ] 4.1 Update `src/main.py` docstring
+- [x] 4.1 Update `src/main.py` docstring
   - Show only config-file examples
   - Remove CLI parameter examples
 
-- [ ] 4.2 Update `setup_experiment_classifier()`
+- [x] 4.2 Update `setup_experiment_classifier()`
   - Remove: `config = merge_configs(classifier_defaults, config)`
   - Keep: `validate_classifier_config(config)`
 
-- [ ] 4.3 Update `setup_experiment_diffusion()`
+- [x] 4.3 Update `setup_experiment_diffusion()`
   - Remove: `config = merge_configs(diffusion_defaults, config)`
   - Keep: `validate_diffusion_config(config)`
 
-- [ ] 4.4 Test: `python -c "from src.main import main; print('OK')"`
+- [x] 4.4 Test: `python -c "from src.main import main; print('OK')"`
 
 **Validation:** No import errors
 
@@ -164,11 +164,11 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Verify changes work with actual configs
 
-- [ ] 5.1 Test classifier: `python -m src.main configs/classifier/baseline.json`
+- [x] 5.1 Test classifier: `python -m src.main configs/classifier/baseline.json`
 
-- [ ] 5.2 Test diffusion: `python -m src.main configs/diffusion/default.json`
+- [x] 5.2 Test diffusion: `python -m src.main configs/diffusion/default.json`
 
-- [ ] 5.3 Test error cases:
+- [x] 5.3 Test error cases:
   ```bash
   python -m src.main  # Should error: config required
   python -m src.main nonexistent.json  # Should error: file not found
@@ -183,35 +183,35 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Fix broken tests, add new tests
 
-- [ ] 6.1 Run tests to see failures: `pytest tests/utils/test_cli.py -v`
+- [x] 6.1 Run tests to see failures: `pytest tests/utils/test_cli.py -v`
 
-- [ ] 6.2 Update `TestCreateParser` class
+- [x] 6.2 Update `TestCreateParser` class
   - Add: `test_parser_has_positional_config_argument()`
   - Add: `test_config_path_is_required()`
 
-- [ ] 6.3 Remove obsolete test classes:
+- [x] 6.3 Remove obsolete test classes:
   - `TestParseTrainingArguments`, `TestParseModelArguments`
   - `TestParseDataArguments`, `TestParseOutputArguments`
   - `TestParseModeArguments`, `TestParseDeviceArguments`
   - `TestArgsToDict`
 
-- [ ] 6.4 Update `TestParseArgs` class
+- [x] 6.4 Update `TestParseArgs` class
   - Remove CLI-only, defaults, overrides, priority tests
   - Keep: `test_parse_args_with_config_file()` (update it)
   - Add: `test_parse_args_requires_config()`
   - Add: `test_parse_args_config_file_not_found()`
 
-- [ ] 6.5 Update `TestValidateConfig` for strict validation
+- [x] 6.5 Update `TestValidateConfig` for strict validation
 
-- [ ] 6.6 Add `TestConfigOnlyMode` class:
+- [x] 6.6 Add `TestConfigOnlyMode` class:
   - `test_requires_config_file()`
   - `test_no_cli_overrides_allowed()`
   - `test_loads_config_only()`
   - `test_experiment_from_config()`
 
-- [ ] 6.7 Run: `pytest tests/utils/test_cli.py -v`
+- [x] 6.7 Run: `pytest tests/utils/test_cli.py -v`
 
-- [ ] 6.8 Check: `pytest tests/test_main.py -v`
+- [x] 6.8 Check: `pytest tests/test_main.py -v`
 
 **Validation:** All tests pass
 

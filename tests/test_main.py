@@ -2,7 +2,7 @@
 
 This module tests the main entry point and experiment dispatcher,
 ensuring proper configuration handling, experiment routing, and
-end-to-end execution flow.
+end-to-end execution flow with config-only mode.
 """
 
 import json
@@ -17,7 +17,7 @@ from src.main import main, setup_experiment_classifier
 
 
 class TestMainEntryPoint:
-    """Test suite for main CLI entry point."""
+    """Test suite for main CLI entry point with config-only mode."""
 
     @pytest.mark.integration
     def test_main_help_message(self):
@@ -30,36 +30,56 @@ class TestMainEntryPoint:
 
     @pytest.mark.integration
     def test_main_missing_required_experiment(self):
-        """Test that missing --experiment argument causes error."""
+        """Test that missing config file causes error."""
         with pytest.raises(SystemExit):
             main([])
 
     @pytest.mark.integration
-    def test_main_invalid_experiment_type(self):
+    def test_main_invalid_experiment_type(self, tmp_path):
         """Test that invalid experiment type raises ValueError."""
-        with pytest.raises(SystemExit):
-            main(["--experiment", "invalid_experiment"])
+        config_file = tmp_path / "invalid.json"
+        with open(config_file, "w") as f:
+            json.dump({"experiment": "invalid_experiment"}, f)
+
+        with pytest.raises(ValueError):
+            main([str(config_file)])
 
     @pytest.mark.integration
-    def test_main_dispatcher_classifier(self):
+    def test_main_dispatcher_classifier(self, tmp_path):
         """Test that classifier experiment is properly dispatched."""
+        config_file = tmp_path / "classifier_config.json"
+        config_data = {
+            "experiment": "classifier",
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
+            "data": {
+                "train_path": "tests/fixtures/mock_data/train",
+                "val_path": "tests/fixtures/mock_data/val",
+                "batch_size": 2,
+                "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
+            "output": {
+                "checkpoint_dir": "outputs/checkpoints",
+                "log_dir": "outputs/logs",
+            },
+        }
+        with open(config_file, "w") as f:
+            json.dump(config_data, f)
+
         with patch("src.main.setup_experiment_classifier") as mock_setup:
-            main(
-                [
-                    "--experiment",
-                    "classifier",
-                    "--model",
-                    "resnet50",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                    "--val-path",
-                    "tests/fixtures/mock_data/val",
-                    "--epochs",
-                    "1",
-                    "--batch-size",
-                    "2",
-                ]
-            )
+            main([str(config_file)])
 
             # Verify setup function was called
             mock_setup.assert_called_once()
@@ -72,21 +92,22 @@ class TestMainEntryPoint:
             assert config["data"]["batch_size"] == 2
 
     @pytest.mark.integration
-    def test_main_dispatcher_gan_not_implemented(self):
+    def test_main_dispatcher_gan_not_implemented(self, tmp_path):
         """Test that GAN experiment raises NotImplementedError."""
+        config_file = tmp_path / "gan_config.json"
+        config_data = {
+            "experiment": "gan",
+            "data": {"train_path": "tests/fixtures/mock_data/train"},
+        }
+        with open(config_file, "w") as f:
+            json.dump(config_data, f)
+
         with pytest.raises(NotImplementedError, match="GAN experiment"):
-            main(
-                [
-                    "--experiment",
-                    "gan",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                ]
-            )
+            main([str(config_file)])
 
     @pytest.mark.integration
     def test_main_config_file_loading(self, tmp_path):
-        """Test that config file is properly loaded and merged."""
+        """Test that config file is properly loaded."""
         # Create a temporary config file
         config_file = tmp_path / "test_config.json"
         config_data = {
@@ -95,20 +116,33 @@ class TestMainEntryPoint:
                 "name": "inceptionv3",
                 "num_classes": 2,
                 "pretrained": True,
+                "freeze_backbone": False,
             },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 16,
+                "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
-            "training": {"epochs": 5, "learning_rate": 0.001},
+            "training": {
+                "epochs": 5,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
+            "output": {
+                "checkpoint_dir": "outputs/checkpoints",
+                "log_dir": "outputs/logs",
+            },
         }
 
         with open(config_file, "w") as f:
             json.dump(config_data, f)
 
         with patch("src.main.setup_experiment_classifier") as mock_setup:
-            main(["--experiment", "classifier", "--config", str(config_file)])
+            main([str(config_file)])
 
             # Verify setup was called
             mock_setup.assert_called_once()
@@ -120,47 +154,43 @@ class TestMainEntryPoint:
 
     @pytest.mark.integration
     def test_main_cli_overrides_config_file(self, tmp_path):
-        """Test that CLI arguments override config file values."""
+        """Test that CLI overrides are NOT supported in config-only mode."""
         # Create a temporary config file
         config_file = tmp_path / "test_config.json"
         config_data = {
             "experiment": "classifier",
-            "model": {"name": "resnet50"},
-            "training": {"epochs": 100, "learning_rate": 0.001},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
+            "training": {
+                "epochs": 100,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 32,
+                "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
+            },
+            "output": {
+                "checkpoint_dir": "outputs/checkpoints",
+                "log_dir": "outputs/logs",
             },
         }
 
         with open(config_file, "w") as f:
             json.dump(config_data, f)
 
-        with patch("src.main.setup_experiment_classifier") as mock_setup:
-            main(
-                [
-                    "--experiment",
-                    "classifier",
-                    "--config",
-                    str(config_file),
-                    "--epochs",
-                    "5",
-                    "--batch-size",
-                    "4",
-                ]
-            )
-
-            # Verify setup was called
-            mock_setup.assert_called_once()
-
-            # Verify CLI arguments override config file
-            config = mock_setup.call_args[0][0]
-            assert config["training"]["epochs"] == 5  # Overridden by CLI
-            assert config["data"]["batch_size"] == 4  # Overridden by CLI
-            assert (
-                config["training"]["learning_rate"] == 0.001
-            )  # Not overridden, from config file
+        # Attempting to add CLI overrides should fail
+        with pytest.raises(SystemExit):
+            main([str(config_file), "--epochs", "5"])
 
 
 class TestClassifierExperimentSetup:
@@ -171,14 +201,26 @@ class TestClassifierExperimentSetup:
         """Test basic classifier setup with minimal config."""
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
-            "training": {"epochs": 1, "learning_rate": 0.001, "device": "cpu"},
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
             "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
                 "log_dir": str(tmp_path / "logs"),
@@ -208,6 +250,7 @@ class TestClassifierExperimentSetup:
                 "name": "inceptionv3",
                 "num_classes": 2,
                 "pretrained": False,
+                "freeze_backbone": False,
                 "dropout": 0.5,
             },
             "data": {
@@ -215,8 +258,15 @@ class TestClassifierExperimentSetup:
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
-            "training": {"epochs": 1, "learning_rate": 0.001, "device": "cpu"},
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
             "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
                 "log_dir": str(tmp_path / "logs"),
@@ -236,16 +286,24 @@ class TestClassifierExperimentSetup:
         """Test classifier setup with learning rate scheduler."""
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
             "training": {
                 "epochs": 10,
                 "learning_rate": 0.001,
+                "optimizer": "adam",
                 "device": "cpu",
                 "scheduler": "cosine",
                 "scheduler_kwargs": {"T_max": 10, "eta_min": 1e-6},
@@ -269,16 +327,24 @@ class TestClassifierExperimentSetup:
         """Test that random seed is properly set."""
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.001,
+                "optimizer": "adam",
                 "device": "cpu",
                 "seed": 42,
             },
@@ -311,14 +377,22 @@ class TestClassifierExperimentSetup:
                 "name": "invalid_model",
                 "num_classes": 2,
                 "pretrained": False,
+                "freeze_backbone": False,
             },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
-            "training": {"epochs": 1, "learning_rate": 0.001, "device": "cpu"},
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
             "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
                 "log_dir": str(tmp_path / "logs"),
@@ -333,12 +407,19 @@ class TestClassifierExperimentSetup:
         """Test that invalid optimizer raises ValueError."""
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
             "training": {
                 "epochs": 1,
@@ -360,16 +441,24 @@ class TestClassifierExperimentSetup:
         """Test that invalid scheduler raises ValueError."""
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
                 "batch_size": 2,
                 "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
             },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.001,
+                "optimizer": "adam",
                 "scheduler": "invalid_scheduler",
                 "device": "cpu",
             },
@@ -392,7 +481,12 @@ class TestClassifierExperimentSetup:
         """
         config = {
             "experiment": "classifier",
-            "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
             "data": {
                 "train_path": "tests/fixtures/mock_data/train",
                 "val_path": "tests/fixtures/mock_data/val",
@@ -429,49 +523,100 @@ class TestClassifierExperimentSetup:
 
 
 class TestExperimentDispatcher:
-    """Test suite for experiment dispatcher logic."""
+    """Test suite for experiment dispatcher logic with config-only mode."""
 
     @pytest.mark.unit
-    def test_dispatcher_routes_to_classifier(self):
+    def test_dispatcher_routes_to_classifier(self, tmp_path):
         """Test that dispatcher correctly routes to classifier."""
+        config_file = tmp_path / "classifier_config.json"
+        config_data = {
+            "experiment": "classifier",
+            "model": {
+                "name": "resnet50",
+                "num_classes": 2,
+                "pretrained": False,
+                "freeze_backbone": False,
+            },
+            "data": {
+                "train_path": "tests/fixtures/mock_data/train",
+                "batch_size": 2,
+                "num_workers": 0,
+                "image_size": 256,
+                "crop_size": 224,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
+            "output": {
+                "checkpoint_dir": "outputs/checkpoints",
+                "log_dir": "outputs/logs",
+            },
+        }
+        with open(config_file, "w") as f:
+            json.dump(config_data, f)
+
         with patch("src.main.setup_experiment_classifier") as mock_classifier:
-            main(
-                [
-                    "--experiment",
-                    "classifier",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                    "--epochs",
-                    "1",
-                ]
-            )
+            main([str(config_file)])
 
             mock_classifier.assert_called_once()
 
     @pytest.mark.unit
-    def test_dispatcher_routes_to_diffusion(self):
+    def test_dispatcher_routes_to_diffusion(self, tmp_path):
         """Test that dispatcher correctly routes to diffusion."""
+        config_file = tmp_path / "diffusion_config.json"
+        config_data = {
+            "experiment": "diffusion",
+            "model": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 64,
+                "num_timesteps": 1000,
+                "beta_schedule": "linear",
+                "channel_multipliers": [1, 2, 4],
+                "num_classes": 2,
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+                "class_dropout_prob": 0.1,
+                "use_attention": [False, True, False],
+            },
+            "data": {
+                "train_path": "tests/fixtures/mock_data/train",
+                "batch_size": 16,
+                "num_workers": 0,
+                "image_size": 32,
+            },
+            "training": {
+                "epochs": 1,
+                "learning_rate": 0.0001,
+                "optimizer": "adam",
+                "device": "cpu",
+            },
+            "output": {
+                "checkpoint_dir": "outputs/checkpoints",
+                "log_dir": "outputs/logs",
+            },
+        }
+        with open(config_file, "w") as f:
+            json.dump(config_data, f)
+
         with patch("src.main.setup_experiment_diffusion") as mock_diffusion:
-            main(
-                [
-                    "--experiment",
-                    "diffusion",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                ]
-            )
+            main([str(config_file)])
 
             mock_diffusion.assert_called_once()
 
     @pytest.mark.unit
-    def test_dispatcher_routes_to_gan(self):
+    def test_dispatcher_routes_to_gan(self, tmp_path):
         """Test that dispatcher correctly routes to GAN (not implemented)."""
+        config_file = tmp_path / "gan_config.json"
+        config_data = {
+            "experiment": "gan",
+            "data": {"train_path": "tests/fixtures/mock_data/train"},
+        }
+        with open(config_file, "w") as f:
+            json.dump(config_data, f)
+
         with pytest.raises(NotImplementedError):
-            main(
-                [
-                    "--experiment",
-                    "gan",
-                    "--train-path",
-                    "tests/fixtures/mock_data/train",
-                ]
-            )
+            main([str(config_file)])

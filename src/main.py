@@ -5,17 +5,19 @@ This module provides the CLI entry point for running different experiments
 appropriate experiment implementation based on the configuration.
 
 Usage:
-    # Train with config file
-    python -m src.main --experiment classifier --config configs/classifier/baseline.json
+    # Train classifier
+    python -m src.main configs/classifier/baseline.json
+    python -m src.main configs/classifier/inceptionv3.json
 
-    # Train with CLI arguments only
-    python -m src.main --experiment classifier --model inceptionv3 --epochs 10
+    # Train diffusion model
+    python -m src.main configs/diffusion/default.json
 
-    # Train with config + CLI overrides
-    python -m src.main --experiment classifier --config configs/classifier/baseline.json --batch-size 32
+    # Generate synthetic data (for diffusion experiments)
+    python -m src.main configs/diffusion/generate.json
 
-    # Generate synthetic data (for diffusion experiments, to be implemented)
-    python -m src.main --experiment diffusion --mode generate --checkpoint path/to/model.pth
+Note:
+    All parameters must be specified in the JSON config file.
+    CLI parameter overrides are not supported.
 """
 
 import json
@@ -40,7 +42,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         ValueError: If configuration is invalid
         RuntimeError: If experiment execution fails
     """
-    from src.experiments.classifier.config import get_default_config
     from src.experiments.classifier.config import (
         validate_config as validate_classifier_config,
     )
@@ -51,13 +52,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         ResNetClassifier,
     )
     from src.experiments.classifier.trainer import ClassifierTrainer
-    from src.utils.config import merge_configs
 
-    # Merge with classifier defaults
-    classifier_defaults = get_default_config()
-    config = merge_configs(classifier_defaults, config)
-
-    # Validate classifier config
+    # Validate classifier config (strict mode - no defaults)
     validate_classifier_config(config)
 
     # Set up device
@@ -259,7 +255,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         ValueError: If configuration is invalid
         RuntimeError: If experiment execution fails
     """
-    from src.experiments.diffusion.config import get_default_config
     from src.experiments.diffusion.config import (
         validate_config as validate_diffusion_config,
     )
@@ -267,13 +262,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     from src.experiments.diffusion.logger import DiffusionLogger
     from src.experiments.diffusion.model import create_ddpm
     from src.experiments.diffusion.trainer import DiffusionTrainer
-    from src.utils.config import merge_configs
 
-    # Merge with diffusion defaults
-    diffusion_defaults = get_default_config()
-    config = merge_configs(diffusion_defaults, config)
-
-    # Validate diffusion config
+    # Validate diffusion config (strict mode - no defaults)
     validate_diffusion_config(config)
 
     # Get mode (train or generate)
