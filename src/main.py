@@ -83,9 +83,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     print(f"Log directory: {log_dir}")
 
     # Save configuration to log directory
-    config_save_path = log_dir / "config.json"
+    config_save_path = log_dir / "config.yaml"
     with open(config_save_path, "w") as f:
-        json.dump(config, f, indent=2)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"Configuration saved to: {config_save_path}")
 
     # Initialize dataloader

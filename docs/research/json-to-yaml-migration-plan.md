@@ -500,7 +500,7 @@ if __name__ == "__main__":
 
 **Goal:** Comprehensive validation of all changes
 
-- [ ] 9.1 **Unit Tests:**
+- [x] 9.1 **Unit Tests:**
 
   ```bash
   pytest tests/utils/test_config.py -v
@@ -508,39 +508,39 @@ if __name__ == "__main__":
   pytest -m unit -v
   ```
 
-- [ ] 9.2 **Component Tests:**
+- [x] 9.2 **Component Tests:**
 
   ```bash
   pytest -m component -v
   ```
 
-- [ ] 9.3 **Integration Tests:**
+- [x] 9.3 **Integration Tests:**
 
   ```bash
   pytest -m integration -v
   ```
 
-- [ ] 9.4 **Full Test Suite:**
+- [x] 9.4 **Full Test Suite:**
 
   ```bash
   pytest -v
   ```
 
-- [ ] 9.5 **Manual Testing - Classifier:**
+- [x] 9.5 **Manual Testing - Classifier:**
 
   ```bash
   python -m src.main configs/classifier/baseline.yaml
   # Verify: Config loaded, training starts, config.yaml saved to outputs
   ```
 
-- [ ] 9.6 **Manual Testing - Diffusion:**
+- [x] 9.6 **Manual Testing - Diffusion:**
 
   ```bash
   python -m src.main configs/diffusion/default.yaml
   # Verify: Config loaded, training starts, config.yaml saved to outputs
   ```
 
-- [ ] 9.7 **Error Cases:**
+- [x] 9.7 **Error Cases:**
 
   ```bash
   # Test missing file
@@ -554,7 +554,7 @@ if __name__ == "__main__":
   python -m src.main configs/old_config.json
   ```
 
-- [ ] 9.8 **Verify Generated Files:**
+- [x] 9.8 **Verify Generated Files:**
   - Check `outputs/logs/config.yaml` exists and is valid
   - Check `outputs/logs/hyperparams.yaml` exists and is valid
 
@@ -568,20 +568,20 @@ if __name__ == "__main__":
 
 **Goal:** Final polish and documentation
 
-- [ ] 10.1 Remove any remaining `.json` references:
+- [x] 10.1 Remove any remaining `.json` references:
 
   ```bash
   grep -r "\.json" src/ tests/ docs/ --include="*.py" --include="*.md"
   ```
 
-- [ ] 10.2 Check for unused imports:
+- [x] 10.2 Check for unused imports:
 
   ```bash
   grep -r "import json" src/ tests/ --include="*.py"
   # Verify all are legitimate uses (not config-related)
   ```
 
-- [ ] 10.3 Format code:
+- [x] 10.3 Format code:
 
   ```bash
   black src/utils/config.py src/utils/cli.py src/main.py
@@ -589,14 +589,14 @@ if __name__ == "__main__":
   black tests/utils/test_config.py tests/utils/test_cli.py
   ```
 
-- [ ] 10.4 Review git diff:
+- [x] 10.4 Review git diff:
 
   ```bash
   git diff main
   git status
   ```
 
-- [ ] 10.5 Update CHANGELOG.md (if exists):
+- [x] 10.5 Update CHANGELOG.md (if exists):
   - Add entry for JSON → YAML migration
   - Note breaking change
   - Provide migration instructions
@@ -611,14 +611,14 @@ if __name__ == "__main__":
 
 **Goal:** Commit changes with clear documentation
 
-- [ ] 11.1 Stage all changes:
+- [x] 11.1 Stage all changes:
 
   ```bash
   git add -A
   git status  # Review
   ```
 
-- [ ] 11.2 Commit with descriptive message:
+- [x] 11.2 Commit with descriptive message:
 
   ```bash
   git commit -m "Migrate config format from JSON to YAML
@@ -640,15 +640,15 @@ if __name__ == "__main__":
   "
   ```
 
-- [ ] 11.3 Create/update migration guide `docs/research/json-to-yaml-migration.md`
+- [x] 11.3 Create/update migration guide `docs/research/json-to-yaml-migration.md`
 
-- [ ] 11.4 Push to remote:
+- [x] 11.4 Push to remote:
 
   ```bash
   git push -u origin feature/yaml-config-migration
   ```
 
-- [ ] 11.5 Create Pull Request with:
+- [x] 11.5 Create Pull Request with:
   - Link to this planning document
   - Summary of changes
   - Testing performed
@@ -710,14 +710,14 @@ if __name__ == "__main__":
 
 ## Success Criteria
 
-- [ ] All config files converted from JSON to YAML
-- [ ] All code uses `yaml.safe_load()` and `yaml.dump()`
-- [ ] CLI accepts `.yaml` files
-- [ ] All tests pass
-- [ ] Documentation updated
-- [ ] Conversion script available for custom configs
-- [ ] Clear migration guide created
-- [ ] No references to `.json` configs remain (except in old/\* folder)
+- [x] All config files converted from JSON to YAML
+- [x] All code uses `yaml.safe_load()` and `yaml.dump()`
+- [x] CLI accepts `.yaml` files
+- [x] All tests pass
+- [x] Documentation updated
+- [x] Conversion script available for custom configs
+- [x] Clear migration guide created
+- [x] No references to `.json` configs remain (except in old/\* folder)
 
 ---
 

@@ -7,9 +7,9 @@ This directory contains test fixtures used across the test suite.
 ```
 fixtures/
 ├── configs/          # Sample configuration files for testing
-│   ├── classifier_minimal.json
-│   ├── diffusion_minimal.json
-│   └── gan_minimal.json
+│   ├── classifier_minimal.yaml
+│   ├── diffusion_minimal.yaml
+│   └── gan_minimal.yaml
 └── mock_data/        # Mock datasets for testing (created by conftest.py fixtures)
 ```
 
@@ -19,9 +19,9 @@ fixtures/
 
 The `configs/` directory contains minimal configuration files for each experiment type. These are used in tests to validate configuration loading and provide realistic test scenarios.
 
-- **classifier_minimal.json**: Minimal classifier configuration with 2 epochs, batch size 2, CPU device
-- **diffusion_minimal.json**: Minimal diffusion model configuration for DDPM training
-- **gan_minimal.json**: Minimal GAN configuration for adversarial training
+- **classifier_minimal.yaml**: Minimal classifier configuration with 2 epochs, batch size 2, CPU device
+- **diffusion_minimal.yaml**: Minimal diffusion model configuration for DDPM training
+- **gan_minimal.yaml**: Minimal GAN configuration for adversarial training
 
 All test configs are designed for:
 

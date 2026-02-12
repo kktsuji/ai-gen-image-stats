@@ -6,10 +6,10 @@ This module tests the diffusion model configuration management, including:
 - Resolution-specific configuration overrides
 """
 
-import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.experiments.diffusion.config import (
     get_default_config,
@@ -665,27 +665,27 @@ class TestConfigFileValidation:
     """Test validation of actual config files."""
 
     def test_default_config_file(self):
-        """Test that default.json is valid."""
-        config_path = Path("configs/diffusion/default.json")
+        """Test that default.yaml is valid."""
+        config_path = Path("configs/diffusion/default.yaml")
 
         if not config_path.exists():
-            pytest.skip("default.json not found")
+            pytest.skip("default.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Should not raise
         validate_config(config)
 
     def test_default_config_structure(self):
         """Test default config has expected structure."""
-        config_path = Path("configs/diffusion/default.json")
+        config_path = Path("configs/diffusion/default.yaml")
 
         if not config_path.exists():
-            pytest.skip("default.json not found")
+            pytest.skip("default.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Check experiment type
         assert config["experiment"] == "diffusion"

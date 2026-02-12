@@ -5,13 +5,13 @@ ensuring proper configuration handling, experiment routing, and
 end-to-end execution flow with config-only mode.
 """
 
-import json
 import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+import yaml
 
 from src.main import main, setup_experiment_classifier
 
@@ -37,9 +37,9 @@ class TestMainEntryPoint:
     @pytest.mark.integration
     def test_main_invalid_experiment_type(self, tmp_path):
         """Test that invalid experiment type raises ValueError."""
-        config_file = tmp_path / "invalid.json"
+        config_file = tmp_path / "invalid.yaml"
         with open(config_file, "w") as f:
-            json.dump({"experiment": "invalid_experiment"}, f)
+            yaml.dump({"experiment": "invalid_experiment"}, f, default_flow_style=False)
 
         with pytest.raises(ValueError):
             main([str(config_file)])
@@ -47,7 +47,7 @@ class TestMainEntryPoint:
     @pytest.mark.integration
     def test_main_dispatcher_classifier(self, tmp_path):
         """Test that classifier experiment is properly dispatched."""
-        config_file = tmp_path / "classifier_config.json"
+        config_file = tmp_path / "classifier_config.yaml"
         config_data = {
             "experiment": "classifier",
             "model": {
@@ -76,7 +76,7 @@ class TestMainEntryPoint:
             },
         }
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with patch("src.main.setup_experiment_classifier") as mock_setup:
             main([str(config_file)])
@@ -94,13 +94,13 @@ class TestMainEntryPoint:
     @pytest.mark.integration
     def test_main_dispatcher_gan_not_implemented(self, tmp_path):
         """Test that GAN experiment raises NotImplementedError."""
-        config_file = tmp_path / "gan_config.json"
+        config_file = tmp_path / "gan_config.yaml"
         config_data = {
             "experiment": "gan",
             "data": {"train_path": "tests/fixtures/mock_data/train"},
         }
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with pytest.raises(NotImplementedError, match="GAN experiment"):
             main([str(config_file)])
@@ -109,7 +109,7 @@ class TestMainEntryPoint:
     def test_main_config_file_loading(self, tmp_path):
         """Test that config file is properly loaded."""
         # Create a temporary config file
-        config_file = tmp_path / "test_config.json"
+        config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
             "model": {
@@ -139,7 +139,7 @@ class TestMainEntryPoint:
         }
 
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with patch("src.main.setup_experiment_classifier") as mock_setup:
             main([str(config_file)])
@@ -156,7 +156,7 @@ class TestMainEntryPoint:
     def test_main_cli_overrides_config_file(self, tmp_path):
         """Test that CLI overrides are NOT supported in config-only mode."""
         # Create a temporary config file
-        config_file = tmp_path / "test_config.json"
+        config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
             "model": {
@@ -186,7 +186,7 @@ class TestMainEntryPoint:
         }
 
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         # Attempting to add CLI overrides should fail
         with pytest.raises(SystemExit):
@@ -239,7 +239,7 @@ class TestClassifierExperimentSetup:
             # Check that output directories were created
             assert (tmp_path / "checkpoints").exists()
             assert (tmp_path / "logs").exists()
-            assert (tmp_path / "logs" / "config.json").exists()
+            assert (tmp_path / "logs" / "config.yaml").exists()
 
     @pytest.mark.integration
     def test_setup_classifier_inceptionv3(self, tmp_path):
@@ -514,7 +514,7 @@ class TestClassifierExperimentSetup:
         # Verify outputs were created
         assert (tmp_path / "checkpoints").exists()
         assert (tmp_path / "logs").exists()
-        assert (tmp_path / "logs" / "config.json").exists()
+        assert (tmp_path / "logs" / "config.yaml").exists()
         assert (tmp_path / "logs" / "metrics.csv").exists()
 
         # Verify checkpoint was saved
@@ -528,7 +528,7 @@ class TestExperimentDispatcher:
     @pytest.mark.unit
     def test_dispatcher_routes_to_classifier(self, tmp_path):
         """Test that dispatcher correctly routes to classifier."""
-        config_file = tmp_path / "classifier_config.json"
+        config_file = tmp_path / "classifier_config.yaml"
         config_data = {
             "experiment": "classifier",
             "model": {
@@ -556,7 +556,7 @@ class TestExperimentDispatcher:
             },
         }
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with patch("src.main.setup_experiment_classifier") as mock_classifier:
             main([str(config_file)])
@@ -566,7 +566,7 @@ class TestExperimentDispatcher:
     @pytest.mark.unit
     def test_dispatcher_routes_to_diffusion(self, tmp_path):
         """Test that dispatcher correctly routes to diffusion."""
-        config_file = tmp_path / "diffusion_config.json"
+        config_file = tmp_path / "diffusion_config.yaml"
         config_data = {
             "experiment": "diffusion",
             "model": {
@@ -600,7 +600,7 @@ class TestExperimentDispatcher:
             },
         }
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with patch("src.main.setup_experiment_diffusion") as mock_diffusion:
             main([str(config_file)])
@@ -610,13 +610,13 @@ class TestExperimentDispatcher:
     @pytest.mark.unit
     def test_dispatcher_routes_to_gan(self, tmp_path):
         """Test that dispatcher correctly routes to GAN (not implemented)."""
-        config_file = tmp_path / "gan_config.json"
+        config_file = tmp_path / "gan_config.yaml"
         config_data = {
             "experiment": "gan",
             "data": {"train_path": "tests/fixtures/mock_data/train"},
         }
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with pytest.raises(NotImplementedError):
             main([str(config_file)])

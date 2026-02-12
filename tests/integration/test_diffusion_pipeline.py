@@ -1035,11 +1035,11 @@ class TestDiffusionPipelineAdvanced:
         }
 
         with open(config_file, "w") as f:
-            json.dump(config, f, indent=2)
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
         # Load config from file
         with open(config_file, "r") as f:
-            loaded_config = json.load(f)
+            loaded_config = yaml.safe_load(f)
 
         # Initialize components from config
         model = create_ddpm(

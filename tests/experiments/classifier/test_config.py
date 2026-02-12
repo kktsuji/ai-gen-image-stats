@@ -6,10 +6,10 @@ This module tests the classifier configuration management, including:
 - Model-specific configuration overrides
 """
 
-import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.experiments.classifier.config import (
     get_default_config,
@@ -375,40 +375,40 @@ class TestConfigFileValidation:
     """Test validation of actual config files."""
 
     def test_baseline_config_file(self):
-        """Test that baseline.json is valid."""
-        config_path = Path("configs/classifier/baseline.json")
+        """Test that baseline.yaml is valid."""
+        config_path = Path("configs/classifier/baseline.yaml")
 
         if not config_path.exists():
-            pytest.skip("baseline.json not found")
+            pytest.skip("baseline.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Should not raise
         validate_config(config)
 
     def test_inceptionv3_config_file(self):
-        """Test that inceptionv3.json is valid."""
-        config_path = Path("configs/classifier/inceptionv3.json")
+        """Test that inceptionv3.yaml is valid."""
+        config_path = Path("configs/classifier/inceptionv3.yaml")
 
         if not config_path.exists():
-            pytest.skip("inceptionv3.json not found")
+            pytest.skip("inceptionv3.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Should not raise
         validate_config(config)
 
     def test_baseline_config_structure(self):
         """Test baseline config has expected structure."""
-        config_path = Path("configs/classifier/baseline.json")
+        config_path = Path("configs/classifier/baseline.yaml")
 
         if not config_path.exists():
-            pytest.skip("baseline.json not found")
+            pytest.skip("baseline.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Check experiment type
         assert config["experiment"] == "classifier"
@@ -423,13 +423,13 @@ class TestConfigFileValidation:
 
     def test_inceptionv3_config_structure(self):
         """Test InceptionV3 config has expected structure."""
-        config_path = Path("configs/classifier/inceptionv3.json")
+        config_path = Path("configs/classifier/inceptionv3.yaml")
 
         if not config_path.exists():
-            pytest.skip("inceptionv3.json not found")
+            pytest.skip("inceptionv3.yaml not found")
 
         with open(config_path) as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Check experiment type
         assert config["experiment"] == "classifier"

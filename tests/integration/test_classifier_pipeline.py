@@ -755,11 +755,11 @@ class TestClassifierPipelineConfigDriven:
         }
 
         with open(config_file, "w") as f:
-            json.dump(config_data, f, indent=2)
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
         # Load config from file
         with open(config_file, "r") as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
 
         # Initialize from config (as main.py would do)
         model = ResNetClassifier(

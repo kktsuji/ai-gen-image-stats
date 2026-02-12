@@ -247,7 +247,7 @@ class TestLoadAndMergeConfigs:
         config_data = {"epochs": 20, "batch_size": 64}
         overrides = {"batch_size": 128}
 
-        config_file = tmp_path / "config.json"
+        config_file = tmp_path / "config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
@@ -268,7 +268,7 @@ class TestLoadAndMergeConfigs:
         config_data = {"model": {"layers": 101, "pretrained": True}}
         overrides = {"model": {"pretrained": False}}
 
-        config_file = tmp_path / "config.json"
+        config_file = tmp_path / "config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
