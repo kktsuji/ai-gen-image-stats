@@ -365,16 +365,16 @@ class ClassifierLogger(BaseLogger):
         plt.close(fig)
 
     def log_hyperparams(self, hyperparams: Dict[str, Any]) -> None:
-        """Log hyperparameters to a JSON file.
+        """Log hyperparameters to a YAML file.
 
         Args:
             hyperparams: Dictionary of hyperparameter names to values
         """
-        import json
+        import yaml
 
-        hyperparams_file = self.log_dir / "hyperparams.json"
+        hyperparams_file = self.log_dir / "hyperparams.yaml"
         with open(hyperparams_file, "w") as f:
-            json.dump(hyperparams, f, indent=2)
+            yaml.dump(hyperparams, f, default_flow_style=False, sort_keys=False)
 
     def close(self) -> None:
         """Cleanup and finalize logging."""

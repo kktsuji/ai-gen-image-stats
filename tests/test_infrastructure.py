@@ -154,9 +154,9 @@ def test_fixtures_directory_structure(
     assert fixtures_mock_data_dir.exists()
 
     # Check for config files
-    classifier_config = fixtures_configs_dir / "classifier_minimal.json"
-    diffusion_config = fixtures_configs_dir / "diffusion_minimal.json"
-    gan_config = fixtures_configs_dir / "gan_minimal.json"
+    classifier_config = fixtures_configs_dir / "classifier_minimal.yaml"
+    diffusion_config = fixtures_configs_dir / "diffusion_minimal.yaml"
+    gan_config = fixtures_configs_dir / "gan_minimal.yaml"
 
     assert classifier_config.exists(), "Classifier config should exist"
     assert diffusion_config.exists(), "Diffusion config should exist"

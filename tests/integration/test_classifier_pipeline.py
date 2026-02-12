@@ -15,11 +15,11 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
-import json
 from pathlib import Path
 
 import pytest
 import torch
+import yaml
 
 from src.experiments.classifier.config import get_default_config
 from src.experiments.classifier.dataloader import ClassifierDataLoader
@@ -717,7 +717,7 @@ class TestClassifierPipelineConfigDriven:
         """Test pipeline using configuration file (like production).
 
         This test simulates the actual usage pattern:
-        1. Load config from JSON file
+        1. Load config from YAML file
         2. Initialize all components from config
         3. Run training
         4. Verify outputs
@@ -725,7 +725,7 @@ class TestClassifierPipelineConfigDriven:
         This is the closest to real-world usage.
         """
         # Create a config file
-        config_file = tmp_path / "test_config.json"
+        config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
             "model": {
@@ -817,8 +817,8 @@ class TestClassifierPipelineConfigDriven:
 
         # Verify config file was saved to output directory
         # (This would be done by main.py in production)
-        saved_config = log_dir / "config.json"
+        saved_config = log_dir / "config.yaml"
         with open(saved_config, "w") as f:
-            json.dump(config, f, indent=2)
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
         assert saved_config.exists()

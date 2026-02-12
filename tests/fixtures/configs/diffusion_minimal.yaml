@@ -1,0 +1,22 @@
+experiment: diffusion
+model:
+  name: ddpm
+  image_size: 32
+  channels: 3
+  num_timesteps: 100
+  beta_start: 0.0001
+  beta_end: 0.02
+data:
+  train_path: data/train
+  batch_size: 2
+  num_workers: 0
+  image_size: 32
+training:
+  epochs: 2
+  learning_rate: 0.0001
+  optimizer: adam
+  device: cpu
+output:
+  checkpoint_dir: outputs/checkpoints
+  log_dir: outputs/logs
+  save_samples_every: 1

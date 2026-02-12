@@ -5,13 +5,13 @@ Tests are organized into unit, component, and integration tiers.
 """
 
 import csv
-import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
+import yaml
 
 from src.experiments.classifier.logger import ClassifierLogger
 
@@ -337,7 +337,7 @@ class TestLogHyperparams:
     """Test the log_hyperparams() method."""
 
     def test_log_hyperparams_writes_json_file(self, logger, temp_log_dir):
-        """log_hyperparams() writes hyperparameters to JSON file."""
+        """log_hyperparams() writes hyperparameters to YAML file."""
         hyperparams = {
             "learning_rate": 0.001,
             "batch_size": 32,
@@ -346,11 +346,11 @@ class TestLogHyperparams:
         }
         logger.log_hyperparams(hyperparams)
 
-        json_file = Path(temp_log_dir) / "hyperparams.json"
-        assert json_file.exists()
+        yaml_file = Path(temp_log_dir) / "hyperparams.yaml"
+        assert yaml_file.exists()
 
-        with open(json_file, "r") as f:
-            loaded = json.load(f)
+        with open(yaml_file, "r") as f:
+            loaded = yaml.safe_load(f)
             assert loaded == hyperparams
 
     def test_log_hyperparams_handles_various_types(self, logger, temp_log_dir):
@@ -365,9 +365,9 @@ class TestLogHyperparams:
         }
         logger.log_hyperparams(hyperparams)
 
-        json_file = Path(temp_log_dir) / "hyperparams.json"
-        with open(json_file, "r") as f:
-            loaded = json.load(f)
+        yaml_file = Path(temp_log_dir) / "hyperparams.yaml"
+        with open(yaml_file, "r") as f:
+            loaded = yaml.safe_load(f)
             assert loaded == hyperparams
 
 
@@ -475,7 +475,7 @@ class TestLoggerIntegration:
 
         # Verify all files were created
         log_dir = Path(temp_log_dir)
-        assert (log_dir / "hyperparams.json").exists()
+        assert (log_dir / "hyperparams.yaml").exists()
         assert (log_dir / "metrics.csv").exists()
         assert len(list((log_dir / "predictions").glob("*.png"))) >= 3
         assert len(list((log_dir / "confusion_matrices").glob("*.png"))) == 3

@@ -145,15 +145,15 @@ python -m src.main configs/diffusion/default.yaml
 
 #### 4.1 Update `src/experiments/classifier/logger.py`
 
-- [ ] 4.1.1 Add import: `import yaml`
-- [ ] 4.1.2 Update hyperparameter saving (around line 375):
+- [x] 4.1.1 Add import: `import yaml`
+- [x] 4.1.2 Update hyperparameter saving (around line 375):
   - Change `hyperparams_file = self.log_dir / "hyperparams.json"` → `hyperparams.yaml`
   - Change `json.dump(hyperparams, f, indent=2)` → `yaml.dump(hyperparams, f, default_flow_style=False, sort_keys=False)`
 
 #### 4.2 Update `src/experiments/diffusion/logger.py`
 
-- [ ] 4.2.1 Add import: `import yaml`
-- [ ] 4.2.2 Update hyperparameter saving (around line 342):
+- [x] 4.2.1 Add import: `import yaml`
+- [x] 4.2.2 Update hyperparameter saving (around line 342):
   - Change `hyperparams_file = self.log_dir / "hyperparams.json"` → `hyperparams.yaml`
   - Change `json.dump(hyperparams, f, indent=2)` → `yaml.dump(hyperparams, f, default_flow_style=False, sort_keys=False)`
 
@@ -169,25 +169,25 @@ python -m src.main configs/diffusion/default.yaml
 
 #### 5.1 Convert Main Config Files
 
-- [ ] 5.1.1 Convert `configs/classifier/baseline.json` → `baseline.yaml`
+- [x] 5.1.1 Convert `configs/classifier/baseline.json` → `baseline.yaml`
   - Read JSON file
   - Write as YAML with proper formatting
   - Verify structure is preserved
   - Delete JSON file
 
-- [ ] 5.1.2 Convert `configs/classifier/inceptionv3.json` → `inceptionv3.yaml`
+- [x] 5.1.2 Convert `configs/classifier/inceptionv3.json` → `inceptionv3.yaml`
 
-- [ ] 5.1.3 Convert `configs/diffusion/default.json` → `default.yaml`
+- [x] 5.1.3 Convert `configs/diffusion/default.json` → `default.yaml`
 
 #### 5.2 Convert Test Fixture Config Files
 
-- [ ] 5.2.1 Convert `tests/fixtures/configs/classifier_minimal.json` → `classifier_minimal.yaml`
-- [ ] 5.2.2 Convert `tests/fixtures/configs/diffusion_minimal.json` → `diffusion_minimal.yaml`
-- [ ] 5.2.3 Convert `tests/fixtures/configs/gan_minimal.json` → `gan_minimal.yaml`
-- [ ] 5.2.4 Convert `tests/fixtures/configs/classifier/valid_minimal.json` → `valid_minimal.yaml`
-- [ ] 5.2.5 Convert `tests/fixtures/configs/classifier/invalid_missing_model.json` → `invalid_missing_model.yaml`
-- [ ] 5.2.6 Convert `tests/fixtures/configs/diffusion/valid_minimal.json` → `valid_minimal.yaml`
-- [ ] 5.2.7 Convert `tests/fixtures/configs/diffusion/invalid_missing_data.json` → `invalid_missing_data.yaml`
+- [x] 5.2.1 Convert `tests/fixtures/configs/classifier_minimal.json` → `classifier_minimal.yaml`
+- [x] 5.2.2 Convert `tests/fixtures/configs/diffusion_minimal.json` → `diffusion_minimal.yaml`
+- [x] 5.2.3 Convert `tests/fixtures/configs/gan_minimal.json` → `gan_minimal.yaml`
+- [x] 5.2.4 Convert `tests/fixtures/configs/classifier/valid_minimal.json` → `valid_minimal.yaml`
+- [x] 5.2.5 Convert `tests/fixtures/configs/classifier/invalid_missing_model.json` → `invalid_missing_model.yaml`
+- [x] 5.2.6 Convert `tests/fixtures/configs/diffusion/valid_minimal.json` → `valid_minimal.yaml`
+- [x] 5.2.7 Convert `tests/fixtures/configs/diffusion/invalid_missing_data.json` → `invalid_missing_data.yaml`
 
 **Helper Script:** Create a Python script to automate conversion:
 
@@ -224,66 +224,66 @@ def convert_json_to_yaml(json_path: Path):
 
 #### 6.1 Update `tests/utils/test_config.py`
 
-- [ ] 6.1.1 Update imports:
+- [x] 6.1.1 Update imports:
   - Change: `import json` → `import yaml`
 
-- [ ] 6.1.2 Update `TestLoadConfig` class:
+- [x] 6.1.2 Update `TestLoadConfig` class:
   - Change all `json.dump()` → `yaml.dump()` in test setup
   - Change all `.json` → `.yaml` in filenames
   - Update test names if they reference JSON
   - Change error assertions: `json.JSONDecodeError` → `yaml.YAMLError`
   - Update test `test_load_config_invalid_json` → `test_load_config_invalid_yaml`
 
-- [ ] 6.1.3 Update `TestMergeConfigs` class:
+- [x] 6.1.3 Update `TestMergeConfigs` class:
   - No changes needed (logic tests only)
 
-- [ ] 6.1.4 Update `TestLoadAndMergeConfigs` class:
+- [x] 6.1.4 Update `TestLoadAndMergeConfigs` class:
   - Change all `json.dump()` → `yaml.dump()` in test setup
   - Change all `.json` → `.yaml` in filenames
   - Update fixture path references
 
-- [ ] 6.1.5 Update `TestSaveConfig` class:
+- [x] 6.1.5 Update `TestSaveConfig` class:
   - Change all `json.load()` → `yaml.safe_load()` in verification
   - Change all `.json` → `.yaml` in filenames
 
 #### 6.2 Update `tests/utils/test_cli.py`
 
-- [ ] 6.2.1 Update imports:
+- [x] 6.2.1 Update imports:
   - Change: `import json` → `import yaml`
 
-- [ ] 6.2.2 Update `TestCreateParser` class:
+- [x] 6.2.2 Update `TestCreateParser` class:
   - Change all examples: `.json` → `.yaml`
   - Line 32: `"configs/test.json"` → `"configs/test.yaml"`
   - Line 44: `"configs/test.json"` → `"configs/test.yaml"`
   - Line 53: `"configs/test.json"` → `"configs/test.yaml"`
 
-- [ ] 6.2.3 Update `TestParseArgs` class:
+- [x] 6.2.3 Update `TestParseArgs` class:
   - Change all `json.dump()` → `yaml.dump()` in test setup
   - Change all `.json` → `.yaml` in filenames
   - Update all config file creation
 
-- [ ] 6.2.4 Update `TestValidateConfig` class:
+- [x] 6.2.4 Update `TestValidateConfig` class:
   - Update config file creation if any
 
-- [ ] 6.2.5 Update `TestConfigOnlyMode` class:
+- [x] 6.2.5 Update `TestConfigOnlyMode` class:
   - Change all `.json` → `.yaml` in examples
 
 #### 6.3 Update `tests/test_infrastructure.py`
 
-- [ ] 6.3.1 Update fixture config references:
+- [x] 6.3.1 Update fixture config references:
   - Line 157: `classifier_minimal.json` → `classifier_minimal.yaml`
   - Line 158: `diffusion_minimal.json` → `diffusion_minimal.yaml`
   - Line 159: `gan_minimal.json` → `gan_minimal.yaml`
 
 #### 6.4 Update Integration Tests
 
-- [ ] 6.4.1 Update `tests/integration/test_classifier_pipeline.py`:
+- [x] 6.4.1 Update `tests/integration/test_classifier_pipeline.py`:
   - Search for `.json` and replace with `.yaml`
   - Line 728: `"test_config.json"` → `"test_config.yaml"`
   - Line 820: `"config.json"` → `"config.yaml"`
   - Update `json.dump()` → `yaml.dump()`
 
-- [ ] 6.4.2 Update `tests/integration/test_diffusion_pipeline.py`:
+- [x] 6.4.2 Update `tests/integration/test_diffusion_pipeline.py`:
   - Line 1003: `"config.json"` → `"config.yaml"`
   - Update `json.dump()` → `yaml.dump()`
 

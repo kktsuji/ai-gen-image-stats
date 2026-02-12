@@ -7,10 +7,10 @@ Tests cover:
 - Error handling for missing/invalid configs
 """
 
-import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.utils.cli import create_parser, parse_args, validate_config
 
@@ -29,8 +29,8 @@ class TestCreateParser:
         """Test that parser has positional config_path argument."""
         parser = create_parser()
         # Parse with config path
-        args = parser.parse_args(["configs/test.json"])
-        assert args.config_path == "configs/test.json"
+        args = parser.parse_args(["configs/test.yaml"])
+        assert args.config_path == "configs/test.yaml"
 
     def test_config_path_is_required(self):
         """Test that config_path argument is required."""
@@ -41,8 +41,8 @@ class TestCreateParser:
     def test_parser_accepts_verbose_flag(self):
         """Test that parser accepts optional --verbose flag."""
         parser = create_parser()
-        args = parser.parse_args(["configs/test.json", "--verbose"])
-        assert args.config_path == "configs/test.json"
+        args = parser.parse_args(["configs/test.yaml", "--verbose"])
+        assert args.config_path == "configs/test.yaml"
         assert args.verbose is True
 
     def test_parser_rejects_unknown_arguments(self):
@@ -50,7 +50,7 @@ class TestCreateParser:
         parser = create_parser()
         # Should fail on unknown arguments like --epochs
         with pytest.raises(SystemExit):
-            parser.parse_args(["configs/test.json", "--epochs", "10"])
+            parser.parse_args(["configs/test.yaml", "--epochs", "10"])
 
 
 @pytest.mark.unit
@@ -81,9 +81,9 @@ class TestParseArgs:
                 "log_dir": "outputs/logs",
             },
         }
-        config_file = tmp_path / "test_config.json"
+        config_file = tmp_path / "test_config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file)])
 
@@ -101,14 +101,14 @@ class TestParseArgs:
     def test_parse_args_config_file_not_found(self):
         """Test that missing config file raises error."""
         with pytest.raises(FileNotFoundError):
-            parse_args(["nonexistent_config.json"])
+            parse_args(["nonexistent_config.yaml"])
 
     def test_parse_args_missing_experiment_field(self, tmp_path):
         """Test that config without experiment field raises error."""
         config_data = {"training": {"epochs": 10}}
-        config_file = tmp_path / "no_experiment.json"
+        config_file = tmp_path / "no_experiment.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with pytest.raises(ValueError, match="Missing required 'experiment' field"):
             parse_args([str(config_file)])
@@ -116,9 +116,9 @@ class TestParseArgs:
     def test_parse_args_invalid_experiment_type(self, tmp_path):
         """Test that invalid experiment type raises error."""
         config_data = {"experiment": "invalid_type"}
-        config_file = tmp_path / "invalid_exp.json"
+        config_file = tmp_path / "invalid_exp.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         with pytest.raises(ValueError, match="Invalid experiment type"):
             parse_args([str(config_file)])
@@ -151,9 +151,9 @@ class TestParseArgs:
                 "log_dir": "outputs/logs",
             },
         }
-        config_file = tmp_path / "diffusion_config.json"
+        config_file = tmp_path / "diffusion_config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file)])
         assert config["experiment"] == "diffusion"
@@ -161,9 +161,9 @@ class TestParseArgs:
     def test_parse_args_with_verbose_flag(self, tmp_path):
         """Test that --verbose flag is added to config."""
         config_data = {"experiment": "classifier", "model": {"name": "resnet50"}}
-        config_file = tmp_path / "test.json"
+        config_file = tmp_path / "test.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file), "--verbose"])
         assert config["verbose"] is True
@@ -218,11 +218,11 @@ class TestConfigOnlyMode:
         parser = create_parser()
         # Should reject any parameter-style arguments
         with pytest.raises(SystemExit):
-            parser.parse_args(["config.json", "--epochs", "10"])
+            parser.parse_args(["config.yaml", "--epochs", "10"])
         with pytest.raises(SystemExit):
-            parser.parse_args(["config.json", "--batch-size", "64"])
+            parser.parse_args(["config.yaml", "--batch-size", "64"])
         with pytest.raises(SystemExit):
-            parser.parse_args(["config.json", "--model", "resnet50"])
+            parser.parse_args(["config.yaml", "--model", "resnet50"])
 
     def test_loads_config_only(self, tmp_path):
         """Test that all settings come from config file only."""
@@ -244,9 +244,9 @@ class TestConfigOnlyMode:
             },
             "output": {"checkpoint_dir": "outputs/ckpts", "log_dir": "outputs/logs"},
         }
-        config_file = tmp_path / "full_config.json"
+        config_file = tmp_path / "full_config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file)])
 
@@ -266,9 +266,9 @@ class TestConfigOnlyMode:
         """Test that experiment type comes from config, not CLI."""
         for exp_type in ["classifier", "diffusion", "gan"]:
             config_data = {"experiment": exp_type}
-            config_file = tmp_path / f"{exp_type}_config.json"
+            config_file = tmp_path / f"{exp_type}_config.yaml"
             with open(config_file, "w") as f:
-                json.dump(config_data, f)
+                yaml.dump(config_data, f, default_flow_style=False)
 
             config = parse_args([str(config_file)])
             assert config["experiment"] == exp_type
@@ -301,9 +301,9 @@ class TestEndToEndCLIWorkflow:
                 "log_dir": "outputs/logs",
             },
         }
-        config_file = tmp_path / "classifier.json"
+        config_file = tmp_path / "classifier.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file)])
         validate_config(config)
@@ -341,9 +341,9 @@ class TestEndToEndCLIWorkflow:
                 "log_dir": "outputs/diffusion/logs",
             },
         }
-        config_file = tmp_path / "diffusion.json"
+        config_file = tmp_path / "diffusion.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         config = parse_args([str(config_file)])
         validate_config(config)
@@ -367,9 +367,9 @@ class TestEndToEndCLIWorkflow:
             "experiment": "classifier",
             # Missing model, training, data, output sections
         }
-        config_file = tmp_path / "incomplete.json"
+        config_file = tmp_path / "incomplete.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         # Basic CLI validation should pass (only checks experiment field)
         config = parse_args([str(config_file)])

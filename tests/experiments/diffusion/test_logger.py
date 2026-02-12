@@ -5,13 +5,13 @@ Tests are organized into unit, component, and integration tiers.
 """
 
 import csv
-import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
+import yaml
 
 from src.experiments.diffusion.logger import DiffusionLogger
 
@@ -355,7 +355,7 @@ class TestLogHyperparams:
         }
         logger.log_hyperparams(hyperparams)
 
-        hyperparams_file = Path(temp_log_dir) / "hyperparams.json"
+        hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
         assert hyperparams_file.exists()
 
     def test_log_hyperparams_saves_correct_data(self, logger, temp_log_dir):
@@ -367,9 +367,9 @@ class TestLogHyperparams:
         }
         logger.log_hyperparams(hyperparams)
 
-        hyperparams_file = Path(temp_log_dir) / "hyperparams.json"
+        hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
         with open(hyperparams_file, "r") as f:
-            saved_hyperparams = json.load(f)
+            saved_hyperparams = yaml.safe_load(f)
 
         assert saved_hyperparams == hyperparams
 
@@ -381,9 +381,9 @@ class TestLogHyperparams:
         }
         logger.log_hyperparams(hyperparams)
 
-        hyperparams_file = Path(temp_log_dir) / "hyperparams.json"
+        hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
         with open(hyperparams_file, "r") as f:
-            saved_hyperparams = json.load(f)
+            saved_hyperparams = yaml.safe_load(f)
 
         assert saved_hyperparams == hyperparams
 
@@ -443,7 +443,7 @@ class TestDiffusionLoggerWorkflow:
         assert (log_dir / "samples" / "samples_epoch10_step1000.png").exists()
         assert (log_dir / "denoising" / "denoising_epoch10_step1000.png").exists()
         assert (log_dir / "quality" / "quality_epoch10_step1000.png").exists()
-        assert (log_dir / "hyperparams.json").exists()
+        assert (log_dir / "hyperparams.yaml").exists()
 
     def test_multiple_metrics_over_time(self, logger, temp_log_dir):
         """Can log multiple metrics entries over time."""

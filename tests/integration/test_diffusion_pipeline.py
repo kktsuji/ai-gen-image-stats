@@ -17,11 +17,11 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
-import json
 from pathlib import Path
 
 import pytest
 import torch
+import yaml
 from torchvision.utils import save_image
 
 from src.experiments.diffusion.config import get_default_config
@@ -995,12 +995,12 @@ class TestDiffusionPipelineAdvanced:
         """Test pipeline driven entirely by config file.
 
         Tests:
-        - Load config from JSON file
+        - Load config from YAML file
         - Use config to initialize all components
         - Run complete training
         """
         # Create config file
-        config_file = tmp_path / "config.json"
+        config_file = tmp_path / "config.yaml"
         config = {
             "experiment": "diffusion",
             "model": {

@@ -1,16 +1,16 @@
 """Unit tests for configuration management utilities.
 
 Tests cover:
-- JSON config loading (valid and invalid cases)
+- YAML config loading (valid and invalid cases)
 - Config merging with nested dictionaries
 - Complete config workflow with defaults and overrides
 - Config saving
 """
 
-import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.utils.config import (
     load_and_merge_configs,
@@ -22,15 +22,15 @@ from src.utils.config import (
 
 @pytest.mark.unit
 class TestLoadConfig:
-    """Test config loading from JSON files."""
+    """Test config loading from YAML files."""
 
     def test_load_valid_config(self, tmp_path):
-        """Test loading a valid JSON config file."""
+        """Test loading a valid YAML config file."""
         # Create a test config file
         config_data = {"experiment": "classifier", "epochs": 10, "batch_size": 32}
-        config_file = tmp_path / "test_config.json"
+        config_file = tmp_path / "test_config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         # Load the config
         result = load_config(str(config_file))
@@ -45,9 +45,9 @@ class TestLoadConfig:
         config_data = {
             "model": {"name": "resnet50", "params": {"layers": 50, "pretrained": True}}
         }
-        config_file = tmp_path / "nested_config.json"
+        config_file = tmp_path / "nested_config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         result = load_config(str(config_file))
 
@@ -58,15 +58,15 @@ class TestLoadConfig:
     def test_load_config_file_not_found(self):
         """Test loading a non-existent config file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="Config file not found"):
-            load_config("/non/existent/path/config.json")
+            load_config("/non/existent/path/config.yaml")
 
-    def test_load_config_invalid_json(self, tmp_path):
-        """Test loading invalid JSON raises JSONDecodeError."""
-        config_file = tmp_path / "invalid.json"
+    def test_load_config_invalid_yaml(self, tmp_path):
+        """Test loading invalid YAML raises YAMLError."""
+        config_file = tmp_path / "invalid.yaml"
         with open(config_file, "w") as f:
-            f.write("{ invalid json content }")
+            f.write("invalid: yaml: content: [unclosed")
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(yaml.YAMLError):
             load_config(str(config_file))
 
     def test_load_config_empty_path(self):
@@ -86,7 +86,7 @@ class TestLoadConfig:
             Path(__file__).parent.parent
             / "fixtures"
             / "configs"
-            / "classifier_minimal.json"
+            / "classifier_minimal.yaml"
         )
 
         if fixture_path.exists():
@@ -208,9 +208,9 @@ class TestLoadAndMergeConfigs:
     def test_config_file_only(self, tmp_path):
         """Test with only config file provided."""
         config_data = {"epochs": 20, "lr": 0.001}
-        config_file = tmp_path / "config.json"
+        config_file = tmp_path / "config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         result = load_and_merge_configs(config_path=str(config_file))
 
@@ -229,9 +229,9 @@ class TestLoadAndMergeConfigs:
         defaults = {"epochs": 10, "batch_size": 32, "lr": 0.001}
         config_data = {"epochs": 20, "batch_size": 64}
 
-        config_file = tmp_path / "config.json"
+        config_file = tmp_path / "config.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         result = load_and_merge_configs(config_path=str(config_file), defaults=defaults)
 
@@ -249,7 +249,7 @@ class TestLoadAndMergeConfigs:
 
         config_file = tmp_path / "config.json"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         result = load_and_merge_configs(
             config_path=str(config_file), defaults=defaults, overrides=overrides
@@ -270,7 +270,7 @@ class TestLoadAndMergeConfigs:
 
         config_file = tmp_path / "config.json"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         result = load_and_merge_configs(
             config_path=str(config_file), defaults=defaults, overrides=overrides
@@ -292,7 +292,7 @@ class TestLoadAndMergeConfigs:
             Path(__file__).parent.parent
             / "fixtures"
             / "configs"
-            / "classifier_minimal.json"
+            / "classifier_minimal.yaml"
         )
 
         if not fixture_path.exists():
@@ -321,7 +321,7 @@ class TestSaveConfig:
     def test_save_config_basic(self, tmp_path):
         """Test saving a basic config."""
         config = {"epochs": 10, "batch_size": 32}
-        output_file = tmp_path / "saved_config.json"
+        output_file = tmp_path / "saved_config.yaml"
 
         save_config(config, str(output_file))
 
@@ -330,7 +330,7 @@ class TestSaveConfig:
 
         # Verify content
         with open(output_file, "r") as f:
-            loaded = json.load(f)
+            loaded = yaml.safe_load(f)
         assert loaded == config
 
     def test_save_config_nested(self, tmp_path):
@@ -339,18 +339,18 @@ class TestSaveConfig:
             "model": {"name": "resnet50", "layers": 50},
             "training": {"epochs": 10, "lr": 0.001},
         }
-        output_file = tmp_path / "nested_config.json"
+        output_file = tmp_path / "nested_config.yaml"
 
         save_config(config, str(output_file))
 
         # Verify content
         with open(output_file, "r") as f:
-            loaded = json.load(f)
+            loaded = yaml.safe_load(f)
         assert loaded == config
 
     def test_save_config_creates_directories(self, tmp_path):
         """Test that save_config creates parent directories."""
-        output_file = tmp_path / "subdir" / "nested" / "config.json"
+        output_file = tmp_path / "subdir" / "nested" / "config.yaml"
         config = {"test": "value"}
 
         save_config(config, str(output_file))
@@ -360,7 +360,7 @@ class TestSaveConfig:
     def test_save_config_custom_indent(self, tmp_path):
         """Test saving with custom indentation."""
         config = {"a": 1, "b": 2}
-        output_file = tmp_path / "config.json"
+        output_file = tmp_path / "config.yaml"
 
         save_config(config, str(output_file), indent=4)
 
@@ -368,12 +368,12 @@ class TestSaveConfig:
         with open(output_file, "r") as f:
             content = f.read()
 
-        # With indent=4, nested items should have 4 spaces
-        assert "    " in content or "{\n" in content  # Some indentation present
+        # YAML output should have line breaks for keys
+        assert "\n" in content
 
     def test_save_config_none_config(self, tmp_path):
         """Test saving None config raises ValueError."""
-        output_file = tmp_path / "config.json"
+        output_file = tmp_path / "config.yaml"
 
         with pytest.raises(ValueError, match="Config cannot be None"):
             save_config(None, str(output_file))
@@ -395,7 +395,7 @@ class TestSaveConfig:
             "model": {"name": "resnet50", "pretrained": True},
             "training": {"epochs": 10, "lr": 0.001, "batch_size": 32},
         }
-        config_file = tmp_path / "roundtrip.json"
+        config_file = tmp_path / "roundtrip.yaml"
 
         # Save and load
         save_config(original_config, str(config_file))
@@ -423,9 +423,9 @@ class TestConfigIntegration:
             "model": {"name": "resnet101"},  # Change model
             "training": {"epochs": 50},  # Reduce epochs
         }
-        config_file = tmp_path / "experiment.json"
+        config_file = tmp_path / "experiment.yaml"
         with open(config_file, "w") as f:
-            json.dump(config_data, f)
+            yaml.dump(config_data, f, default_flow_style=False)
 
         # Step 3: Define CLI overrides (runtime overrides)
         overrides = {
@@ -451,7 +451,7 @@ class TestConfigIntegration:
         assert final_config["training"]["lr"] == 0.001  # From defaults (not overridden)
 
         # Step 6: Save final config for reproducibility
-        output_file = tmp_path / "final_config.json"
+        output_file = tmp_path / "final_config.yaml"
         save_config(final_config, str(output_file))
 
         # Step 7: Verify saved config can be reloaded
