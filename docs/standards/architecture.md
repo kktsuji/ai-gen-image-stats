@@ -30,8 +30,9 @@ This repository follows a **Vertical Slice + Base Class** architecture pattern f
 
 ### 4. Configuration Driven
 
-- Experiments configured via JSON files or CLI arguments (see [Configuration Management](#configuration-management))
-- CLI arguments override config file values, which override code defaults
+- Experiments configured via JSON files (see [Configuration Management](#configuration-management))
+- All configuration parameters must be specified in config files
+- No CLI parameter overrides or code defaults
 - Reproducible experiments through configuration version control
 
 ## Directory Structure
@@ -174,27 +175,47 @@ Each experiment module (GAN, Diffusion, Classifier) contains:
 ### Command Structure
 
 ```bash
-python -m src.main --experiment <EXPERIMENT> [OPTIONS]
+python -m src.main <CONFIG_FILE>
 ```
 
-**Parameter Priority:** CLI arguments > Config file > Code defaults
+**Configuration:** All parameters must be specified in the JSON configuration file. The experiment type is read from the config file's `experiment` field.
+
+### Strict Validation
+
+The CLI enforces strict validation:
+
+- All required fields must be present in the config file
+- No default values are provided
+- No CLI parameter overrides are allowed
+- Clear error messages indicate missing or invalid fields
 
 ### Usage Examples
 
 ```bash
-# Train with config file
-python -m src.main --experiment diffusion --config configs/diffusion/default.json
+# Train classifier
+python -m src.main configs/classifier/baseline.json
 
-# Train with CLI arguments only
-python -m src.main --experiment gan --epochs 100 --batch-size 64 --lr 0.0002
+# Train diffusion model
+python -m src.main configs/diffusion/default.json
 
-# Train with config + CLI overrides
-python -m src.main --experiment classifier --model inceptionv3 \
-  --config configs/classifier/baseline.json --batch-size 32
+# Train with custom config
+python -m src.main my_experiment_config.json
+```
 
-# Generate synthetic data
-python -m src.main --experiment diffusion --mode generate \
-  --checkpoint outputs/checkpoints/diffusion_best.pth --num-samples 1000
+### Error Handling
+
+```bash
+# Missing config file
+$ python -m src.main
+Error: config_path is required
+
+# File not found
+$ python -m src.main nonexistent.json
+Error: Config file not found: nonexistent.json
+
+# Invalid config (missing required field)
+$ python -m src.main incomplete_config.json
+Error: Missing required field: model.name
 ```
 
 ## Testing Strategy

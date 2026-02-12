@@ -221,17 +221,17 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Update user-facing documentation
 
-- [ ] 7.1 Update `README.md`
+- [x] 7.1 Update `README.md`
   - Update "Quick Start" section
   - Remove CLI parameter examples
   - Show only: `python -m src.main configs/<file>.json`
 
-- [ ] 7.2 Update `docs/standards/architecture.md`
+- [x] 7.2 Update `docs/standards/architecture.md`
   - Update "CLI Interface" section
   - Remove priority explanation
   - Add strict validation requirements
 
-- [ ] 7.3 Create `docs/research/cli-migration-guide.md`
+- [x] 7.3 Create `docs/research/cli-migration-guide.md`
   - Before/after examples
   - Migration instructions
 
@@ -243,7 +243,7 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 **Goal:** Comprehensive validation
 
-- [ ] 8.1-8.4 Run all test suites:
+- [x] 8.1-8.4 Run all test suites:
 
   ```bash
   pytest -m unit -v
@@ -252,14 +252,14 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
   pytest -v  # Full suite
   ```
 
-- [ ] 8.5 Test real workflows:
+- [x] 8.5 Test real workflows:
 
   ```bash
   python -m src.main configs/classifier/baseline.json
   python -m src.main configs/diffusion/default.json
   ```
 
-- [ ] 8.6 Test error cases (missing config, extra args, missing fields)
+- [x] 8.6 Test error cases (missing config, extra args, missing fields)
 
 **Validation:** All tests pass, error messages clear
 
@@ -267,11 +267,11 @@ Priority: JSON config values ONLY (no defaults, no CLI overrides)
 
 ### Step 9: Code Review and Cleanup
 
-- [ ] 9.1 Remove backup: `rm src/utils/cli.py.backup`
-- [ ] 9.2 Check for unused imports
-- [ ] 9.3 Format code: `black src/utils/cli.py src/main.py`
-- [ ] 9.4 Review changes: `git diff main`
-- [ ] 9.5 Update CHANGELOG if exists
+- [x] 9.1 Remove backup: `rm src/utils/cli.py.backup`
+- [x] 9.2 Check for unused imports
+- [x] 9.3 Format code: `black src/utils/cli.py src/main.py`
+- [x] 9.4 Review changes: `git diff main`
+- [x] 9.5 Update CHANGELOG if exists
 
 **Validation:** Code is clean
 

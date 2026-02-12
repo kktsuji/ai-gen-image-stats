@@ -74,22 +74,20 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Train with config file
-python -m src.main --experiment classifier --config configs/classifier/baseline.json
+python -m src.main configs/classifier/baseline.json
 
-# Train with CLI arguments
-python -m src.main --experiment classifier --model inceptionv3 --epochs 10 --batch-size 32
+# Train with InceptionV3
+python -m src.main configs/classifier/inceptionv3.json
 ```
 
 ### Training a Diffusion Model
 
 ```bash
 # Train diffusion model
-python -m src.main --experiment diffusion --config configs/diffusion/default.json
-
-# Generate synthetic images
-python -m src.main --experiment diffusion --mode generate \
-  --checkpoint outputs/checkpoints/diffusion_best.pth --num-samples 1000
+python -m src.main configs/diffusion/default.json
 ```
+
+**Note:** All parameters must be specified in the configuration file. The CLI accepts only the config file path as a positional argument. CLI parameter overrides are not supported.
 
 ## Testing
 
