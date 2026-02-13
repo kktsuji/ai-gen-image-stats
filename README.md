@@ -89,6 +89,84 @@ python -m src.main configs/diffusion/default.yaml
 
 **Note:** All parameters must be specified in the configuration file. The CLI accepts only the config file path as a positional argument. CLI parameter overrides are not supported.
 
+## Configuration
+
+### Diffusion Model Configuration
+
+The diffusion configuration is organized into common, training-specific, and generation-specific sections for better clarity and maintainability.
+
+#### Common Parameters (used in both modes)
+
+These parameters are specified at the top level and apply to both training and generation:
+
+```yaml
+experiment: diffusion
+mode: train # Options: train, generate
+device: cuda # Options: cuda, cpu, auto
+seed: 42 # Random seed for reproducibility (null for random)
+```
+
+#### Training Mode Configuration
+
+Training mode includes model training, validation, and visualization parameters:
+
+```yaml
+mode: train
+
+training:
+  # Core training parameters
+  epochs: 200
+  learning_rate: 0.0001
+  optimizer: adam
+  use_ema: true
+  ema_decay: 0.9999
+
+  # Training checkpointing
+  checkpoint_dir: outputs/checkpoints
+  save_frequency: 10
+  save_best_only: false
+
+  # Nested validation configuration
+  validation:
+    frequency: 1
+    metric: loss
+
+  # Nested visualization configuration (training-time sampling)
+  visualization:
+    sample_images: true
+    sample_interval: 10
+    samples_per_class: 2
+    guidance_scale: 3.0
+```
+
+#### Generation Mode Configuration
+
+Generation mode is used to generate images from a trained checkpoint:
+
+```yaml
+mode: generate
+
+generation:
+  # Generation input
+  checkpoint: path/to/model.pth # Required for generate mode
+
+  # Generation parameters
+  num_samples: 100
+  guidance_scale: 3.0
+  use_ema: true
+
+  # Generation output
+  output_dir: outputs/generated # Defaults to log_dir/generated
+  save_grid: true
+  grid_nrow: 10
+```
+
+#### Complete Example
+
+See [configs/diffusion/default.yaml](configs/diffusion/default.yaml) for a complete, documented example configuration.
+
+**Note:** If you have configurations from before February 2026, see the [migration guide](docs/research/diffusion-config-migration-guide.md) for updating to the new structure.
+
 ## Testing
 
 This project uses a comprehensive **four-tier testing strategy** that balances speed, coverage, and practical validation needs. All code is testable on CPU without GPU requirements.

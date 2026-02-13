@@ -1,30 +1,44 @@
+# ==============================================================================
+# DIFFUSION MODEL CONFIGURATION
+# ==============================================================================
+
+# ==============================================================================
+# COMMON PARAMETERS (Used in both train and generate modes)
+# ==============================================================================
 experiment: diffusion
-mode: train
-checkpoint: null
+mode: train # Options: train, generate
+
+# Device configuration (used for model initialization and data loading)
+device: cuda # Options: cuda, cpu, auto
+
+# Random seed for reproducibility (affects data loading, model init, sampling)
+seed: null # Set to null to disable, or use integer like 42
+
+# ==============================================================================
+# MODEL CONFIGURATION (Used in both modes)
+# ==============================================================================
 model:
   image_size: 40
   in_channels: 3
   model_channels: 64
-  channel_multipliers:
-  - 1
-  - 2
-  - 4
-  num_classes: null
+  channel_multipliers: [1, 2, 4]
+  num_classes: null # null for unconditional, integer for conditional
   num_timesteps: 1000
-  beta_schedule: cosine
+  beta_schedule: cosine # Options: linear, cosine, quadratic, sigmoid
   beta_start: 0.0001
   beta_end: 0.02
-  class_dropout_prob: 0.1
-  use_attention:
-  - false
-  - false
-  - true
+  class_dropout_prob: 0.1 # For classifier-free guidance (0.0-1.0)
+  use_attention: [false, false, true] # Attention at each resolution level
+
+# ==============================================================================
+# DATA CONFIGURATION (Used in both modes)
+# ==============================================================================
 data:
   train_path: data/train
-  val_path: null
+  val_path: null # Optional validation set path
   batch_size: 32
   num_workers: 4
-  image_size: 40
+  image_size: 40 # Must match model.image_size
   horizontal_flip: true
   rotation_degrees: 0
   color_jitter: false
@@ -32,38 +46,86 @@ data:
   pin_memory: true
   drop_last: false
   shuffle_train: true
-  return_labels: false
+  return_labels: false # Set to true for conditional generation
+
+# ==============================================================================
+# COMMON OUTPUT CONFIGURATION
+# ==============================================================================
+output:
+  log_dir: outputs/logs # Used in both modes for logging
+
+# ==============================================================================
+# TRAINING MODE CONFIGURATION (Only used when mode=train)
+# ==============================================================================
 training:
+  # --------------------------------------------------------------------------
+  # Core Training Parameters
+  # --------------------------------------------------------------------------
   epochs: 200
   learning_rate: 0.0001
-  optimizer: adam
+  optimizer: adam # Options: adam, adamw
   optimizer_kwargs:
     weight_decay: 0.0
-    betas:
-    - 0.9
-    - 0.999
-  scheduler: null
+    betas: [0.9, 0.999]
+
+  # --------------------------------------------------------------------------
+  # Learning Rate Scheduling
+  # --------------------------------------------------------------------------
+  scheduler: null # Options: cosine, step, plateau, none, null
   scheduler_kwargs:
-    T_max: 200
-    eta_min: 1.0e-06
-  device: cuda
-  seed: null
-  use_ema: true
+    T_max: 200 # For cosine (defaults to epochs if not specified)
+    eta_min: 1.0e-6 # For cosine
+
+  # --------------------------------------------------------------------------
+  # Advanced Training Features
+  # --------------------------------------------------------------------------
+  use_ema: true # Exponential moving average for better sample quality
   ema_decay: 0.9999
-  use_amp: false
-  gradient_clip_norm: null
-generation:
-  sample_images: true
-  sample_interval: 10
-  samples_per_class: 2
-  guidance_scale: 3.0
-  num_samples: 100
-  output_dir: null
-output:
+  use_amp: false # Automatic mixed precision (CUDA only, can speed up training)
+  gradient_clip_norm: null # Max gradient norm, null to disable
+
+  # --------------------------------------------------------------------------
+  # Training Checkpointing
+  # --------------------------------------------------------------------------
   checkpoint_dir: outputs/checkpoints
-  log_dir: outputs/logs
-  save_best_only: false
-  save_frequency: 10
-validation:
-  frequency: 1
-  metric: loss
+  save_best_only: false # Save all checkpoints (diffusion benefits from many)
+  save_frequency: 10 # Save every N epochs
+
+  # --------------------------------------------------------------------------
+  # Training Validation
+  # --------------------------------------------------------------------------
+  validation:
+    frequency: 1 # Run validation every N epochs
+    metric: loss # Metric to monitor for best model
+
+  # --------------------------------------------------------------------------
+  # Training Visualization (Periodic sampling during training)
+  # --------------------------------------------------------------------------
+  visualization:
+    sample_images: true # Generate sample images during training
+    sample_interval: 10 # Generate samples every N epochs
+    samples_per_class: 2 # Number of samples per class (if conditional)
+    guidance_scale: 3.0 # Classifier-free guidance scale for training samples
+
+# ==============================================================================
+# GENERATION MODE CONFIGURATION (Only used when mode=generate)
+# ==============================================================================
+generation:
+  # --------------------------------------------------------------------------
+  # Generation Input
+  # --------------------------------------------------------------------------
+  checkpoint: null # Path to trained model checkpoint (required for generate mode)
+
+  # --------------------------------------------------------------------------
+  # Generation Parameters
+  # --------------------------------------------------------------------------
+  num_samples: 100 # Total number of samples to generate
+  guidance_scale: 3.0 # Classifier-free guidance scale (>=1.0, higher = more guidance)
+  use_ema: true # Use EMA weights if available in checkpoint
+
+  # --------------------------------------------------------------------------
+  # Generation Output
+  # --------------------------------------------------------------------------
+  output_dir: null # Directory to save generated images (defaults to log_dir/generated)
+  save_grid: true # Save samples as grid image
+  grid_nrow: 10 # Number of samples per row in grid

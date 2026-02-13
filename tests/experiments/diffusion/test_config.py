@@ -34,7 +34,14 @@ class TestGetDefaultConfig:
     def test_has_required_keys(self):
         """Test that default config has all required top-level keys."""
         config = get_default_config()
-        required_keys = ["experiment", "model", "data", "training", "output"]
+        required_keys = [
+            "experiment",
+            "model",
+            "data",
+            "training",
+            "output",
+            "generation",
+        ]
         for key in required_keys:
             assert key in config, f"Missing required key: {key}"
 
@@ -42,6 +49,18 @@ class TestGetDefaultConfig:
         """Test that experiment type is 'diffusion'."""
         config = get_default_config()
         assert config["experiment"] == "diffusion"
+
+    def test_device_at_top_level(self):
+        """Test that device is at top level."""
+        config = get_default_config()
+        assert "device" in config
+        assert isinstance(config["device"], str)
+
+    def test_seed_at_top_level(self):
+        """Test that seed is at top level."""
+        config = get_default_config()
+        assert "seed" in config
+        # seed can be None or int
 
     def test_model_defaults(self):
         """Test model configuration defaults."""
@@ -90,9 +109,13 @@ class TestGetDefaultConfig:
         assert "epochs" in training
         assert "learning_rate" in training
         assert "optimizer" in training
-        assert "device" in training
         assert "use_ema" in training
         assert "ema_decay" in training
+        assert "checkpoint_dir" in training
+        assert "save_best_only" in training
+        assert "save_frequency" in training
+        assert "validation" in training
+        assert "visualization" in training
 
         # Check types and valid ranges
         assert isinstance(training["epochs"], int)
@@ -101,22 +124,46 @@ class TestGetDefaultConfig:
         assert training["learning_rate"] > 0
         assert isinstance(training["use_ema"], bool)
 
+    def test_training_nested_validation(self):
+        """Test that validation is nested under training."""
+        config = get_default_config()
+        assert "validation" in config["training"]
+        validation = config["training"]["validation"]
+        assert "frequency" in validation
+        assert "metric" in validation
+        assert isinstance(validation["frequency"], int)
+        assert isinstance(validation["metric"], str)
+
+    def test_training_nested_visualization(self):
+        """Test that visualization is nested under training."""
+        config = get_default_config()
+        assert "visualization" in config["training"]
+        visualization = config["training"]["visualization"]
+        assert "sample_images" in visualization
+        assert "sample_interval" in visualization
+        assert "samples_per_class" in visualization
+        assert "guidance_scale" in visualization
+        assert isinstance(visualization["sample_images"], bool)
+        assert isinstance(visualization["sample_interval"], int)
+        assert isinstance(visualization["samples_per_class"], int)
+        assert isinstance(visualization["guidance_scale"], (int, float))
+
     def test_generation_defaults(self):
         """Test generation configuration defaults."""
         config = get_default_config()
         generation = config["generation"]
 
         assert isinstance(generation, dict)
-        assert "sample_images" in generation
-        assert "sample_interval" in generation
-        assert "samples_per_class" in generation
+        assert "checkpoint" in generation
+        assert "num_samples" in generation
         assert "guidance_scale" in generation
+        assert "use_ema" in generation
+        assert "output_dir" in generation
 
         # Check types
-        assert isinstance(generation["sample_images"], bool)
-        assert isinstance(generation["sample_interval"], int)
-        assert isinstance(generation["samples_per_class"], int)
+        assert isinstance(generation["num_samples"], int)
         assert isinstance(generation["guidance_scale"], (int, float))
+        assert isinstance(generation["use_ema"], bool)
 
     def test_output_defaults(self):
         """Test output configuration defaults."""
@@ -124,8 +171,8 @@ class TestGetDefaultConfig:
         output = config["output"]
 
         assert isinstance(output, dict)
-        assert "checkpoint_dir" in output
         assert "log_dir" in output
+        # checkpoint_dir moved to training section
 
     def test_image_size_consistency(self):
         """Test that model.image_size matches data.image_size."""
@@ -480,7 +527,7 @@ class TestValidateConfig:
     def test_invalid_device(self):
         """Test validation fails with invalid device."""
         config = get_default_config()
-        config["training"]["device"] = "tpu"
+        config["device"] = "tpu"  # Device is now at top level
 
         with pytest.raises(ValueError, match="Invalid device"):
             validate_config(config)
@@ -540,7 +587,7 @@ class TestValidateConfig:
     def test_invalid_sample_images(self):
         """Test validation fails with non-boolean sample_images."""
         config = get_default_config()
-        config["generation"]["sample_images"] = "true"
+        config["training"]["visualization"]["sample_images"] = "true"
 
         with pytest.raises(ValueError, match="sample_images must be a boolean"):
             validate_config(config)
@@ -548,7 +595,7 @@ class TestValidateConfig:
     def test_invalid_sample_interval(self):
         """Test validation fails with invalid sample_interval."""
         config = get_default_config()
-        config["generation"]["sample_interval"] = 0
+        config["training"]["visualization"]["sample_interval"] = 0
 
         with pytest.raises(
             ValueError, match="sample_interval must be a positive integer"
@@ -558,7 +605,7 @@ class TestValidateConfig:
     def test_invalid_samples_per_class(self):
         """Test validation fails with invalid samples_per_class."""
         config = get_default_config()
-        config["generation"]["samples_per_class"] = -1
+        config["training"]["visualization"]["samples_per_class"] = -1
 
         with pytest.raises(
             ValueError, match="samples_per_class must be a positive integer"
@@ -568,24 +615,104 @@ class TestValidateConfig:
     def test_invalid_guidance_scale(self):
         """Test validation fails with invalid guidance_scale."""
         config = get_default_config()
-        config["generation"]["guidance_scale"] = 0.5
+        config["training"]["visualization"]["guidance_scale"] = 0.5
 
-        with pytest.raises(ValueError, match="guidance_scale must be a number >= 1.0"):
+        with pytest.raises(
+            ValueError, match="training.visualization.guidance_scale must be >= 1.0"
+        ):
             validate_config(config)
 
     def test_missing_output_dirs(self):
         """Test validation fails with missing output directories."""
         config = get_default_config()
 
-        # Test missing checkpoint_dir
-        del config["output"]["checkpoint_dir"]
-        with pytest.raises(KeyError, match="checkpoint_dir"):
+        # Test missing checkpoint_dir (now in training section)
+        del config["training"]["checkpoint_dir"]
+        with pytest.raises(ValueError, match="training.checkpoint_dir is required"):
             validate_config(config)
 
         # Reset and test missing log_dir
         config = get_default_config()
         del config["output"]["log_dir"]
-        with pytest.raises(KeyError, match="log_dir"):
+        with pytest.raises(ValueError, match="output.log_dir is required"):
+            validate_config(config)
+
+
+@pytest.mark.unit
+class TestModeAwareValidation:
+    """Test mode-aware configuration validation."""
+
+    def test_train_mode_requires_checkpoint_dir(self):
+        """Test that train mode requires training.checkpoint_dir."""
+        config = get_default_config()
+        config["mode"] = "train"
+        del config["training"]["checkpoint_dir"]
+
+        with pytest.raises(ValueError, match="training.checkpoint_dir is required"):
+            validate_config(config)
+
+    def test_generate_mode_requires_checkpoint(self):
+        """Test that generate mode requires generation.checkpoint."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = None
+
+        with pytest.raises(ValueError, match="generation.checkpoint is required"):
+            validate_config(config)
+
+    def test_generate_mode_with_valid_checkpoint(self):
+        """Test that generate mode validates with checkpoint set."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+
+        # Should not raise
+        validate_config(config)
+
+    def test_invalid_mode(self):
+        """Test validation fails with invalid mode."""
+        config = get_default_config()
+        config["mode"] = "invalid"
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            validate_config(config)
+
+    def test_training_validation_nested(self):
+        """Test that training.validation section is properly validated."""
+        config = get_default_config()
+        config["training"]["validation"]["frequency"] = -1
+
+        with pytest.raises(ValueError, match="training.validation.frequency"):
+            validate_config(config)
+
+    def test_training_visualization_nested(self):
+        """Test that training.visualization section is properly validated."""
+        config = get_default_config()
+        config["training"]["visualization"]["sample_interval"] = 0
+
+        with pytest.raises(ValueError, match="training.visualization.sample_interval"):
+            validate_config(config)
+
+    def test_generation_use_ema(self):
+        """Test that generation.use_ema is validated."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["use_ema"] = "true"  # Should be boolean
+
+        with pytest.raises(ValueError, match="generation.use_ema must be a boolean"):
+            validate_config(config)
+
+    def test_generation_num_samples(self):
+        """Test that generation.num_samples is validated."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["num_samples"] = 0
+
+        with pytest.raises(
+            ValueError, match="generation.num_samples must be a positive"
+        ):
             validate_config(config)
 
 
@@ -701,7 +828,10 @@ class TestConfigFileValidation:
         # Check training configuration
         assert config["training"]["use_ema"] is True
         assert isinstance(config["training"]["epochs"], int)
+        assert "validation" in config["training"]
+        assert "visualization" in config["training"]
 
         # Check generation configuration
         assert "generation" in config
-        assert "sample_images" in config["generation"]
+        assert "checkpoint" in config["generation"]
+        assert "use_ema" in config["generation"]

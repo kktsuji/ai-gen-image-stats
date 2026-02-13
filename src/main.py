@@ -269,8 +269,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Get mode (train or generate)
     mode = config.get("mode", "train")
 
-    # Set up device
-    device_config = config.get("training", {}).get("device", "auto")
+    # Set up device (now at top level)
+    device_config = config.get("device", "auto")
     if device_config == "auto":
         device = get_device()
     else:
@@ -278,8 +278,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
     print(f"Using device: {device}")
 
-    # Set random seed if specified
-    seed = config.get("training", {}).get("seed")
+    # Set random seed if specified (now at top level)
+    seed = config.get("seed")
     if seed is not None:
         torch.manual_seed(seed)
         if device == "cuda":
@@ -287,12 +287,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         print(f"Random seed set to: {seed}")
 
     # Create output directories
-    checkpoint_dir = Path(config["output"]["checkpoint_dir"])
     log_dir = Path(config["output"]["log_dir"])
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Checkpoint directory: {checkpoint_dir}")
     print(f"Log directory: {log_dir}")
 
     # Save configuration to log directory
@@ -326,9 +323,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Check if in generation mode
     if mode == "generate":
         # Generation mode: load checkpoint and generate samples
-        checkpoint_path = config.get("checkpoint")
+        generation_config = config["generation"]
+        checkpoint_path = generation_config.get("checkpoint")
         if not checkpoint_path:
-            raise ValueError("Checkpoint path required for generation mode")
+            raise ValueError("generation.checkpoint is required for generation mode")
 
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
@@ -367,8 +365,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Create dummy optimizer (required by trainer but not used in generation)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-        # Initialize trainer
-        generation_config = config.get("generation", {})
+        # Initialize trainer (use generation config for EMA)
         trainer = DiffusionTrainer(
             model=model,
             dataloader=dataloader,
@@ -376,18 +373,18 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             logger=logger,
             device=device,
             show_progress=True,
-            use_ema=config.get("training", {}).get("use_ema", True),
-            ema_decay=config.get("training", {}).get("ema_decay", 0.9999),
-            use_amp=config.get("training", {}).get("use_amp", False),
-            gradient_clip_norm=config.get("training", {}).get("gradient_clip_norm"),
-            sample_images=generation_config.get("sample_images", True),
-            sample_interval=generation_config.get("sample_interval", 10),
+            use_ema=generation_config.get("use_ema", True),
+            ema_decay=0.9999,  # Not used in generation
+            use_amp=False,
+            gradient_clip_norm=None,
+            sample_images=False,  # Not used in generation mode
+            sample_interval=1,
             samples_per_class=generation_config.get("samples_per_class", 2),
             guidance_scale=generation_config.get("guidance_scale", 3.0),
         )
 
         # Generate samples
-        num_samples = config.get("num_samples", 100)
+        num_samples = generation_config.get("num_samples", 100)
         print(f"\nGenerating {num_samples} samples...")
 
         # Prepare class labels if conditional generation
@@ -407,11 +404,15 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             num_samples=num_samples,
             class_labels=class_labels,
             guidance_scale=generation_config.get("guidance_scale", 3.0),
-            use_ema=config.get("training", {}).get("use_ema", True),
+            use_ema=generation_config.get("use_ema", True),
         )
 
         # Save generated samples
-        output_dir = config.get("output_dir", log_dir / "generated")
+        output_dir = generation_config.get("output_dir")
+        if output_dir is None:
+            output_dir = log_dir / "generated"
+        else:
+            output_dir = Path(output_dir)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -434,6 +435,13 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
     else:
         # Training mode
+        training_config = config["training"]
+
+        # Create checkpoint directory (now from training section)
+        checkpoint_dir = Path(training_config["checkpoint_dir"])
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Checkpoint directory: {checkpoint_dir}")
+
         # Initialize dataloader
         data_config = config["data"]
         dataloader = DiffusionDataLoader(
@@ -456,7 +464,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         logger = DiffusionLogger(log_dir=log_dir)
 
         # Initialize optimizer
-        training_config = config["training"]
         optimizer_name = training_config["optimizer"].lower()
         optimizer_kwargs = training_config.get("optimizer_kwargs", {})
 
@@ -509,8 +516,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
             print(f"Scheduler: {scheduler_name}")
 
-        # Initialize trainer
-        generation_config = config.get("generation", {})
+        # Initialize trainer (use training.visualization for sampling)
+        visualization_config = training_config.get("visualization", {})
+        validation_config = training_config.get("validation", {})
+
         trainer = DiffusionTrainer(
             model=model,
             dataloader=dataloader,
@@ -523,10 +532,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             use_amp=training_config.get("use_amp", False),
             gradient_clip_norm=training_config.get("gradient_clip_norm"),
             scheduler=scheduler,
-            sample_images=generation_config.get("sample_images", True),
-            sample_interval=generation_config.get("sample_interval", 10),
-            samples_per_class=generation_config.get("samples_per_class", 2),
-            guidance_scale=generation_config.get("guidance_scale", 3.0),
+            sample_images=visualization_config.get("sample_images", True),
+            sample_interval=visualization_config.get("sample_interval", 10),
+            samples_per_class=visualization_config.get("samples_per_class", 2),
+            guidance_scale=visualization_config.get("guidance_scale", 3.0),
         )
 
         # Train the model
@@ -537,10 +546,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             trainer.train(
                 num_epochs=num_epochs,
                 checkpoint_dir=str(checkpoint_dir),
-                save_best=config["output"].get("save_best_only", False),
-                checkpoint_frequency=config["output"].get("save_frequency", 10),
-                validate_frequency=config.get("validation", {}).get("frequency", 1),
-                best_metric=config.get("validation", {}).get("metric", "loss"),
+                save_best=training_config.get("save_best_only", False),
+                checkpoint_frequency=training_config.get("save_frequency", 10),
+                validate_frequency=validation_config.get("frequency", 1),
+                best_metric=validation_config.get("metric", "loss"),
             )
         except KeyboardInterrupt:
             print("\n\nTraining interrupted by user")

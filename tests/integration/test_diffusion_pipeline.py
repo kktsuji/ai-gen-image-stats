@@ -50,6 +50,8 @@ class TestDiffusionPipelineBasic:
         """
         # Setup configuration
         config = {
+            "device": TEST_DEVICE,
+            "seed": None,
             "model": {
                 "image_size": 32,
                 "in_channels": 3,
@@ -68,26 +70,36 @@ class TestDiffusionPipelineBasic:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 2,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": True,
                 "ema_decay": 0.999,
                 "use_amp": False,
-            },
-            "generation": {
-                "sample_images": True,
-                "sample_interval": 1,
-                "samples_per_class": 2,
-                "guidance_scale": 0.0,
-            },
-            "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
                 "save_best_only": False,
                 "save_frequency": 1,
+                "validation": {
+                    "frequency": 1,
+                    "metric": "loss",
+                },
+                "visualization": {
+                    "sample_images": True,
+                    "sample_interval": 1,
+                    "samples_per_class": 2,
+                    "guidance_scale": 0.0,
+                },
+            },
+            "generation": {
+                "checkpoint": None,
+                "num_samples": 100,
+                "guidance_scale": 0.0,
+                "use_ema": True,
+                "output_dir": None,
             },
         }
 
@@ -101,7 +113,7 @@ class TestDiffusionPipelineBasic:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],  # Now from top level
         )
 
         dataloader = DiffusionDataLoader(
@@ -125,25 +137,25 @@ class TestDiffusionPipelineBasic:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
             use_amp=config["training"]["use_amp"],
-            sample_images=config["generation"]["sample_images"],
-            sample_interval=config["generation"]["sample_interval"],
-            samples_per_class=config["generation"]["samples_per_class"],
-            guidance_scale=config["generation"]["guidance_scale"],
+            sample_images=config["training"]["visualization"]["sample_images"],
+            sample_interval=config["training"]["visualization"]["sample_interval"],
+            samples_per_class=config["training"]["visualization"]["samples_per_class"],
+            guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
 
         # Run training
         trainer.train(
             num_epochs=config["training"]["epochs"],
-            checkpoint_dir=config["output"]["checkpoint_dir"],
-            checkpoint_frequency=config["output"]["save_frequency"],
+            checkpoint_dir=config["training"]["checkpoint_dir"],
+            checkpoint_frequency=config["training"]["save_frequency"],
         )
 
         # Verify outputs
-        checkpoint_dir = Path(config["output"]["checkpoint_dir"])
+        checkpoint_dir = Path(config["training"]["checkpoint_dir"])
         log_dir = Path(config["output"]["log_dir"])
 
         assert checkpoint_dir.exists(), "Checkpoint directory not created"
@@ -184,6 +196,8 @@ class TestDiffusionPipelineBasic:
         """
         # Setup configuration
         config = {
+            "device": TEST_DEVICE,
+            "seed": None,
             "model": {
                 "image_size": 32,
                 "in_channels": 3,
@@ -203,26 +217,36 @@ class TestDiffusionPipelineBasic:
                 "image_size": 32,
                 "return_labels": True,  # Important for conditional generation
             },
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 2,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": True,
                 "ema_decay": 0.999,
                 "use_amp": False,
-            },
-            "generation": {
-                "sample_images": True,
-                "sample_interval": 1,
-                "samples_per_class": 2,
-                "guidance_scale": 2.0,
-            },
-            "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
                 "save_best_only": False,
                 "save_frequency": 1,
+                "validation": {
+                    "frequency": 1,
+                    "metric": "loss",
+                },
+                "visualization": {
+                    "sample_images": True,
+                    "sample_interval": 1,
+                    "samples_per_class": 2,
+                    "guidance_scale": 2.0,
+                },
+            },
+            "generation": {
+                "checkpoint": None,
+                "num_samples": 100,
+                "guidance_scale": 2.0,
+                "use_ema": True,
+                "output_dir": None,
             },
         }
 
@@ -237,7 +261,7 @@ class TestDiffusionPipelineBasic:
             beta_schedule=config["model"]["beta_schedule"],
             class_dropout_prob=config["model"]["class_dropout_prob"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -261,25 +285,25 @@ class TestDiffusionPipelineBasic:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
             use_amp=config["training"]["use_amp"],
-            sample_images=config["generation"]["sample_images"],
-            sample_interval=config["generation"]["sample_interval"],
-            samples_per_class=config["generation"]["samples_per_class"],
-            guidance_scale=config["generation"]["guidance_scale"],
+            sample_images=config["training"]["visualization"]["sample_images"],
+            sample_interval=config["training"]["visualization"]["sample_interval"],
+            samples_per_class=config["training"]["visualization"]["samples_per_class"],
+            guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
 
         # Run training
         trainer.train(
             num_epochs=config["training"]["epochs"],
-            checkpoint_dir=config["output"]["checkpoint_dir"],
-            checkpoint_frequency=config["output"]["save_frequency"],
+            checkpoint_dir=config["training"]["checkpoint_dir"],
+            checkpoint_frequency=config["training"]["save_frequency"],
         )
 
         # Verify outputs
-        checkpoint_dir = Path(config["output"]["checkpoint_dir"])
+        checkpoint_dir = Path(config["training"]["checkpoint_dir"])
         log_dir = Path(config["output"]["log_dir"])
 
         assert checkpoint_dir.exists(), "Checkpoint directory not created"
@@ -338,11 +362,15 @@ class TestDiffusionPipelineCheckpoints:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "device": TEST_DEVICE,
+            "seed": None,
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,  # Disable EMA for simpler test
             },
         }
@@ -357,7 +385,7 @@ class TestDiffusionPipelineCheckpoints:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -380,7 +408,7 @@ class TestDiffusionPipelineCheckpoints:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
 
@@ -409,13 +437,11 @@ class TestDiffusionPipelineCheckpoints:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         # Load checkpoint
-        checkpoint = torch.load(
-            checkpoint_path, map_location=config["training"]["device"]
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
         model_loaded.load_state_dict(checkpoint["model_state_dict"])
 
         # Verify loaded weights match original
@@ -460,11 +486,15 @@ class TestDiffusionPipelineCheckpoints:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "device": TEST_DEVICE,
+            "seed": None,
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 2,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,
             },
         }
@@ -479,7 +509,7 @@ class TestDiffusionPipelineCheckpoints:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -502,7 +532,7 @@ class TestDiffusionPipelineCheckpoints:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
 
@@ -530,7 +560,7 @@ class TestDiffusionPipelineCheckpoints:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         logger_resumed = DiffusionLogger(log_dir=str(log_dir / "resumed"))
@@ -544,7 +574,7 @@ class TestDiffusionPipelineCheckpoints:
             dataloader=dataloader,
             optimizer=optimizer_resumed,
             logger=logger_resumed,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
 
@@ -603,11 +633,15 @@ class TestDiffusionPipelineGeneration:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "device": TEST_DEVICE,
+            "seed": None,
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,
             },
         }
@@ -622,7 +656,7 @@ class TestDiffusionPipelineGeneration:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -645,7 +679,7 @@ class TestDiffusionPipelineGeneration:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
 
@@ -672,12 +706,10 @@ class TestDiffusionPipelineGeneration:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
-        checkpoint = torch.load(
-            checkpoint_path, map_location=config["training"]["device"]
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
         logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
@@ -689,7 +721,7 @@ class TestDiffusionPipelineGeneration:
             dataloader=dataloader,
             optimizer=optimizer_gen,
             logger=logger_gen,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=False,
         )
 
@@ -758,11 +790,15 @@ class TestDiffusionPipelineGeneration:
                 "image_size": 32,
                 "return_labels": True,
             },
+            "device": TEST_DEVICE,
+            "seed": None,
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,
             },
         }
@@ -778,7 +814,7 @@ class TestDiffusionPipelineGeneration:
             beta_schedule=config["model"]["beta_schedule"],
             class_dropout_prob=config["model"]["class_dropout_prob"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -801,7 +837,7 @@ class TestDiffusionPipelineGeneration:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
 
@@ -829,12 +865,10 @@ class TestDiffusionPipelineGeneration:
             beta_schedule=config["model"]["beta_schedule"],
             class_dropout_prob=config["model"]["class_dropout_prob"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
-        checkpoint = torch.load(
-            checkpoint_path, map_location=config["training"]["device"]
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
         logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
@@ -846,13 +880,13 @@ class TestDiffusionPipelineGeneration:
             dataloader=dataloader,
             optimizer=optimizer_gen,
             logger=logger_gen,
-            device=config["training"]["device"],
+            device=config["device"],
             use_ema=False,
         )
 
         # Generate samples for each class
         num_samples = 8
-        class_labels = torch.tensor([0, 1] * 4, device=config["training"]["device"])
+        class_labels = torch.tensor([0, 1] * 4, device=config["device"])
 
         samples = trainer_gen.generate_samples(
             num_samples=num_samples,
@@ -900,6 +934,8 @@ class TestDiffusionPipelineAdvanced:
         """
         # Setup configuration
         config = {
+            "device": TEST_DEVICE,
+            "seed": None,
             "model": {
                 "image_size": 32,
                 "in_channels": 3,
@@ -918,16 +954,34 @@ class TestDiffusionPipelineAdvanced:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 3,
                 "learning_rate": 0.001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,
-            },
-            "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "save_best_only": False,
+                "save_frequency": 1,
+                "validation": {
+                    "frequency": 1,
+                    "metric": "loss",
+                },
+                "visualization": {
+                    "sample_images": False,
+                    "sample_interval": 1,
+                    "samples_per_class": 2,
+                    "guidance_scale": 0.0,
+                },
+            },
+            "generation": {
+                "checkpoint": None,
+                "num_samples": 100,
+                "guidance_scale": 0.0,
+                "use_ema": True,
+                "output_dir": None,
             },
         }
 
@@ -940,7 +994,7 @@ class TestDiffusionPipelineAdvanced:
             num_timesteps=config["model"]["num_timesteps"],
             beta_schedule=config["model"]["beta_schedule"],
             use_attention=tuple(config["model"]["use_attention"]),
-            device=config["training"]["device"],
+            device=config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -968,7 +1022,7 @@ class TestDiffusionPipelineAdvanced:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=config["training"]["device"],
+            device=config["device"],
             scheduler=scheduler,
             use_ema=config["training"]["use_ema"],
         )
@@ -978,7 +1032,7 @@ class TestDiffusionPipelineAdvanced:
 
         trainer.train(
             num_epochs=config["training"]["epochs"],
-            checkpoint_dir=config["output"]["checkpoint_dir"],
+            checkpoint_dir=config["training"]["checkpoint_dir"],
         )
 
         # Verify learning rate changed
@@ -1003,6 +1057,8 @@ class TestDiffusionPipelineAdvanced:
         config_file = tmp_path / "config.yaml"
         config = {
             "experiment": "diffusion",
+            "device": TEST_DEVICE,
+            "seed": None,
             "model": {
                 "image_size": 32,
                 "in_channels": 3,
@@ -1021,16 +1077,27 @@ class TestDiffusionPipelineAdvanced:
                 "image_size": 32,
                 "return_labels": False,
             },
+            "output": {
+                "log_dir": str(tmp_path / "logs"),
+            },
             "training": {
                 "epochs": 1,
                 "learning_rate": 0.0001,
                 "optimizer": "adam",
-                "device": TEST_DEVICE,
                 "use_ema": False,
-            },
-            "output": {
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "validation": {
+                    "validate_interval": 1,
+                    "num_validation_samples": 0,
+                },
+                "visualization": {
+                    "sample_images": False,
+                    "save_interval": 1,
+                },
+            },
+            "generation": {
+                "num_samples": 4,
+                "batch_size": 4,
             },
         }
 
@@ -1051,7 +1118,7 @@ class TestDiffusionPipelineAdvanced:
             num_timesteps=loaded_config["model"]["num_timesteps"],
             beta_schedule=loaded_config["model"]["beta_schedule"],
             use_attention=tuple(loaded_config["model"]["use_attention"]),
-            device=loaded_config["training"]["device"],
+            device=loaded_config["device"],
         )
 
         dataloader = DiffusionDataLoader(
@@ -1074,18 +1141,18 @@ class TestDiffusionPipelineAdvanced:
             dataloader=dataloader,
             optimizer=optimizer,
             logger=logger,
-            device=loaded_config["training"]["device"],
+            device=loaded_config["device"],
             use_ema=loaded_config["training"]["use_ema"],
         )
 
         # Run training
         trainer.train(
             num_epochs=loaded_config["training"]["epochs"],
-            checkpoint_dir=loaded_config["output"]["checkpoint_dir"],
+            checkpoint_dir=loaded_config["training"]["checkpoint_dir"],
         )
 
         # Verify outputs
-        assert Path(loaded_config["output"]["checkpoint_dir"]).exists()
+        assert Path(loaded_config["training"]["checkpoint_dir"]).exists()
         assert Path(loaded_config["output"]["log_dir"]).exists()
 
         logger.close()

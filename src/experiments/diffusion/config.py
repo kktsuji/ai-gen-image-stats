@@ -10,6 +10,11 @@ from typing import Any, Dict, Optional
 def get_default_config() -> Dict[str, Any]:
     """Get default configuration for diffusion model experiments.
 
+    Configuration Structure:
+    - Common parameters at top level (device, seed)
+    - Mode-specific parameters in training/generation sections
+    - Logical nesting for related features
+
     Returns:
         Dictionary containing default configuration values
 
@@ -21,7 +26,9 @@ def get_default_config() -> Dict[str, Any]:
     return {
         "experiment": "diffusion",
         "mode": "train",  # Options: train, generate
-        "checkpoint": None,  # Path to checkpoint for generation mode
+        # Common parameters (used in both modes)
+        "device": "cuda",  # Options: cuda, cpu, auto
+        "seed": None,  # Random seed for reproducibility
         "model": {
             "image_size": 40,  # Size of generated images
             "in_channels": 3,  # Number of input channels (RGB)
@@ -50,7 +57,11 @@ def get_default_config() -> Dict[str, Any]:
             "shuffle_train": True,
             "return_labels": False,  # Set to True for conditional generation
         },
+        "output": {
+            "log_dir": "outputs/logs",  # Only common output parameter
+        },
         "training": {
+            # Core training parameters
             "epochs": 200,
             "learning_rate": 0.0001,
             "optimizer": "adam",  # Options: adam, adamw
@@ -63,30 +74,39 @@ def get_default_config() -> Dict[str, Any]:
                 "T_max": 200,  # For cosine
                 "eta_min": 1e-6,  # For cosine
             },
-            "device": "cuda",  # Options: cuda, cpu
-            "seed": None,  # Random seed for reproducibility
+            # Advanced training features
             "use_ema": True,  # Use exponential moving average
             "ema_decay": 0.9999,  # EMA decay rate
             "use_amp": False,  # Use automatic mixed precision
             "gradient_clip_norm": None,  # Max gradient norm (None to disable)
-        },
-        "generation": {
-            "sample_images": True,  # Generate samples during training
-            "sample_interval": 10,  # Generate every N epochs
-            "samples_per_class": 2,  # Samples per class for conditional models
-            "guidance_scale": 3.0,  # Classifier-free guidance scale
-            "num_samples": 100,  # Number of samples to generate in generation mode
-            "output_dir": None,  # Output directory for generated images (defaults to log_dir/generated)
-        },
-        "output": {
+            # Training checkpointing
             "checkpoint_dir": "outputs/checkpoints",
-            "log_dir": "outputs/logs",
             "save_best_only": False,  # Save all checkpoints (diffusion typically needs many)
             "save_frequency": 10,  # Save checkpoint every N epochs
+            # Training validation (nested)
+            "validation": {
+                "frequency": 1,  # Run validation every N epochs
+                "metric": "loss",  # Metric to monitor for best model
+            },
+            # Training visualization (nested)
+            "visualization": {
+                "sample_images": True,  # Generate samples during training
+                "sample_interval": 10,  # Generate every N epochs
+                "samples_per_class": 2,  # Samples per class for conditional models
+                "guidance_scale": 3.0,  # Classifier-free guidance scale
+            },
         },
-        "validation": {
-            "frequency": 1,  # Run validation every N epochs
-            "metric": "loss",  # Metric to monitor for best model
+        "generation": {
+            # Generation input
+            "checkpoint": None,  # Required for generate mode
+            # Generation parameters
+            "num_samples": 100,  # Number of samples to generate in generation mode
+            "guidance_scale": 3.0,  # Classifier-free guidance scale
+            "use_ema": True,  # Use EMA weights if available
+            # Generation output
+            "output_dir": None,  # Output directory for generated images (defaults to log_dir/generated)
+            "save_grid": True,
+            "grid_nrow": 10,
         },
     }
 
@@ -94,9 +114,7 @@ def get_default_config() -> Dict[str, Any]:
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate diffusion model configuration.
 
-    Checks that all required fields are present and have valid values.
-    Implements strict validation with no defaults or None values allowed
-    for required fields.
+    Performs mode-aware validation with clear error messages.
 
     Args:
         config: Configuration dictionary to validate
@@ -111,19 +129,54 @@ def validate_config(config: Dict[str, Any]) -> None:
         >>> config["model"]["image_size"] = -1
         >>> validate_config(config)  # Raises ValueError
     """
-    # Check required top-level keys
-    required_keys = ["experiment", "model", "data", "training", "output"]
-    for key in required_keys:
-        if key not in config:
-            raise KeyError(f"Missing required config key: {key}")
-
     # Validate experiment type
-    if config["experiment"] != "diffusion":
+    if config.get("experiment") != "diffusion":
         raise ValueError(
-            f"Invalid experiment type: {config['experiment']}. Must be 'diffusion'"
+            f"Invalid experiment type: {config.get('experiment')}. Must be 'diffusion'"
         )
 
-    # Validate model configuration - strict required fields
+    # Validate mode
+    mode = config.get("mode", "train")
+    if mode not in ["train", "generate"]:
+        raise ValueError(f"Invalid mode: {mode}. Must be 'train' or 'generate'")
+
+    # Validate common parameters
+    device = config.get("device", "cuda")
+    valid_devices = ["cuda", "cpu", "auto"]
+    if device not in valid_devices:
+        raise ValueError(f"Invalid device: {device}. Must be one of {valid_devices}")
+
+    seed = config.get("seed")
+    if seed is not None:
+        if not isinstance(seed, int) or seed < 0:
+            raise ValueError("seed must be None or a non-negative integer")
+
+    # Validate model configuration
+    _validate_model_config(config)
+
+    # Validate data configuration
+    _validate_data_config(config)
+
+    # Validate output section (simplified)
+    if "output" not in config:
+        raise KeyError("Missing required config key: output")
+
+    output = config["output"]
+    if "log_dir" not in output or output["log_dir"] is None:
+        raise ValueError("output.log_dir is required and cannot be None")
+
+    # Mode-specific validation
+    if mode == "train":
+        _validate_training_config(config)
+    elif mode == "generate":
+        _validate_generation_config(config)
+
+
+def _validate_model_config(config: Dict[str, Any]) -> None:
+    """Validate model configuration section."""
+    if "model" not in config:
+        raise KeyError("Missing required config key: model")
+
     model = config["model"]
     required_model_fields = [
         "image_size",
@@ -205,8 +258,15 @@ def validate_config(config: Dict[str, Any]) -> None:
     if len(model["use_attention"]) != len(model["channel_multipliers"]):
         raise ValueError("use_attention length must match channel_multipliers length")
 
-    # Validate data configuration - strict required fields
+
+def _validate_data_config(config: Dict[str, Any]) -> None:
+    """Validate data configuration section."""
+    if "data" not in config:
+        raise KeyError("Missing required config key: data")
+
     data = config["data"]
+    model = config["model"]
+
     required_data_fields = [
         "train_path",
         "batch_size",
@@ -252,13 +312,19 @@ def validate_config(config: Dict[str, Any]) -> None:
             "(conditional generation requires labels)"
         )
 
-    # Validate training configuration - strict required fields
+
+def _validate_training_config(config: Dict[str, Any]) -> None:
+    """Validate training-specific configuration."""
+    if "training" not in config:
+        raise KeyError("Missing required config key: training")
+
     training = config["training"]
+
+    # Validate core training parameters
     required_training_fields = [
         "epochs",
         "learning_rate",
         "optimizer",
-        "device",
         "use_ema",
         "ema_decay",
         "use_amp",
@@ -286,16 +352,10 @@ def validate_config(config: Dict[str, Any]) -> None:
         )
 
     valid_schedulers = ["cosine", "step", "plateau", "none", None]
-    if training["scheduler"] not in valid_schedulers:
+    if training.get("scheduler") not in valid_schedulers:
         raise ValueError(
-            f"Invalid scheduler: {training['scheduler']}. "
+            f"Invalid scheduler: {training.get('scheduler')}. "
             f"Must be one of {valid_schedulers}"
-        )
-
-    valid_devices = ["cuda", "cpu"]
-    if training["device"] not in valid_devices:
-        raise ValueError(
-            f"Invalid device: {training['device']}. Must be one of {valid_devices}"
         )
 
     if not isinstance(training["use_ema"], bool):
@@ -311,46 +371,92 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(training["use_amp"], bool):
         raise ValueError("use_amp must be a boolean")
 
-    if training["gradient_clip_norm"] is not None:
+    if training.get("gradient_clip_norm") is not None:
         if (
             not isinstance(training["gradient_clip_norm"], (int, float))
             or training["gradient_clip_norm"] <= 0
         ):
             raise ValueError("gradient_clip_norm must be a positive number or None")
 
-    # Validate generation configuration
-    if "generation" in config:
-        generation = config["generation"]
+    # Validate checkpointing
+    if "checkpoint_dir" not in training or training["checkpoint_dir"] is None:
+        raise ValueError("training.checkpoint_dir is required for training mode")
 
-        if not isinstance(generation["sample_images"], bool):
-            raise ValueError("sample_images must be a boolean")
+    # Validate nested validation section
+    if "validation" in training:
+        val = training["validation"]
+        if "frequency" in val:
+            if not isinstance(val["frequency"], int) or val["frequency"] < 1:
+                raise ValueError(
+                    "training.validation.frequency must be a positive integer"
+                )
+        if "metric" in val and not isinstance(val["metric"], str):
+            raise ValueError("training.validation.metric must be a string")
 
+    # Validate nested visualization section
+    if "visualization" in training:
+        vis = training["visualization"]
+        if "sample_images" in vis and not isinstance(vis["sample_images"], bool):
+            raise ValueError("training.visualization.sample_images must be a boolean")
+        if "sample_interval" in vis:
+            if (
+                not isinstance(vis["sample_interval"], int)
+                or vis["sample_interval"] < 1
+            ):
+                raise ValueError(
+                    "training.visualization.sample_interval must be a positive integer"
+                )
+        if "samples_per_class" in vis:
+            if (
+                not isinstance(vis["samples_per_class"], int)
+                or vis["samples_per_class"] < 1
+            ):
+                raise ValueError(
+                    "training.visualization.samples_per_class must be a positive integer"
+                )
+        if "guidance_scale" in vis:
+            if (
+                not isinstance(vis["guidance_scale"], (int, float))
+                or vis["guidance_scale"] < 1.0
+            ):
+                raise ValueError("training.visualization.guidance_scale must be >= 1.0")
+
+
+def _validate_generation_config(config: Dict[str, Any]) -> None:
+    """Validate generation-specific configuration."""
+    if "generation" not in config:
+        raise KeyError("Missing required config key: generation")
+
+    generation = config["generation"]
+
+    # Validate checkpoint (required for generation)
+    if "checkpoint" not in generation or generation["checkpoint"] is None:
+        raise ValueError("generation.checkpoint is required for generate mode")
+
+    # Validate generation parameters
+    if "num_samples" in generation:
         if (
-            not isinstance(generation["sample_interval"], int)
-            or generation["sample_interval"] < 1
+            not isinstance(generation["num_samples"], int)
+            or generation["num_samples"] < 1
         ):
-            raise ValueError("sample_interval must be a positive integer")
+            raise ValueError("generation.num_samples must be a positive integer")
 
-        if (
-            not isinstance(generation["samples_per_class"], int)
-            or generation["samples_per_class"] < 1
-        ):
-            raise ValueError("samples_per_class must be a positive integer")
-
+    if "guidance_scale" in generation:
         if (
             not isinstance(generation["guidance_scale"], (int, float))
             or generation["guidance_scale"] < 1.0
         ):
-            raise ValueError("guidance_scale must be a number >= 1.0")
+            raise ValueError("generation.guidance_scale must be >= 1.0")
 
-    # Validate output configuration - strict required fields
-    output = config["output"]
-    required_output_fields = ["checkpoint_dir", "log_dir"]
-    for field in required_output_fields:
-        if field not in output:
-            raise KeyError(f"Missing required field: output.{field}")
-        if output[field] is None:
-            raise ValueError(f"output.{field} cannot be None")
+    if "use_ema" in generation and not isinstance(generation["use_ema"], bool):
+        raise ValueError("generation.use_ema must be a boolean")
+
+    if "save_grid" in generation and not isinstance(generation["save_grid"], bool):
+        raise ValueError("generation.save_grid must be a boolean")
+
+    if "grid_nrow" in generation:
+        if not isinstance(generation["grid_nrow"], int) or generation["grid_nrow"] < 1:
+            raise ValueError("generation.grid_nrow must be a positive integer")
 
 
 def get_resolution_config(image_size: int) -> Dict[str, Any]:
