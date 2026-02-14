@@ -1,0 +1,62 @@
+# ==============================================================================
+# CLASSIFIER CONFIGURATION (V1 FORMAT - LEGACY)
+# ==============================================================================
+# Default configuration for training image classification models (ResNet, InceptionV3)
+# This uses the V1 format for backward compatibility
+# Note: V2 format is also supported - see configs/classifier/ for examples
+# ==============================================================================
+
+experiment: classifier
+
+# Model configuration
+model:
+  name: resnet50 # Options: resnet50, resnet101, resnet152, inceptionv3
+  pretrained: true
+  num_classes: 2
+  freeze_backbone: false
+  trainable_layers: null # List of layer patterns to unfreeze (InceptionV3 only)
+  dropout: 0.5 # Only for InceptionV3
+
+# Data configuration
+data:
+  train_path: data/train
+  val_path: data/val
+  batch_size: 32
+  num_workers: 4
+  image_size: 256
+  crop_size: 224
+  horizontal_flip: true
+  color_jitter: false
+  rotation_degrees: 0
+  normalize: imagenet # Options: imagenet, cifar10, none, null
+  pin_memory: true
+  drop_last: false
+  shuffle_train: true
+
+# Training configuration
+training:
+  epochs: 100
+  learning_rate: 0.001
+  optimizer: adam # Options: adam, sgd, adamw
+  optimizer_kwargs:
+    weight_decay: 0.0001
+  scheduler: cosine # Options: cosine, step, plateau, none
+  scheduler_kwargs:
+    T_max: 100 # For cosine
+    eta_min: 0.000001 # For cosine
+  device: cuda # Options: cuda, cpu
+  mixed_precision: false # Use automatic mixed precision (AMP)
+  gradient_clip: null # Max gradient norm for clipping (null to disable)
+  early_stopping_patience: null # Epochs to wait before early stopping (null to disable)
+
+# Output configuration
+output:
+  checkpoint_dir: outputs/checkpoints
+  log_dir: outputs/logs
+  save_best_only: true
+  save_frequency: 10 # Save checkpoint every N epochs (0 to save only best)
+
+# Validation configuration
+validation:
+  frequency: 1 # Run validation every N epochs
+  metric: accuracy # Metric to monitor for best model (accuracy or loss)

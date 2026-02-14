@@ -4,76 +4,45 @@ This module provides default configuration values for classifier experiments.
 It defines sensible defaults for training, data loading, model selection, and logging.
 
 Supports both V1 (legacy) and V2 configuration formats.
+Default values are loaded from YAML as the single source of truth.
 """
 
 import warnings
+from pathlib import Path
 from typing import Any, Dict
+
+from src.utils.config import load_config
 
 
 def get_default_config() -> Dict[str, Any]:
-    """Get default configuration for classifier experiments.
+    """Get default configuration by loading default.yaml.
+
+    The default.yaml file is colocated with this module in the same directory,
+    following the principle of keeping related files together. YAML serves as
+    the single source of truth for default configuration values.
 
     Returns:
-        Dictionary containing default configuration values
+        Dictionary containing default configuration values from YAML file
+
+    Raises:
+        FileNotFoundError: If default.yaml is not found
+        yaml.YAMLError: If YAML is invalid
 
     Example:
         >>> config = get_default_config()
         >>> print(config["training"]["epochs"])
         100
     """
-    return {
-        "experiment": "classifier",
-        "model": {
-            "name": "resnet50",  # Options: resnet50, resnet101, resnet152, inceptionv3
-            "pretrained": True,
-            "num_classes": 2,
-            "freeze_backbone": False,
-            "trainable_layers": None,  # List of layer patterns to unfreeze (InceptionV3 only)
-            "dropout": 0.5,  # Only for InceptionV3
-        },
-        "data": {
-            "train_path": "data/train",
-            "val_path": "data/val",
-            "batch_size": 32,
-            "num_workers": 4,
-            "image_size": 256,
-            "crop_size": 224,
-            "horizontal_flip": True,
-            "color_jitter": False,
-            "rotation_degrees": 0,
-            "normalize": "imagenet",  # Options: imagenet, cifar10, none, None
-            "pin_memory": True,
-            "drop_last": False,
-            "shuffle_train": True,
-        },
-        "training": {
-            "epochs": 100,
-            "learning_rate": 0.001,
-            "optimizer": "adam",  # Options: adam, sgd, adamw
-            "optimizer_kwargs": {
-                "weight_decay": 1e-4,
-            },
-            "scheduler": "cosine",  # Options: cosine, step, plateau, none
-            "scheduler_kwargs": {
-                "T_max": 100,  # For cosine
-                "eta_min": 1e-6,  # For cosine
-            },
-            "device": "cuda",  # Options: cuda, cpu
-            "mixed_precision": False,  # Use automatic mixed precision (AMP)
-            "gradient_clip": None,  # Max gradient norm for clipping (None to disable)
-            "early_stopping_patience": None,  # Epochs to wait before early stopping (None to disable)
-        },
-        "output": {
-            "checkpoint_dir": "outputs/checkpoints",
-            "log_dir": "outputs/logs",
-            "save_best_only": True,
-            "save_frequency": 10,  # Save checkpoint every N epochs (0 to save only best)
-        },
-        "validation": {
-            "frequency": 1,  # Run validation every N epochs
-            "metric": "accuracy",  # Metric to monitor for best model (accuracy or loss)
-        },
-    }
+    # Simple path resolution - default.yaml is in the same directory
+    default_yaml = Path(__file__).parent / "default.yaml"
+
+    if not default_yaml.exists():
+        raise FileNotFoundError(
+            f"Default config not found: {default_yaml}\n"
+            f"Expected location: src/experiments/classifier/default.yaml"
+        )
+
+    return load_config(str(default_yaml))
 
 
 # Note: validate_config() is defined later in this file, after validate_config_v2()

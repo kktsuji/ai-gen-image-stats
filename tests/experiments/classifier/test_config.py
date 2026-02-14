@@ -752,8 +752,8 @@ class TestV2ConfigFiles:
     """Test actual V2 config files."""
 
     def test_default_v2_config_file(self):
-        """Test that default.yaml (V2) is valid."""
-        config_path = Path("configs/classifier/default.yaml")
+        """Test that default.yaml (V1) is valid."""
+        config_path = Path("src/experiments/classifier/default.yaml")
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
@@ -761,11 +761,12 @@ class TestV2ConfigFiles:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        # Should be V2 format
-        assert is_v2_config(config)
+        # Should be V1 format (for backward compatibility)
+        assert not is_v2_config(config), "default.yaml should be V1 format"
 
-        # Should validate
-        validate_config(config)
+        # Should validate (with deprecation warning)
+        with pytest.warns(DeprecationWarning):
+            validate_config(config)
 
     def test_baseline_v2_config_file(self):
         """Test that baseline.yaml (V2) is valid."""

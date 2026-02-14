@@ -9,15 +9,23 @@ Key improvements in V2:
 - Single source of truth (no duplicate parameters)
 - Mode-specific sections properly scoped
 - Derived parameters (image_size, return_labels)
+- Default values loaded from YAML for maintainability
 
 For migration from V1, see: docs/research/diffusion-config-migration-guide.md
 """
 
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict
+
+from src.utils.config import load_config
 
 
 def get_default_config() -> Dict[str, Any]:
-    """Get default configuration for diffusion model experiments (V2 format).
+    """Get default configuration by loading default.yaml.
+
+    The default.yaml file is colocated with this module in the same directory,
+    following the principle of keeping related files together. YAML serves as
+    the single source of truth for default configuration values.
 
     Configuration Structure (V2):
     - compute: Device and seed settings
@@ -28,7 +36,11 @@ def get_default_config() -> Dict[str, Any]:
     - generation: All generation-related parameters
 
     Returns:
-        Dictionary containing default configuration values in V2 format
+        Dictionary containing default configuration values from YAML file
+
+    Raises:
+        FileNotFoundError: If default.yaml is not found
+        yaml.YAMLError: If YAML is invalid
 
     Example:
         >>> config = get_default_config()
@@ -37,130 +49,16 @@ def get_default_config() -> Dict[str, Any]:
         >>> print(config["model"]["architecture"]["image_size"])
         40
     """
-    return {
-        "experiment": "diffusion",
-        "mode": "train",  # Options: train, generate
-        # Compute configuration
-        "compute": {
-            "device": "cuda",  # Options: cuda, cpu, auto
-            "seed": None,  # Random seed for reproducibility (None to disable)
-        },
-        # Model configuration
-        "model": {
-            "architecture": {
-                "image_size": 40,  # Size of generated images (H=W)
-                "in_channels": 3,  # Number of input channels (RGB)
-                "model_channels": 64,  # Base number of U-Net channels
-                "channel_multipliers": [1, 2, 4],  # Channel multipliers per stage
-                "use_attention": [False, False, True],  # Attention at each stage
-            },
-            "diffusion": {
-                "num_timesteps": 1000,  # Number of diffusion timesteps
-                "beta_schedule": "cosine",  # Options: linear, cosine, quadratic, sigmoid
-                "beta_start": 0.0001,  # Starting beta value
-                "beta_end": 0.02,  # Ending beta value
-            },
-            "conditioning": {
-                "type": None,  # Options: None (unconditional), "class" (conditional)
-                "num_classes": None,  # Number of classes (required if type="class")
-                "class_dropout_prob": 0.1,  # Classifier-free guidance dropout
-            },
-        },
-        # Data configuration
-        "data": {
-            "paths": {
-                "train": "data/train",  # Training data directory
-                "val": None,  # Optional validation data directory
-            },
-            "loading": {
-                "batch_size": 32,  # Batch size
-                "num_workers": 4,  # Number of data loading workers
-                "pin_memory": True,  # Pin memory for faster GPU transfer
-                "shuffle_train": True,  # Shuffle training data
-                "drop_last": False,  # Drop incomplete batches
-            },
-            "augmentation": {
-                "horizontal_flip": True,  # Random horizontal flip
-                "rotation_degrees": 0,  # Random rotation (0 to disable)
-                "color_jitter": {
-                    "enabled": False,  # Enable color jitter
-                    "strength": 0.1,  # Jitter strength (0.0-1.0)
-                },
-            },
-        },
-        # Output configuration
-        "output": {
-            "base_dir": "outputs",  # Base output directory
-            "subdirs": {
-                "logs": "logs",  # Log files
-                "checkpoints": "checkpoints",  # Model checkpoints
-                "samples": "samples",  # Training samples
-                "generated": "generated",  # Generated images
-            },
-        },
-        # Training configuration
-        "training": {
-            "epochs": 200,  # Number of training epochs
-            "optimizer": {
-                "type": "adam",  # Options: adam, adamw
-                "learning_rate": 0.0001,  # Learning rate
-                "weight_decay": 0.0,  # L2 regularization
-                "betas": [0.9, 0.999],  # Adam beta parameters
-                "gradient_clip_norm": None,  # Max gradient norm (None to disable)
-            },
-            "scheduler": {
-                "type": None,  # Options: cosine, step, plateau, None
-                "T_max": "auto",  # For cosine (auto = epochs)
-                "eta_min": 1e-6,  # For cosine (minimum LR)
-            },
-            "ema": {
-                "enabled": True,  # Use EMA for better sample quality
-                "decay": 0.9999,  # EMA decay rate
-            },
-            "checkpointing": {
-                "save_frequency": 10,  # Save every N epochs
-                "save_best_only": False,  # Save all checkpoints
-                "save_optimizer": True,  # Include optimizer state
-            },
-            "validation": {
-                "enabled": True,  # Run validation
-                "frequency": 1,  # Validate every N epochs
-                "metric": "loss",  # Metric to monitor
-            },
-            "visualization": {
-                "enabled": True,  # Generate samples during training
-                "interval": 10,  # Generate samples every N epochs
-                "num_samples": 8,  # Total number of samples
-                "guidance_scale": 3.0,  # Classifier-free guidance scale
-            },
-            "performance": {
-                "use_amp": False,  # Automatic mixed precision
-                "use_tf32": True,  # Enable TF32 on Ampere+ GPUs
-                "cudnn_benchmark": True,  # cuDNN benchmark mode
-                "compile_model": False,  # Use torch.compile (PyTorch 2.0+)
-            },
-            "resume": {
-                "enabled": False,  # Enable resume training
-                "checkpoint": None,  # Path to checkpoint (required if enabled)
-                "reset_optimizer": False,  # Reset optimizer state
-                "reset_scheduler": False,  # Reset scheduler state
-            },
-        },
-        # Generation configuration
-        "generation": {
-            "checkpoint": None,  # Path to trained model checkpoint (required)
-            "sampling": {
-                "num_samples": 100,  # Total number of samples to generate
-                "guidance_scale": 3.0,  # Classifier-free guidance scale (>=1.0)
-                "use_ema": True,  # Use EMA weights if available
-            },
-            "output": {
-                "save_individual": True,  # Save individual sample images
-                "save_grid": True,  # Save samples as grid image
-                "grid_nrow": 10,  # Number of samples per row in grid
-            },
-        },
-    }
+    # Simple path resolution - default.yaml is in the same directory
+    default_yaml = Path(__file__).parent / "default.yaml"
+
+    if not default_yaml.exists():
+        raise FileNotFoundError(
+            f"Default config not found: {default_yaml}\n"
+            f"Expected location: src/experiments/diffusion/default.yaml"
+        )
+
+    return load_config(str(default_yaml))
 
 
 def validate_config(config: Dict[str, Any]) -> None:

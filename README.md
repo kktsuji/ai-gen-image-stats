@@ -31,15 +31,24 @@ src/
 ├── base/              # Base classes for trainers, models, data loaders
 ├── experiments/       # Self-contained experiment implementations
 │   ├── classifier/    # Classification models and training
+│   │   ├── config.py       # Config loading and validation
+│   │   ├── default.yaml    # Default configuration values
+│   │   └── train.py        # Training logic
 │   ├── diffusion/     # Diffusion models (DDPM)
+│   │   ├── config.py       # Config loading and validation
+│   │   ├── default.yaml    # Default configuration values
+│   │   ├── train.py        # Training logic
+│   │   └── generate.py     # Generation logic
 │   └── gan/          # GAN models (planned)
 ├── utils/            # CLI, config, device management, metrics
 └── data/             # Dataset implementations and transforms
 
 tests/                # Mirror of src/ structure with test tiers
-configs/              # Experiment configurations (YAML)
+configs/              # User experiment configurations (YAML)
 outputs/              # Training outputs (gitignored)
 ```
+
+**Note:** Default configuration files (`default.yaml`) are colocated with their experiment code in `src/experiments/`. The `configs/` directory is for user-provided configurations and experiment-specific overrides.
 
 See [docs/standards/architecture.md](docs/standards/architecture.md) for complete architecture specification.
 
@@ -120,7 +129,7 @@ The configuration is organized into logical sections:
   - `sampling`: Sampling parameters
   - `output`: Generation output settings
 
-See [configs/diffusion/default.yaml](configs/diffusion/default.yaml) for a complete example.
+See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete example.
 
 ### Diffusion Model Configuration (V2)
 
@@ -275,7 +284,7 @@ generation:
 
 #### Complete Example
 
-See [configs/diffusion/default.yaml](configs/diffusion/default.yaml) for a complete, documented example configuration.
+See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete, documented example configuration.
 
 #### Migration from V1
 
