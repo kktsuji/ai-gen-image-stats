@@ -91,52 +91,163 @@ python -m src.main configs/diffusion/default.yaml
 
 ## Configuration
 
-### Diffusion Model Configuration
+### Configuration Structure (V2)
 
-The diffusion configuration is organized into common, training-specific, and generation-specific sections for better clarity and maintainability.
+The configuration is organized into logical sections:
 
-#### Common Parameters (used in both modes)
+- **`compute`**: Device and seed settings
+- **`model`**: Model architecture, diffusion parameters, and conditioning
+  - `architecture`: U-Net architecture parameters
+  - `diffusion`: Diffusion process parameters
+  - `conditioning`: Conditional generation settings
+- **`data`**: Dataset paths, loading, and augmentation
+  - `paths`: Train and validation data paths
+  - `loading`: Batch size, workers, memory settings
+  - `augmentation`: Data augmentation settings
+- **`output`**: Output directory structure
+  - `base_dir`: Base output directory
+  - `subdirs`: Subdirectories for logs, checkpoints, samples, generated images
+- **`training`**: Training-specific parameters
+  - `optimizer`: Optimizer configuration
+  - `scheduler`: Learning rate scheduler
+  - `ema`: Exponential moving average
+  - `checkpointing`: Checkpoint saving
+  - `validation`: Validation settings
+  - `visualization`: Training visualization
+  - `performance`: Performance optimizations
+  - `resume`: Resume training settings
+- **`generation`**: Generation-specific parameters
+  - `sampling`: Sampling parameters
+  - `output`: Generation output settings
 
-These parameters are specified at the top level and apply to both training and generation:
+See [configs/diffusion/default.yaml](configs/diffusion/default.yaml) for a complete example.
+
+### Diffusion Model Configuration (V2)
+
+#### Common Parameters
+
+These parameters apply to both training and generation modes:
 
 ```yaml
 experiment: diffusion
 mode: train # Options: train, generate
-device: cuda # Options: cuda, cpu, auto
-seed: 42 # Random seed for reproducibility (null for random)
+
+# Compute configuration
+compute:
+  device: cuda # Options: cuda, cpu, auto
+  seed: 42 # Random seed for reproducibility (null for random)
+
+# Model configuration
+model:
+  architecture:
+    image_size: 40
+    in_channels: 3
+    model_channels: 64
+    channel_multipliers: [1, 2, 4]
+    use_attention: [false, false, true]
+
+  diffusion:
+    num_timesteps: 1000
+    beta_schedule: cosine
+    beta_start: 0.0001
+    beta_end: 0.02
+
+  conditioning:
+    type: null # Options: null (unconditional), "class" (class-conditional)
+    num_classes: null # Required if type="class"
+    class_dropout_prob: 0.1
+
+# Data configuration (V2 - image_size derived from model)
+data:
+  paths:
+    train: data/train
+    val: null
+
+  loading:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: true
+    shuffle_train: true
+    drop_last: false
+
+  augmentation:
+    horizontal_flip: true
+    rotation_degrees: 0
+    color_jitter:
+      enabled: false
+      strength: 0.1
+
+# Output configuration
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    samples: samples
+    generated: generated
 ```
 
 #### Training Mode Configuration
 
-Training mode includes model training, validation, and visualization parameters:
+Training mode includes comprehensive training parameters:
 
 ```yaml
 mode: train
 
 training:
-  # Core training parameters
   epochs: 200
-  learning_rate: 0.0001
-  optimizer: adam
-  use_ema: true
-  ema_decay: 0.9999
 
-  # Training checkpointing
-  checkpoint_dir: outputs/checkpoints
-  save_frequency: 10
-  save_best_only: false
+  # Optimizer configuration
+  optimizer:
+    type: adam
+    learning_rate: 0.0001
+    weight_decay: 0.0
+    betas: [0.9, 0.999]
+    gradient_clip_norm: null
 
-  # Nested validation configuration
+  # Scheduler configuration
+  scheduler:
+    type: null # Options: null, cosine, step, plateau
+    T_max: auto # Auto sets to number of epochs
+    eta_min: 1.0e-6
+
+  # EMA configuration
+  ema:
+    enabled: true
+    decay: 0.9999
+
+  # Checkpointing configuration
+  checkpointing:
+    save_frequency: 10
+    save_best_only: false
+    save_optimizer: true
+
+  # Validation configuration
   validation:
+    enabled: true
     frequency: 1
     metric: loss
 
-  # Nested visualization configuration (training-time sampling)
+  # Visualization configuration (training-time sampling)
   visualization:
-    sample_images: true
-    sample_interval: 10
-    samples_per_class: 2
+    enabled: true
+    interval: 10
+    num_samples: 8
     guidance_scale: 3.0
+
+  # Performance optimizations
+  performance:
+    use_amp: false # Automatic mixed precision
+    use_tf32: true # TF32 on Ampere+ GPUs
+    cudnn_benchmark: true
+    compile_model: false # PyTorch 2.0+ torch.compile
+
+  # Resume training configuration
+  resume:
+    enabled: false
+    checkpoint: null
+    reset_optimizer: false
+    reset_scheduler: false
 ```
 
 #### Generation Mode Configuration
@@ -147,25 +258,36 @@ Generation mode is used to generate images from a trained checkpoint:
 mode: generate
 
 generation:
-  # Generation input
   checkpoint: path/to/model.pth # Required for generate mode
 
-  # Generation parameters
-  num_samples: 100
-  guidance_scale: 3.0
-  use_ema: true
+  # Sampling configuration
+  sampling:
+    num_samples: 100
+    guidance_scale: 3.0
+    use_ema: true
 
-  # Generation output
-  output_dir: outputs/generated # Defaults to log_dir/generated
-  save_grid: true
-  grid_nrow: 10
+  # Output configuration
+  output:
+    save_individual: true
+    save_grid: true
+    grid_nrow: 10
 ```
 
 #### Complete Example
 
 See [configs/diffusion/default.yaml](configs/diffusion/default.yaml) for a complete, documented example configuration.
 
-**Note:** If you have configurations from before February 2026, see the [migration guide](docs/research/diffusion-config-migration-guide.md) for updating to the new structure.
+#### Migration from V1
+
+If you have configurations from before February 2026, see the [migration guide](docs/research/diffusion-config-migration-guide.md) for updating to the V2 structure. Key changes:
+
+- `device` and `seed` moved to `compute` section
+- Model parameters reorganized into `architecture`, `diffusion`, `conditioning`
+- Data parameters reorganized into `paths`, `loading`, `augmentation`
+- `image_size` only in `model.architecture` (derived for data)
+- `return_labels` derived from `model.conditioning.type`
+- Optimizer/scheduler parameters nested under `training`
+- Visualization moved from `generation` to `training`
 
 ## Testing
 

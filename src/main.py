@@ -262,6 +262,11 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     from src.experiments.diffusion.logger import DiffusionLogger
     from src.experiments.diffusion.model import create_ddpm
     from src.experiments.diffusion.trainer import DiffusionTrainer
+    from src.utils.config import (
+        derive_image_size_from_model,
+        derive_return_labels_from_model,
+        resolve_output_path,
+    )
 
     # Validate diffusion config (strict mode - no defaults)
     validate_diffusion_config(config)
@@ -269,8 +274,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Get mode (train or generate)
     mode = config.get("mode", "train")
 
-    # Set up device (now at top level)
-    device_config = config.get("device", "auto")
+    # Set up device (now in compute section)
+    compute_config = config.get("compute", {})
+    device_config = compute_config.get("device", "auto")
     if device_config == "auto":
         device = get_device()
     else:
@@ -278,16 +284,16 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
     print(f"Using device: {device}")
 
-    # Set random seed if specified (now at top level)
-    seed = config.get("seed")
+    # Set random seed if specified (now in compute section)
+    seed = compute_config.get("seed")
     if seed is not None:
         torch.manual_seed(seed)
         if device == "cuda":
             torch.cuda.manual_seed_all(seed)
         print(f"Random seed set to: {seed}")
 
-    # Create output directories
-    log_dir = Path(config["output"]["log_dir"])
+    # Create output directories using V2 structure
+    log_dir = resolve_output_path(config, "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Log directory: {log_dir}")
@@ -298,27 +304,31 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"Configuration saved to: {config_save_path}")
 
-    # Initialize model
+    # Initialize model using V2 config structure
     model_config = config["model"]
+    arch_config = model_config["architecture"]
+    diff_config = model_config["diffusion"]
+    cond_config = model_config["conditioning"]
+
     model = create_ddpm(
-        image_size=model_config["image_size"],
-        in_channels=model_config["in_channels"],
-        model_channels=model_config["model_channels"],
-        channel_multipliers=tuple(model_config["channel_multipliers"]),
-        num_classes=model_config["num_classes"],
-        num_timesteps=model_config["num_timesteps"],
-        beta_schedule=model_config["beta_schedule"],
-        beta_start=model_config["beta_start"],
-        beta_end=model_config["beta_end"],
-        class_dropout_prob=model_config["class_dropout_prob"],
-        use_attention=tuple(model_config["use_attention"]),
+        image_size=arch_config["image_size"],
+        in_channels=arch_config["in_channels"],
+        model_channels=arch_config["model_channels"],
+        channel_multipliers=tuple(arch_config["channel_multipliers"]),
+        num_classes=cond_config["num_classes"],
+        num_timesteps=diff_config["num_timesteps"],
+        beta_schedule=diff_config["beta_schedule"],
+        beta_start=diff_config["beta_start"],
+        beta_end=diff_config["beta_end"],
+        class_dropout_prob=cond_config["class_dropout_prob"],
+        use_attention=tuple(arch_config["use_attention"]),
         device=device,
     )
 
     print(f"Model: DDPM")
-    print(f"Image size: {model_config['image_size']}")
-    print(f"Num classes: {model_config['num_classes']}")
-    print(f"Num timesteps: {model_config['num_timesteps']}")
+    print(f"Image size: {arch_config['image_size']}")
+    print(f"Num classes: {cond_config['num_classes']}")
+    print(f"Num timesteps: {diff_config['num_timesteps']}")
 
     # Check if in generation mode
     if mode == "generate":
@@ -344,19 +354,21 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Initialize dataloader (needed for class info even in generation mode)
         data_config = config["data"]
         dataloader = DiffusionDataLoader(
-            train_path=data_config["train_path"],
-            val_path=data_config.get("val_path"),
-            batch_size=data_config["batch_size"],
-            num_workers=data_config["num_workers"],
-            image_size=data_config["image_size"],
-            horizontal_flip=data_config.get("horizontal_flip", True),
-            rotation_degrees=data_config.get("rotation_degrees", 0),
-            color_jitter=data_config.get("color_jitter", False),
-            color_jitter_strength=data_config.get("color_jitter_strength", 0.1),
-            pin_memory=data_config.get("pin_memory", True),
-            drop_last=data_config.get("drop_last", False),
-            shuffle_train=data_config.get("shuffle_train", True),
-            return_labels=data_config.get("return_labels", False),
+            train_path=data_config["paths"]["train"],
+            val_path=data_config["paths"].get("val"),
+            batch_size=data_config["loading"]["batch_size"],
+            num_workers=data_config["loading"]["num_workers"],
+            image_size=derive_image_size_from_model(config),
+            horizontal_flip=data_config["augmentation"]["horizontal_flip"],
+            rotation_degrees=data_config["augmentation"]["rotation_degrees"],
+            color_jitter=data_config["augmentation"]["color_jitter"]["enabled"],
+            color_jitter_strength=data_config["augmentation"]["color_jitter"][
+                "strength"
+            ],
+            pin_memory=data_config["loading"]["pin_memory"],
+            drop_last=data_config["loading"]["drop_last"],
+            shuffle_train=data_config["loading"]["shuffle_train"],
+            return_labels=derive_return_labels_from_model(config),
         )
 
         # Initialize logger
@@ -365,7 +377,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Create dummy optimizer (required by trainer but not used in generation)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-        # Initialize trainer (use generation config for EMA)
+        # Get generation configuration
+        sampling_config = generation_config["sampling"]
+
+        # Initialize trainer for generation mode
         trainer = DiffusionTrainer(
             model=model,
             dataloader=dataloader,
@@ -373,62 +388,65 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             logger=logger,
             device=device,
             show_progress=True,
-            use_ema=generation_config.get("use_ema", True),
-            ema_decay=0.9999,  # Not used in generation
-            use_amp=False,
+            use_ema=sampling_config["use_ema"],
+            ema_decay=0.9999,  # Not used in generation, but required by constructor
+            use_amp=False,  # No AMP in generation mode
             gradient_clip_norm=None,
             sample_images=False,  # Not used in generation mode
             sample_interval=1,
-            samples_per_class=generation_config.get("samples_per_class", 2),
-            guidance_scale=generation_config.get("guidance_scale", 3.0),
+            samples_per_class=2,  # Will be overridden by generate_samples call
+            guidance_scale=sampling_config["guidance_scale"],
         )
 
-        # Generate samples
-        num_samples = generation_config.get("num_samples", 100)
+        # Get generation parameters
+        sampling_config = generation_config["sampling"]
+        output_config = generation_config["output"]
+
+        num_samples = sampling_config["num_samples"]
         print(f"\nGenerating {num_samples} samples...")
 
         # Prepare class labels if conditional generation
         class_labels = None
-        if model_config["num_classes"] is not None:
+        if cond_config["num_classes"] is not None:
             # Generate balanced samples across all classes
-            samples_per_class = num_samples // model_config["num_classes"]
-            remainder = num_samples % model_config["num_classes"]
+            samples_per_class = num_samples // cond_config["num_classes"]
+            remainder = num_samples % cond_config["num_classes"]
             class_labels = []
-            for i in range(model_config["num_classes"]):
+            for i in range(cond_config["num_classes"]):
                 count = samples_per_class + (1 if i < remainder else 0)
                 class_labels.extend([i] * count)
             class_labels = torch.tensor(class_labels, device=device)
 
-        # Generate samples
+        # Generate samples with V2 config
         samples = trainer.generate_samples(
             num_samples=num_samples,
             class_labels=class_labels,
-            guidance_scale=generation_config.get("guidance_scale", 3.0),
-            use_ema=generation_config.get("use_ema", True),
+            guidance_scale=sampling_config["guidance_scale"],
+            use_ema=sampling_config["use_ema"],
         )
 
-        # Save generated samples
-        output_dir = generation_config.get("output_dir")
-        if output_dir is None:
-            output_dir = log_dir / "generated"
-        else:
-            output_dir = Path(output_dir)
-        output_dir = Path(output_dir)
+        # Save generated samples to configured generated directory
+        output_dir = resolve_output_path(config, "generated")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save as grid image
+        # Save outputs according to V2 config
         from torchvision.utils import save_image
 
-        save_image(
-            samples, output_dir / "generated_samples.png", nrow=10, normalize=True
-        )
-        print(f"Saved generated samples to: {output_dir / 'generated_samples.png'}")
+        if output_config["save_grid"]:
+            grid_nrow = output_config["grid_nrow"]
+            save_image(
+                samples,
+                output_dir / "generated_samples.png",
+                nrow=grid_nrow,
+                normalize=True,
+            )
+            print(f"Saved generated grid to: {output_dir / 'generated_samples.png'}")
 
-        # Save individual samples
-        for i, sample in enumerate(samples):
-            save_image(sample, output_dir / f"sample_{i:04d}.png", normalize=True)
-
-        print(f"Saved {len(samples)} individual samples to: {output_dir}")
+        # Save individual samples if configured
+        if output_config["save_individual"]:
+            for i, sample in enumerate(samples):
+                save_image(sample, output_dir / f"sample_{i:04d}.png", normalize=True)
+            print(f"Saved {len(samples)} individual samples to: {output_dir}")
 
         logger.close()
         print("\nGeneration completed successfully!")
@@ -437,46 +455,80 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Training mode
         training_config = config["training"]
 
-        # Create checkpoint directory (now from training section)
-        checkpoint_dir = Path(training_config["checkpoint_dir"])
+        # Create checkpoint directory from output.subdirs
+        checkpoint_dir = resolve_output_path(config, "checkpoints")
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         print(f"Checkpoint directory: {checkpoint_dir}")
 
-        # Initialize dataloader
+        # Initialize dataloader with V2 config
         data_config = config["data"]
         dataloader = DiffusionDataLoader(
-            train_path=data_config["train_path"],
-            val_path=data_config.get("val_path"),
-            batch_size=data_config["batch_size"],
-            num_workers=data_config["num_workers"],
-            image_size=data_config["image_size"],
-            horizontal_flip=data_config.get("horizontal_flip", True),
-            rotation_degrees=data_config.get("rotation_degrees", 0),
-            color_jitter=data_config.get("color_jitter", False),
-            color_jitter_strength=data_config.get("color_jitter_strength", 0.1),
-            pin_memory=data_config.get("pin_memory", True),
-            drop_last=data_config.get("drop_last", False),
-            shuffle_train=data_config.get("shuffle_train", True),
-            return_labels=data_config.get("return_labels", False),
+            train_path=data_config["paths"]["train"],
+            val_path=data_config["paths"].get("val"),
+            batch_size=data_config["loading"]["batch_size"],
+            num_workers=data_config["loading"]["num_workers"],
+            image_size=derive_image_size_from_model(config),
+            horizontal_flip=data_config["augmentation"]["horizontal_flip"],
+            rotation_degrees=data_config["augmentation"]["rotation_degrees"],
+            color_jitter=data_config["augmentation"]["color_jitter"]["enabled"],
+            color_jitter_strength=data_config["augmentation"]["color_jitter"][
+                "strength"
+            ],
+            pin_memory=data_config["loading"]["pin_memory"],
+            drop_last=data_config["loading"]["drop_last"],
+            shuffle_train=data_config["loading"]["shuffle_train"],
+            return_labels=derive_return_labels_from_model(config),
         )
+
+        # Apply performance optimizations
+        performance_config = training_config["performance"]
+
+        # Enable TF32 on Ampere+ GPUs (PyTorch 1.7+)
+        if performance_config.get("use_tf32", True) and torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            print("Enabled TF32 for faster training on Ampere+ GPUs")
+
+        # Enable cuDNN benchmark mode
+        if (
+            performance_config.get("cudnn_benchmark", True)
+            and torch.cuda.is_available()
+        ):
+            torch.backends.cudnn.benchmark = True
+            print("Enabled cuDNN benchmark mode")
+
+        # Compile model (PyTorch 2.0+)
+        if performance_config.get("compile_model", False):
+            try:
+                model = torch.compile(model)
+                print("Compiled model with torch.compile()")
+            except Exception as e:
+                print(f"Warning: Failed to compile model: {e}")
 
         # Initialize logger
         logger = DiffusionLogger(log_dir=log_dir)
 
-        # Initialize optimizer
-        optimizer_name = training_config["optimizer"].lower()
-        optimizer_kwargs = training_config.get("optimizer_kwargs", {})
+        # Initialize optimizer from V2 config
+        optimizer_config = training_config["optimizer"]
+        optimizer_name = optimizer_config["type"].lower()
+
+        # Extract optimizer kwargs (excluding type, learning_rate, gradient_clip_norm)
+        optimizer_kwargs = {
+            k: v
+            for k, v in optimizer_config.items()
+            if k not in ["type", "learning_rate", "gradient_clip_norm"]
+        }
 
         if optimizer_name == "adam":
             optimizer = torch.optim.Adam(
                 model.parameters(),
-                lr=training_config["learning_rate"],
+                lr=optimizer_config["learning_rate"],
                 **optimizer_kwargs,
             )
         elif optimizer_name == "adamw":
             optimizer = torch.optim.AdamW(
                 model.parameters(),
-                lr=training_config["learning_rate"],
+                lr=optimizer_config["learning_rate"],
                 **optimizer_kwargs,
             )
         else:
@@ -485,17 +537,22 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             )
 
         print(f"Optimizer: {optimizer_name}")
-        print(f"Learning rate: {training_config['learning_rate']}")
+        print(f"Learning rate: {optimizer_config['learning_rate']}")
 
         # Initialize scheduler if specified
         scheduler = None
-        scheduler_name = training_config.get("scheduler", "none")
-        if scheduler_name and scheduler_name.lower() not in ["none", None]:
-            scheduler_kwargs = training_config.get("scheduler_kwargs", {})
+        scheduler_config = training_config["scheduler"]
+        scheduler_name = scheduler_config.get("type")
 
+        if scheduler_name and scheduler_name.lower() not in ["none", None]:
+            # Extract scheduler kwargs (excluding type)
+            scheduler_kwargs = {
+                k: v for k, v in scheduler_config.items() if k != "type"
+            }
+
+            # Handle auto T_max for cosine scheduler
             if scheduler_name.lower() == "cosine":
-                # Use epochs as T_max if not specified
-                if "T_max" not in scheduler_kwargs:
+                if scheduler_kwargs.get("T_max") == "auto":
                     scheduler_kwargs["T_max"] = training_config["epochs"]
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, **scheduler_kwargs
@@ -516,10 +573,15 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
             print(f"Scheduler: {scheduler_name}")
 
-        # Initialize trainer (use training.visualization for sampling)
-        visualization_config = training_config.get("visualization", {})
-        validation_config = training_config.get("validation", {})
+        # Get configuration sections
+        ema_config = training_config["ema"]
+        performance_config = training_config["performance"]
+        visualization_config = training_config["visualization"]
+        optimizer_config = training_config["optimizer"]
+        validation_config = training_config["validation"]
+        checkpointing_config = training_config["checkpointing"]
 
+        # Initialize trainer (use training.visualization for sampling)
         trainer = DiffusionTrainer(
             model=model,
             dataloader=dataloader,
@@ -527,15 +589,15 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             logger=logger,
             device=device,
             show_progress=True,
-            use_ema=training_config.get("use_ema", True),
-            ema_decay=training_config.get("ema_decay", 0.9999),
-            use_amp=training_config.get("use_amp", False),
-            gradient_clip_norm=training_config.get("gradient_clip_norm"),
+            use_ema=ema_config["enabled"],
+            ema_decay=ema_config["decay"],
+            use_amp=performance_config["use_amp"],
+            gradient_clip_norm=optimizer_config.get("gradient_clip_norm"),
             scheduler=scheduler,
-            sample_images=visualization_config.get("sample_images", True),
-            sample_interval=visualization_config.get("sample_interval", 10),
-            samples_per_class=visualization_config.get("samples_per_class", 2),
-            guidance_scale=visualization_config.get("guidance_scale", 3.0),
+            sample_images=visualization_config["enabled"],
+            sample_interval=visualization_config["interval"],
+            samples_per_class=2,  # Will calculate based on num_samples internally
+            guidance_scale=visualization_config["guidance_scale"],
         )
 
         # Train the model
@@ -546,10 +608,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             trainer.train(
                 num_epochs=num_epochs,
                 checkpoint_dir=str(checkpoint_dir),
-                save_best=training_config.get("save_best_only", False),
-                checkpoint_frequency=training_config.get("save_frequency", 10),
-                validate_frequency=validation_config.get("frequency", 1),
-                best_metric=validation_config.get("metric", "loss"),
+                save_best=checkpointing_config["save_best_only"],
+                checkpoint_frequency=checkpointing_config["save_frequency"],
+                validate_frequency=validation_config["frequency"],
+                best_metric=validation_config["metric"],
             )
         except KeyboardInterrupt:
             print("\n\nTraining interrupted by user")
