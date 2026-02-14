@@ -620,3 +620,369 @@ class TestExperimentDispatcher:
 
         with pytest.raises(NotImplementedError):
             main([str(config_file)])
+
+
+class TestDiffusionGenerationMode:
+    """Test suite for diffusion generation mode refactoring."""
+
+    @pytest.mark.unit
+    def test_generation_mode_missing_checkpoint_raises_error(self, tmp_path):
+        """Test that generation mode without checkpoint raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        config = self._create_generation_config(tmp_path, checkpoint=None)
+
+        with pytest.raises(ValueError, match="generation.checkpoint is required"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_generation_mode_checkpoint_not_found_raises_error(self, tmp_path):
+        """Test that non-existent checkpoint raises FileNotFoundError."""
+        from src.main import setup_experiment_diffusion
+
+        config = self._create_generation_config(
+            tmp_path, checkpoint="nonexistent_checkpoint.pth"
+        )
+
+        with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_generation_mode_invalid_checkpoint_raises_error(self, tmp_path):
+        """Test that checkpoint without model_state_dict raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        # Create invalid checkpoint (empty dict)
+        checkpoint_path = tmp_path / "invalid_checkpoint.pth"
+        import torch
+
+        torch.save({}, checkpoint_path)
+
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path)
+        )
+
+        with pytest.raises(ValueError, match="does not contain 'model_state_dict'"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_generation_mode_validates_num_samples(self, tmp_path):
+        """Test that num_samples validation works."""
+        from src.main import setup_experiment_diffusion
+
+        # Create valid checkpoint
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=0
+        )
+
+        with pytest.raises(ValueError, match="num_samples must be a positive integer"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_generation_mode_warns_when_samples_less_than_classes(
+        self, tmp_path, capsys
+    ):
+        """Test warning when num_samples < num_classes."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        # Create valid checkpoint
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+
+        config = self._create_generation_config(
+            tmp_path,
+            checkpoint=str(checkpoint_path),
+            num_samples=1,  # Less than num_classes=2
+            num_classes=2,
+        )
+
+        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                # Mock sampler to return proper tensor
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+                mock_sampler_instance.sample.return_value = torch.randn(1, 3, 32, 32)
+
+                # Should not raise, but should warn
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass  # May exit after generation
+
+                captured = capsys.readouterr()
+                assert "Warning" in captured.out
+                assert "num_samples" in captured.out
+
+    @pytest.mark.unit
+    def test_generation_mode_uses_sampler_not_trainer(self, tmp_path):
+        """Test that generation mode uses DiffusionSampler, not DiffusionTrainer."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path)
+        )
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+                # Return proper tensor instead of MagicMock
+                mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass  # May exit after generation
+
+                # Verify DiffusionSampler was created and used
+                mock_sampler.assert_called_once()
+                mock_sampler_instance.sample.assert_called_once()
+
+    @pytest.mark.unit
+    def test_generation_mode_no_optimizer_created(self, tmp_path):
+        """Test that generation mode does not create an optimizer."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path)
+        )
+
+        with patch("torch.optim.Adam") as mock_adam:
+            with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+                with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                    # Mock sampler to return proper tensor
+                    mock_sampler_instance = MagicMock()
+                    mock_sampler.return_value = mock_sampler_instance
+                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+
+                    try:
+                        setup_experiment_diffusion(config)
+                    except SystemExit:
+                        pass  # May exit after generation
+
+                    # Verify no optimizer was created
+                    mock_adam.assert_not_called()
+
+    @pytest.mark.unit
+    def test_generation_mode_no_dataloader_created(self, tmp_path):
+        """Test that generation mode does not create a dataloader."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path)
+        )
+
+        with patch(
+            "src.experiments.diffusion.dataloader.DiffusionDataLoader"
+        ) as mock_dataloader:
+            with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+                with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                    # Mock sampler to return proper tensor
+                    mock_sampler_instance = MagicMock()
+                    mock_sampler.return_value = mock_sampler_instance
+                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+
+                    try:
+                        setup_experiment_diffusion(config)
+                    except SystemExit:
+                        pass  # May exit after generation
+
+                    # Verify no dataloader was created
+                    mock_dataloader.assert_not_called()
+
+    @pytest.mark.unit
+    def test_generation_mode_loads_ema_when_available(self, tmp_path, capsys):
+        """Test that EMA weights are loaded when available."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path, include_ema=True)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), use_ema=True
+        )
+
+        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                with patch("src.experiments.diffusion.model.EMA") as mock_ema:
+                    # Mock sampler to return proper tensor
+                    mock_sampler_instance = MagicMock()
+                    mock_sampler.return_value = mock_sampler_instance
+                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+
+                    try:
+                        setup_experiment_diffusion(config)
+                    except SystemExit:
+                        pass  # May exit after generation
+
+                    # Verify EMA was created and loaded
+                    mock_ema.assert_called_once()
+
+                    captured = capsys.readouterr()
+                    assert "Loaded EMA weights" in captured.out
+
+    @pytest.mark.unit
+    def test_generation_mode_warns_when_ema_missing(self, tmp_path, capsys):
+        """Test warning when use_ema=True but no EMA in checkpoint."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path, include_ema=False)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), use_ema=True
+        )
+
+        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                # Mock sampler to return proper tensor
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+                mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass  # May exit after generation
+
+                captured = capsys.readouterr()
+                assert "Warning" in captured.out
+                assert "no EMA weights" in captured.out
+                assert "Falling back" in captured.out
+
+    # Helper methods
+    def _create_generation_config(
+        self,
+        tmp_path,
+        checkpoint=None,
+        num_samples=10,
+        num_classes=2,
+        use_ema=False,
+    ):
+        """Create a minimal generation mode config."""
+        return {
+            "experiment": "diffusion",
+            "mode": "generate",
+            "model": {
+                "architecture": {
+                    "image_size": 32,
+                    "in_channels": 3,
+                    "model_channels": 64,
+                    "channel_multipliers": [1, 2, 4],
+                    "use_attention": [False, True, False],
+                },
+                "diffusion": {
+                    "num_timesteps": 1000,
+                    "beta_schedule": "linear",
+                    "beta_start": 0.0001,
+                    "beta_end": 0.02,
+                },
+                "conditioning": {
+                    "type": "class",
+                    "num_classes": num_classes,
+                    "class_dropout_prob": 0.1,
+                },
+            },
+            "data": {
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",  # Required by validator
+                },
+                "loading": {
+                    "batch_size": 16,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "drop_last": False,
+                    "shuffle_train": True,
+                },
+                "augmentation": {
+                    "horizontal_flip": False,
+                    "rotation_degrees": 0,
+                    "color_jitter": {
+                        "enabled": False,
+                        "strength": 0.0,
+                    },
+                },
+            },
+            "generation": {
+                "checkpoint": checkpoint,
+                "sampling": {
+                    "num_samples": num_samples,
+                    "guidance_scale": 3.0,
+                    "use_ema": use_ema,
+                },
+                "output": {
+                    "save_grid": True,
+                    "save_individual": False,
+                    "grid_nrow": 4,
+                },
+            },
+            "compute": {
+                "device": "cpu",
+                "seed": 42,
+            },
+            "output": {
+                "base_dir": str(tmp_path / "outputs"),
+                "subdirs": {
+                    "logs": "logs",
+                    "checkpoints": "checkpoints",
+                    "samples": "samples",
+                    "generated": "generated",
+                },
+            },
+        }
+
+    def _create_mock_checkpoint(self, tmp_path, include_ema=False):
+        """Create a mock checkpoint file for testing."""
+        import torch
+
+        from src.experiments.diffusion.model import create_ddpm
+
+        # Create a minimal model to get state dict
+        model = create_ddpm(
+            image_size=32,
+            in_channels=3,
+            model_channels=64,
+            channel_multipliers=(1, 2, 4),
+            num_classes=2,
+            num_timesteps=1000,
+            beta_schedule="linear",
+            beta_start=0.0001,
+            beta_end=0.02,
+            class_dropout_prob=0.1,
+            use_attention=(False, True, False),
+            device="cpu",
+        )
+
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "epoch": 10,
+        }
+
+        if include_ema:
+            # Add mock EMA state dict
+            checkpoint["ema_state_dict"] = model.state_dict()
+
+        checkpoint_path = tmp_path / "mock_checkpoint.pth"
+        torch.save(checkpoint, checkpoint_path)
+        return checkpoint_path
+        return checkpoint_path
+            checkpoint["ema_state_dict"] = model.state_dict()
+
+        checkpoint_path = tmp_path / "mock_checkpoint.pth"
+        torch.save(checkpoint, checkpoint_path)
+        return checkpoint_path
+        return checkpoint_path

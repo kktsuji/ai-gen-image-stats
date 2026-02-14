@@ -96,6 +96,60 @@ python -m src.main configs/classifier/inceptionv3.yaml
 python -m src.main configs/diffusion/default.yaml
 ```
 
+### Inference and Sample Generation
+
+The diffusion module provides two ways to generate samples from trained models:
+
+#### Using Config-Based Generation
+
+```bash
+# Generate samples using config file (recommended for CLI)
+python -m src.main configs/diffusion/generate.yaml
+```
+
+#### Using Python API (Inference-Only)
+
+For inference-only workflows without training dependencies, use `DiffusionSampler` directly:
+
+```python
+import torch
+from src.experiments.diffusion.model import create_ddpm, EMA
+from src.experiments.diffusion.sampler import DiffusionSampler
+
+# Load trained model from checkpoint
+model = create_ddpm(image_size=64, num_classes=2, device="cuda")
+checkpoint = torch.load("outputs/checkpoints/best_model.pth")
+model.load_state_dict(checkpoint["model_state_dict"])
+
+# (Optional) Load EMA weights for better quality
+ema = EMA(model, decay=0.9999, device="cuda")
+if "ema_state_dict" in checkpoint:
+    ema.load_state_dict(checkpoint["ema_state_dict"])
+
+# Create sampler (no optimizer/dataloader needed!)
+sampler = DiffusionSampler(model=model, device="cuda", ema=ema)
+
+# Generate unconditional samples
+samples = sampler.sample(num_samples=64, use_ema=True)
+
+# Generate conditional samples with guidance
+labels = torch.tensor([0, 1] * 32, device="cuda")  # Alternating classes
+samples = sampler.sample(
+    num_samples=64,
+    class_labels=labels,
+    guidance_scale=3.0,
+    use_ema=True
+)
+
+# Generate balanced samples across all classes
+samples, labels = sampler.sample_by_class(
+    samples_per_class=10,
+    num_classes=2,
+    guidance_scale=3.0,
+    use_ema=True
+)
+```
+
 **Note:** All parameters must be specified in the configuration file. The CLI accepts only the config file path as a positional argument. CLI parameter overrides are not supported.
 
 ## Configuration

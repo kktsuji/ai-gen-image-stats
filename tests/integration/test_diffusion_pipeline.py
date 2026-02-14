@@ -727,7 +727,7 @@ class TestDiffusionPipelineGeneration:
 
         # Generate samples
         num_samples = 8
-        samples = trainer_gen.generate_samples(
+        samples = trainer_gen.sampler.sample(
             num_samples=num_samples,
             class_labels=None,
             guidance_scale=0.0,
@@ -888,7 +888,7 @@ class TestDiffusionPipelineGeneration:
         num_samples = 8
         class_labels = torch.tensor([0, 1] * 4, device=config["device"])
 
-        samples = trainer_gen.generate_samples(
+        samples = trainer_gen.sampler.sample(
             num_samples=num_samples,
             class_labels=class_labels,
             guidance_scale=2.0,  # Use classifier-free guidance

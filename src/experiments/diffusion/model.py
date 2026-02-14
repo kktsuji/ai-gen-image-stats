@@ -92,7 +92,11 @@ class EMA:
     def load_state_dict(self, state_dict):
         """Load state dict from checkpoint."""
         self.decay = state_dict["decay"]
-        self.shadow = state_dict["shadow"]
+        # Move shadow parameters to the correct device
+        self.shadow = {
+            name: tensor.to(self.device)
+            for name, tensor in state_dict["shadow"].items()
+        }
 
 
 class SinusoidalPositionEmbeddings(nn.Module):

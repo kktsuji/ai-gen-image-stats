@@ -390,35 +390,6 @@ def test_diffusion_trainer_unconditional(
 
 
 @pytest.mark.component
-def test_diffusion_trainer_generate_samples(diffusion_trainer):
-    """Test sample generation from trained model."""
-    # Generate unconditional samples
-    samples = diffusion_trainer.generate_samples(num_samples=4)
-
-    assert samples.shape[0] == 4
-    assert samples.shape[1] == 3  # RGB
-    assert samples.shape[2] == 8  # image_size
-    assert samples.shape[3] == 8  # image_size
-
-
-@pytest.mark.component
-def test_diffusion_trainer_generate_samples_conditional(diffusion_trainer):
-    """Test conditional sample generation."""
-    class_labels = torch.tensor([0, 1, 0, 1])
-
-    samples = diffusion_trainer.generate_samples(
-        num_samples=4,
-        class_labels=class_labels,
-        guidance_scale=1.0,
-    )
-
-    assert samples.shape[0] == 4
-    assert samples.shape[1] == 3
-    assert samples.shape[2] == 8
-    assert samples.shape[3] == 8
-
-
-@pytest.mark.component
 def test_diffusion_trainer_with_gradient_clipping(
     simple_diffusion_model,
     simple_diffusion_dataloader,

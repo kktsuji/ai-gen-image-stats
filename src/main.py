@@ -15,6 +15,19 @@ Usage:
     # Generate synthetic data (for diffusion experiments)
     python -m src.main configs/diffusion/generate.yaml
 
+Generation Mode (Diffusion):
+    When mode='generate' in the config, the diffusion experiment uses a
+    lightweight DiffusionSampler for inference instead of the full trainer.
+    This eliminates unnecessary dependencies like optimizer and dataloader,
+    providing faster initialization and lower memory usage for generation-only
+    workflows.
+
+    Required config sections for generation mode:
+    - model: Defines the architecture
+    - generation.checkpoint: Path to trained model checkpoint
+    - generation.sampling: Sampling parameters (num_samples, use_ema, etc.)
+    - generation.output: Output configuration (save_grid, save_individual, etc.)
+
 Note:
     All parameters must be specified in the YAML config file.
     CLI parameter overrides are not supported.
@@ -301,11 +314,24 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     """Setup and run diffusion experiment.
 
+    This function handles both training and generation modes:
+
+    Training Mode (mode='train'):
+        - Initializes full training infrastructure with trainer, dataloader, optimizer
+        - Trains the diffusion model and saves checkpoints
+
+    Generation Mode (mode='generate'):
+        - Uses lightweight DiffusionSampler for inference
+        - Loads checkpoint and generates samples without training dependencies
+        - No optimizer or dataloader needed (class info from config)
+        - Handles EMA weights if available in checkpoint
+
     Args:
         config: Merged configuration dictionary
 
     Raises:
-        ValueError: If configuration is invalid
+        ValueError: If configuration is invalid or checkpoint missing
+        FileNotFoundError: If checkpoint file not found in generation mode
         RuntimeError: If experiment execution fails
     """
     from src.experiments.diffusion.config import (
@@ -386,6 +412,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Check if in generation mode
     if mode == "generate":
         # Generation mode: load checkpoint and generate samples
+        # Import sampler for inference-only workflow
+        from src.experiments.diffusion.sampler import DiffusionSampler
+
         generation_config = config["generation"]
         checkpoint_path = generation_config.get("checkpoint")
         if not checkpoint_path:
@@ -397,85 +426,85 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         print(f"\nLoading checkpoint: {checkpoint_path}")
 
-        # Load model weights
+        # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=device)
+
+        # Validate checkpoint contains model weights
         if "model_state_dict" in checkpoint:
             model.load_state_dict(checkpoint["model_state_dict"])
-        else:
+        elif isinstance(checkpoint, dict) and any(
+            k.startswith("module.") for k in checkpoint.keys()
+        ):
+            # Direct state dict (possibly from DataParallel)
             model.load_state_dict(checkpoint)
-
-        # Initialize dataloader (needed for class info even in generation mode)
-        data_config = config["data"]
-        dataloader = DiffusionDataLoader(
-            train_path=data_config["paths"]["train"],
-            val_path=data_config["paths"].get("val"),
-            batch_size=data_config["loading"]["batch_size"],
-            num_workers=data_config["loading"]["num_workers"],
-            image_size=derive_image_size_from_model(config),
-            horizontal_flip=data_config["augmentation"]["horizontal_flip"],
-            rotation_degrees=data_config["augmentation"]["rotation_degrees"],
-            color_jitter=data_config["augmentation"]["color_jitter"]["enabled"],
-            color_jitter_strength=data_config["augmentation"]["color_jitter"][
-                "strength"
-            ],
-            pin_memory=data_config["loading"]["pin_memory"],
-            drop_last=data_config["loading"]["drop_last"],
-            shuffle_train=data_config["loading"]["shuffle_train"],
-            return_labels=derive_return_labels_from_model(config),
-        )
-
-        # Initialize logger
-        logger = DiffusionLogger(log_dir=log_dir)
-
-        # Create dummy optimizer (required by trainer but not used in generation)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        else:
+            raise ValueError(
+                f"Checkpoint does not contain 'model_state_dict'. "
+                f"Available keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'not a dict'}"
+            )
 
         # Get generation configuration
         sampling_config = generation_config["sampling"]
+        output_config = generation_config["output"]
+        num_samples = sampling_config["num_samples"]
+        num_classes = cond_config["num_classes"]
 
-        # Initialize trainer for generation mode
-        trainer = DiffusionTrainer(
+        # Validate num_samples
+        if num_samples <= 0:
+            raise ValueError(f"num_samples must be positive, got {num_samples}")
+
+        # Validate compatibility with conditional generation
+        if num_classes is not None and num_samples < num_classes:
+            print(
+                f"Warning: num_samples ({num_samples}) < num_classes ({num_classes}). "
+                f"Some classes will have no samples."
+            )
+
+        # Load EMA if requested and available
+        ema = None
+        if sampling_config["use_ema"]:
+            if "ema_state_dict" in checkpoint:
+                from src.experiments.diffusion.model import EMA
+
+                ema = EMA(model, decay=0.9999, device=device)
+                ema.load_state_dict(checkpoint["ema_state_dict"])
+                print("Loaded EMA weights from checkpoint")
+            else:
+                print("Warning: use_ema=True but checkpoint has no EMA weights")
+                print("Falling back to standard model weights")
+                sampling_config["use_ema"] = False
+
+        # Initialize logger for metadata
+        logger = DiffusionLogger(log_dir=log_dir)
+
+        # Create sampler (no optimizer or dataloader needed!)
+        sampler = DiffusionSampler(
             model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
             device=device,
-            show_progress=True,
-            use_ema=sampling_config["use_ema"],
-            ema_decay=0.9999,  # Not used in generation, but required by constructor
-            use_amp=False,  # No AMP in generation mode
-            gradient_clip_norm=None,
-            sample_images=False,  # Not used in generation mode
-            sample_interval=1,
-            samples_per_class=2,  # Will be overridden by generate_samples call
-            guidance_scale=sampling_config["guidance_scale"],
+            ema=ema,
         )
 
-        # Get generation parameters
-        sampling_config = generation_config["sampling"]
-        output_config = generation_config["output"]
-
-        num_samples = sampling_config["num_samples"]
         print(f"\nGenerating {num_samples} samples...")
 
         # Prepare class labels if conditional generation
         class_labels = None
-        if cond_config["num_classes"] is not None:
+        if num_classes is not None:
             # Generate balanced samples across all classes
-            samples_per_class = num_samples // cond_config["num_classes"]
-            remainder = num_samples % cond_config["num_classes"]
+            samples_per_class = num_samples // num_classes
+            remainder = num_samples % num_classes
             class_labels = []
-            for i in range(cond_config["num_classes"]):
+            for i in range(num_classes):
                 count = samples_per_class + (1 if i < remainder else 0)
                 class_labels.extend([i] * count)
             class_labels = torch.tensor(class_labels, device=device)
 
-        # Generate samples
-        samples = trainer.generate_samples(
+        # Generate samples using sampler
+        samples = sampler.sample(
             num_samples=num_samples,
             class_labels=class_labels,
             guidance_scale=sampling_config["guidance_scale"],
             use_ema=sampling_config["use_ema"],
+            show_progress=True,
         )
 
         # Save generated samples to configured generated directory

@@ -17,6 +17,7 @@ from src.base.logger import BaseLogger
 from src.base.model import BaseModel
 from src.base.trainer import BaseTrainer
 from src.experiments.diffusion.model import EMA
+from src.experiments.diffusion.sampler import DiffusionSampler
 
 
 class DiffusionTrainer(BaseTrainer):
@@ -38,6 +39,14 @@ class DiffusionTrainer(BaseTrainer):
     3. Sample generation with optional class conditioning
     4. Checkpointing with EMA and AMP state (handled by base class)
     5. Sample visualization during training
+
+    Note:
+        For inference-only workflows (generating samples from a trained model),
+        use DiffusionSampler directly instead of creating a trainer. This avoids
+        the overhead of initializing optimizer, dataloaders, and other training
+        components. See DiffusionSampler documentation for examples.
+
+        During training, samples can be accessed via `trainer.sampler.sample()`.
 
     Args:
         model: The diffusion model to train (DDPM)
@@ -151,6 +160,13 @@ class DiffusionTrainer(BaseTrainer):
 
         # Loss criterion
         self.criterion = nn.MSELoss()
+
+        # Initialize sampler for sample generation
+        self.sampler = DiffusionSampler(
+            model=self.model,
+            device=self.device,
+            ema=self.ema,
+        )
 
     def train_epoch(self) -> Dict[str, float]:
         """Execute one training epoch.
@@ -538,6 +554,9 @@ class DiffusionTrainer(BaseTrainer):
         model = self.get_model()
         model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
 
+        # Ensure model is on correct device after loading
+        model.to(self.device)
+
         # Load optimizer state
         if load_optimizer and "optimizer_state_dict" in checkpoint:
             optimizer = self.get_optimizer()
@@ -567,71 +586,11 @@ class DiffusionTrainer(BaseTrainer):
 
         return checkpoint
 
-    def generate_samples(
-        self,
-        num_samples: int,
-        class_labels: Optional[torch.Tensor] = None,
-        guidance_scale: float = 0.0,
-        use_ema: bool = True,
-    ) -> torch.Tensor:
-        """Generate samples from the trained model.
-
-        This is the main interface for generating samples. Can be used for:
-        - Inference after training
-        - Generating synthetic data for augmentation
-        - Visual quality assessment
-
-        Args:
-            num_samples: Number of samples to generate
-            class_labels: Class labels for conditional generation (None for unconditional)
-            guidance_scale: Classifier-free guidance scale (0.0 to disable)
-            use_ema: Whether to use EMA weights for generation (recommended)
-
-        Returns:
-            Generated samples, shape (num_samples, channels, height, width)
-            Values are in range [-1, 1]
-
-        Example:
-            >>> # Unconditional generation
-            >>> samples = trainer.generate_samples(num_samples=16)
-            >>>
-            >>> # Conditional generation with guidance
-            >>> labels = torch.tensor([0, 1] * 8)  # Alternating classes
-            >>> samples = trainer.generate_samples(
-            ...     num_samples=16,
-            ...     class_labels=labels,
-            ...     guidance_scale=3.0
-            ... )
-        """
-        self.model.eval()
-
-        # Apply EMA weights if requested
-        if use_ema and self.use_ema and self.ema is not None:
-            self.ema.apply_shadow()
-
-        try:
-            with torch.no_grad():
-                if class_labels is not None:
-                    class_labels = class_labels.to(self.device)
-
-                samples = self.model.sample(
-                    batch_size=num_samples,
-                    class_labels=class_labels,
-                    guidance_scale=guidance_scale,
-                )
-
-            return samples
-
-        finally:
-            # Restore original weights if EMA was used
-            if use_ema and self.use_ema and self.ema is not None:
-                self.ema.restore()
-
     def _generate_samples(self, logger: BaseLogger, step: int) -> None:
         """Generate and log sample images during training.
 
         Internal method called periodically during training to generate
-        samples for visual quality assessment.
+        samples for visual quality assessment. Uses DiffusionSampler for generation.
 
         Args:
             logger: Logger to save generated samples
@@ -641,30 +600,14 @@ class DiffusionTrainer(BaseTrainer):
         num_classes = getattr(self.model, "num_classes", None)
 
         if num_classes is not None and num_classes > 0:
-            # Conditional generation: generate samples for each class
-            samples_list = []
-            class_labels_list = []
-
-            for class_idx in range(num_classes):
-                class_labels = torch.full(
-                    (self.samples_per_class,),
-                    class_idx,
-                    dtype=torch.long,
-                    device=self.device,
-                )
-
-                samples = self.generate_samples(
-                    num_samples=self.samples_per_class,
-                    class_labels=class_labels,
-                    guidance_scale=self.guidance_scale,
-                    use_ema=self.use_ema,
-                )
-
-                samples_list.append(samples)
-                class_labels_list.extend([class_idx] * self.samples_per_class)
-
-            # Concatenate all samples
-            all_samples = torch.cat(samples_list, dim=0)
+            # Conditional generation: generate samples for each class using sampler
+            all_samples, class_labels_list = self.sampler.sample_by_class(
+                samples_per_class=self.samples_per_class,
+                num_classes=num_classes,
+                guidance_scale=self.guidance_scale,
+                use_ema=self.use_ema,
+                show_progress=False,
+            )
 
             # Log samples
             logger.log_images(
@@ -674,8 +617,8 @@ class DiffusionTrainer(BaseTrainer):
                 class_labels=class_labels_list,
             )
         else:
-            # Unconditional generation
-            samples = self.generate_samples(
+            # Unconditional generation using sampler
+            samples = self.sampler.sample(
                 num_samples=8,  # Fixed number for visualization
                 guidance_scale=0.0,
                 use_ema=self.use_ema,
