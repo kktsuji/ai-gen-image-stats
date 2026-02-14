@@ -467,7 +467,9 @@ class TestValidateConfig:
         config = get_v2_default_config()
         del config["output"]["subdirs"]
 
-        with pytest.raises(KeyError, match="Missing required field: output.subdirs"):
+        with pytest.raises(
+            KeyError, match="Missing required config key: output.subdirs"
+        ):
             validate_config(config)
 
     def test_missing_required_subdirs(self):
@@ -479,7 +481,7 @@ class TestValidateConfig:
             del config_copy["output"]["subdirs"][subdir]
 
             with pytest.raises(
-                KeyError, match=f"Missing required field: output.subdirs.{subdir}"
+                ValueError, match=f"output.subdirs.{subdir} is required"
             ):
                 validate_config(config_copy)
 

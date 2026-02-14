@@ -11,10 +11,16 @@ Key features:
 - Default values loaded from YAML for maintainability
 """
 
-from pathlib import Path
 from typing import Any, Dict
 
-from src.utils.config import load_config
+from src.utils.config import (
+    get_default_config_from_module,
+    validate_compute_section,
+    validate_data_loading_section,
+    validate_optimizer_section,
+    validate_output_section,
+    validate_scheduler_section,
+)
 
 
 def get_default_config() -> Dict[str, Any]:
@@ -46,16 +52,7 @@ def get_default_config() -> Dict[str, Any]:
         >>> print(config["model"]["architecture"]["image_size"])
         40
     """
-    # Simple path resolution - default.yaml is in the same directory
-    default_yaml = Path(__file__).parent / "default.yaml"
-
-    if not default_yaml.exists():
-        raise FileNotFoundError(
-            f"Default config not found: {default_yaml}\n"
-            f"Expected location: src/experiments/diffusion/default.yaml"
-        )
-
-    return load_config(str(default_yaml))
+    return get_default_config_from_module(__file__)
 
 
 def validate_config(config: Dict[str, Any]) -> None:
@@ -112,22 +109,7 @@ def validate_config(config: Dict[str, Any]) -> None:
 
 def _validate_compute_config(config: Dict[str, Any]) -> None:
     """Validate compute configuration section."""
-    if "compute" not in config:
-        raise KeyError("Missing required config key: compute")
-
-    compute = config["compute"]
-
-    # Validate device
-    device = compute.get("device", "cuda")
-    valid_devices = ["cuda", "cpu", "auto"]
-    if device not in valid_devices:
-        raise ValueError(f"Invalid device: {device}. Must be one of {valid_devices}")
-
-    # Validate seed
-    seed = compute.get("seed")
-    if seed is not None:
-        if not isinstance(seed, int) or seed < 0:
-            raise ValueError("compute.seed must be None or a non-negative integer")
+    validate_compute_section(config)
 
 
 def _validate_model_config(config: Dict[str, Any]) -> None:
@@ -274,22 +256,7 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
         raise ValueError("data.paths.train is required and cannot be None")
 
     # Validate loading subsection
-    if "loading" not in data:
-        raise KeyError("Missing required config key: data.loading")
-
-    loading = data["loading"]
-    required_loading_fields = ["batch_size", "num_workers"]
-    for field in required_loading_fields:
-        if field not in loading:
-            raise KeyError(f"Missing required field: data.loading.{field}")
-        if loading[field] is None:
-            raise ValueError(f"data.loading.{field} cannot be None")
-
-    if not isinstance(loading["batch_size"], int) or loading["batch_size"] < 1:
-        raise ValueError("data.loading.batch_size must be a positive integer")
-
-    if not isinstance(loading["num_workers"], int) or loading["num_workers"] < 0:
-        raise ValueError("data.loading.num_workers must be a non-negative integer")
+    validate_data_loading_section(data)
 
     # Validate augmentation subsection
     if "augmentation" not in data:
@@ -308,22 +275,8 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
 
 def _validate_output_config(config: Dict[str, Any]) -> None:
     """Validate output configuration section."""
-    if "output" not in config:
-        raise KeyError("Missing required config key: output")
-
-    output = config["output"]
-
-    if "base_dir" not in output or output["base_dir"] is None:
-        raise ValueError("output.base_dir is required and cannot be None")
-
-    if "subdirs" not in output:
-        raise KeyError("Missing required config key: output.subdirs")
-
-    subdirs = output["subdirs"]
     required_subdirs = ["logs", "checkpoints", "samples", "generated"]
-    for subdir in required_subdirs:
-        if subdir not in subdirs or subdirs[subdir] is None:
-            raise ValueError(f"output.subdirs.{subdir} is required and cannot be None")
+    validate_output_section(config, required_subdirs)
 
 
 def _validate_config_consistency(config: Dict[str, Any]) -> None:
@@ -383,42 +336,20 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
         raise KeyError("Missing required config key: training.optimizer")
 
     opt = training["optimizer"]
-    if "type" not in opt or opt["type"] is None:
+    if opt.get("type") is None:
         raise ValueError("training.optimizer.type is required and cannot be None")
-
-    valid_optimizers = ["adam", "adamw"]
-    if opt["type"] not in valid_optimizers:
-        raise ValueError(
-            f"Invalid optimizer type: {opt['type']}. Must be one of {valid_optimizers}"
-        )
-
-    if "learning_rate" not in opt or opt["learning_rate"] is None:
+    if opt.get("learning_rate") is None:
         raise ValueError(
             "training.optimizer.learning_rate is required and cannot be None"
         )
 
-    if not isinstance(opt["learning_rate"], (int, float)) or opt["learning_rate"] <= 0:
-        raise ValueError("training.optimizer.learning_rate must be a positive number")
-
-    if opt.get("gradient_clip_norm") is not None:
-        if (
-            not isinstance(opt["gradient_clip_norm"], (int, float))
-            or opt["gradient_clip_norm"] <= 0
-        ):
-            raise ValueError(
-                "training.optimizer.gradient_clip_norm must be a positive number or None"
-            )
+    validate_optimizer_section(opt, valid_types=["adam", "adamw"])
 
     # Validate scheduler subsection
     if "scheduler" in training:
-        sched = training["scheduler"]
-        if "type" in sched and sched["type"] is not None:
-            valid_schedulers = ["cosine", "step", "plateau"]
-            if sched["type"] not in valid_schedulers:
-                raise ValueError(
-                    f"Invalid scheduler type: {sched['type']}. "
-                    f"Must be one of {valid_schedulers} or None"
-                )
+        validate_scheduler_section(
+            training["scheduler"], valid_types=["cosine", "step", "plateau", None]
+        )
 
     # Validate EMA subsection
     if "ema" not in training:

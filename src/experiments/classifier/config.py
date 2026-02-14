@@ -6,10 +6,16 @@ It defines sensible defaults for training, data loading, model selection, and lo
 Default values are loaded from YAML as the single source of truth.
 """
 
-from pathlib import Path
 from typing import Any, Dict
 
-from src.utils.config import load_config
+from src.utils.config import (
+    get_default_config_from_module,
+    validate_compute_section,
+    validate_data_loading_section,
+    validate_optimizer_section,
+    validate_output_section,
+    validate_scheduler_section,
+)
 
 
 def get_default_config() -> Dict[str, Any]:
@@ -31,16 +37,7 @@ def get_default_config() -> Dict[str, Any]:
         >>> print(config["training"]["epochs"])
         100
     """
-    # Simple path resolution - default.yaml is in the same directory
-    default_yaml = Path(__file__).parent / "default.yaml"
-
-    if not default_yaml.exists():
-        raise FileNotFoundError(
-            f"Default config not found: {default_yaml}\n"
-            f"Expected location: src/experiments/classifier/default.yaml"
-        )
-
-    return load_config(str(default_yaml))
+    return get_default_config_from_module(__file__)
 
 
 # Note: validate_config() is defined later in this file.
@@ -138,17 +135,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         )
 
     # Validate compute configuration
-    compute = config["compute"]
-    required_compute_fields = ["device"]
-    for field in required_compute_fields:
-        if field not in compute:
-            raise KeyError(f"Missing required field: compute.{field}")
-
-    valid_devices = ["cuda", "cpu", "auto"]
-    if compute["device"] not in valid_devices:
-        raise ValueError(
-            f"Invalid device: {compute['device']}. Must be one of {valid_devices}"
-        )
+    validate_compute_section(config)
 
     # Validate model configuration
     model = config["model"]
@@ -196,17 +183,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         raise KeyError("Missing required field: data.paths.train")
 
     # Validate loading
-    loading = data["loading"]
-    required_loading_fields = ["batch_size", "num_workers"]
-    for field in required_loading_fields:
-        if field not in loading:
-            raise KeyError(f"Missing required field: data.loading.{field}")
-
-    if not isinstance(loading["batch_size"], int) or loading["batch_size"] < 1:
-        raise ValueError("batch_size must be a positive integer")
-
-    if not isinstance(loading["num_workers"], int) or loading["num_workers"] < 0:
-        raise ValueError("num_workers must be a non-negative integer")
+    validate_data_loading_section(data)
 
     # Validate preprocessing
     preprocessing = data["preprocessing"]
@@ -235,16 +212,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         )
 
     # Validate output configuration
-    output = config["output"]
-    required_output_fields = ["base_dir", "subdirs"]
-    for field in required_output_fields:
-        if field not in output:
-            raise KeyError(f"Missing required field: output.{field}")
-
-    required_subdirs = ["logs", "checkpoints"]
-    for subdir in required_subdirs:
-        if subdir not in output["subdirs"]:
-            raise KeyError(f"Missing required field: output.subdirs.{subdir}")
+    validate_output_section(config)
 
     # Mode-specific validation
     if config["mode"] == "train":
@@ -269,28 +237,10 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "learning_rate" not in optimizer:
             raise KeyError("Missing required field: training.optimizer.learning_rate")
 
-        valid_optimizers = ["adam", "adamw", "sgd"]
-        if optimizer["type"] not in valid_optimizers:
-            raise ValueError(
-                f"Invalid optimizer: {optimizer['type']}. Must be one of {valid_optimizers}"
-            )
-
-        if (
-            not isinstance(optimizer["learning_rate"], (int, float))
-            or optimizer["learning_rate"] <= 0
-        ):
-            raise ValueError("learning_rate must be a positive number")
+        validate_optimizer_section(optimizer, valid_types=["adam", "adamw", "sgd"])
 
         # Validate scheduler
-        scheduler = training["scheduler"]
-        if "type" not in scheduler:
-            raise KeyError("Missing required field: training.scheduler.type")
-
-        valid_schedulers = ["cosine", "step", "plateau", None]
-        if scheduler["type"] not in valid_schedulers:
-            raise ValueError(
-                f"Invalid scheduler: {scheduler['type']}. Must be one of {valid_schedulers}"
-            )
+        validate_scheduler_section(training["scheduler"])
 
     elif config["mode"] == "evaluate":
         if "evaluation" not in config:
