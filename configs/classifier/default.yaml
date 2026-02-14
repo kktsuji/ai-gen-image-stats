@@ -1,100 +1,150 @@
 # ==============================================================================
-# CLASSIFIER CONFIGURATION
+# CLASSIFIER CONFIGURATION (V2 FORMAT)
 # ==============================================================================
 # Configuration for training image classification models (ResNet, InceptionV3)
+# V2 Changes: Restructured for consistency with diffusion config
 # ==============================================================================
 
 experiment: classifier
+mode: train # Options: train, evaluate
+
+# ==============================================================================
+# COMPUTE CONFIGURATION
+# ==============================================================================
+
+compute:
+  device: cuda # Options: cuda, cpu, auto
+  seed: null # Random seed for reproducibility (null to disable)
 
 # ==============================================================================
 # MODEL CONFIGURATION
 # ==============================================================================
-# Model architecture and initialization settings
 
 model:
-  name: resnet50 # Options: resnet50, resnet101, resnet152, inceptionv3
-  pretrained: true # Use ImageNet pretrained weights
-  num_classes: 2 # Number of output classes
-  freeze_backbone: false # Freeze all backbone layers
-  trainable_layers: null # List of layer patterns to unfreeze (InceptionV3 only, null = unfreeze all)
-  dropout: 0.5 # Dropout rate (InceptionV3 only)
+  # Architecture: Model type and structure
+  architecture:
+    name: resnet50 # Options: resnet50, resnet101, resnet152, inceptionv3
+    num_classes: 2
+
+  # Initialization: Pretrained weights and layer freezing
+  initialization:
+    pretrained: true # Use ImageNet pretrained weights
+    freeze_backbone: false # Freeze all backbone layers
+    trainable_layers: null # List of layer patterns to unfreeze (null = all)
+
+  # Regularization: Model-specific regularization
+  regularization:
+    dropout: 0.5 # Dropout rate (InceptionV3 only)
 
 # ==============================================================================
 # DATA CONFIGURATION
 # ==============================================================================
-# Dataset paths, loading, and augmentation settings
 
 data:
   # Paths: Dataset locations
-  train_path: data/train # Training data directory (required)
-  val_path: data/val # Validation data directory (null for no validation)
+  paths:
+    train: data/train # Training data directory (required)
+    val: data/val # Validation data directory (null for no validation)
 
   # Loading: DataLoader parameters
-  batch_size: 32 # Batch size for training
-  num_workers: 4 # Number of data loading workers
-  pin_memory: true # Pin memory for faster GPU transfer
-  shuffle_train: true # Shuffle training data
-  drop_last: false # Drop incomplete batches
+  loading:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: true
+    shuffle_train: true
+    drop_last: false
 
-  # Image preprocessing
-  image_size: 256 # Resize images to this size before cropping
-  crop_size: 224 # Random crop size (224 for ResNet, 299 for InceptionV3)
-  normalize: imagenet # Normalization preset: imagenet, cifar10, none, null
+  # Preprocessing: Image preprocessing before augmentation
+  preprocessing:
+    image_size: 256 # Resize to this size
+    crop_size: 224 # Crop to this size (224 for ResNet, 299 for InceptionV3)
+    normalize: imagenet # Options: imagenet, cifar10, custom, null
 
   # Augmentation: Data augmentation settings
-  horizontal_flip: true # Random horizontal flip
-  color_jitter: false # Apply color jitter augmentation
-  rotation_degrees: 0 # Random rotation degrees (0 to disable)
-
-# ==============================================================================
-# TRAINING CONFIGURATION
-# ==============================================================================
-# Training parameters and optimization settings
-
-training:
-  # Core Training Parameters
-  epochs: 100 # Number of training epochs
-  learning_rate: 0.001 # Initial learning rate
-
-  # Device and Reproducibility
-  device: cuda # Options: cuda, cpu
-  seed: null # Random seed for reproducibility (null to disable)
-
-  # Optimizer: Optimization algorithm and parameters
-  optimizer: adam # Options: adam, adamw, sgd
-  optimizer_kwargs:
-    weight_decay: 0.0001 # L2 regularization (default for Adam/AdamW)
-    # For SGD: momentum: 0.9
-
-  # Scheduler: Learning rate scheduling
-  scheduler: cosine # Options: cosine, step, plateau, none, null
-  scheduler_kwargs:
-    T_max: 100 # For cosine: max epochs (should match training.epochs)
-    eta_min: 0.000001 # For cosine: minimum learning rate
-    # For step: step_size: 30, gamma: 0.1
-    # For plateau: mode: min, factor: 0.1, patience: 10
-
-  # Advanced Training Options
-  mixed_precision: false # Use automatic mixed precision (AMP)
-  gradient_clip: null # Max gradient norm for clipping (null to disable)
-  early_stopping_patience: null # Epochs to wait before early stopping (null to disable)
+  augmentation:
+    horizontal_flip: true
+    rotation_degrees: 0
+    color_jitter:
+      enabled: false
+      brightness: 0.2
+      contrast: 0.2
+      saturation: 0.2
+      hue: 0.1
 
 # ==============================================================================
 # OUTPUT CONFIGURATION
 # ==============================================================================
-# Checkpoint and logging settings
 
 output:
-  checkpoint_dir: outputs/checkpoints # Directory for model checkpoints
-  log_dir: outputs/logs # Directory for training logs and metrics
-  save_best_only: true # Save only the best model (by validation metric)
-  save_frequency: 10 # Save checkpoint every N epochs (0 to save only best)
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
 
 # ==============================================================================
-# VALIDATION CONFIGURATION
+# TRAINING MODE CONFIGURATION
 # ==============================================================================
-# Validation during training
 
-validation:
-  frequency: 1 # Run validation every N epochs
-  metric: accuracy # Metric to monitor for best model: accuracy, loss
+training:
+  # Core Training Parameters
+  epochs: 100
+
+  # Optimizer: Optimization algorithm and parameters
+  optimizer:
+    type: adam # Options: adam, adamw, sgd
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    gradient_clip_norm: null # Max gradient norm (null to disable)
+    # For SGD: momentum: 0.9
+    # For Adam/AdamW: betas: [0.9, 0.999]
+
+  # Scheduler: Learning rate scheduling
+  scheduler:
+    type: cosine # Options: cosine, step, plateau, null
+    T_max: auto # Auto = epochs, or specify number
+    eta_min: 1.0e-6
+    # For step: step_size: 30, gamma: 0.1
+    # For plateau: mode: min, factor: 0.1, patience: 10
+
+  # Checkpointing: Model checkpoint saving
+  checkpointing:
+    save_frequency: 10
+    save_best_only: true
+    save_optimizer: true
+
+  # Validation: Validation during training
+  validation:
+    enabled: true
+    frequency: 1
+    metric: accuracy # Options: accuracy, loss, f1, precision, recall
+    early_stopping_patience: null # Epochs to wait (null to disable)
+
+  # Performance: Performance optimization settings
+  performance:
+    use_amp: false # Automatic mixed precision (CUDA only)
+    use_tf32: true # Enable TF32 on Ampere+ GPUs
+    cudnn_benchmark: true # cuDNN benchmark mode
+    compile_model: false # Use torch.compile (PyTorch 2.0+)
+
+  # Resume: Resume training from checkpoint
+  resume:
+    enabled: false
+    checkpoint: null # Path to checkpoint (required if enabled)
+    reset_optimizer: false
+    reset_scheduler: false
+
+# ==============================================================================
+# EVALUATION MODE CONFIGURATION
+# ==============================================================================
+
+evaluation:
+  checkpoint: null # Path to trained model checkpoint (required)
+
+  data:
+    test_path: data/test
+    batch_size: 32
+
+  output:
+    save_predictions: true
+    save_confusion_matrix: true
+    save_metrics: true

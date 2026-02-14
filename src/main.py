@@ -35,6 +35,8 @@ from src.utils.device import get_device
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     """Setup and run classifier experiment.
 
+    Supports both V1 (legacy) and V2 configuration formats.
+
     Args:
         config: Merged configuration dictionary
 
@@ -42,6 +44,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         ValueError: If configuration is invalid
         RuntimeError: If experiment execution fails
     """
+    from src.experiments.classifier.config import is_v2_config
     from src.experiments.classifier.config import (
         validate_config as validate_classifier_config,
     )
@@ -52,12 +55,20 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         ResNetClassifier,
     )
     from src.experiments.classifier.trainer import ClassifierTrainer
+    from src.utils.config import resolve_output_path
 
     # Validate classifier config (strict mode - no defaults)
     validate_classifier_config(config)
 
+    # Detect config format
+    is_v2 = is_v2_config(config)
+
     # Set up device
-    device_config = config.get("training", {}).get("device", "auto")
+    if is_v2:
+        device_config = config.get("compute", {}).get("device", "auto")
+    else:
+        device_config = config.get("training", {}).get("device", "auto")
+
     if device_config == "auto":
         device = get_device()
     else:
@@ -66,7 +77,11 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     print(f"Using device: {device}")
 
     # Set random seed if specified
-    seed = config.get("training", {}).get("seed")
+    if is_v2:
+        seed = config.get("compute", {}).get("seed")
+    else:
+        seed = config.get("training", {}).get("seed")
+
     if seed is not None:
         torch.manual_seed(seed)
         if device == "cuda":
@@ -74,8 +89,13 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         print(f"Random seed set to: {seed}")
 
     # Create output directories
-    checkpoint_dir = Path(config["output"]["checkpoint_dir"])
-    log_dir = Path(config["output"]["log_dir"])
+    if is_v2:
+        checkpoint_dir = resolve_output_path(config, "checkpoints")
+        log_dir = resolve_output_path(config, "logs")
+    else:
+        checkpoint_dir = Path(config["output"]["checkpoint_dir"])
+        log_dir = Path(config["output"]["log_dir"])
+
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,20 +110,54 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     # Initialize dataloader
     data_config = config["data"]
+    if is_v2:
+        train_path = data_config["paths"]["train"]
+        val_path = data_config["paths"].get("val")
+        batch_size = data_config["loading"]["batch_size"]
+        num_workers = data_config["loading"]["num_workers"]
+        pin_memory = data_config["loading"].get("pin_memory", True)
+        drop_last = data_config["loading"].get("drop_last", False)
+        shuffle_train = data_config["loading"].get("shuffle_train", True)
+        image_size = data_config["preprocessing"].get("image_size", 256)
+        crop_size = data_config["preprocessing"].get("crop_size", 224)
+        normalize = data_config["preprocessing"].get("normalize", "imagenet")
+        horizontal_flip = data_config["augmentation"].get("horizontal_flip", True)
+        rotation_degrees = data_config["augmentation"].get("rotation_degrees", 0)
+        color_jitter_config = data_config["augmentation"].get("color_jitter", {})
+        color_jitter = (
+            color_jitter_config.get("enabled", False)
+            if isinstance(color_jitter_config, dict)
+            else color_jitter_config
+        )
+    else:
+        train_path = data_config["train_path"]
+        val_path = data_config.get("val_path")
+        batch_size = data_config["batch_size"]
+        num_workers = data_config["num_workers"]
+        pin_memory = data_config.get("pin_memory", True)
+        drop_last = data_config.get("drop_last", False)
+        shuffle_train = data_config.get("shuffle_train", True)
+        image_size = data_config.get("image_size", 256)
+        crop_size = data_config.get("crop_size", 224)
+        normalize = data_config.get("normalize", "imagenet")
+        horizontal_flip = data_config.get("horizontal_flip", True)
+        rotation_degrees = data_config.get("rotation_degrees", 0)
+        color_jitter = data_config.get("color_jitter", False)
+
     dataloader = ClassifierDataLoader(
-        train_path=data_config["train_path"],
-        val_path=data_config.get("val_path"),
-        batch_size=data_config["batch_size"],
-        num_workers=data_config["num_workers"],
-        image_size=data_config.get("image_size", 256),
-        crop_size=data_config.get("crop_size", 224),
-        horizontal_flip=data_config.get("horizontal_flip", True),
-        color_jitter=data_config.get("color_jitter", False),
-        rotation_degrees=data_config.get("rotation_degrees", 0),
-        normalize=data_config.get("normalize", "imagenet"),
-        pin_memory=data_config.get("pin_memory", True),
-        drop_last=data_config.get("drop_last", False),
-        shuffle_train=data_config.get("shuffle_train", True),
+        train_path=train_path,
+        val_path=val_path,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        image_size=image_size,
+        crop_size=crop_size,
+        horizontal_flip=horizontal_flip,
+        color_jitter=color_jitter,
+        rotation_degrees=rotation_degrees,
+        normalize=normalize,
+        pin_memory=pin_memory,
+        drop_last=drop_last,
+        shuffle_train=shuffle_train,
     )
 
     # Get class names from dataset
@@ -111,29 +165,46 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     if hasattr(train_loader.dataset, "classes"):
         class_names = train_loader.dataset.classes
     else:
-        class_names = [f"Class {i}" for i in range(config["model"]["num_classes"])]
+        if is_v2:
+            num_classes = config["model"]["architecture"]["num_classes"]
+        else:
+            num_classes = config["model"]["num_classes"]
+        class_names = [f"Class {i}" for i in range(num_classes)]
 
     print(f"Number of classes: {len(class_names)}")
     print(f"Classes: {class_names}")
 
     # Initialize model
     model_config = config["model"]
-    model_name = model_config["name"].lower()
+    if is_v2:
+        model_name = model_config["architecture"]["name"].lower()
+        num_classes = model_config["architecture"]["num_classes"]
+        pretrained = model_config["initialization"].get("pretrained", True)
+        freeze_backbone = model_config["initialization"].get("freeze_backbone", False)
+        trainable_layers = model_config["initialization"].get("trainable_layers")
+        dropout = model_config["regularization"].get("dropout", 0.5)
+    else:
+        model_name = model_config["name"].lower()
+        num_classes = model_config["num_classes"]
+        pretrained = model_config["pretrained"]
+        freeze_backbone = model_config.get("freeze_backbone", False)
+        trainable_layers = model_config.get("trainable_layers")
+        dropout = model_config.get("dropout", 0.5)
 
     if model_name == "inceptionv3":
         model = InceptionV3Classifier(
-            num_classes=model_config["num_classes"],
-            pretrained=model_config["pretrained"],
-            freeze_backbone=model_config.get("freeze_backbone", False),
-            trainable_layers=model_config.get("trainable_layers"),
-            dropout=model_config.get("dropout", 0.5),
+            num_classes=num_classes,
+            pretrained=pretrained,
+            freeze_backbone=freeze_backbone,
+            trainable_layers=trainable_layers,
+            dropout=dropout,
         )
     elif model_name in ["resnet50", "resnet101", "resnet152"]:
         model = ResNetClassifier(
             variant=model_name,
-            num_classes=model_config["num_classes"],
-            pretrained=model_config["pretrained"],
-            freeze_backbone=model_config.get("freeze_backbone", False),
+            num_classes=num_classes,
+            pretrained=pretrained,
+            freeze_backbone=freeze_backbone,
         )
     else:
         raise ValueError(
@@ -143,28 +214,46 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     model = model.to(device)
     print(f"Model: {model_name}")
-    print(f"Pretrained: {model_config['pretrained']}")
-    print(f"Freeze backbone: {model_config.get('freeze_backbone', False)}")
+    print(f"Pretrained: {pretrained}")
+    print(f"Freeze backbone: {freeze_backbone}")
 
     # Initialize optimizer
     training_config = config["training"]
-    optimizer_name = training_config["optimizer"].lower()
-    optimizer_kwargs = training_config.get("optimizer_kwargs", {})
+    if is_v2:
+        optimizer_config = training_config["optimizer"]
+        optimizer_name = optimizer_config["type"].lower()
+        learning_rate = optimizer_config["learning_rate"]
+        weight_decay = optimizer_config.get("weight_decay", 0.0)
+        # TODO: Implement gradient clipping in trainer
+        # gradient_clip_norm = optimizer_config.get("gradient_clip_norm")
+
+        # Build optimizer kwargs
+        optimizer_kwargs = {"weight_decay": weight_decay}
+        if "betas" in optimizer_config:
+            optimizer_kwargs["betas"] = optimizer_config["betas"]
+        if "momentum" in optimizer_config:
+            optimizer_kwargs["momentum"] = optimizer_config["momentum"]
+    else:
+        optimizer_name = training_config["optimizer"].lower()
+        learning_rate = training_config["learning_rate"]
+        optimizer_kwargs = training_config.get("optimizer_kwargs", {})
+        # TODO: Implement gradient clipping in trainer
+        # gradient_clip_norm = training_config.get("gradient_clip")
 
     if optimizer_name == "adam":
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=training_config["learning_rate"], **optimizer_kwargs
+            model.parameters(), lr=learning_rate, **optimizer_kwargs
         )
     elif optimizer_name == "adamw":
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=training_config["learning_rate"], **optimizer_kwargs
+            model.parameters(), lr=learning_rate, **optimizer_kwargs
         )
     elif optimizer_name == "sgd":
         # SGD typically needs momentum
         if "momentum" not in optimizer_kwargs:
             optimizer_kwargs["momentum"] = 0.9
         optimizer = torch.optim.SGD(
-            model.parameters(), lr=training_config["learning_rate"], **optimizer_kwargs
+            model.parameters(), lr=learning_rate, **optimizer_kwargs
         )
     else:
         raise ValueError(
@@ -172,34 +261,69 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         )
 
     print(f"Optimizer: {optimizer_name}")
-    print(f"Learning rate: {training_config['learning_rate']}")
+    print(f"Learning rate: {learning_rate}")
 
     # Initialize scheduler if specified
     scheduler = None
-    scheduler_name = training_config.get("scheduler", "none")
-    if scheduler_name and scheduler_name.lower() != "none":
-        scheduler_kwargs = training_config.get("scheduler_kwargs", {})
+    if is_v2:
+        scheduler_config = training_config.get("scheduler", {})
+        scheduler_name = scheduler_config.get("type")
 
-        if scheduler_name.lower() == "cosine":
-            # Use epochs as T_max if not specified
-            if "T_max" not in scheduler_kwargs:
-                scheduler_kwargs["T_max"] = training_config["epochs"]
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, **scheduler_kwargs
-            )
-        elif scheduler_name.lower() == "step":
-            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, **scheduler_kwargs)
-        elif scheduler_name.lower() == "plateau":
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, **scheduler_kwargs
-            )
-        else:
-            raise ValueError(
-                f"Unknown scheduler: {scheduler_name}. "
-                f"Supported: cosine, step, plateau, none"
-            )
+        if scheduler_name and scheduler_name.lower() != "none":
+            # Handle auto T_max
+            if scheduler_name.lower() == "cosine":
+                t_max = scheduler_config.get("T_max", "auto")
+                if t_max == "auto":
+                    t_max = training_config["epochs"]
+                eta_min = scheduler_config.get("eta_min", 1e-6)
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=t_max, eta_min=eta_min
+                )
+            elif scheduler_name.lower() == "step":
+                step_size = scheduler_config.get("step_size", 30)
+                gamma = scheduler_config.get("gamma", 0.1)
+                scheduler = torch.optim.lr_scheduler.StepLR(
+                    optimizer, step_size=step_size, gamma=gamma
+                )
+            elif scheduler_name.lower() == "plateau":
+                mode = scheduler_config.get("mode", "min")
+                factor = scheduler_config.get("factor", 0.1)
+                patience = scheduler_config.get("patience", 10)
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer, mode=mode, factor=factor, patience=patience
+                )
+            else:
+                raise ValueError(
+                    f"Unknown scheduler: {scheduler_name}. "
+                    f"Supported: cosine, step, plateau, none"
+                )
+            print(f"Scheduler: {scheduler_name}")
+    else:
+        scheduler_name = training_config.get("scheduler", "none")
+        if scheduler_name and scheduler_name.lower() != "none":
+            scheduler_kwargs = training_config.get("scheduler_kwargs", {})
 
-        print(f"Scheduler: {scheduler_name}")
+            if scheduler_name.lower() == "cosine":
+                # Use epochs as T_max if not specified
+                if "T_max" not in scheduler_kwargs:
+                    scheduler_kwargs["T_max"] = training_config["epochs"]
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, **scheduler_kwargs
+                )
+            elif scheduler_name.lower() == "step":
+                scheduler = torch.optim.lr_scheduler.StepLR(
+                    optimizer, **scheduler_kwargs
+                )
+            elif scheduler_name.lower() == "plateau":
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer, **scheduler_kwargs
+                )
+            else:
+                raise ValueError(
+                    f"Unknown scheduler: {scheduler_name}. "
+                    f"Supported: cosine, step, plateau, none"
+                )
+            print(f"Scheduler: {scheduler_name}")
 
     # Initialize logger
     logger = ClassifierLogger(log_dir=log_dir, class_names=class_names)
@@ -218,18 +342,31 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     if scheduler is not None:
         trainer.scheduler = scheduler
 
-    # Train the model
+    # Get training parameters
     num_epochs = training_config["epochs"]
+    if is_v2:
+        save_best = training_config["checkpointing"].get("save_best_only", True)
+        checkpoint_frequency = training_config["checkpointing"].get(
+            "save_frequency", 10
+        )
+        validate_frequency = training_config["validation"].get("frequency", 1)
+        best_metric = training_config["validation"].get("metric", "accuracy")
+    else:
+        save_best = config["output"].get("save_best_only", True)
+        checkpoint_frequency = config["output"].get("save_frequency", 10)
+        validate_frequency = config.get("validation", {}).get("frequency", 1)
+        best_metric = config.get("validation", {}).get("metric", "accuracy")
+
     print(f"\nStarting training for {num_epochs} epochs...")
 
     try:
         trainer.train(
             num_epochs=num_epochs,
             checkpoint_dir=str(checkpoint_dir),
-            save_best=config["output"].get("save_best_only", True),
-            checkpoint_frequency=config["output"].get("save_frequency", 10),
-            validate_frequency=config.get("validation", {}).get("frequency", 1),
-            best_metric=config.get("validation", {}).get("metric", "accuracy"),
+            save_best=save_best,
+            checkpoint_frequency=checkpoint_frequency,
+            validate_frequency=validate_frequency,
+            best_metric=best_metric,
         )
     except KeyboardInterrupt:
         print("\n\nTraining interrupted by user")

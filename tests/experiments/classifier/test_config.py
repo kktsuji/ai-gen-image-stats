@@ -14,7 +14,9 @@ import yaml
 from src.experiments.classifier.config import (
     get_default_config,
     get_model_specific_config,
+    is_v2_config,
     validate_config,
+    validate_config_v2,
 )
 
 # ============================================================================
@@ -413,13 +415,18 @@ class TestConfigFileValidation:
         # Check experiment type
         assert config["experiment"] == "classifier"
 
-        # Check it uses ResNet50
-        assert config["model"]["name"] == "resnet50"
-
-        # Check standard ImageNet preprocessing
-        assert config["data"]["image_size"] == 256
-        assert config["data"]["crop_size"] == 224
-        assert config["data"]["normalize"] == "imagenet"
+        # Check it uses ResNet50 (V2 structure)
+        if is_v2_config(config):
+            assert config["model"]["architecture"]["name"] == "resnet50"
+            assert config["data"]["preprocessing"]["image_size"] == 256
+            assert config["data"]["preprocessing"]["crop_size"] == 224
+            assert config["data"]["preprocessing"]["normalize"] == "imagenet"
+        else:
+            # V1 structure
+            assert config["model"]["name"] == "resnet50"
+            assert config["data"]["image_size"] == 256
+            assert config["data"]["crop_size"] == 224
+            assert config["data"]["normalize"] == "imagenet"
 
     def test_inceptionv3_config_structure(self):
         """Test InceptionV3 config has expected structure."""
@@ -434,13 +441,377 @@ class TestConfigFileValidation:
         # Check experiment type
         assert config["experiment"] == "classifier"
 
-        # Check it uses InceptionV3
-        assert config["model"]["name"] == "inceptionv3"
+        # Check it uses InceptionV3 (V2 structure)
+        if is_v2_config(config):
+            assert config["model"]["architecture"]["name"] == "inceptionv3"
+            assert config["data"]["preprocessing"]["image_size"] == 320
+            assert config["data"]["preprocessing"]["crop_size"] == 299
+            assert config["data"]["preprocessing"]["normalize"] == "imagenet"
+        else:
+            # V1 structure
+            assert config["model"]["name"] == "inceptionv3"
+            assert config["data"]["image_size"] == 320
+            assert config["data"]["crop_size"] == 299
+            assert config["data"]["normalize"] == "imagenet"
 
-        # Check InceptionV3-specific preprocessing
-        assert config["data"]["image_size"] == 320
-        assert config["data"]["crop_size"] == 299
-        assert config["data"]["normalize"] == "imagenet"
+        # Check dropout parameter (location depends on config version)
+        if is_v2_config(config):
+            assert "dropout" in config["model"]["regularization"]
+        else:
+            assert "dropout" in config["model"]
 
-        # Check dropout parameter
-        assert "dropout" in config["model"]
+
+# ============================================================================
+# V2 Configuration Tests
+# ============================================================================
+
+
+def get_v2_default_config():
+    """Helper function to get a valid V2 config for testing."""
+    return {
+        "experiment": "classifier",
+        "mode": "train",
+        "compute": {"device": "cuda", "seed": None},
+        "model": {
+            "architecture": {"name": "resnet50", "num_classes": 2},
+            "initialization": {
+                "pretrained": True,
+                "freeze_backbone": False,
+                "trainable_layers": None,
+            },
+            "regularization": {"dropout": 0.5},
+        },
+        "data": {
+            "paths": {"train": "data/train", "val": "data/val"},
+            "loading": {
+                "batch_size": 32,
+                "num_workers": 4,
+                "pin_memory": True,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "preprocessing": {
+                "image_size": 256,
+                "crop_size": 224,
+                "normalize": "imagenet",
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 0,
+                "color_jitter": {
+                    "enabled": False,
+                    "brightness": 0.2,
+                    "contrast": 0.2,
+                    "saturation": 0.2,
+                    "hue": 0.1,
+                },
+            },
+        },
+        "output": {
+            "base_dir": "outputs",
+            "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
+        },
+        "training": {
+            "epochs": 100,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.001,
+                "weight_decay": 0.0001,
+                "gradient_clip_norm": None,
+            },
+            "scheduler": {"type": "cosine", "T_max": "auto", "eta_min": 1.0e-6},
+            "checkpointing": {
+                "save_frequency": 10,
+                "save_best_only": True,
+                "save_optimizer": True,
+            },
+            "validation": {
+                "enabled": True,
+                "frequency": 1,
+                "metric": "accuracy",
+                "early_stopping_patience": None,
+            },
+            "performance": {
+                "use_amp": False,
+                "use_tf32": True,
+                "cudnn_benchmark": True,
+                "compile_model": False,
+            },
+            "resume": {
+                "enabled": False,
+                "checkpoint": None,
+                "reset_optimizer": False,
+                "reset_scheduler": False,
+            },
+        },
+    }
+
+
+@pytest.mark.unit
+class TestIsV2Config:
+    """Test V2 config detection."""
+
+    def test_detects_v1_config(self):
+        """Test that V1 config is correctly identified."""
+        v1_config = get_default_config()
+        assert not is_v2_config(v1_config)
+
+    def test_detects_v2_config(self):
+        """Test that V2 config is correctly identified."""
+        v2_config = get_v2_default_config()
+        assert is_v2_config(v2_config)
+
+    def test_empty_config(self):
+        """Test empty config is not identified as V2."""
+        assert not is_v2_config({})
+
+
+@pytest.mark.unit
+class TestValidateConfigV2:
+    """Test V2 configuration validation."""
+
+    def test_valid_v2_config(self):
+        """Test that valid V2 config passes validation."""
+        config = get_v2_default_config()
+        # Should not raise
+        validate_config_v2(config)
+
+    def test_missing_mode_key(self):
+        """Test validation fails with missing mode key."""
+        config = get_v2_default_config()
+        del config["mode"]
+
+        with pytest.raises(KeyError, match="Missing required config key: mode"):
+            validate_config_v2(config)
+
+    def test_missing_compute_key(self):
+        """Test validation fails with missing compute key."""
+        config = get_v2_default_config()
+        del config["compute"]
+
+        with pytest.raises(KeyError, match="Missing required config key: compute"):
+            validate_config_v2(config)
+
+    def test_invalid_mode(self):
+        """Test validation fails with invalid mode."""
+        config = get_v2_default_config()
+        config["mode"] = "invalid"
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            validate_config_v2(config)
+
+    def test_valid_modes(self):
+        """Test validation succeeds with all valid modes."""
+        config = get_v2_default_config()
+
+        for mode in ["train", "evaluate"]:
+            config["mode"] = mode
+            # For evaluate mode, need to add evaluation section
+            if mode == "evaluate":
+                config["evaluation"] = {
+                    "checkpoint": "path/to/checkpoint.pth",
+                    "data": {"test_path": "data/test", "batch_size": 32},
+                    "output": {
+                        "save_predictions": True,
+                        "save_confusion_matrix": True,
+                        "save_metrics": True,
+                    },
+                }
+            validate_config_v2(config)
+
+    def test_invalid_device_v2(self):
+        """Test validation fails with invalid device in V2."""
+        config = get_v2_default_config()
+        config["compute"]["device"] = "tpu"
+
+        with pytest.raises(ValueError, match="Invalid device"):
+            validate_config_v2(config)
+
+    def test_valid_devices_v2(self):
+        """Test validation succeeds with all valid devices in V2."""
+        config = get_v2_default_config()
+
+        for device in ["cuda", "cpu", "auto"]:
+            config["compute"]["device"] = device
+            validate_config_v2(config)
+
+    def test_missing_architecture_section(self):
+        """Test validation fails with missing architecture section."""
+        config = get_v2_default_config()
+        del config["model"]["architecture"]
+
+        with pytest.raises(
+            KeyError, match="Missing required field: model.architecture"
+        ):
+            validate_config_v2(config)
+
+    def test_invalid_model_name_v2(self):
+        """Test validation fails with invalid model name in V2."""
+        config = get_v2_default_config()
+        config["model"]["architecture"]["name"] = "invalid_model"
+
+        with pytest.raises(ValueError, match="Invalid model name"):
+            validate_config_v2(config)
+
+    def test_missing_data_sections(self):
+        """Test validation fails with missing data sections."""
+        config = get_v2_default_config()
+
+        for section in ["paths", "loading", "preprocessing", "augmentation"]:
+            config_copy = get_v2_default_config()
+            del config_copy["data"][section]
+
+            with pytest.raises(
+                KeyError, match=f"Missing required field: data.{section}"
+            ):
+                validate_config_v2(config_copy)
+
+    def test_missing_output_subdirs(self):
+        """Test validation fails with missing output subdirs."""
+        config = get_v2_default_config()
+        del config["output"]["subdirs"]
+
+        with pytest.raises(KeyError, match="Missing required field: output.subdirs"):
+            validate_config_v2(config)
+
+    def test_missing_required_subdirs(self):
+        """Test validation fails with missing required subdirs."""
+        config = get_v2_default_config()
+
+        for subdir in ["logs", "checkpoints"]:
+            config_copy = get_v2_default_config()
+            del config_copy["output"]["subdirs"][subdir]
+
+            with pytest.raises(
+                KeyError, match=f"Missing required field: output.subdirs.{subdir}"
+            ):
+                validate_config_v2(config_copy)
+
+    def test_invalid_optimizer_type(self):
+        """Test validation fails with invalid optimizer type."""
+        config = get_v2_default_config()
+        config["training"]["optimizer"]["type"] = "invalid"
+
+        with pytest.raises(ValueError, match="Invalid optimizer"):
+            validate_config_v2(config)
+
+    def test_invalid_scheduler_type(self):
+        """Test validation fails with invalid scheduler type."""
+        config = get_v2_default_config()
+        config["training"]["scheduler"]["type"] = "invalid"
+
+        with pytest.raises(ValueError, match="Invalid scheduler"):
+            validate_config_v2(config)
+
+    def test_evaluate_mode_requires_checkpoint(self):
+        """Test validation fails in evaluate mode without checkpoint."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        config["evaluation"] = {
+            "checkpoint": None,  # Invalid: should be a path
+            "data": {"test_path": "data/test", "batch_size": 32},
+            "output": {
+                "save_predictions": True,
+                "save_confusion_matrix": True,
+                "save_metrics": True,
+            },
+        }
+
+        with pytest.raises(
+            ValueError, match="evaluation.checkpoint is required for evaluate mode"
+        ):
+            validate_config_v2(config)
+
+
+@pytest.mark.unit
+class TestValidateConfigAutoDetect:
+    """Test that validate_config auto-detects V1 vs V2."""
+
+    def test_validates_v1_config(self):
+        """Test that validate_config handles V1 configs."""
+        v1_config = get_default_config()
+        # Should not raise
+        validate_config(v1_config)
+
+    def test_validates_v2_config(self):
+        """Test that validate_config handles V2 configs."""
+        v2_config = get_v2_default_config()
+        # Should not raise
+        validate_config(v2_config)
+
+    def test_v1_config_triggers_deprecation_warning(self):
+        """Test that V1 config triggers deprecation warning."""
+        v1_config = get_default_config()
+
+        with pytest.warns(DeprecationWarning):
+            validate_config(v1_config)
+
+
+@pytest.mark.component
+class TestV2ConfigFiles:
+    """Test actual V2 config files."""
+
+    def test_default_v2_config_file(self):
+        """Test that default.yaml (V2) is valid."""
+        config_path = Path("configs/classifier/default.yaml")
+
+        if not config_path.exists():
+            pytest.skip("default.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Should be V2 format
+        assert is_v2_config(config)
+
+        # Should validate
+        validate_config(config)
+
+    def test_baseline_v2_config_file(self):
+        """Test that baseline.yaml (V2) is valid."""
+        config_path = Path("configs/classifier/baseline.yaml")
+
+        if not config_path.exists():
+            pytest.skip("baseline.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Should be V2 format
+        assert is_v2_config(config)
+
+        # Should validate
+        validate_config(config)
+
+    def test_inceptionv3_v2_config_file(self):
+        """Test that inceptionv3.yaml (V2) is valid."""
+        config_path = Path("configs/classifier/inceptionv3.yaml")
+
+        if not config_path.exists():
+            pytest.skip("inceptionv3.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Should be V2 format
+        assert is_v2_config(config)
+
+        # Should validate
+        validate_config(config)
+
+    def test_legacy_config_file(self):
+        """Test that legacy.yaml (V1) is valid."""
+        config_path = Path("configs/classifier/legacy.yaml")
+
+        if not config_path.exists():
+            pytest.skip("legacy.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Should be V1 format
+        assert not is_v2_config(config)
+
+        # Should still validate with deprecation warning
+        with pytest.warns(DeprecationWarning):
+            validate_config(config)

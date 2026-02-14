@@ -1,44 +1,89 @@
+# InceptionV3 Configuration (V2 Format)
 experiment: classifier
+mode: train
+
+compute:
+  device: cuda
+  seed: null
+
 model:
-  name: inceptionv3
-  pretrained: true
-  num_classes: 2
-  freeze_backbone: true
-  trainable_layers: null
-  dropout: 0.5
+  architecture:
+    name: inceptionv3
+    num_classes: 2
+  initialization:
+    pretrained: true
+    freeze_backbone: true
+    trainable_layers: null
+  regularization:
+    dropout: 0.5
+
 data:
-  train_path: data/0.Normal
-  val_path: data/1.Abnormal
-  batch_size: 32
-  num_workers: 4
-  image_size: 320
-  crop_size: 299
-  horizontal_flip: true
-  color_jitter: false
-  rotation_degrees: 0
-  normalize: imagenet
-  pin_memory: true
-  drop_last: false
-  shuffle_train: true
+  paths:
+    train: data/0.Normal
+    val: data/1.Abnormal
+  loading:
+    batch_size: 32
+    num_workers: 4
+    pin_memory: true
+    shuffle_train: true
+    drop_last: false
+  preprocessing:
+    image_size: 320
+    crop_size: 299
+    normalize: imagenet
+  augmentation:
+    horizontal_flip: true
+    rotation_degrees: 0
+    color_jitter:
+      enabled: false
+      brightness: 0.2
+      contrast: 0.2
+      saturation: 0.2
+      hue: 0.1
+
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+
 training:
   epochs: 100
-  learning_rate: 0.001
-  optimizer: adam
-  optimizer_kwargs:
+  optimizer:
+    type: adam
+    learning_rate: 0.001
     weight_decay: 0.0001
-  scheduler: cosine
-  scheduler_kwargs:
-    T_max: 100
-    eta_min: 1.0e-06
-  device: cuda
-  mixed_precision: false
-  gradient_clip: null
-  early_stopping_patience: null
-output:
-  checkpoint_dir: outputs/checkpoints
-  log_dir: outputs/logs
-  save_best_only: true
-  save_frequency: 10
-validation:
-  frequency: 1
-  metric: accuracy
+    gradient_clip_norm: null
+  scheduler:
+    type: cosine
+    T_max: auto
+    eta_min: 1.0e-6
+  checkpointing:
+    save_frequency: 10
+    save_best_only: true
+    save_optimizer: true
+  validation:
+    enabled: true
+    frequency: 1
+    metric: accuracy
+    early_stopping_patience: null
+  performance:
+    use_amp: false
+    use_tf32: true
+    cudnn_benchmark: true
+    compile_model: false
+  resume:
+    enabled: false
+    checkpoint: null
+    reset_optimizer: false
+    reset_scheduler: false
+
+evaluation:
+  checkpoint: null
+  data:
+    test_path: data/test
+    batch_size: 32
+  output:
+    save_predictions: true
+    save_confusion_matrix: true
+    save_metrics: true
