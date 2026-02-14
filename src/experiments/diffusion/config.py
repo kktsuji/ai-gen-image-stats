@@ -1,17 +1,14 @@
-"""Diffusion Configuration (V2 Format)
+"""Diffusion Configuration
 
-This module provides default configuration values for diffusion model experiments
-using the V2 configuration format. V2 provides better organization and
-eliminates parameter duplication.
+This module provides default configuration values for diffusion model experiments.
+Provides logical organization and eliminates parameter duplication.
 
-Key improvements in V2:
+Key features:
 - Logical grouping of related parameters
 - Single source of truth (no duplicate parameters)
 - Mode-specific sections properly scoped
 - Derived parameters (image_size, return_labels)
 - Default values loaded from YAML for maintainability
-
-For migration from V1, see: docs/research/diffusion-config-migration-guide.md
 """
 
 from pathlib import Path
@@ -27,7 +24,7 @@ def get_default_config() -> Dict[str, Any]:
     following the principle of keeping related files together. YAML serves as
     the single source of truth for default configuration values.
 
-    Configuration Structure (V2):
+    Configuration Structure:
     - compute: Device and seed settings
     - model: Architecture, diffusion, and conditioning subsections
     - data: Paths, loading, and augmentation subsections
@@ -62,13 +59,13 @@ def get_default_config() -> Dict[str, Any]:
 
 
 def validate_config(config: Dict[str, Any]) -> None:
-    """Validate diffusion model configuration (V2 format).
+    """Validate diffusion model configuration.
 
     Performs mode-aware validation with clear error messages.
-    Validates V2 configuration structure with nested sections.
+    Validates configuration structure with nested sections.
 
     Args:
-        config: Configuration dictionary to validate (V2 format)
+        config: Configuration dictionary to validate
 
     Raises:
         ValueError: If configuration is invalid
@@ -114,7 +111,7 @@ def validate_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_compute_config(config: Dict[str, Any]) -> None:
-    """Validate compute configuration section (V2)."""
+    """Validate compute configuration section."""
     if "compute" not in config:
         raise KeyError("Missing required config key: compute")
 
@@ -134,7 +131,7 @@ def _validate_compute_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_model_config(config: Dict[str, Any]) -> None:
-    """Validate model configuration section (V2)."""
+    """Validate model configuration section."""
     if "model" not in config:
         raise KeyError("Missing required config key: model")
 
@@ -262,7 +259,7 @@ def _validate_model_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_data_config(config: Dict[str, Any]) -> None:
-    """Validate data configuration section (V2)."""
+    """Validate data configuration section."""
     if "data" not in config:
         raise KeyError("Missing required config key: data")
 
@@ -310,7 +307,7 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_output_config(config: Dict[str, Any]) -> None:
-    """Validate output configuration section (V2)."""
+    """Validate output configuration section."""
     if "output" not in config:
         raise KeyError("Missing required config key: output")
 
@@ -330,7 +327,7 @@ def _validate_output_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_config_consistency(config: Dict[str, Any]) -> None:
-    """Validate cross-parameter consistency in configuration (V2).
+    """Validate cross-parameter consistency in configuration.
 
     Checks:
     - If conditioning.type == "class", num_classes must be set
@@ -368,7 +365,7 @@ def _validate_config_consistency(config: Dict[str, Any]) -> None:
 
 
 def _validate_training_config(config: Dict[str, Any]) -> None:
-    """Validate training-specific configuration (V2)."""
+    """Validate training-specific configuration."""
     if "training" not in config:
         raise KeyError("Missing required config key: training")
 
@@ -506,7 +503,7 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
 
 
 def _validate_generation_config(config: Dict[str, Any]) -> None:
-    """Validate generation-specific configuration (V2)."""
+    """Validate generation-specific configuration."""
     if "generation" not in config:
         raise KeyError("Missing required config key: generation")
 
@@ -553,7 +550,7 @@ def _validate_generation_config(config: Dict[str, Any]) -> None:
 
 
 def get_resolution_config(image_size: int) -> Dict[str, Any]:
-    """Get resolution-specific configuration overrides (V2 format).
+    """Get resolution-specific configuration overrides.
 
     Different image sizes may require different model architectures and
     training settings for optimal results.
@@ -563,7 +560,6 @@ def get_resolution_config(image_size: int) -> Dict[str, Any]:
 
     Returns:
         Dictionary containing resolution-specific configuration overrides
-        in V2 format
 
     Raises:
         ValueError: If image_size is not supported

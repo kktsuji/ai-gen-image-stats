@@ -1,62 +1,302 @@
-# ==============================================================================
-# CLASSIFIER CONFIGURATION (V1 FORMAT - LEGACY)
-# ==============================================================================
+# ------------------------------------------------------------------------------
+# CLASSIFIER CONFIGURATION
+# ------------------------------------------------------------------------------
 # Default configuration for training image classification models (ResNet, InceptionV3)
-# This uses the V1 format for backward compatibility
-# Note: V2 format is also supported - see configs/classifier/ for examples
-# ==============================================================================
+#
+# This configuration file defines all parameters for training and evaluating
+# image classifiers. Modify values as needed for your specific use case.
+# ------------------------------------------------------------------------------
 
+# Experiment type identifier (used for model/trainer selection)
 experiment: classifier
 
-# Model configuration
+# Execution mode: 'train' for training new models, 'evaluate' for testing
+mode: train # Options: train, evaluate
+
+# ------------------------------------------------------------------------------
+# COMPUTE CONFIGURATION
+# Hardware and reproducibility settings
+# ------------------------------------------------------------------------------
+compute:
+  # Device selection: 'cuda' for GPU, 'cpu' for CPU, 'auto' for automatic detection
+  # Use 'cuda' when available for significantly faster training
+  device: cuda # Options: cuda, cpu, auto
+
+  # Random seed for reproducibility across runs
+  # Set to an integer (e.g., 42) for deterministic behavior, or null for random
+  # Note: Complete reproducibility requires additional settings (cudnn_benchmark-false)
+  seed: null # Random seed for reproducibility (null for random)
+
+# ------------------------------------------------------------------------------
+# MODEL CONFIGURATION
+# Architecture, initialization, and regularization settings
+# ------------------------------------------------------------------------------
 model:
-  name: resnet50 # Options: resnet50, resnet101, resnet152, inceptionv3
-  pretrained: true
-  num_classes: 2
-  freeze_backbone: false
-  trainable_layers: null # List of layer patterns to unfreeze (InceptionV3 only)
-  dropout: 0.5 # Only for InceptionV3
+  architecture:
+    # Model architecture selection
+    # - resnet50: 25.6M params, good balance of speed and accuracy
+    # - resnet101: 44.5M params, better accuracy, slower
+    # - resnet152: 60.2M params, best accuracy, slowest
+    # - inceptionv3: 27.2M params, efficient multi-scale feature extraction
+    name: resnet50 # Options: resnet50, resnet101, resnet152, inceptionv3
 
-# Data configuration
+    # Number of output classes for classification
+    # Set to 2 for binary classification, 10 for CIFAR-10, etc.
+    num_classes: 2
+
+  initialization:
+    # Use ImageNet pretrained weights as starting point
+    # Highly recommended for transfer learning and small datasets
+    # Pretrained models converge faster and achieve better accuracy
+    pretrained: true
+
+    # Freeze backbone (feature extraction) layers during training
+    # Set to true to only train the final classification layer (faster, less prone to overfitting)
+    # Set to false for full fine-tuning (better accuracy with sufficient data)
+    freeze_backbone: false
+
+    # Specify layer patterns to selectively unfreeze (InceptionV3 only)
+    # Example: ['Mixed_7', 'AuxLogits'] to train only top layers
+    # null means all layers are trainable (when freeze_backbone-false)
+    trainable_layers: null # List of layer patterns to unfreeze (InceptionV3 only)
+
+  regularization:
+    # Dropout probability for InceptionV3 classifier head
+    # Range: 0.0 (no dropout) to 0.9 (aggressive regularization)
+    # Higher values reduce overfitting but may harm accuracy
+    # Only applies to InceptionV3; ResNet models use their built-in dropout
+    dropout: 0.5 # Only for InceptionV3
+
+# ------------------------------------------------------------------------------
+# DATA CONFIGURATION
+# Dataset paths, loading parameters, and preprocessing
+# ------------------------------------------------------------------------------
 data:
-  train_path: data/train
-  val_path: data/val
-  batch_size: 32
-  num_workers: 4
-  image_size: 256
-  crop_size: 224
-  horizontal_flip: true
-  color_jitter: false
-  rotation_degrees: 0
-  normalize: imagenet # Options: imagenet, cifar10, none, null
-  pin_memory: true
-  drop_last: false
-  shuffle_train: true
+  paths:
+    # Path to training dataset directory
+    # Expected structure: train/<class_name>/<images>
+    train: data/train
 
-# Training configuration
-training:
-  epochs: 100
-  learning_rate: 0.001
-  optimizer: adam # Options: adam, sgd, adamw
-  optimizer_kwargs:
-    weight_decay: 0.0001
-  scheduler: cosine # Options: cosine, step, plateau, none
-  scheduler_kwargs:
-    T_max: 100 # For cosine
-    eta_min: 0.000001 # For cosine
-  device: cuda # Options: cuda, cpu
-  mixed_precision: false # Use automatic mixed precision (AMP)
-  gradient_clip: null # Max gradient norm for clipping (null to disable)
-  early_stopping_patience: null # Epochs to wait before early stopping (null to disable)
+    # Path to validation dataset directory
+    # Expected structure: val/<class_name>/<images>
+    val: data/val
 
-# Output configuration
+  loading:
+    # Number of samples per batch
+    # Larger batches: more stable gradients, better GPU utilization, more memory
+    # Smaller batches: noisier gradients, acts as regularization, less memory
+    # Typical range: 16-128 depending on GPU memory and image size
+    batch_size: 32
+
+    # Number of parallel data loading workers
+    # Set to 0 for single-process loading (debugging), 4-8 for fast training
+    # Too many workers can cause CPU/memory bottlenecks
+    num_workers: 4
+
+    # Pin memory for faster CPU-to-GPU transfer
+    # Set to true when using CUDA, false for CPU-only training
+    pin_memory: true
+
+    # Shuffle training data each epoch
+    # Should be true for training, false for evaluation
+    shuffle_train: true
+
+    # Drop incomplete batches (when dataset size not divisible by batch_size)
+    # Set to true for batch normalization stability with very small last batches
+    drop_last: false
+
+  preprocessing:
+    # Initial image resize dimension (before cropping)
+    # Images are resized so shorter side equals this value
+    # Typical: 256 for 224x224 crops, 299 for InceptionV3
+    image_size: 256
+
+    # Final square crop size fed to model
+    # Must match model's expected input size:
+    # - ResNet: 224x224
+    # - InceptionV3: 299x299
+    crop_size: 224
+
+    # Normalization preset for pixel values
+    # - 'imagenet': mean-[0.485,0.456,0.406], std-[0.229,0.224,0.225] (recommended for pretrained models)
+    # - 'cifar10': mean-[0.4914,0.4822,0.4465], std-[0.247,0.243,0.261]
+    # - 'none' or null: no normalization (values in [0,1])
+    normalize: imagenet # Options: imagenet, cifar10, none, null
+
+  augmentation:
+    # Randomly flip images horizontally (50% probability)
+    # Useful for datasets where left/right orientation doesn't matter
+    horizontal_flip: true
+
+    # Random rotation range in degrees (±rotation_degrees)
+    # 0 disables rotation; 15-30 typical for natural images
+    # Larger values may hurt performance if orientation is important
+    rotation_degrees: 0
+
+    # Color jitter augmentation for improved robustness
+    color_jitter:
+      # Enable color jitter augmentation
+      enabled: false
+
+      # Brightness adjustment factor range
+      # 0.2 means randomly adjust brightness by ±20%
+      brightness: 0.2
+
+      # Contrast adjustment factor range
+      # 0.2 means randomly adjust contrast by ±20%
+      contrast: 0.2
+
+      # Saturation adjustment factor range
+      # 0.2 means randomly adjust saturation by ±20%
+      saturation: 0.2
+
+      # Hue adjustment range (in fraction of full hue circle)
+      # 0.1 means randomly shift hue by ±0.1 (on [0,1] scale)
+      hue: 0.1
+
+# ------------------------------------------------------------------------------
+# OUTPUT CONFIGURATION
+# Directories for logs, checkpoints, and results
+# ------------------------------------------------------------------------------
 output:
-  checkpoint_dir: outputs/checkpoints
-  log_dir: outputs/logs
-  save_best_only: true
-  save_frequency: 10 # Save checkpoint every N epochs (0 to save only best)
+  # Base output directory for all experiment artifacts
+  # Subdirectories will be created automatically within this path
+  base_dir: outputs
 
-# Validation configuration
-validation:
-  frequency: 1 # Run validation every N epochs
-  metric: accuracy # Metric to monitor for best model (accuracy or loss)
+  # Subdirectory structure for organizing outputs
+  subdirs:
+    # Training logs and metrics (loss, accuracy, etc.)
+    logs: logs
+
+    # Model checkpoints (.pth files with model weights and training state)
+    checkpoints: checkpoints
+
+# ------------------------------------------------------------------------------
+# TRAINING CONFIGURATION
+# Optimization, scheduling, checkpointing, and performance settings
+# ------------------------------------------------------------------------------
+training:
+  # Total number of training epochs (full passes through training dataset)
+  # More epochs: better convergence but risk of overfitting
+  # Use early stopping to automatically determine optimal stopping point
+  epochs: 100
+
+  optimizer:
+    # Optimizer algorithm selection
+    # - 'adam': Adaptive learning rate, good default choice, fast convergence
+    # - 'sgd': Classic optimizer, may require learning rate tuning, good for final performance
+    # - 'adamw': Adam with decoupled weight decay, better generalization than Adam
+    type: adam # Options: adam, sgd, adamw
+
+    # Initial learning rate (step size for parameter updates)
+    # Too high: unstable training, divergence; Too low: slow convergence
+    # Typical ranges: 0.0001-0.001 for Adam, 0.01-0.1 for SGD
+    # Use learning rate schedulers to adjust during training
+    learning_rate: 0.001
+
+    # L2 regularization strength (penalizes large weights)
+    # Higher values: stronger regularization, reduces overfitting
+    # Typical range: 0.0001-0.01; 0 disables weight decay
+    weight_decay: 0.0001
+
+    # Maximum gradient norm for clipping (prevents exploding gradients)
+    # Set to float (e.g., 1.0) to clip gradients with norm > value
+    # null disables gradient clipping (fine for most vision tasks)
+    gradient_clip_norm: null # Max gradient norm for clipping (null to disable)
+
+  scheduler:
+    # Learning rate scheduler type
+    # - 'cosine': Smoothly decay LR following cosine curve (recommended)
+    # - 'step': Decay LR by factor at specified epochs
+    # - 'plateau': Reduce LR when validation metric plateaus
+    # - 'none': No scheduling (constant learning rate)
+    type: cosine # Options: cosine, step, plateau, none
+
+    # Maximum epoch for cosine annealing (cosine scheduler only)
+    # 'auto' sets this to total number of epochs
+    # Can manually set to value < epochs for cosine warmup/restart cycles
+    T_max: auto # For cosine (auto sets to epochs)
+
+    # Minimum learning rate for cosine annealing (cosine scheduler only)
+    # After T_max epochs, learning rate will be eta_min
+    # Prevents learning rate from becoming too small
+    eta_min: 0.000001 # For cosine
+
+  checkpointing:
+    # Save checkpoint every N epochs (for recovery and analysis)
+    # More frequent: better recovery options, more disk space
+    # Less frequent: less disk usage, faster training
+    save_frequency: 10 # Save checkpoint every N epochs
+
+    # Only save checkpoint when validation metric improves
+    # true: saves best model only (disk efficient)
+    # false: saves checkpoint every save_frequency epochs
+    save_best_only: true
+
+    # Include optimizer state in checkpoint (for exact training resumption)
+    # true: enables perfect resume but larger checkpoint files
+    # false: model weights only, smaller files but can't resume optimization state
+    save_optimizer: true
+
+  validation:
+    # Enable validation during training (recommended)
+    # Disabling skips validation and early stopping
+    enabled: true
+
+    # Run validation every N epochs
+    # 1: validate every epoch (most accurate tracking, slower)
+    # >1: validate less frequently (faster training, less monitoring)
+    frequency: 1 # Run validation every N epochs
+
+    # Metric to monitor for best model selection and early stopping
+    # 'accuracy': higher is better
+    # 'loss': lower is better
+    metric: accuracy # Metric to monitor for best model (accuracy or loss)
+
+    # Early stopping patience: stop if no improvement for N epochs
+    # Set to integer (e.g., 10) to enable early stopping
+    # null disables early stopping (trains for full epochs)
+    # Prevents overfitting and saves training time
+    early_stopping_patience: null # Epochs to wait before early stopping (null to disable)
+
+  performance:
+    # Automatic Mixed Precision (AMP): use float16 for faster training
+    # Recommended for modern GPUs (Volta/Turing/Ampere/Ada/Hopper)
+    # Reduces memory usage and increases speed with minimal accuracy impact
+    # Disable if encountering numerical instability
+    use_amp: false # Use automatic mixed precision (AMP)
+
+    # Use TensorFloat-32 (faster matrix ops on Ampere+ GPUs)
+    # Automatically enabled on compatible hardware (A100, RTX 30xx/40xx)
+    # No accuracy impact for most tasks; disable for highest precision
+    use_tf32: true # Use TF32 tensor cores on Ampere+ GPUs
+
+    # CuDNN auto-tuner: finds fastest convolution algorithms
+    # true: faster training after initial overhead (recommended for fixed input sizes)
+    # false: consistent timing, better for variable input sizes or debugging
+    cudnn_benchmark: true # Enable CuDNN benchmark mode
+
+    # Use torch.compile for model optimization (PyTorch 2.0+)
+    # Significant speedup (10-30%) after initial compilation overhead
+    # May cause compatibility issues with some models/operations
+    compile_model: false # Use torch.compile for faster training
+
+  resume:
+    # Enable training resumption from checkpoint
+    # Allows continuing interrupted training runs
+    enabled: false
+
+    # Path to checkpoint file for resumption
+    # null when resume is disabled or starting fresh
+    # Set to checkpoint path (e.g., 'outputs/checkpoints/epoch_50.pth') to resume
+    checkpoint: null
+
+    # Reset optimizer state when resuming (start with fresh optimizer)
+    # true: uses initial learning rate and optimizer state
+    # false: restores exact optimizer state (recommended for proper resume)
+    reset_optimizer: false
+
+    # Reset learning rate scheduler when resuming
+    # true: restarts LR schedule from beginning
+    # false: continues LR schedule from checkpoint epoch (recommended)
+    reset_scheduler: false

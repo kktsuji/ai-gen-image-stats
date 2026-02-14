@@ -14,9 +14,7 @@ import yaml
 from src.experiments.classifier.config import (
     get_default_config,
     get_model_specific_config,
-    is_v2_config,
     validate_config,
-    validate_config_v2,
 )
 
 # ============================================================================
@@ -36,7 +34,15 @@ class TestGetDefaultConfig:
     def test_has_required_keys(self):
         """Test that default config has all required top-level keys."""
         config = get_default_config()
-        required_keys = ["experiment", "model", "data", "training", "output"]
+        required_keys = [
+            "experiment",
+            "mode",
+            "compute",
+            "model",
+            "data",
+            "training",
+            "output",
+        ]
         for key in required_keys:
             assert key in config, f"Missing required key: {key}"
 
@@ -51,16 +57,23 @@ class TestGetDefaultConfig:
         model = config["model"]
 
         assert isinstance(model, dict)
-        assert "name" in model
-        assert "pretrained" in model
-        assert "num_classes" in model
-        assert "freeze_backbone" in model
+        assert "architecture" in model
+        assert "initialization" in model
+        assert "regularization" in model
 
-        # Check types
-        assert isinstance(model["name"], str)
-        assert isinstance(model["pretrained"], bool)
-        assert isinstance(model["num_classes"], int)
-        assert isinstance(model["freeze_backbone"], bool)
+        # Check architecture section
+        arch = model["architecture"]
+        assert "name" in arch
+        assert "num_classes" in arch
+        assert isinstance(arch["name"], str)
+        assert isinstance(arch["num_classes"], int)
+
+        # Check initialization section
+        init = model["initialization"]
+        assert "pretrained" in init
+        assert "freeze_backbone" in init
+        assert isinstance(init["pretrained"], bool)
+        assert isinstance(init["freeze_backbone"], bool)
 
     def test_data_defaults(self):
         """Test data configuration defaults."""
@@ -68,17 +81,24 @@ class TestGetDefaultConfig:
         data = config["data"]
 
         assert isinstance(data, dict)
-        assert "train_path" in data
-        assert "batch_size" in data
-        assert "num_workers" in data
-        assert "image_size" in data
-        assert "crop_size" in data
+        assert "paths" in data
+        assert "loading" in data
+        assert "preprocessing" in data
+        assert "augmentation" in data
 
-        # Check types and valid ranges
-        assert isinstance(data["batch_size"], int)
-        assert data["batch_size"] > 0
-        assert isinstance(data["num_workers"], int)
-        assert data["num_workers"] >= 0
+        # Check loading section
+        loading = data["loading"]
+        assert "batch_size" in loading
+        assert "num_workers" in loading
+        assert isinstance(loading["batch_size"], int)
+        assert loading["batch_size"] > 0
+        assert isinstance(loading["num_workers"], int)
+        assert loading["num_workers"] >= 0
+
+        # Check preprocessing section
+        preprocessing = data["preprocessing"]
+        assert "image_size" in preprocessing
+        assert "crop_size" in preprocessing
 
     def test_training_defaults(self):
         """Test training configuration defaults."""
@@ -87,16 +107,21 @@ class TestGetDefaultConfig:
 
         assert isinstance(training, dict)
         assert "epochs" in training
-        assert "learning_rate" in training
         assert "optimizer" in training
         assert "scheduler" in training
-        assert "device" in training
+        assert "checkpointing" in training
+        assert "validation" in training
+
+        # Check optimizer section
+        optimizer = training["optimizer"]
+        assert "type" in optimizer
+        assert "learning_rate" in optimizer
 
         # Check types and valid ranges
         assert isinstance(training["epochs"], int)
         assert training["epochs"] > 0
-        assert isinstance(training["learning_rate"], (int, float))
-        assert training["learning_rate"] > 0
+        assert isinstance(optimizer["learning_rate"], (int, float))
+        assert optimizer["learning_rate"] > 0
 
     def test_output_defaults(self):
         """Test output configuration defaults."""
@@ -104,204 +129,10 @@ class TestGetDefaultConfig:
         output = config["output"]
 
         assert isinstance(output, dict)
-        assert "checkpoint_dir" in output
-        assert "log_dir" in output
-
-
-@pytest.mark.unit
-class TestValidateConfig:
-    """Test configuration validation."""
-
-    def test_valid_default_config(self):
-        """Test that default config passes validation."""
-        config = get_default_config()
-        # Should not raise any exception
-        validate_config(config)
-
-    def test_missing_top_level_key(self):
-        """Test validation fails with missing top-level key."""
-        config = get_default_config()
-        del config["model"]
-
-        with pytest.raises(KeyError, match="Missing required config key: model"):
-            validate_config(config)
-
-    def test_invalid_experiment_type(self):
-        """Test validation fails with wrong experiment type."""
-        config = get_default_config()
-        config["experiment"] = "invalid"
-
-        with pytest.raises(ValueError, match="Invalid experiment type"):
-            validate_config(config)
-
-    def test_invalid_model_name(self):
-        """Test validation fails with invalid model name."""
-        config = get_default_config()
-        config["model"]["name"] = "invalid_model"
-
-        with pytest.raises(ValueError, match="Invalid model name"):
-            validate_config(config)
-
-    def test_invalid_num_classes(self):
-        """Test validation fails with invalid num_classes."""
-        config = get_default_config()
-
-        # Test negative value
-        config["model"]["num_classes"] = -1
-        with pytest.raises(ValueError, match="num_classes must be a positive integer"):
-            validate_config(config)
-
-        # Test zero
-        config["model"]["num_classes"] = 0
-        with pytest.raises(ValueError, match="num_classes must be a positive integer"):
-            validate_config(config)
-
-        # Test non-integer
-        config["model"]["num_classes"] = 2.5
-        with pytest.raises(ValueError, match="num_classes must be a positive integer"):
-            validate_config(config)
-
-    def test_invalid_pretrained(self):
-        """Test validation fails with non-boolean pretrained."""
-        config = get_default_config()
-        config["model"]["pretrained"] = "true"  # String instead of bool
-
-        with pytest.raises(ValueError, match="pretrained must be a boolean"):
-            validate_config(config)
-
-    def test_invalid_freeze_backbone(self):
-        """Test validation fails with non-boolean freeze_backbone."""
-        config = get_default_config()
-        config["model"]["freeze_backbone"] = "false"  # String instead of bool
-
-        with pytest.raises(ValueError, match="freeze_backbone must be a boolean"):
-            validate_config(config)
-
-    def test_invalid_trainable_layers_type(self):
-        """Test validation fails with invalid trainable_layers type."""
-        config = get_default_config()
-        config["model"]["trainable_layers"] = "Mixed_7*"  # String instead of list
-
-        with pytest.raises(ValueError, match="trainable_layers must be a list or None"):
-            validate_config(config)
-
-    def test_invalid_trainable_layers_content(self):
-        """Test validation fails with non-string elements in trainable_layers."""
-        config = get_default_config()
-        config["model"]["trainable_layers"] = ["Mixed_7*", 123]  # Contains non-string
-
-        with pytest.raises(ValueError, match="All trainable_layers must be strings"):
-            validate_config(config)
-
-    def test_valid_trainable_layers(self):
-        """Test validation succeeds with valid trainable_layers."""
-        config = get_default_config()
-        config["model"]["trainable_layers"] = ["Mixed_7*", "Mixed_6*"]
-
-        # Should not raise
-        validate_config(config)
-
-    def test_invalid_batch_size(self):
-        """Test validation fails with invalid batch_size."""
-        config = get_default_config()
-
-        # Test zero
-        config["data"]["batch_size"] = 0
-        with pytest.raises(ValueError, match="batch_size must be a positive integer"):
-            validate_config(config)
-
-        # Test negative
-        config["data"]["batch_size"] = -1
-        with pytest.raises(ValueError, match="batch_size must be a positive integer"):
-            validate_config(config)
-
-    def test_invalid_num_workers(self):
-        """Test validation fails with negative num_workers."""
-        config = get_default_config()
-        config["data"]["num_workers"] = -1
-
-        with pytest.raises(
-            ValueError, match="num_workers must be a non-negative integer"
-        ):
-            validate_config(config)
-
-    def test_invalid_normalize(self):
-        """Test validation fails with invalid normalize option."""
-        config = get_default_config()
-        config["data"]["normalize"] = "invalid"
-
-        with pytest.raises(ValueError, match="Invalid normalize option"):
-            validate_config(config)
-
-    def test_valid_normalize_options(self):
-        """Test validation succeeds with all valid normalize options."""
-        config = get_default_config()
-        valid_options = ["imagenet", "cifar10", "none", None]
-
-        for option in valid_options:
-            config["data"]["normalize"] = option
-            validate_config(config)  # Should not raise
-
-    def test_invalid_epochs(self):
-        """Test validation fails with invalid epochs."""
-        config = get_default_config()
-        config["training"]["epochs"] = 0
-
-        with pytest.raises(ValueError, match="epochs must be a positive integer"):
-            validate_config(config)
-
-    def test_invalid_learning_rate(self):
-        """Test validation fails with invalid learning_rate."""
-        config = get_default_config()
-
-        # Test zero
-        config["training"]["learning_rate"] = 0
-        with pytest.raises(ValueError, match="learning_rate must be a positive number"):
-            validate_config(config)
-
-        # Test negative
-        config["training"]["learning_rate"] = -0.001
-        with pytest.raises(ValueError, match="learning_rate must be a positive number"):
-            validate_config(config)
-
-    def test_invalid_optimizer(self):
-        """Test validation fails with invalid optimizer."""
-        config = get_default_config()
-        config["training"]["optimizer"] = "invalid"
-
-        with pytest.raises(ValueError, match="Invalid optimizer"):
-            validate_config(config)
-
-    def test_invalid_scheduler(self):
-        """Test validation fails with invalid scheduler."""
-        config = get_default_config()
-        config["training"]["scheduler"] = "invalid"
-
-        with pytest.raises(ValueError, match="Invalid scheduler"):
-            validate_config(config)
-
-    def test_invalid_device(self):
-        """Test validation fails with invalid device."""
-        config = get_default_config()
-        config["training"]["device"] = "tpu"
-
-        with pytest.raises(ValueError, match="Invalid device"):
-            validate_config(config)
-
-    def test_missing_output_dirs(self):
-        """Test validation fails with missing output directories."""
-        config = get_default_config()
-
-        # Test missing checkpoint_dir
-        del config["output"]["checkpoint_dir"]
-        with pytest.raises(KeyError, match="checkpoint_dir"):
-            validate_config(config)
-
-        # Reset and test missing log_dir
-        config = get_default_config()
-        del config["output"]["log_dir"]
-        with pytest.raises(KeyError, match="log_dir"):
-            validate_config(config)
+        assert "base_dir" in output
+        assert "subdirs" in output
+        assert "logs" in output["subdirs"]
+        assert "checkpoints" in output["subdirs"]
 
 
 @pytest.mark.unit
@@ -415,18 +246,11 @@ class TestConfigFileValidation:
         # Check experiment type
         assert config["experiment"] == "classifier"
 
-        # Check it uses ResNet50 (V2 structure)
-        if is_v2_config(config):
-            assert config["model"]["architecture"]["name"] == "resnet50"
-            assert config["data"]["preprocessing"]["image_size"] == 256
-            assert config["data"]["preprocessing"]["crop_size"] == 224
-            assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-        else:
-            # V1 structure
-            assert config["model"]["name"] == "resnet50"
-            assert config["data"]["image_size"] == 256
-            assert config["data"]["crop_size"] == 224
-            assert config["data"]["normalize"] == "imagenet"
+        # Check it uses ResNet50
+        assert config["model"]["architecture"]["name"].lower() == "resnet50"
+        assert config["data"]["preprocessing"]["image_size"] == 256
+        assert config["data"]["preprocessing"]["crop_size"] == 224
+        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
 
     def test_inceptionv3_config_structure(self):
         """Test InceptionV3 config has expected structure."""
@@ -441,28 +265,19 @@ class TestConfigFileValidation:
         # Check experiment type
         assert config["experiment"] == "classifier"
 
-        # Check it uses InceptionV3 (V2 structure)
-        if is_v2_config(config):
-            assert config["model"]["architecture"]["name"] == "inceptionv3"
-            assert config["data"]["preprocessing"]["image_size"] == 320
-            assert config["data"]["preprocessing"]["crop_size"] == 299
-            assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-        else:
-            # V1 structure
-            assert config["model"]["name"] == "inceptionv3"
-            assert config["data"]["image_size"] == 320
-            assert config["data"]["crop_size"] == 299
-            assert config["data"]["normalize"] == "imagenet"
+        # Check it uses InceptionV3
+        assert config["model"]["architecture"]["name"].lower() == "inceptionv3"
+        assert config["data"]["preprocessing"]["image_size"] == 320
+        assert config["data"]["preprocessing"]["crop_size"] == 299
+        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
 
-        # Check dropout parameter (location depends on config version)
-        if is_v2_config(config):
-            assert "dropout" in config["model"]["regularization"]
-        else:
-            assert "dropout" in config["model"]
+        # Check dropout parameter
+        assert "dropout" in config["model"]["regularization"]
 
 
 # ============================================================================
-# V2 Configuration Tests
+# ============================================================================
+# Configuration Tests
 # ============================================================================
 
 
@@ -548,33 +363,14 @@ def get_v2_default_config():
 
 
 @pytest.mark.unit
-class TestIsV2Config:
-    """Test V2 config detection."""
+class TestValidateConfig:
+    """Test configuration validation."""
 
-    def test_detects_v1_config(self):
-        """Test that V1 config is correctly identified."""
-        v1_config = get_default_config()
-        assert not is_v2_config(v1_config)
-
-    def test_detects_v2_config(self):
-        """Test that V2 config is correctly identified."""
-        v2_config = get_v2_default_config()
-        assert is_v2_config(v2_config)
-
-    def test_empty_config(self):
-        """Test empty config is not identified as V2."""
-        assert not is_v2_config({})
-
-
-@pytest.mark.unit
-class TestValidateConfigV2:
-    """Test V2 configuration validation."""
-
-    def test_valid_v2_config(self):
-        """Test that valid V2 config passes validation."""
+    def test_valid_config(self):
+        """Test that valid config passes validation."""
         config = get_v2_default_config()
         # Should not raise
-        validate_config_v2(config)
+        validate_config(config)
 
     def test_missing_mode_key(self):
         """Test validation fails with missing mode key."""
@@ -582,7 +378,7 @@ class TestValidateConfigV2:
         del config["mode"]
 
         with pytest.raises(KeyError, match="Missing required config key: mode"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_missing_compute_key(self):
         """Test validation fails with missing compute key."""
@@ -590,7 +386,7 @@ class TestValidateConfigV2:
         del config["compute"]
 
         with pytest.raises(KeyError, match="Missing required config key: compute"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_invalid_mode(self):
         """Test validation fails with invalid mode."""
@@ -598,7 +394,7 @@ class TestValidateConfigV2:
         config["mode"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid mode"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_valid_modes(self):
         """Test validation succeeds with all valid modes."""
@@ -617,23 +413,23 @@ class TestValidateConfigV2:
                         "save_metrics": True,
                     },
                 }
-            validate_config_v2(config)
+            validate_config(config)
 
-    def test_invalid_device_v2(self):
-        """Test validation fails with invalid device in V2."""
+    def test_invalid_device(self):
+        """Test validation fails with invalid device."""
         config = get_v2_default_config()
         config["compute"]["device"] = "tpu"
 
         with pytest.raises(ValueError, match="Invalid device"):
-            validate_config_v2(config)
+            validate_config(config)
 
-    def test_valid_devices_v2(self):
-        """Test validation succeeds with all valid devices in V2."""
+    def test_valid_devices(self):
+        """Test validation succeeds with all valid devices."""
         config = get_v2_default_config()
 
         for device in ["cuda", "cpu", "auto"]:
             config["compute"]["device"] = device
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_missing_architecture_section(self):
         """Test validation fails with missing architecture section."""
@@ -643,15 +439,15 @@ class TestValidateConfigV2:
         with pytest.raises(
             KeyError, match="Missing required field: model.architecture"
         ):
-            validate_config_v2(config)
+            validate_config(config)
 
-    def test_invalid_model_name_v2(self):
-        """Test validation fails with invalid model name in V2."""
+    def test_invalid_model_name(self):
+        """Test validation fails with invalid model name."""
         config = get_v2_default_config()
         config["model"]["architecture"]["name"] = "invalid_model"
 
         with pytest.raises(ValueError, match="Invalid model name"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_missing_data_sections(self):
         """Test validation fails with missing data sections."""
@@ -664,7 +460,7 @@ class TestValidateConfigV2:
             with pytest.raises(
                 KeyError, match=f"Missing required field: data.{section}"
             ):
-                validate_config_v2(config_copy)
+                validate_config(config_copy)
 
     def test_missing_output_subdirs(self):
         """Test validation fails with missing output subdirs."""
@@ -672,7 +468,7 @@ class TestValidateConfigV2:
         del config["output"]["subdirs"]
 
         with pytest.raises(KeyError, match="Missing required field: output.subdirs"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_missing_required_subdirs(self):
         """Test validation fails with missing required subdirs."""
@@ -685,7 +481,7 @@ class TestValidateConfigV2:
             with pytest.raises(
                 KeyError, match=f"Missing required field: output.subdirs.{subdir}"
             ):
-                validate_config_v2(config_copy)
+                validate_config(config_copy)
 
     def test_invalid_optimizer_type(self):
         """Test validation fails with invalid optimizer type."""
@@ -693,7 +489,7 @@ class TestValidateConfigV2:
         config["training"]["optimizer"]["type"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid optimizer"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_invalid_scheduler_type(self):
         """Test validation fails with invalid scheduler type."""
@@ -701,7 +497,7 @@ class TestValidateConfigV2:
         config["training"]["scheduler"]["type"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid scheduler"):
-            validate_config_v2(config)
+            validate_config(config)
 
     def test_evaluate_mode_requires_checkpoint(self):
         """Test validation fails in evaluate mode without checkpoint."""
@@ -720,39 +516,16 @@ class TestValidateConfigV2:
         with pytest.raises(
             ValueError, match="evaluation.checkpoint is required for evaluate mode"
         ):
-            validate_config_v2(config)
+            validate_config(config)
 
 
 @pytest.mark.unit
-class TestValidateConfigAutoDetect:
-    """Test that validate_config auto-detects V1 vs V2."""
-
-    def test_validates_v1_config(self):
-        """Test that validate_config handles V1 configs."""
-        v1_config = get_default_config()
-        # Should not raise
-        validate_config(v1_config)
-
-    def test_validates_v2_config(self):
-        """Test that validate_config handles V2 configs."""
-        v2_config = get_v2_default_config()
-        # Should not raise
-        validate_config(v2_config)
-
-    def test_v1_config_triggers_deprecation_warning(self):
-        """Test that V1 config triggers deprecation warning."""
-        v1_config = get_default_config()
-
-        with pytest.warns(DeprecationWarning):
-            validate_config(v1_config)
-
-
 @pytest.mark.component
-class TestV2ConfigFiles:
-    """Test actual V2 config files."""
+class TestConfigFiles:
+    """Test actual config files."""
 
-    def test_default_v2_config_file(self):
-        """Test that default.yaml (V1) is valid."""
+    def test_default_config_file(self):
+        """Test that default.yaml is valid."""
         config_path = Path("src/experiments/classifier/default.yaml")
 
         if not config_path.exists():
@@ -761,15 +534,11 @@ class TestV2ConfigFiles:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        # Should be V1 format (for backward compatibility)
-        assert not is_v2_config(config), "default.yaml should be V1 format"
+        # Should validate
+        validate_config(config)
 
-        # Should validate (with deprecation warning)
-        with pytest.warns(DeprecationWarning):
-            validate_config(config)
-
-    def test_baseline_v2_config_file(self):
-        """Test that baseline.yaml (V2) is valid."""
+    def test_baseline_config_file(self):
+        """Test that baseline.yaml is valid."""
         config_path = Path("configs/classifier/baseline.yaml")
 
         if not config_path.exists():
@@ -778,14 +547,11 @@ class TestV2ConfigFiles:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        # Should be V2 format
-        assert is_v2_config(config)
-
         # Should validate
         validate_config(config)
 
-    def test_inceptionv3_v2_config_file(self):
-        """Test that inceptionv3.yaml (V2) is valid."""
+    def test_inceptionv3_config_file(self):
+        """Test that inceptionv3.yaml is valid."""
         config_path = Path("configs/classifier/inceptionv3.yaml")
 
         if not config_path.exists():
@@ -794,25 +560,5 @@ class TestV2ConfigFiles:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        # Should be V2 format
-        assert is_v2_config(config)
-
         # Should validate
         validate_config(config)
-
-    def test_legacy_config_file(self):
-        """Test that legacy.yaml (V1) is valid."""
-        config_path = Path("configs/classifier/legacy.yaml")
-
-        if not config_path.exists():
-            pytest.skip("legacy.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should be V1 format
-        assert not is_v2_config(config)
-
-        # Should still validate with deprecation warning
-        with pytest.warns(DeprecationWarning):
-            validate_config(config)

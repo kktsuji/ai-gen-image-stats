@@ -100,7 +100,7 @@ python -m src.main configs/diffusion/default.yaml
 
 ## Configuration
 
-### Configuration Structure (V2)
+### Configuration Structure
 
 The configuration is organized into logical sections:
 
@@ -131,7 +131,7 @@ The configuration is organized into logical sections:
 
 See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete example.
 
-### Diffusion Model Configuration (V2)
+### Diffusion Model Configuration
 
 #### Common Parameters
 
@@ -166,7 +166,7 @@ model:
     num_classes: null # Required if type="class"
     class_dropout_prob: 0.1
 
-# Data configuration (V2 - image_size derived from model)
+# Data configuration (image_size derived from model)
 data:
   paths:
     train: data/train
@@ -285,18 +285,6 @@ generation:
 #### Complete Example
 
 See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete, documented example configuration.
-
-#### Migration from V1
-
-If you have configurations from before February 2026, see the [migration guide](docs/research/diffusion-config-migration-guide.md) for updating to the V2 structure. Key changes:
-
-- `device` and `seed` moved to `compute` section
-- Model parameters reorganized into `architecture`, `diffusion`, `conditioning`
-- Data parameters reorganized into `paths`, `loading`, `augmentation`
-- `image_size` only in `model.architecture` (derived for data)
-- `return_labels` derived from `model.conditioning.type`
-- Optimizer/scheduler parameters nested under `training`
-- Visualization moved from `generation` to `training`
 
 ## Testing
 

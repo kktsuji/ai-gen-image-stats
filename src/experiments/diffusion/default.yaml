@@ -1,32 +1,32 @@
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # DIFFUSION MODEL CONFIGURATION (V2 FORMAT)
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # This is the V2 configuration format with improved organization and
 # no parameter duplication. For migration guide, see:
 # docs/research/diffusion-config-migration-guide.md
-# ==============================================================================
+# ------------------------------------------------------------------------------
 
 experiment: diffusion
 mode: train # Options: train, generate
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # COMPUTE CONFIGURATION
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Device and reproducibility settings used across all modes
 
 compute:
   device: cuda # Options: cuda, cpu, auto
   seed: null # Random seed for reproducibility (null to disable)
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # MODEL CONFIGURATION
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Model architecture, diffusion process, and conditioning settings
 
 model:
   # Architecture: U-Net structure and channels
   architecture:
-    image_size: 40 # Size of generated images (H=W)
+    image_size: 40 # Size of generated images (H-W)
     in_channels: 3 # Number of input channels (3 for RGB)
     model_channels: 64 # Base number of U-Net channels
     channel_multipliers: [1, 2, 4] # Channel multipliers per stage
@@ -42,12 +42,12 @@ model:
   # Conditioning: Class conditioning for guided generation
   conditioning:
     type: null # Options: null (unconditional), "class" (class-conditional)
-    num_classes: null # Number of classes (required if type="class")
+    num_classes: null # Number of classes (required if type-"class")
     class_dropout_prob: 0.1 # Dropout for classifier-free guidance
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # DATA CONFIGURATION
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Dataset paths, loading, and augmentation settings
 
 data:
@@ -72,9 +72,9 @@ data:
       enabled: false # Enable color jitter
       strength: 0.1 # Jitter strength (0.0-1.0)
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # OUTPUT CONFIGURATION
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Output directory structure
 
 output:
@@ -85,10 +85,10 @@ output:
     samples: samples # Training samples
     generated: generated # Generated images
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # TRAINING MODE CONFIGURATION
-# ==============================================================================
-# Only used when mode=train
+# ------------------------------------------------------------------------------
+# Only used when mode-train
 
 training:
   # Core Training Parameters
@@ -105,7 +105,7 @@ training:
   # Scheduler: Learning rate scheduling
   scheduler:
     type: null # Options: cosine, step, plateau, null (none)
-    T_max: auto # For cosine (auto = epochs)
+    T_max: auto # For cosine (auto - epochs)
     eta_min: 1.0e-6 # For cosine (minimum LR)
 
   # EMA: Exponential Moving Average
@@ -146,10 +146,10 @@ training:
     reset_optimizer: false # Reset optimizer state
     reset_scheduler: false # Reset scheduler state
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # GENERATION MODE CONFIGURATION
-# ==============================================================================
-# Only used when mode=generate
+# ------------------------------------------------------------------------------
+# Only used when mode-generate
 
 generation:
   checkpoint: null # Path to trained model checkpoint (required)
@@ -157,7 +157,7 @@ generation:
   # Sampling: Generation parameters
   sampling:
     num_samples: 100 # Total number of samples to generate
-    guidance_scale: 3.0 # Classifier-free guidance scale (>=1.0)
+    guidance_scale: 3.0 # Classifier-free guidance scale (>-1.0)
     use_ema: true # Use EMA weights if available
 
   # Output: Generation output settings
