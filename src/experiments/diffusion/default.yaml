@@ -1,9 +1,9 @@
 # ------------------------------------------------------------------------------
-# DIFFUSION MODEL CONFIGURATION (V2 FORMAT)
+# DIFFUSION MODEL CONFIGURATION
 # ------------------------------------------------------------------------------
-# This is the V2 configuration format with improved organization and
-# no parameter duplication. For migration guide, see:
-# docs/research/diffusion-config-migration-guide.md
+# Default configuration for diffusion model experiments.
+#
+# This file defines the default settings for training and generation modes.
 # ------------------------------------------------------------------------------
 
 experiment: diffusion
