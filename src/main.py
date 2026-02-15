@@ -160,9 +160,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     pretrained = model_config["initialization"].get("pretrained", True)
     freeze_backbone = model_config["initialization"].get("freeze_backbone", False)
     trainable_layers = model_config["initialization"].get("trainable_layers")
-    dropout = model_config["regularization"].get("dropout", 0.5)
 
     if model_name == "inceptionv3":
+        dropout = model_config.get("regularization", {}).get("dropout", 0.5)
         model = InceptionV3Classifier(
             num_classes=num_classes,
             pretrained=pretrained,

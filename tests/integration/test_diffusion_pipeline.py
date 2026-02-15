@@ -184,6 +184,7 @@ class TestDiffusionPipelineBasic:
 
         logger.close()
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_full_pipeline_conditional(self, tmp_path, mock_dataset_medium):
@@ -453,6 +454,7 @@ class TestDiffusionPipelineCheckpoints:
 
         logger.close()
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_training_resumption_from_checkpoint(self, tmp_path, mock_dataset_medium):
@@ -755,6 +757,7 @@ class TestDiffusionPipelineGeneration:
 
         logger_gen.close()
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_generation_mode_conditional(self, tmp_path, mock_dataset_medium):

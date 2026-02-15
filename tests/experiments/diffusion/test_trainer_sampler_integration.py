@@ -57,6 +57,9 @@ def small_conditional_model(device):
 @pytest.fixture
 def small_dataloader(temp_dir):
     """Create a minimal dataloader for testing."""
+    import numpy as np
+    from PIL import Image
+
     # Create dummy data directory structure
     train_dir = temp_dir / "train"
     train_dir.mkdir()
@@ -65,10 +68,12 @@ def small_dataloader(temp_dir):
         class_dir = train_dir / str(class_idx)
         class_dir.mkdir()
 
-        # Create a few dummy images
+        # Create a few dummy images as actual image files
         for i in range(4):
-            img_tensor = torch.rand(3, 32, 32)
-            torch.save(img_tensor, class_dir / f"img_{i}.pt")
+            # Create a random RGB image
+            img_array = np.random.randint(0, 256, (32, 32, 3), dtype=np.uint8)
+            img = Image.fromarray(img_array)
+            img.save(class_dir / f"img_{i}.png")
 
     # Create dataloader
     dataloader = DiffusionDataLoader(

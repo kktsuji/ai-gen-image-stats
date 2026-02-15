@@ -50,29 +50,49 @@ class TestMainEntryPoint:
         config_file = tmp_path / "classifier_config.yaml"
         config_data = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {"device": "cpu", "seed": None},
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {"name": "resnet50", "num_classes": 2},
+                "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": "outputs/checkpoints",
-                "log_dir": "outputs/logs",
+                "base_dir": "outputs",
+                "subdirs": {"checkpoints": "checkpoints", "logs": "logs"},
             },
         }
         with open(config_file, "w") as f:
@@ -87,9 +107,9 @@ class TestMainEntryPoint:
             # Verify config was passed correctly
             config = mock_setup.call_args[0][0]
             assert config["experiment"] == "classifier"
-            assert config["model"]["name"] == "resnet50"
+            assert config["model"]["architecture"]["name"] == "resnet50"
             assert config["training"]["epochs"] == 1
-            assert config["data"]["batch_size"] == 2
+            assert config["data"]["loading"]["batch_size"] == 2
 
     @pytest.mark.integration
     def test_main_dispatcher_gan_not_implemented(self, tmp_path):
@@ -112,29 +132,49 @@ class TestMainEntryPoint:
         config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {"device": "cpu", "seed": None},
             "model": {
-                "name": "inceptionv3",
-                "num_classes": 2,
-                "pretrained": True,
-                "freeze_backbone": False,
+                "architecture": {"name": "inceptionv3", "num_classes": 2},
+                "initialization": {"pretrained": True, "freeze_backbone": False},
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 16,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 16,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 5,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": "outputs/checkpoints",
-                "log_dir": "outputs/logs",
+                "base_dir": "outputs",
+                "subdirs": {"checkpoints": "checkpoints", "logs": "logs"},
             },
         }
 
@@ -149,7 +189,7 @@ class TestMainEntryPoint:
 
             # Verify config was loaded correctly
             config = mock_setup.call_args[0][0]
-            assert config["model"]["name"] == "inceptionv3"
+            assert config["model"]["architecture"]["name"] == "inceptionv3"
             assert config["training"]["epochs"] == 5
 
     @pytest.mark.integration
@@ -159,29 +199,49 @@ class TestMainEntryPoint:
         config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {"device": "cpu", "seed": None},
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {"name": "resnet50", "num_classes": 2},
+                "initialization": {"pretrained": False, "freeze_backbone": False},
+            },
+            "data": {
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 32,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 100,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
-            },
-            "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 32,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": "outputs/checkpoints",
-                "log_dir": "outputs/logs",
+                "base_dir": "outputs",
+                "subdirs": {"checkpoints": "checkpoints", "logs": "logs"},
             },
         }
 
@@ -201,29 +261,58 @@ class TestClassifierExperimentSetup:
         """Test basic classifier setup with minimal config."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -246,30 +335,61 @@ class TestClassifierExperimentSetup:
         """Test classifier setup with InceptionV3 model."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "inceptionv3",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
-                "dropout": 0.5,
+                "architecture": {
+                    "name": "inceptionv3",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
+                "regularization": {
+                    "dropout": 0.5,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -286,31 +406,58 @@ class TestClassifierExperimentSetup:
         """Test classifier setup with learning rate scheduler."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 10,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
-                "scheduler": "cosine",
-                "scheduler_kwargs": {"T_max": 10, "eta_min": 1e-6},
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": "cosine", "T_max": 10, "eta_min": 1e-6},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -327,30 +474,58 @@ class TestClassifierExperimentSetup:
         """Test that random seed is properly set."""
         config = {
             "experiment": "classifier",
-            "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
-            },
-            "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
-            },
-            "training": {
-                "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
+            "mode": "train",
+            "compute": {
                 "device": "cpu",
                 "seed": 42,
             },
+            "model": {
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
+            },
+            "data": {
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
+            },
+            "training": {
+                "epochs": 1,
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
+            },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -373,29 +548,58 @@ class TestClassifierExperimentSetup:
         """Test that invalid model name raises ValueError."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "invalid_model",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "invalid_model",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -407,29 +611,58 @@ class TestClassifierExperimentSetup:
         """Test that invalid optimizer raises ValueError."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "invalid_optimizer",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "invalid_optimizer",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -441,30 +674,58 @@ class TestClassifierExperimentSetup:
         """Test that invalid scheduler raises ValueError."""
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "scheduler": "invalid_scheduler",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": "invalid_scheduler"},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -481,30 +742,58 @@ class TestClassifierExperimentSetup:
         """
         config = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {
+                "device": "cpu",
+                "seed": None,
+            },
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {
+                    "name": "resnet50",
+                    "num_classes": 2,
+                },
+                "initialization": {
+                    "pretrained": False,
+                    "freeze_backbone": False,
+                },
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "val_path": "tests/fixtures/mock_data/val",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 64,
-                "crop_size": 32,
+                "paths": {
+                    "train": "tests/fixtures/mock_data/train",
+                    "val": "tests/fixtures/mock_data/val",
+                },
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 64,
+                    "crop_size": 32,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": str(tmp_path / "checkpoints"),
-                "log_dir": str(tmp_path / "logs"),
-                "save_best_only": True,
+                "base_dir": str(tmp_path),
+                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
             },
         }
 
@@ -531,28 +820,46 @@ class TestExperimentDispatcher:
         config_file = tmp_path / "classifier_config.yaml"
         config_data = {
             "experiment": "classifier",
+            "mode": "train",
+            "compute": {"device": "cpu", "seed": None},
             "model": {
-                "name": "resnet50",
-                "num_classes": 2,
-                "pretrained": False,
-                "freeze_backbone": False,
+                "architecture": {"name": "resnet50", "num_classes": 2},
+                "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
-                "batch_size": 2,
-                "num_workers": 0,
-                "image_size": 256,
-                "crop_size": 224,
+                "paths": {"train": "tests/fixtures/mock_data/train"},
+                "loading": {
+                    "batch_size": 2,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "shuffle_train": True,
+                    "drop_last": False,
+                },
+                "preprocessing": {
+                    "image_size": 256,
+                    "crop_size": 224,
+                    "normalize": "imagenet",
+                },
+                "augmentation": {
+                    "horizontal_flip": True,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False},
+                },
             },
             "training": {
                 "epochs": 1,
-                "learning_rate": 0.001,
-                "optimizer": "adam",
-                "device": "cpu",
+                "optimizer": {
+                    "type": "adam",
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                },
+                "scheduler": {"type": None},
+                "checkpointing": {"save_frequency": 10, "save_best_only": True},
+                "validation": {"enabled": True, "frequency": 1},
             },
             "output": {
-                "checkpoint_dir": "outputs/checkpoints",
-                "log_dir": "outputs/logs",
+                "base_dir": "outputs",
+                "subdirs": {"checkpoints": "checkpoints", "logs": "logs"},
             },
         }
         with open(config_file, "w") as f:
@@ -699,7 +1006,9 @@ class TestDiffusionGenerationMode:
             num_classes=2,
         )
 
-        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
             with patch("src.experiments.diffusion.logger.DiffusionLogger"):
                 # Mock sampler to return proper tensor
                 mock_sampler_instance = MagicMock()
@@ -759,12 +1068,16 @@ class TestDiffusionGenerationMode:
         )
 
         with patch("torch.optim.Adam") as mock_adam:
-            with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+            with patch(
+                "src.experiments.diffusion.sampler.DiffusionSampler"
+            ) as mock_sampler:
                 with patch("src.experiments.diffusion.logger.DiffusionLogger"):
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
                     mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+                    mock_sampler_instance.sample.return_value = torch.randn(
+                        10, 3, 32, 32
+                    )
 
                     try:
                         setup_experiment_diffusion(config)
@@ -789,12 +1102,16 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.dataloader.DiffusionDataLoader"
         ) as mock_dataloader:
-            with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+            with patch(
+                "src.experiments.diffusion.sampler.DiffusionSampler"
+            ) as mock_sampler:
                 with patch("src.experiments.diffusion.logger.DiffusionLogger"):
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
                     mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+                    mock_sampler_instance.sample.return_value = torch.randn(
+                        10, 3, 32, 32
+                    )
 
                     try:
                         setup_experiment_diffusion(config)
@@ -816,13 +1133,17 @@ class TestDiffusionGenerationMode:
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
 
-        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
             with patch("src.experiments.diffusion.logger.DiffusionLogger"):
                 with patch("src.experiments.diffusion.model.EMA") as mock_ema:
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
                     mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+                    mock_sampler_instance.sample.return_value = torch.randn(
+                        10, 3, 32, 32
+                    )
 
                     try:
                         setup_experiment_diffusion(config)
@@ -847,7 +1168,9 @@ class TestDiffusionGenerationMode:
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
 
-        with patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler:
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
             with patch("src.experiments.diffusion.logger.DiffusionLogger"):
                 # Mock sampler to return proper tensor
                 mock_sampler_instance = MagicMock()
@@ -978,11 +1301,4 @@ class TestDiffusionGenerationMode:
 
         checkpoint_path = tmp_path / "mock_checkpoint.pth"
         torch.save(checkpoint, checkpoint_path)
-        return checkpoint_path
-        return checkpoint_path
-            checkpoint["ema_state_dict"] = model.state_dict()
-
-        checkpoint_path = tmp_path / "mock_checkpoint.pth"
-        torch.save(checkpoint, checkpoint_path)
-        return checkpoint_path
         return checkpoint_path

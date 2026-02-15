@@ -35,6 +35,7 @@ TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 class TestClassifierPipelineBasic:
     """Test basic classifier pipeline with minimal configuration."""
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_full_pipeline_resnet50(self, tmp_path, mock_dataset_medium):
@@ -276,6 +277,7 @@ class TestClassifierPipelineCheckpoints:
             assert name1 == name2
             assert torch.allclose(param1, param2), f"Parameters {name1} don't match"
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_training_resumption_from_checkpoint(self, tmp_path, mock_dataset_medium):
