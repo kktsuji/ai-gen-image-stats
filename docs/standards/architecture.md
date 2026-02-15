@@ -8,10 +8,10 @@ This repository follows a **Vertical Slice + Base Class** architecture pattern f
 
 ### 1. Vertical Slice Architecture
 
-- Each experiment type (GAN, Diffusion, Classifier) is self-contained
+- Each experiment type (Diffusion, Classifier) is self-contained
 - Changes to one experiment don't affect others
 - Clear separation of concerns per experiment
-- Easy to add new experiment types
+- Easy to add new experiment types (GAN planned for future)
 
 ### 2. Base Class Pattern
 
@@ -53,34 +53,28 @@ ai-gen-image-stats/
 │   ├── experiments/                     # Vertical slices
 │   │   ├── __init__.py
 │   │   │
-│   │   ├── gan/
-│   │   │   ├── __init__.py
-│   │   │   ├── trainer.py               # GAN-specific trainer (inherits base)
-│   │   │   ├── model.py                 # GAN models (Generator, Discriminator)
-│   │   │   ├── dataloader.py            # GAN-specific dataloader
-│   │   │   ├── logger.py                # GAN-specific logging (e.g., generated images)
-│   │   │   └── config.py                # GAN default configs
-│   │   │
 │   │   ├── diffusion/
 │   │   │   ├── __init__.py
 │   │   │   ├── trainer.py               # Diffusion-specific trainer
 │   │   │   ├── model.py                 # Diffusion model (DDPM, etc.)
+│   │   │   ├── sampler.py               # Lightweight sampler for generation mode
 │   │   │   ├── dataloader.py            # Diffusion-specific dataloader
 │   │   │   ├── logger.py                # Diffusion-specific logging
-│   │   │   └── config.py                # Diffusion default configs
+│   │   │   ├── config.py                # Diffusion config validation
+│   │   │   └── default.yaml             # Default diffusion configuration
 │   │   │
-│   │   └── classifier/                  # Non-generative models
+│   │   └── classifier/                  # Classification models
 │   │       ├── __init__.py
 │   │       ├── trainer.py               # Classification trainer
 │   │       ├── models/
 │   │       │   ├── __init__.py
 │   │       │   ├── inceptionv3.py       # InceptionV3 wrapper
-│   │       │   ├── resnet.py            # ResNet variants
-│   │       │   └── custom.py            # Custom architectures
+│   │       │   └── resnet.py            # ResNet variants
 │   │       ├── dataloader.py            # Classification dataloader
 │   │       ├── logger.py                # Classification metrics logging
 │   │       ├── analyze_comparison.py    # Analysis tools
-│   │       └── config.py
+│   │       ├── config.py                # Classifier config validation
+│   │       └── default.yaml             # Default classifier configuration
 │   │
 │   ├── utils/
 │   │   ├── __init__.py
@@ -89,33 +83,44 @@ ai-gen-image-stats/
 │   │   ├── device.py                    # Device management (CPU/GPU)
 │   │   └── metrics.py                   # Common metrics (FID, IS, PR-AUC, ROC-AUC)
 │   │
+│   ├── deprecated/                      # Old code being phased out
+│   │   ├── ddpm_train.py
+│   │   ├── ddpm.py
+│   │   ├── inception_v3.py
+│   │   ├── resnet.py
+│   │   ├── train.py
+│   │   ├── analyze_comparison.py
+│   │   ├── stats.py
+│   │   ├── util.py
+│   │   └── ...                          # Other deprecated files
+│   │
 │   └── data/
 │       ├── __init__.py
 │       ├── datasets.py                  # Dataset implementations
 │       ├── transforms.py                # Common transformations
-│       └── samplers.py                  # Custom samplers if needed
+│       └── samplers.py                  # Custom data samplers
 │
 ├── tests/                               # See Testing Strategy section for details
 │   ├── base/                            # Mirror src/base/
 │   ├── experiments/                     # Mirror src/experiments/
+│   │   ├── classifier/
+│   │   ├── diffusion/
+│   │   └── gan/                         # Placeholder for future implementation
 │   ├── utils/                           # Mirror src/utils/
 │   ├── data/                            # Mirror src/data/
-│   ├── integration/                     # Optional: Complex end-to-end tests
-│   ├── smoke/                           # Optional: GPU-intensive tests
+│   ├── integration/                     # Complex end-to-end tests
+│   │   ├── test_classifier_pipeline.py
+│   │   └── test_diffusion_pipeline.py
 │   ├── fixtures/                        # Test fixtures, mock data
-│   └── conftest.py                      # Shared pytest fixtures
+│   │   ├── configs/
+│   │   ├── mock_data/
+│   │   └── README.md
+│   ├── conftest.py                      # Shared pytest fixtures
+│   ├── test_main.py                     # Main CLI tests
+│   └── test_infrastructure.py           # Infrastructure tests
 │
-├── configs/                             # Production configs
-│   ├── gan/
-│   │   ├── default.yaml
-│   │   └── experiment_001.yaml
-│   ├── diffusion/
-│   │   ├── default.yaml
-│   │   └── experiment_001.yaml
-│   └── classifier/
-│       ├── baseline.yaml
-│       ├── with_synth.yaml
-│       └── inceptionv3.yaml
+├── configs/                             # User experiment configs (user folder)
+│   └── (empty - users create their own configs here. gitignored)
 │
 ├── outputs/                             # Training outputs (gitignored)
 │   ├── checkpoints/
@@ -146,13 +151,31 @@ ai-gen-image-stats/
 
 **Purpose:** Self-contained implementations for each research direction.
 
-Each experiment module (GAN, Diffusion, Classifier) contains:
+**Currently Implemented:**
 
-- **Trainer**: Experiment-specific training logic (inherits from base)
-- **Model**: Architecture implementations
-- **DataLoader**: Data loading for specific experiment needs
-- **Logger**: Experiment-specific metrics and visualizations
-- **Config**: Default configurations
+**Diffusion Experiment** (`src/experiments/diffusion/`):
+
+- **Trainer**: DDPM training logic with EMA support
+- **Model**: U-Net architecture for diffusion models
+- **Sampler**: Lightweight sampler for generation-only mode
+- **DataLoader**: Dataset loading for diffusion training
+- **Logger**: Training metrics and generated image logging
+- **Config**: Configuration validation and default settings
+- **default.yaml**: Default configuration template
+
+**Classifier Experiment** (`src/experiments/classifier/`):
+
+- **Trainer**: Classification training with validation
+- **Models**: InceptionV3 and ResNet variants (50/101/152)
+- **DataLoader**: Image classification dataset loading
+- **Logger**: Training/validation metrics and confusion matrices
+- **Config**: Configuration validation and default settings
+- **default.yaml**: Default configuration template
+- **analyze_comparison.py**: Tools for comparing classifier performance
+
+**Planned:**
+
+- **GAN Experiment**: Placeholder exists in CLI but not yet implemented
 
 **Experiment Isolation:**
 
@@ -180,6 +203,11 @@ python -m src.main <CONFIG_FILE>
 
 **Configuration:** All parameters must be specified in the YAML configuration file. The experiment type is read from the config file's `experiment` field.
 
+**Config File Locations:**
+
+- `src/experiments/<experiment>/default.yaml`: Default configurations shipped with the project
+- `configs/`: User folder for custom experiment configurations (user-managed)
+
 ### Strict Validation
 
 The CLI enforces strict validation:
@@ -192,14 +220,17 @@ The CLI enforces strict validation:
 ### Usage Examples
 
 ```bash
-# Train classifier
-python -m src.main configs/classifier/baseline.yaml
+# Train classifier (using default config from src/experiments/classifier/)
+python -m src.main src/experiments/classifier/default.yaml
 
-# Train diffusion model
-python -m src.main configs/diffusion/default.yaml
+# Train diffusion model (using default config from src/experiments/diffusion/)
+python -m src.main src/experiments/diffusion/default.yaml
 
-# Train with custom config
-python -m src.main my_experiment_config.yaml
+# Generate synthetic data with diffusion model (mode must be set in config)
+python -m src.main configs/diffusion/generate.yaml
+
+# Train with custom user config
+python -m src.main configs/my_experiment.yaml
 ```
 
 ### Error Handling
@@ -297,53 +328,65 @@ tests/
 ├── base/                                # Mirror src/base/
 │   ├── test_trainer.py
 │   ├── test_model.py
+│   ├── test_dataloader.py
 │   └── test_logger.py
 │
 ├── experiments/                         # Mirror src/experiments/
-│   ├── gan/
-│   │   ├── test_trainer.py
-│   │   ├── test_model.py
-│   │   └── test_dataloader.py
 │   ├── diffusion/
 │   │   ├── test_trainer.py
 │   │   ├── test_model.py
-│   │   └── test_dataloader.py
-│   └── classifier/
-│       ├── test_trainer.py
-│       ├── test_models.py
-│       └── test_dataloader.py
+│   │   ├── test_sampler.py
+│   │   ├── test_dataloader.py
+│   │   ├── test_logger.py
+│   │   ├── test_config.py
+│   │   └── test_trainer_sampler_integration.py
+│   ├── classifier/
+│   │   ├── test_trainer.py
+│   │   ├── test_dataloader.py
+│   │   ├── test_logger.py
+│   │   ├── test_config.py
+│   │   ├── test_analyze_comparison.py
+│   │   └── models/
+│   │       ├── test_inceptionv3.py
+│   │       └── test_resnet.py
+│   └── gan/                             # Placeholder for future tests
+│       └── __init__.py
 │
 ├── utils/                               # Mirror src/utils/
 │   ├── test_cli.py
 │   ├── test_config.py
+│   ├── test_device.py
 │   └── test_metrics.py
 │
 ├── data/                                # Mirror src/data/
 │   ├── test_datasets.py
-│   └── test_transforms.py
+│   ├── test_transforms.py
+│   └── test_samplers.py
 │
-├── integration/                         # Optional: Complex end-to-end tests
-│   ├── test_full_gan_workflow.py
-│   ├── test_full_diffusion_workflow.py
-│   └── test_classifier_pipeline.py
-│
-├── smoke/                               # Optional: GPU-intensive tests
-│   ├── test_gpu_training.py
-│   ├── test_performance.py
-│   └── test_memory_usage.py
+├── integration/                         # Complex end-to-end tests
+│   ├── test_classifier_pipeline.py
+│   └── test_diffusion_pipeline.py
 │
 ├── fixtures/                            # Test fixtures, mock data
 │   ├── configs/
-│   └── mock_data/
+│   │   ├── classifier/
+│   │   ├── diffusion/
+│   │   ├── classifier_minimal.yaml
+│   │   ├── diffusion_minimal.yaml
+│   │   └── gan_minimal.yaml
+│   ├── mock_data/
+│   └── README.md
 │
-└── conftest.py                          # Shared pytest fixtures
+├── conftest.py                          # Shared pytest fixtures
+├── test_main.py                         # Main CLI tests
+└── test_infrastructure.py               # Infrastructure tests
 ```
 
 **Layout Strategy:**
 
 - **Primary Organization**: Tests mirror the `src/` directory structure for easy navigation
 - **Marker-Based Tiers**: Each test file contains multiple test tiers organized by pytest markers
-- **Optional Directories**: `integration/` and `smoke/` directories for complex multi-file tests (add only when needed)
+- **Integration Directory**: Used for complex end-to-end workflow tests
 
 **Test File Organization:**
 
@@ -355,20 +398,15 @@ Each test file contains tests from multiple tiers, organized top to bottom:
 
 This keeps related tests together while allowing selective execution via markers.
 
-**When to Add Optional Directories:**
+**Integration Tests:**
 
-Add `tests/integration/` and `tests/smoke/` when:
+The `tests/integration/` directory contains end-to-end workflow tests:
 
-- Integration tests become complex multi-file orchestrations
-- Smoke tests need special setup/teardown or CI/CD configuration
-- You want to run entire test categories with directory-based commands
-- Tests don't naturally fit the mirrored structure
+- Complex multi-component orchestration
+- Full training/generation pipelines with minimal settings
+- Tests that verify multiple components work together correctly
 
-Skip these directories if:
-
-- Tests remain simple and component-scoped
-- Markers provide sufficient organization
-- You prefer keeping all related tests in one place
+These tests use the `@pytest.mark.integration` marker and typically run longer than component tests.
 
 **Benefits of This Layout:**
 
@@ -483,45 +521,101 @@ pytest -m smoke --gpu
 
 ### Config File Format
 
-YAML format for configuration files with the following structure:
+YAML format for configuration files. Each experiment type has its own structure.
+
+**Classifier Example:**
 
 ```yaml
 experiment: classifier
+mode: train
+compute:
+  device: cuda
+  seed: 42
 model:
-  name: inceptionv3
-  pretrained: true
-  num_classes: 2
+  architecture:
+    name: resnet50
+    num_classes: 2
+  initialization:
+    pretrained: true
 data:
-  train_path: data/train
-  val_path: data/val
-  batch_size: 32
-  num_workers: 4
+  paths:
+    train: data/0.Normal
+    val: data/1.Abnormal
+  loading:
+    batch_size: 32
+    num_workers: 4
 training:
+  optimizer:
+    type: adam
+    learning_rate: 0.001
   epochs: 10
-  learning_rate: 0.001
-  optimizer: adam
-  scheduler: cosine
 output:
-  checkpoint_dir: outputs/checkpoints
-  log_dir: outputs/logs
+  base_dir: outputs
+```
+
+**Diffusion Example:**
+
+```yaml
+experiment: diffusion
+mode: train # or generate
+compute:
+  device: cuda
+  seed: null
+model:
+  architecture:
+    image_size: 40
+    in_channels: 3
+    model_channels: 64
+  diffusion:
+    num_timesteps: 1000
+    beta_schedule: cosine
+data:
+  paths:
+    train: data/train
+  loading:
+    batch_size: 64
+training:
+  epochs: 100
+  learning_rate: 0.0002
+output:
+  base_dir: outputs
 ```
 
 ### Config Organization
 
-- `configs/`: Production experiment configs (version controlled)
-- `tests/fixtures/configs/`: Test configs with minimal settings
-- One config per experiment variant for reproducibility
+- `src/experiments/<experiment>/default.yaml`: Default configs shipped with each experiment
+- `configs/`: User folder for custom experiment configurations (user-managed, can be empty)
+- `tests/fixtures/configs/`: Minimal test configs for fast testing
+- Each config must specify `experiment` field for routing to correct experiment implementation
 
 ## Research Workflow
 
 ### Typical Workflow
 
-1. **Generate Synthetic Data** (optional): Use diffusion experiment in generate mode
-2. **Train Baseline Classifier**: Train on real data only
-3. **Train with Synthetic Augmentation**: Train on real + synthetic data
-4. **Compare Results**: Use analysis tools to evaluate performance differences
+1. **Generate Synthetic Data** (optional):
 
-See [CLI Interface](#cli-interface) for command examples.
+   ```bash
+   # Set mode: generate in config file
+   python -m src.main configs/diffusion/generate.yaml
+   ```
+
+2. **Train Baseline Classifier**:
+
+   ```bash
+   # Train on real data only
+   python -m src.main src/experiments/classifier/default.yaml
+   ```
+
+3. **Train with Synthetic Augmentation**:
+
+   ```bash
+   # Train on real + synthetic data (update data paths in config)
+   python -m src.main configs/classifier/with_synth.yaml
+   ```
+
+4. **Compare Results**:
+   - Use `analyze_comparison.py` tools in classifier experiment
+   - Compare metrics logged in outputs directory
 
 ### Experiment Tracking
 
@@ -532,17 +626,19 @@ See [CLI Interface](#cli-interface) for command examples.
 
 ## Integration with Existing Code
 
-### Migration Path
+### Migration Status
 
-Current code in `src/old/` will be refactored into new structure:
+Old code from `src/deprecated/` has been successfully refactored:
 
-- `ddpm_train.py` → `src/experiments/diffusion/trainer.py`
-- `ddpm.py` → `src/experiments/diffusion/model.py`
-- `inception_v3.py`, `resnet.py` → `src/experiments/classifier/models/`
-- `train.py` → `src/base/trainer.py` (common logic)
-- `analyze_comparison.py` → `src/experiments/classifier/analyze_comparison.py`
-- `stats.py` → `src/utils/metrics.py`
-- `util.py` → `src/utils/` (split by concern)
+- ✓ `ddpm_train.py` → `src/experiments/diffusion/trainer.py`
+- ✓ `ddpm.py` → `src/experiments/diffusion/model.py`
+- ✓ `inception_v3.py`, `resnet.py` → `src/experiments/classifier/models/`
+- ✓ `train.py` → `src/base/trainer.py` (common logic)
+- ✓ `analyze_comparison.py` → `src/experiments/classifier/analyze_comparison.py`
+- ✓ `stats.py` → `src/utils/metrics.py`
+- ✓ `util.py` → `src/utils/` (split by concern)
+
+The `src/deprecated/` directory is maintained for reference but is no longer used in the active codebase.
 
 ### Pre-trained Model Weights
 
