@@ -205,6 +205,9 @@ data/
 # Pre-trained model weights (large files, download separately)
 models/
 
+# Experiment configuration files (if they contain sensitive info or are generated)
+configs/
+
 # PyTorch specific
 *.pt
 *.pth
