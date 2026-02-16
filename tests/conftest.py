@@ -9,6 +9,7 @@ This module provides common test fixtures used across all test tiers:
 - Mock configurations
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -118,6 +119,101 @@ def tmp_data_dir(tmp_path):
     data_dir = tmp_path / "data"
     data_dir.mkdir(exist_ok=True)
     return data_dir
+
+
+# ==============================================================================
+# Logging Fixtures
+# ==============================================================================
+
+
+@pytest.fixture
+def capture_logs(caplog):
+    """
+    Fixture to capture log messages in tests.
+
+    This fixture sets the log level to DEBUG and provides access to captured
+    log records. Tests can assert on log messages using caplog.text or
+    caplog.records.
+
+    Example:
+        def test_something(capture_logs):
+            logger.info("Test message")
+            assert "Test message" in capture_logs.text
+    """
+    caplog.set_level(logging.DEBUG)
+    return caplog
+
+
+@pytest.fixture
+def temp_log_file(tmp_path):
+    """
+    Temporary log file for testing.
+
+    Creates a temporary log file in a test-specific directory.
+    The file is automatically cleaned up after the test.
+
+    Returns:
+        Path: Path to the temporary log file
+
+    Example:
+        def test_file_logging(temp_log_file):
+            setup_logging(log_file=temp_log_file)
+            logger.info("Test")
+            assert temp_log_file.exists()
+    """
+    log_file = tmp_path / "test.log"
+    return log_file
+
+
+@pytest.fixture(scope="function", autouse=False)
+def clean_logging_handlers():
+    """
+    Clean up logging handlers after test to prevent pollution.
+
+    This fixture ensures that logging handlers created during tests
+    don't affect other tests. It removes all handlers from the root
+    logger after the test completes.
+
+    Usage:
+        @pytest.mark.usefixtures("clean_logging_handlers")
+        def test_logging_setup():
+            setup_logging(...)
+            # Test code
+            # Handlers are automatically cleaned up
+    """
+    yield
+    # Remove all handlers from root logger
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
+
+
+@pytest.fixture(scope="function")
+def suppress_console_logging():
+    """
+    Suppress console logging during tests.
+
+    This fixture temporarily sets the console logging level to CRITICAL
+    to prevent test output pollution. Useful for tests that trigger
+    many log messages but don't need to verify console output.
+
+    Example:
+        def test_verbose_operation(suppress_console_logging):
+            # Runs without console noise
+            do_something_verbose()
+    """
+    # Store original level
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+
+    # Suppress console output
+    root_logger.setLevel(logging.CRITICAL)
+
+    yield
+
+    # Restore original level
+    root_logger.setLevel(original_level)
 
 
 # ==============================================================================

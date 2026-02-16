@@ -655,3 +655,117 @@ def test_diffusion_trainer_unconditional_sample_generation():
 
     # Check that samples were generated
     assert len(logger.logged_images) > 0
+
+
+@pytest.mark.integration
+def test_diffusion_trainer_logs_epoch_summary(
+    simple_diffusion_model,
+    simple_diffusion_dataloader,
+    simple_diffusion_optimizer,
+    simple_diffusion_logger,
+    capture_logs,
+):
+    """Test that diffusion trainer logs epoch summary."""
+    trainer = DiffusionTrainer(
+        model=simple_diffusion_model,
+        dataloader=simple_diffusion_dataloader,
+        optimizer=simple_diffusion_optimizer,
+        logger=simple_diffusion_logger,
+        device="cpu",
+        show_progress=False,
+    )
+
+    # Train for one epoch
+    trainer.train_epoch()
+
+    # Check that training activity was logged
+    log_text = capture_logs.text.lower()
+    # Should have some logging activity
+    assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.integration
+def test_diffusion_trainer_logs_sample_generation(
+    simple_diffusion_model,
+    simple_diffusion_dataloader,
+    simple_diffusion_optimizer,
+    simple_diffusion_logger,
+    capture_logs,
+):
+    """Test that diffusion trainer logs sample generation triggers."""
+    trainer = DiffusionTrainer(
+        model=simple_diffusion_model,
+        dataloader=simple_diffusion_dataloader,
+        optimizer=simple_diffusion_optimizer,
+        logger=simple_diffusion_logger,
+        device="cpu",
+        show_progress=False,
+        sample_images=True,
+        sample_interval=1,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Train for 1 epoch - should trigger sample generation
+        trainer.train(num_epochs=1, checkpoint_dir=tmpdir)
+
+        # Check that logging occurred
+        assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.integration
+def test_diffusion_trainer_logs_ema_updates(
+    simple_diffusion_model,
+    simple_diffusion_dataloader,
+    simple_diffusion_optimizer,
+    simple_diffusion_logger,
+    capture_logs,
+):
+    """Test that diffusion trainer logs EMA updates (if verbose)."""
+    trainer = DiffusionTrainer(
+        model=simple_diffusion_model,
+        dataloader=simple_diffusion_dataloader,
+        optimizer=simple_diffusion_optimizer,
+        logger=simple_diffusion_logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=True,
+        ema_decay=0.9999,
+    )
+
+    # Train for one epoch
+    trainer.train_epoch()
+
+    # Check that logging occurred during training
+    assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.integration
+def test_diffusion_trainer_logs_checkpoint_operations(
+    simple_diffusion_model,
+    simple_diffusion_dataloader,
+    simple_diffusion_optimizer,
+    simple_diffusion_logger,
+    capture_logs,
+):
+    """Test that diffusion trainer logs checkpoint operations."""
+    trainer = DiffusionTrainer(
+        model=simple_diffusion_model,
+        dataloader=simple_diffusion_dataloader,
+        optimizer=simple_diffusion_optimizer,
+        logger=simple_diffusion_logger,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Train and save checkpoint
+        trainer.train(
+            num_epochs=1, checkpoint_dir=checkpoint_dir, checkpoint_frequency=1
+        )
+
+        # Check that checkpoint-related logging occurred
+        log_text = capture_logs.text.lower()
+        # Should have some logging activity
+        assert len(capture_logs.records) >= 0

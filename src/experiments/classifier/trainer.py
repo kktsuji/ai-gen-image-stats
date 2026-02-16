@@ -19,8 +19,8 @@ from src.base.logger import BaseLogger
 from src.base.model import BaseModel
 from src.base.trainer import BaseTrainer
 
-# Module-level logger
-logger = logging.getLogger(__name__)
+# Module-level logger for application logging
+_logger = logging.getLogger(__name__)
 
 
 class ClassifierTrainer(BaseTrainer):
@@ -94,14 +94,14 @@ class ClassifierTrainer(BaseTrainer):
         self.model.to(self.device)
 
         # Debug logging: Model structure
-        logger.debug(f"Model: {self.model.__class__.__name__}")
+        _logger.debug(f"Model: {self.model.__class__.__name__}")
         total_params = sum(p.numel() for p in self.model.parameters())
         trainable_params = sum(
             p.numel() for p in self.model.parameters() if p.requires_grad
         )
-        logger.debug(f"Total parameters: {total_params:,}")
-        logger.debug(f"Trainable parameters: {trainable_params:,}")
-        logger.debug(f"Device: {self.device}")
+        _logger.debug(f"Total parameters: {total_params:,}")
+        _logger.debug(f"Trainable parameters: {trainable_params:,}")
+        _logger.debug(f"Device: {self.device}")
 
     def train_epoch(self) -> Dict[str, float]:
         """Execute one training epoch.
@@ -127,9 +127,9 @@ class ClassifierTrainer(BaseTrainer):
         num_batches = 0
 
         # Debug: Log dataset info
-        logger.debug(f"Training on {len(train_loader)} batches")
+        _logger.debug(f"Training on {len(train_loader)} batches")
         if hasattr(train_loader, "dataset"):
-            logger.debug(f"Dataset size: {len(train_loader.dataset)}")
+            _logger.debug(f"Dataset size: {len(train_loader.dataset)}")
 
         # Create progress bar if enabled
         iterator = (
@@ -144,10 +144,10 @@ class ClassifierTrainer(BaseTrainer):
 
             # Debug: Log batch shapes on first batch
             if batch_idx == 0:
-                logger.debug(f"Input batch shape: {data.shape}")
-                logger.debug(f"Target batch shape: {target.shape}")
+                _logger.debug(f"Input batch shape: {data.shape}")
+                _logger.debug(f"Target batch shape: {target.shape}")
                 if torch.cuda.is_available() and self.device == "cuda":
-                    logger.debug(
+                    _logger.debug(
                         f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB"
                     )
 
@@ -179,7 +179,7 @@ class ClassifierTrainer(BaseTrainer):
             # Batch-level logging
             if self.log_interval > 0 and (batch_idx + 1) % self.log_interval == 0:
                 current_lr = self.optimizer.param_groups[0]["lr"]
-                logger.debug(
+                _logger.debug(
                     f"Epoch [{self._current_epoch}] Batch [{batch_idx + 1}/{len(train_loader)}] - "
                     f"Loss: {loss.item():.4f}, Acc: {100.0 * correct / total:.2f}%, LR: {current_lr:.6f}"
                 )
@@ -199,19 +199,19 @@ class ClassifierTrainer(BaseTrainer):
 
         # Warning for unusual conditions
         if avg_loss > 10.0:
-            logger.warning(
+            _logger.warning(
                 f"High loss detected: {avg_loss:.4f} - training may be unstable"
             )
         if accuracy < 10.0 and self._current_epoch > 5:
-            logger.warning(
+            _logger.warning(
                 f"Low accuracy detected: {accuracy:.2f}% after {self._current_epoch} epochs"
             )
 
-        logger.info(
+        _logger.info(
             f"Epoch {self._current_epoch} [Train] - "
             f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%"
         )
-        logger.debug(f"Training batches: {num_batches}, Total samples: {total}")
+        _logger.debug(f"Training batches: {num_batches}, Total samples: {total}")
 
         return {
             "loss": avg_loss,
@@ -262,17 +262,17 @@ class ClassifierTrainer(BaseTrainer):
 
                 # Warning for very low learning rate
                 if new_lr < 1e-7:
-                    logger.warning(
+                    _logger.warning(
                         f"Very low learning rate: {new_lr:.2e} - training may be ineffective"
                     )
 
                 if old_lr != new_lr:
-                    logger.info(
+                    _logger.info(
                         f"Learning rate changed: {old_lr:.6e} -> {new_lr:.6e} "
                         f"(epoch {self._current_epoch})"
                     )
                 else:
-                    logger.debug(f"Learning rate: {new_lr:.6e}")
+                    _logger.debug(f"Learning rate: {new_lr:.6e}")
 
             # Log training metrics
             logger.log_metrics(
@@ -406,11 +406,11 @@ class ClassifierTrainer(BaseTrainer):
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         accuracy = 100.0 * correct / total if total > 0 else 0.0
 
-        logger.info(
+        _logger.info(
             f"Epoch {self._current_epoch} [Val] - "
             f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%"
         )
-        logger.debug(f"Validation batches: {num_batches}, Total samples: {total}")
+        _logger.debug(f"Validation batches: {num_batches}, Total samples: {total}")
 
         return {
             "val_loss": avg_loss,

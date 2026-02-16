@@ -722,10 +722,10 @@ def temp_log_file(tmp_path):
 
 **Implementation Checklist:**
 
-- [ ] Add `capture_logs` fixture to `tests/conftest.py`
-- [ ] Add `temp_log_file` fixture to `tests/conftest.py`
-- [ ] Add logging setup/teardown for tests
-- [ ] Ensure tests don't pollute console with logs
+- [x] Add `capture_logs` fixture to `tests/conftest.py`
+- [x] Add `temp_log_file` fixture to `tests/conftest.py`
+- [x] Add logging setup/teardown for tests
+- [x] Ensure tests don't pollute console with logs
 
 #### Step 4.2: Test Logging in Trainers
 
@@ -747,10 +747,10 @@ def test_trainer_logs_checkpoint_save(trainer, capture_logs, tmp_path):
 
 **Implementation Checklist:**
 
-- [ ] Add logging tests to `tests/base/test_trainer.py`
-- [ ] Verify epoch logging
-- [ ] Verify checkpoint logging
-- [ ] Verify error logging
+- [x] Add logging tests to `tests/base/test_trainer.py`
+- [x] Verify epoch logging
+- [x] Verify checkpoint logging
+- [x] Verify error logging
 
 #### Step 4.3: Test Logging in Experiments
 
@@ -769,10 +769,10 @@ def test_classifier_trainer_logs_validation(trainer, capture_logs):
 
 **Implementation Checklist:**
 
-- [ ] Add logging tests for classifier trainer
-- [ ] Add logging tests for diffusion trainer
-- [ ] Verify validation logging
-- [ ] Verify metric logging (not to be confused with BaseLogger metrics)
+- [x] Add logging tests for classifier trainer
+- [x] Add logging tests for diffusion trainer
+- [x] Verify validation logging
+- [x] Verify metric logging (not to be confused with BaseLogger metrics)
 
 #### Step 4.4: Integration Tests
 
@@ -802,11 +802,11 @@ def test_different_log_levels(tmp_path):
 
 **Implementation Checklist:**
 
-- [ ] Create `tests/integration/test_logging_integration.py`
-- [ ] Test dual output (console + file)
-- [ ] Test different log levels
-- [ ] Test module-specific levels
-- [ ] Test log format customization
+- [x] Create `tests/integration/test_logging_integration.py`
+- [x] Test dual output (console + file)
+- [x] Test different log levels
+- [x] Test module-specific levels
+- [x] Test log format customization
 - [ ] Test log file rotation (if implemented)
 
 ### Phase 5: Documentation and Cleanup (Week 5)

@@ -301,9 +301,12 @@ class BaseTrainer(ABC):
                     if is_best:
                         prev_best = self._best_metric
                         self._best_metric = current_metric_value
+                        prev_best_str = (
+                            f"{prev_best:.6f}" if prev_best is not None else "N/A"
+                        )
                         logger.info(
                             f"New best {best_metric}: {current_metric_value:.6f} "
-                            f"(previous: {prev_best:.6f if prev_best is not None else 'N/A'})"
+                            f"(previous: {prev_best_str})"
                         )
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
@@ -595,9 +598,12 @@ class BaseTrainer(ABC):
                     if is_best:
                         prev_best = self._best_metric
                         self._best_metric = current_metric_value
+                        prev_best_str = (
+                            f"{prev_best:.6f}" if prev_best is not None else "N/A"
+                        )
                         logger.info(
                             f"New best {best_metric}: {current_metric_value:.6f} "
-                            f"(previous: {prev_best:.6f if prev_best is not None else 'N/A'})"
+                            f"(previous: {prev_best_str})"
                         )
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"

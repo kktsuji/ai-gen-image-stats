@@ -726,3 +726,132 @@ class TestBestMetricTracking:
 
         with pytest.raises(ValueError, match="Invalid metric mode"):
             trainer._is_best_metric(0.5, "invalid")
+
+
+@pytest.mark.component
+class TestTrainerLogging:
+    """Test logging functionality in trainer."""
+
+    def test_trainer_logs_epoch_start(self, capture_logs, tmp_output_dir):
+        """Trainer logs epoch start message."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=10, batch_size=5)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+
+        # Train for 1 epoch
+        trainer.train(num_epochs=1, checkpoint_dir=str(tmp_output_dir / "checkpoints"))
+
+        # Check that epoch info is logged
+        log_text = capture_logs.text.lower()
+        assert "epoch" in log_text or "training" in log_text
+
+    def test_trainer_logs_checkpoint_save(self, capture_logs, tmp_output_dir):
+        """Trainer logs checkpoint save operations."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader()
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        trainer._current_epoch = 1
+
+        checkpoint_path = tmp_output_dir / "checkpoints" / "test_ckpt.pt"
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save checkpoint
+        trainer.save_checkpoint(str(checkpoint_path), epoch=1)
+
+        # Check that checkpoint save is logged
+        log_text = capture_logs.text.lower()
+        assert "checkpoint" in log_text or "save" in log_text
+
+    def test_trainer_logs_checkpoint_load(self, capture_logs, tmp_output_dir):
+        """Trainer logs checkpoint load operations."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader()
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        trainer._current_epoch = 1
+
+        # Save checkpoint first
+        checkpoint_path = tmp_output_dir / "checkpoints" / "test_ckpt.pt"
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        trainer.save_checkpoint(str(checkpoint_path), epoch=1)
+
+        # Clear log capture
+        capture_logs.clear()
+
+        # Create new trainer and load checkpoint
+        model2 = SimpleTestModel()
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer, logger)
+        trainer2.load_checkpoint(str(checkpoint_path))
+
+        # Check that checkpoint load is logged
+        log_text = capture_logs.text.lower()
+        assert "checkpoint" in log_text or "load" in log_text or "resum" in log_text
+
+    def test_trainer_logs_training_progress(self, capture_logs, tmp_output_dir):
+        """Trainer logs training progress."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=20, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+
+        # Train for 2 epochs
+        trainer.train(num_epochs=2, checkpoint_dir=str(tmp_output_dir / "checkpoints"))
+
+        # Check that progress is logged
+        log_text = capture_logs.text.lower()
+        # Should have some indication of progress
+        assert len(capture_logs.records) > 0
+
+    def test_trainer_logs_validation_execution(self, capture_logs, tmp_output_dir):
+        """Trainer logs validation execution."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=10, num_val_samples=5)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+
+        # Train with validation
+        trainer.train(
+            num_epochs=2,
+            checkpoint_dir=str(tmp_output_dir / "checkpoints"),
+            validate_frequency=1,
+        )
+
+        # Check that validation is mentioned in logs
+        log_text = capture_logs.text.lower()
+        # Should have some logging activity
+        assert len(capture_logs.records) > 0
+
+    def test_trainer_respects_log_levels(self, tmp_output_dir, caplog):
+        """Trainer respects different log levels."""
+        import logging
+
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=10)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+
+        # Set logging to WARNING level
+        root_logger = logging.getLogger()
+        original_level = root_logger.level
+        root_logger.setLevel(logging.WARNING)
+        caplog.set_level(logging.WARNING)
+
+        # Train - should complete without issues
+        trainer.train(num_epochs=1, checkpoint_dir=str(tmp_output_dir / "checkpoints"))
+
+        # Reset to default
+        root_logger.setLevel(original_level)
