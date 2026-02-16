@@ -81,19 +81,21 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Setup logging FIRST (before any other operations)
-    log_file = get_log_file_path(
-        output_base_dir=config["output"]["base_dir"],
-        log_subdir=config["output"]["subdirs"]["logs"],
-    )
-
     # Get logging configuration (with defaults)
     logging_config = config.get("logging", {})
     console_level = logging_config.get("console_level", "INFO")
     file_level = logging_config.get("file_level", "DEBUG")
     log_format = logging_config.get("format")
     date_format = logging_config.get("date_format")
+    timezone = logging_config.get("timezone", "UTC")
     module_levels = logging_config.get("module_levels")
+
+    # Setup logging FIRST (before any other operations)
+    log_file = get_log_file_path(
+        output_base_dir=config["output"]["base_dir"],
+        log_subdir=config["output"]["subdirs"]["logs"],
+        timezone=timezone,
+    )
 
     # Initialize logging
     setup_logging(
@@ -102,6 +104,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         file_level=file_level,
         log_format=log_format,
         date_format=date_format,
+        timezone=timezone,
         module_levels=module_levels,
     )
 
@@ -394,19 +397,21 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     log_dir = resolve_output_path(config, "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Setup logging FIRST (before any other operations)
-    log_file = get_log_file_path(
-        output_base_dir=config["output"]["base_dir"],
-        log_subdir=config["output"]["subdirs"]["logs"],
-    )
-
     # Get logging configuration (with defaults)
     logging_config = config.get("logging", {})
     console_level = logging_config.get("console_level", "INFO")
     file_level = logging_config.get("file_level", "DEBUG")
     log_format = logging_config.get("format")
     date_format = logging_config.get("date_format")
+    timezone = logging_config.get("timezone", "UTC")
     module_levels = logging_config.get("module_levels")
+
+    # Setup logging FIRST (before any other operations)
+    log_file = get_log_file_path(
+        output_base_dir=config["output"]["base_dir"],
+        log_subdir=config["output"]["subdirs"]["logs"],
+        timezone=timezone,
+    )
 
     # Initialize logging
     setup_logging(
@@ -415,6 +420,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         file_level=file_level,
         log_format=log_format,
         date_format=date_format,
+        timezone=timezone,
         module_levels=module_levels,
     )
 

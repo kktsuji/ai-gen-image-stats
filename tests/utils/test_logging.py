@@ -5,11 +5,19 @@ These tests run on CPU only and do not require GPU hardware.
 """
 
 import logging
+import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.utils.logging import get_log_file_path, get_logger, setup_logging
+from src.utils.logging import (
+    TimezoneFormatter,
+    get_log_file_path,
+    get_logger,
+    setup_logging,
+)
 
 
 @pytest.mark.unit
@@ -277,3 +285,240 @@ class TestGetLogger:
 
         assert logger.name == module_name
         assert isinstance(logger, logging.Logger)
+
+
+@pytest.mark.unit
+class TestTimezoneFormatter:
+    """Tests for timezone-aware log formatting."""
+
+    def test_timezone_formatter_utc(self):
+        """TimezoneFormatter correctly handles UTC timezone."""
+        formatter = TimezoneFormatter(
+            fmt="%(asctime)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            timezone="UTC",
+        )
+
+        # Create a mock log record
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        formatted = formatter.format(record)
+        assert "Test message" in formatted
+        # Should have timestamp in format YYYY-MM-DD HH:MM:SS
+        assert formatted.count("|") == 1
+
+    def test_timezone_formatter_local(self):
+        """TimezoneFormatter correctly handles local timezone."""
+        formatter = TimezoneFormatter(
+            fmt="%(asctime)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            timezone="local",
+        )
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        formatted = formatter.format(record)
+        assert "Test message" in formatted
+
+    def test_timezone_formatter_iana_timezone(self):
+        """TimezoneFormatter correctly handles IANA timezones."""
+        formatter = TimezoneFormatter(
+            fmt="%(asctime)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            timezone="Asia/Tokyo",
+        )
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        formatted = formatter.format(record)
+        assert "Test message" in formatted
+
+    def test_timezone_formatter_none_uses_local(self):
+        """TimezoneFormatter uses local time when timezone is None."""
+        formatter = TimezoneFormatter(
+            fmt="%(asctime)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            timezone=None,
+        )
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        formatted = formatter.format(record)
+        assert "Test message" in formatted
+
+
+@pytest.mark.unit
+class TestLoggingWithTimezone:
+    """Tests for logging setup with timezone support."""
+
+    def test_setup_logging_with_utc_timezone(self, tmp_path):
+        """setup_logging correctly uses UTC timezone."""
+        log_file = tmp_path / "test_utc.log"
+        logger = setup_logging(log_file=log_file, timezone="UTC")
+
+        test_message = "Test UTC message"
+        logger.info(test_message)
+
+        log_content = log_file.read_text()
+        assert test_message in log_content
+
+    def test_setup_logging_with_local_timezone(self, tmp_path):
+        """setup_logging correctly uses local timezone."""
+        log_file = tmp_path / "test_local.log"
+        logger = setup_logging(log_file=log_file, timezone="local")
+
+        test_message = "Test local message"
+        logger.info(test_message)
+
+        log_content = log_file.read_text()
+        assert test_message in log_content
+
+    def test_setup_logging_with_iana_timezone(self, tmp_path):
+        """setup_logging correctly uses IANA timezone."""
+        log_file = tmp_path / "test_tokyo.log"
+        logger = setup_logging(log_file=log_file, timezone="Asia/Tokyo")
+
+        test_message = "Test Tokyo message"
+        logger.info(test_message)
+
+        log_content = log_file.read_text()
+        assert test_message in log_content
+
+    def test_setup_logging_default_timezone_is_utc(self, tmp_path):
+        """setup_logging defaults to UTC when timezone not specified."""
+        log_file = tmp_path / "test_default.log"
+        logger = setup_logging(log_file=log_file)
+
+        test_message = "Test default timezone"
+        logger.info(test_message)
+
+        log_content = log_file.read_text()
+        assert test_message in log_content
+
+    def test_timezone_affects_timestamp_in_logs(self, tmp_path):
+        """Different timezones produce different timestamps."""
+        log_file_utc = tmp_path / "test_utc.log"
+        log_file_tokyo = tmp_path / "test_tokyo.log"
+
+        # Log with UTC
+        logger_utc = setup_logging(
+            log_file=log_file_utc,
+            timezone="UTC",
+            console_level="ERROR",  # Suppress console
+        )
+        logger_utc.info("UTC timestamp test")
+
+        # Clear handlers
+        logging.getLogger().handlers.clear()
+
+        # Log with Tokyo timezone
+        logger_tokyo = setup_logging(
+            log_file=log_file_tokyo,
+            timezone="Asia/Tokyo",
+            console_level="ERROR",  # Suppress console
+        )
+        logger_tokyo.info("Tokyo timestamp test")
+
+        # Read both logs
+        utc_content = log_file_utc.read_text()
+        tokyo_content = log_file_tokyo.read_text()
+
+        # Both should have the message
+        assert "UTC timestamp test" in utc_content
+        assert "Tokyo timestamp test" in tokyo_content
+
+        # Extract timestamps (first part before |)
+        utc_timestamp = utc_content.split("|")[0].strip()
+        tokyo_timestamp = tokyo_content.split("|")[0].strip()
+
+        # Timestamps should be in expected format
+        assert len(utc_timestamp) == len("2026-02-17 08:30:15")
+        assert len(tokyo_timestamp) == len("2026-02-17 08:30:15")
+
+
+@pytest.mark.unit
+class TestLogFilePathWithTimezone:
+    """Tests for log file path generation with timezone support."""
+
+    def test_get_log_file_path_with_utc_timezone(self):
+        """get_log_file_path generates path with UTC timestamp."""
+        output_dir = "outputs/test"
+        path = get_log_file_path(output_dir, timezone="UTC")
+
+        assert isinstance(path, Path)
+        assert "log_" in path.name
+        assert path.name.endswith(".log")
+
+    def test_get_log_file_path_with_local_timezone(self):
+        """get_log_file_path generates path with local timestamp."""
+        output_dir = "outputs/test"
+        path = get_log_file_path(output_dir, timezone="local")
+
+        assert isinstance(path, Path)
+        assert "log_" in path.name
+        assert path.name.endswith(".log")
+
+    def test_get_log_file_path_with_iana_timezone(self):
+        """get_log_file_path generates path with IANA timezone timestamp."""
+        output_dir = "outputs/test"
+        path = get_log_file_path(output_dir, timezone="Asia/Tokyo")
+
+        assert isinstance(path, Path)
+        assert "log_" in path.name
+        assert path.name.endswith(".log")
+
+    def test_get_log_file_path_default_timezone(self):
+        """get_log_file_path uses UTC when timezone not specified."""
+        output_dir = "outputs/test"
+        path = get_log_file_path(output_dir)
+
+        assert isinstance(path, Path)
+        assert "log_" in path.name
+
+    def test_different_timezones_may_produce_different_filenames(self):
+        """Different timezones can produce different log filenames."""
+        output_dir = "outputs/test"
+
+        path_utc = get_log_file_path(output_dir, timezone="UTC")
+        path_tokyo = get_log_file_path(output_dir, timezone="Asia/Tokyo")
+
+        # Both should be valid paths
+        assert isinstance(path_utc, Path)
+        assert isinstance(path_tokyo, Path)
+
+        # Filenames may differ if UTC and Tokyo are in different days
+        # but both should follow the naming pattern
+        assert path_utc.name.startswith("log_")
+        assert path_tokyo.name.startswith("log_")

@@ -6,12 +6,15 @@ Tests verify:
 - Different log levels
 - Module-specific log levels
 - Log format customization
+- Timezone support
 - End-to-end logging with training workflows
 """
 
 import logging
 import tempfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import torch
@@ -371,3 +374,144 @@ class TestEndToEndLogging:
         assert "module3" in content
         assert "module2" in content
         assert "module3" in content
+
+
+@pytest.mark.integration
+class TestLoggingTimezoneIntegration:
+    """Integration tests for timezone support in logging."""
+
+    def test_complete_logging_flow_with_utc(self, tmp_path):
+        """Complete logging flow works with UTC timezone."""
+        log_file = tmp_path / "integration_utc.log"
+
+        # Setup logging with UTC
+        logger = setup_logging(
+            log_file=log_file,
+            console_level="INFO",
+            file_level="DEBUG",
+            timezone="UTC",
+        )
+
+        test_logger = get_logger("test.utc.integration")
+        test_logger.info("UTC integration test message")
+        test_logger.debug("UTC debug message")
+
+        # Verify log file
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "UTC integration test message" in content
+        assert "UTC debug message" in content
+
+    def test_complete_logging_flow_with_tokyo_timezone(self, tmp_path):
+        """Complete logging flow works with Asia/Tokyo timezone."""
+        log_file = tmp_path / "integration_tokyo.log"
+
+        # Setup logging with Tokyo timezone
+        logger = setup_logging(
+            log_file=log_file,
+            console_level="INFO",
+            file_level="DEBUG",
+            timezone="Asia/Tokyo",
+        )
+
+        test_logger = get_logger("test.tokyo.integration")
+        test_logger.info("Tokyo integration test message")
+        test_logger.debug("Tokyo debug message")
+
+        # Verify log file
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Tokyo integration test message" in content
+        assert "Tokyo debug message" in content
+
+    def test_log_file_path_generation_with_timezone(self, tmp_path):
+        """Log file path generation respects timezone setting."""
+        # Generate path with UTC
+        path_utc = get_log_file_path(
+            output_base_dir=tmp_path, log_subdir="logs", timezone="UTC"
+        )
+
+        # Generate path with Tokyo
+        path_tokyo = get_log_file_path(
+            output_base_dir=tmp_path, log_subdir="logs", timezone="Asia/Tokyo"
+        )
+
+        # Both should be valid paths with correct structure
+        assert path_utc.parent == tmp_path / "logs"
+        assert path_tokyo.parent == tmp_path / "logs"
+        assert path_utc.name.startswith("log_")
+        assert path_tokyo.name.startswith("log_")
+
+    def test_timezone_appears_in_log_timestamps(self, tmp_path):
+        """Timezone configuration affects log timestamps correctly."""
+        log_file = tmp_path / "timezone_test.log"
+
+        # Setup logging with UTC
+        logger = setup_logging(
+            log_file=log_file,
+            console_level="ERROR",  # Suppress console
+            file_level="INFO",
+            timezone="UTC",
+            date_format="%Y-%m-%d %H:%M:%S",
+        )
+
+        # Get current UTC time for comparison
+        utc_now = datetime.now(ZoneInfo("UTC"))
+        current_hour = utc_now.strftime("%H")
+
+        # Log a message
+        test_logger = get_logger("test.timezone")
+        test_logger.info("Timezone timestamp verification")
+
+        # Read log file
+        content = log_file.read_text()
+
+        # Should contain the message
+        assert "Timezone timestamp verification" in content
+
+        # Timestamp should be present and in correct format
+        lines = content.strip().split("\n")
+        assert len(lines) > 0
+        timestamp_part = lines[0].split("|")[0].strip()
+
+        # Verify timestamp format (YYYY-MM-DD HH:MM:SS)
+        assert len(timestamp_part) == 19  # Length of "YYYY-MM-DD HH:MM:SS"
+        assert timestamp_part[4] == "-"
+        assert timestamp_part[7] == "-"
+        assert timestamp_part[10] == " "
+        assert timestamp_part[13] == ":"
+        assert timestamp_part[16] == ":"
+
+    def test_multiple_loggers_with_timezone(self, tmp_path):
+        """Multiple loggers work correctly with timezone configuration."""
+        log_file = tmp_path / "multi_logger_tz.log"
+
+        # Setup logging with timezone
+        setup_logging(
+            log_file=log_file,
+            console_level="ERROR",
+            file_level="DEBUG",
+            timezone="UTC",
+        )
+
+        # Create multiple loggers
+        logger1 = get_logger("module1.submodule")
+        logger2 = get_logger("module2.component")
+        logger3 = get_logger("module3.handler")
+
+        # Log from different loggers
+        logger1.info("Message from module1")
+        logger2.debug("Message from module2")
+        logger3.warning("Message from module3")
+
+        # Verify all messages in file with timestamps
+        content = log_file.read_text()
+        assert "Message from module1" in content
+        assert "Message from module2" in content
+        assert "Message from module3" in content
+
+        # All lines should have timestamps
+        lines = [line for line in content.split("\n") if line.strip()]
+        for line in lines:
+            # Each line should start with timestamp format
+            assert "|" in line  # Timestamp | logger | level | message

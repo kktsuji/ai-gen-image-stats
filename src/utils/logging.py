@@ -9,6 +9,66 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Union
+from zoneinfo import ZoneInfo
+
+
+class TimezoneFormatter(logging.Formatter):
+    """Custom formatter that supports timezone-aware timestamps.
+
+    Converts log record timestamps to the specified timezone before formatting.
+    """
+
+    def __init__(
+        self,
+        fmt: Optional[str] = None,
+        datefmt: Optional[str] = None,
+        timezone: Optional[str] = None,
+    ):
+        """Initialize formatter with timezone support.
+
+        Args:
+            fmt: Log message format string
+            datefmt: Timestamp format string
+            timezone: Timezone string ('UTC', 'local', or IANA timezone like 'Asia/Tokyo')
+        """
+        super().__init__(fmt, datefmt)
+        self.timezone = self._get_timezone(timezone)
+
+    def _get_timezone(self, timezone: Optional[str]) -> Optional[ZoneInfo]:
+        """Get ZoneInfo object from timezone string.
+
+        Args:
+            timezone: Timezone string ('UTC', 'local', or IANA timezone)
+
+        Returns:
+            ZoneInfo object or None for local time
+        """
+        if timezone is None or timezone.lower() == "local":
+            return None  # Use local time
+        elif timezone.upper() == "UTC":
+            return ZoneInfo("UTC")
+        else:
+            return ZoneInfo(timezone)  # IANA timezone (e.g., 'Asia/Tokyo')
+
+    def formatTime(
+        self, record: logging.LogRecord, datefmt: Optional[str] = None
+    ) -> str:
+        """Format the log record timestamp with timezone conversion.
+
+        Args:
+            record: Log record to format
+            datefmt: Optional date format override
+
+        Returns:
+            Formatted timestamp string
+        """
+        # Create datetime from record timestamp
+        dt = datetime.fromtimestamp(record.created, tz=self.timezone)
+
+        if datefmt:
+            return dt.strftime(datefmt)
+        else:
+            return dt.isoformat()
 
 
 def setup_logging(
@@ -17,6 +77,7 @@ def setup_logging(
     file_level: str = "DEBUG",
     log_format: Optional[str] = None,
     date_format: Optional[str] = None,
+    timezone: Optional[str] = None,
     module_levels: Optional[Dict[str, str]] = None,
 ) -> logging.Logger:
     """Configure application-wide logging with console and file handlers.
@@ -27,6 +88,7 @@ def setup_logging(
         file_level: Log level for file output
         log_format: Custom format string for log messages
         date_format: Custom format for timestamps
+        timezone: Timezone for timestamps ('UTC', 'local', or IANA timezone like 'Asia/Tokyo')
         module_levels: Dict of module names to log levels for fine-grained control
 
     Returns:
@@ -36,7 +98,8 @@ def setup_logging(
         >>> logger = setup_logging(
         ...     log_file="outputs/logs/train_20260216_143022.log",
         ...     console_level="INFO",
-        ...     file_level="DEBUG"
+        ...     file_level="DEBUG",
+        ...     timezone="UTC"
         ... )
         >>> logger.info("Logging initialized")
     """
@@ -54,8 +117,12 @@ def setup_logging(
     if date_format is None:
         date_format = "%Y-%m-%d %H:%M:%S"
 
-    # Create formatter
-    formatter = logging.Formatter(log_format, datefmt=date_format)
+    # Set default timezone if not provided
+    if timezone is None:
+        timezone = "UTC"
+
+    # Create formatter with timezone support
+    formatter = TimezoneFormatter(log_format, datefmt=date_format, timezone=timezone)
 
     # Get root logger
     root_logger = logging.getLogger()
@@ -91,24 +158,35 @@ def setup_logging(
 
 
 def get_log_file_path(
-    output_base_dir: Union[str, Path], log_subdir: str = "logs"
+    output_base_dir: Union[str, Path],
+    log_subdir: str = "logs",
+    timezone: Optional[str] = None,
 ) -> Path:
     """Generate timestamped log file path.
 
     Args:
         output_base_dir: Base output directory from config
         log_subdir: Subdirectory for logs
+        timezone: Timezone for timestamp ('UTC', 'local', or IANA timezone like 'Asia/Tokyo')
 
     Returns:
         Path to log file with timestamp
 
     Example:
-        >>> path = get_log_file_path("outputs/classifier-experiment", "logs")
+        >>> path = get_log_file_path("outputs/classifier-experiment", "logs", "UTC")
         >>> print(path)
         outputs/classifier-experiment/logs/log_20260216_143022.log
     """
     output_base_dir = Path(output_base_dir)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Get current time in the specified timezone
+    if timezone is None or timezone.lower() == "local":
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    elif timezone.upper() == "UTC":
+        timestamp = datetime.now(ZoneInfo("UTC")).strftime("%Y%m%d_%H%M%S")
+    else:
+        timestamp = datetime.now(ZoneInfo(timezone)).strftime("%Y%m%d_%H%M%S")
+
     log_filename = f"log_{timestamp}.log"
     return output_base_dir / log_subdir / log_filename
 
