@@ -111,6 +111,7 @@ class DiffusionTrainer(BaseTrainer):
         sample_interval: int = 10,
         samples_per_class: int = 2,
         guidance_scale: float = 3.0,
+        log_interval: int = 100,
     ):
         """Initialize the diffusion trainer.
 
@@ -130,6 +131,7 @@ class DiffusionTrainer(BaseTrainer):
             sample_interval: Generate samples every N epochs
             samples_per_class: Number of samples per class to generate
             guidance_scale: Classifier-free guidance scale
+            log_interval: Log batch-level metrics every N batches (0 to disable)
         """
         super().__init__()
         self.model = model
@@ -140,6 +142,7 @@ class DiffusionTrainer(BaseTrainer):
         self.show_progress = show_progress
         self.scheduler = scheduler
         self.gradient_clip_norm = gradient_clip_norm
+        self.log_interval = log_interval
 
         # Sample generation settings
         self.sample_images = sample_images
@@ -149,6 +152,16 @@ class DiffusionTrainer(BaseTrainer):
 
         # Move model to device
         self.model.to(self.device)
+
+        # Debug logging: Model structure
+        logger.debug(f"Model: {self.model.__class__.__name__}")
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(
+            p.numel() for p in self.model.parameters() if p.requires_grad
+        )
+        logger.debug(f"Total parameters: {total_params:,}")
+        logger.debug(f"Trainable parameters: {trainable_params:,}")
+        logger.debug(f"Device: {self.device}")
 
         # Setup EMA
         self.use_ema = use_ema
@@ -195,6 +208,11 @@ class DiffusionTrainer(BaseTrainer):
         total_loss = 0.0
         num_batches = 0
 
+        # Debug: Log dataset info
+        logger.debug(f"Training on {len(train_loader)} batches")
+        if hasattr(train_loader, "dataset"):
+            logger.debug(f"Dataset size: {len(train_loader.dataset)}")
+
         # Create progress bar if enabled
         iterator = (
             tqdm(train_loader, desc=f"Epoch {self._current_epoch} [Train]")
@@ -216,10 +234,24 @@ class DiffusionTrainer(BaseTrainer):
                     labels = None
                 else:
                     raise ValueError(f"Unexpected batch data length: {len(batch_data)}")
+                    logger.critical(
+                        f"Unexpected batch data format: length {len(batch_data)}"
+                    )
+                    raise ValueError(f"Unexpected batch data length: {len(batch_data)}")
             else:
                 # Direct tensor (shouldn't happen with DataLoader, but handle it)
                 images = batch_data.to(self.device)
                 labels = None
+
+            # Debug: Log batch shapes on first batch
+            if batch_idx == 0:
+                logger.debug(f"Input batch shape: {images.shape}")
+                if labels is not None:
+                    logger.debug(f"Labels batch shape: {labels.shape}")
+                if torch.cuda.is_available() and self.device == "cuda":
+                    logger.debug(
+                        f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB"
+                    )
 
             # Zero gradients
             self.optimizer.zero_grad()
@@ -241,9 +273,10 @@ class DiffusionTrainer(BaseTrainer):
                         self.model.parameters(), self.gradient_clip_norm
                     )
                     if grad_norm > self.gradient_clip_norm:
-                        logger.debug(
-                            f"Gradient clipped: norm {grad_norm:.4f} -> {self.gradient_clip_norm}"
+                        logger.warning(
+                            f"Gradient clipped: norm {grad_norm:.4f} exceeded threshold {self.gradient_clip_norm}"
                         )
+                    logger.debug(f"Gradient norm: {grad_norm:.4f}")
 
                 # Optimizer step with scaler
                 self.scaler.step(self.optimizer)
@@ -263,9 +296,10 @@ class DiffusionTrainer(BaseTrainer):
                         self.model.parameters(), self.gradient_clip_norm
                     )
                     if grad_norm > self.gradient_clip_norm:
-                        logger.debug(
-                            f"Gradient clipped: norm {grad_norm:.4f} -> {self.gradient_clip_norm}"
+                        logger.warning(
+                            f"Gradient clipped: norm {grad_norm:.4f} exceeded threshold {self.gradient_clip_norm}"
                         )
+                    logger.debug(f"Gradient norm: {grad_norm:.4f}")
 
                 # Optimizer step
                 self.optimizer.step()
@@ -279,12 +313,26 @@ class DiffusionTrainer(BaseTrainer):
             num_batches += 1
             self._global_step += 1
 
+            # Batch-level logging
+            if self.log_interval > 0 and (batch_idx + 1) % self.log_interval == 0:
+                current_lr = self.optimizer.param_groups[0]["lr"]
+                logger.debug(
+                    f"Epoch [{self._current_epoch}] Batch [{batch_idx + 1}/{len(train_loader)}] - "
+                    f"Loss: {loss.item():.6f}, LR: {current_lr:.6e}"
+                )
+
             # Update progress bar
             if self.show_progress:
                 iterator.set_postfix({"loss": total_loss / num_batches})
 
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+
+        # Warning for unusual conditions
+        if avg_loss > 1.0:
+            logger.warning(
+                f"High diffusion loss detected: {avg_loss:.6f} - training may be unstable"
+            )
 
         logger.info(f"Epoch {self._current_epoch} [Train] - Loss: {avg_loss:.6f}")
         logger.debug(f"Training batches: {num_batches}")
@@ -423,10 +471,20 @@ class DiffusionTrainer(BaseTrainer):
                 old_lr = self.optimizer.param_groups[0]["lr"]
                 self.scheduler.step()
                 current_lr = self.scheduler.get_last_lr()[0]
+
+                # Warning for very low learning rate
+                if current_lr < 1e-7:
+                    logger.warning(
+                        f"Very low learning rate: {current_lr:.2e} - training may be ineffective"
+                    )
+
                 if old_lr != current_lr:
                     logger.info(
-                        f"Learning rate changed: {old_lr:.6f} -> {current_lr:.6f}"
+                        f"Learning rate changed: {old_lr:.6e} -> {current_lr:.6e} "
+                        f"(epoch {self._current_epoch})"
                     )
+                else:
+                    logger.debug(f"Learning rate: {current_lr:.6e}")
                 logger.log_metrics(
                     {"learning_rate": current_lr},
                     step=self._global_step,
@@ -551,6 +609,32 @@ class DiffusionTrainer(BaseTrainer):
 
         torch.save(checkpoint, path)
 
+        # Enhanced logging
+        if is_best:
+            logger.info(f"✓ Best model checkpoint saved: {path}")
+        else:
+            logger.info(f"✓ Checkpoint saved: {path}")
+
+        logger.info(f"  Epoch: {epoch}, Global step: {self._global_step}")
+
+        if metrics:
+            metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
+            logger.info(f"  Metrics: {metrics_str}")
+
+        if self._best_metric is not None:
+            logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
+
+        # Log diffusion-specific state
+        if self.use_ema and self.ema is not None:
+            logger.debug("  EMA state included")
+        if self.use_amp and self.scaler is not None:
+            logger.debug("  AMP scaler state included")
+        if self.scheduler is not None:
+            logger.debug("  Scheduler state included")
+
+        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+        logger.debug(f"  File size: {path.stat().st_size / 1024 / 1024:.2f} MB")
+
     def load_checkpoint(
         self,
         path: Union[str, Path],
@@ -574,13 +658,32 @@ class DiffusionTrainer(BaseTrainer):
         """
         path = Path(path)
         if not path.exists():
+            logger.error(f"Checkpoint not found: {path}")
             raise FileNotFoundError(f"Checkpoint not found: {path}")
 
-        checkpoint = torch.load(path, map_location="cpu")
+        logger.info(f"Loading checkpoint from {path}")
+
+        try:
+            checkpoint = torch.load(path, map_location="cpu")
+        except Exception as e:
+            logger.critical(f"Failed to load checkpoint from {path}")
+            logger.exception(f"Error details: {e}")
+            raise
+
+        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+        logger.debug(f"  Trainer class: {checkpoint.get('trainer_class', 'unknown')}")
 
         # Load model state
         model = self.get_model()
-        model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+        try:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+        except Exception as e:
+            logger.error(f"Failed to load model state dict")
+            logger.exception(f"Error details: {e}")
+            if strict:
+                raise
+            else:
+                logger.warning("Continuing with non-strict loading")
 
         # Ensure model is on correct device after loading
         model.to(self.device)
@@ -588,15 +691,22 @@ class DiffusionTrainer(BaseTrainer):
         # Load optimizer state
         if load_optimizer and "optimizer_state_dict" in checkpoint:
             optimizer = self.get_optimizer()
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            try:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            except Exception as e:
+                logger.error(f"Failed to load optimizer state dict")
+                logger.exception(f"Error details: {e}")
+                logger.warning("Continuing without optimizer state")
 
         # Load EMA state
         if self.use_ema and self.ema is not None and "ema_state_dict" in checkpoint:
             self.ema.load_state_dict(checkpoint["ema_state_dict"])
+            logger.debug("  EMA state restored")
 
         # Load scheduler state
         if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            logger.debug("  Scheduler state restored")
 
         # Load scaler state for AMP
         if (
@@ -605,12 +715,25 @@ class DiffusionTrainer(BaseTrainer):
             and "scaler_state_dict" in checkpoint
         ):
             self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            logger.debug("  AMP scaler state restored")
 
         # Restore training progress
         self._current_epoch = checkpoint.get("epoch", 0)
         self._global_step = checkpoint.get("global_step", 0)
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
+
+        logger.info(f"✓ Checkpoint loaded successfully")
+        logger.info(f"  Epoch: {self._current_epoch}, Global step: {self._global_step}")
+
+        if "metrics" in checkpoint:
+            metrics_str = ", ".join(
+                [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
+            )
+            logger.info(f"  Loaded metrics: {metrics_str}")
+
+        if self._best_metric is not None:
+            logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
 
         return checkpoint
 

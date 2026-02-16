@@ -6,6 +6,7 @@ the required abstract methods.
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -256,13 +257,18 @@ class BaseTrainer(ABC):
 
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
+            epoch_start_time = time.time()
             logger.info(f"Epoch {self._current_epoch}/{num_epochs} started")
 
             # Training epoch
             train_metrics = self.train_epoch()
-            logger.debug(
-                f"Epoch {self._current_epoch} training metrics: {train_metrics}"
+            epoch_time = time.time() - epoch_start_time
+
+            logger.info(
+                f"Epoch {self._current_epoch} completed in {epoch_time:.1f}s - "
+                f"Training metrics: {train_metrics}"
             )
+            logger.debug(f"Epoch time: {epoch_time:.2f}s")
 
             # Log training metrics
             metrics_logger.log_metrics(
@@ -393,7 +399,24 @@ class BaseTrainer(ABC):
         checkpoint.update(kwargs)
 
         torch.save(checkpoint, path)
-        logger.debug(f"Checkpoint saved to {path} (epoch {epoch})")
+
+        # Enhanced logging
+        if is_best:
+            logger.info(f"✓ Best model checkpoint saved: {path}")
+        else:
+            logger.info(f"✓ Checkpoint saved: {path}")
+
+        logger.info(f"  Epoch: {epoch}, Global step: {self._global_step}")
+
+        if metrics:
+            metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
+            logger.info(f"  Metrics: {metrics_str}")
+
+        if self._best_metric is not None:
+            logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
+
+        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+        logger.debug(f"  File size: {path.stat().st_size / 1024 / 1024:.2f} MB")
 
     def load_checkpoint(
         self,
@@ -427,16 +450,38 @@ class BaseTrainer(ABC):
             raise FileNotFoundError(f"Checkpoint not found: {path}")
 
         logger.info(f"Loading checkpoint from {path}")
-        checkpoint = torch.load(path, map_location="cpu")
+
+        try:
+            checkpoint = torch.load(path, map_location="cpu")
+        except Exception as e:
+            logger.critical(f"Failed to load checkpoint from {path}")
+            logger.exception(f"Error details: {e}")
+            raise
+
+        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+        logger.debug(f"  Trainer class: {checkpoint.get('trainer_class', 'unknown')}")
 
         # Load model state
         model = self.get_model()
-        model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+        try:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+        except Exception as e:
+            logger.error(f"Failed to load model state dict")
+            logger.exception(f"Error details: {e}")
+            if strict:
+                raise
+            else:
+                logger.warning("Continuing with non-strict loading")
 
         # Load optimizer state
         if load_optimizer and "optimizer_state_dict" in checkpoint:
             optimizer = self.get_optimizer()
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            try:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            except Exception as e:
+                logger.error(f"Failed to load optimizer state dict")
+                logger.exception(f"Error details: {e}")
+                logger.warning("Continuing without optimizer state")
 
         # Restore training progress
         self._current_epoch = checkpoint.get("epoch", 0)
@@ -444,10 +489,17 @@ class BaseTrainer(ABC):
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
 
-        logger.info(f"Checkpoint loaded successfully (epoch {self._current_epoch})")
-        logger.debug(f"Global step: {self._global_step}")
+        logger.info(f"✓ Checkpoint loaded successfully")
+        logger.info(f"  Epoch: {self._current_epoch}, Global step: {self._global_step}")
+
+        if "metrics" in checkpoint:
+            metrics_str = ", ".join(
+                [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
+            )
+            logger.info(f"  Loaded metrics: {metrics_str}")
+
         if self._best_metric is not None:
-            logger.debug(f"Best metric ({self._best_metric_name}): {self._best_metric}")
+            logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
 
         return checkpoint
 
@@ -499,13 +551,18 @@ class BaseTrainer(ABC):
 
         for epoch in range(num_epochs):
             self._current_epoch = start_epoch + epoch + 1
+            epoch_start_time = time.time()
             logger.info(f"Epoch {self._current_epoch} started (resumed)")
 
             # Training epoch
             train_metrics = self.train_epoch()
-            logger.debug(
-                f"Epoch {self._current_epoch} training metrics: {train_metrics}"
+            epoch_time = time.time() - epoch_start_time
+
+            logger.info(
+                f"Epoch {self._current_epoch} completed in {epoch_time:.1f}s - "
+                f"Training metrics: {train_metrics}"
             )
+            logger.debug(f"Epoch time: {epoch_time:.2f}s")
 
             # Log training metrics
             metrics_logger.log_metrics(
