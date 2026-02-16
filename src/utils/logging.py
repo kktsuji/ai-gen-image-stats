@@ -82,6 +82,11 @@ def setup_logging(
             module_logger = logging.getLogger(module_name)
             module_logger.setLevel(getattr(logging, level.upper()))
 
+    # Suppress verbose third-party library logs
+    # PIL/Pillow logs debug messages for every image chunk read
+    logging.getLogger("PIL").setLevel(logging.WARNING)
+    logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
+
     return root_logger
 
 
