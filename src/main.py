@@ -825,13 +825,6 @@ def main(args: Optional[list] = None) -> None:
     # Get experiment type
     experiment = config["experiment"]
 
-    print("=" * 60)
-    print(f"AI Image Generation and Statistics Framework")
-    print("=" * 60)
-    print(f"Experiment: {experiment}")
-    print(f"Mode: {config.get('mode', 'train')}")
-    print("=" * 60)
-
     # Dispatch to experiment
     if experiment == "classifier":
         setup_experiment_classifier(config)

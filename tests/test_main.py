@@ -1022,7 +1022,7 @@ class TestDiffusionGenerationMode:
                     pass  # May exit after generation
 
                 captured = capsys.readouterr()
-                assert "Warning" in captured.out
+                assert "WARNING" in captured.out
                 assert "num_samples" in captured.out
 
     @pytest.mark.unit
@@ -1183,7 +1183,7 @@ class TestDiffusionGenerationMode:
                     pass  # May exit after generation
 
                 captured = capsys.readouterr()
-                assert "Warning" in captured.out
+                assert "WARNING" in captured.out
                 assert "no EMA weights" in captured.out
                 assert "Falling back" in captured.out
 

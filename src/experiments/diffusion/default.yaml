@@ -31,7 +31,7 @@ logging:
   file_level: DEBUG
 
   # Log message format string
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 
   # Timestamp format in log messages
   date_format: "%Y-%m-%d %H:%M:%S"

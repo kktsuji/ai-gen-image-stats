@@ -42,7 +42,7 @@ logging:
 
   # Log message format string
   # Available fields: asctime, name, levelname, message, funcName, lineno
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 
   # Timestamp format in log messages
   date_format: "%Y-%m-%d %H:%M:%S"

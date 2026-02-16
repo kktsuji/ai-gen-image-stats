@@ -48,7 +48,7 @@ def setup_logging(
 
     # Set default format if not provided
     if log_format is None:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_format = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 
     # Set default date format if not provided
     if date_format is None:

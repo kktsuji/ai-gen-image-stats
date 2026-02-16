@@ -128,7 +128,7 @@ logging:
   file_level: DEBUG
 
   # Log format string
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 
   # Date format for timestamps
   date_format: "%Y-%m-%d %H:%M:%S"
@@ -156,7 +156,7 @@ mode: train
 logging:
   console_level: INFO
   file_level: DEBUG
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
 
 compute:
@@ -372,7 +372,7 @@ Add `logging` section to all config files:
 logging:
   console_level: INFO # Console output verbosity
   file_level: DEBUG # File output verbosity (more detailed)
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   # Optional: Module-specific overrides
   # module_levels:
@@ -838,7 +838,7 @@ Configure logging in your YAML config file:
 logging:
 console_level: INFO # Console output verbosity
 file_level: DEBUG # File output verbosity (more detailed)
-format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 date_format: "%Y-%m-%d %H:%M:%S"
 \`\`\`
 
@@ -851,11 +851,11 @@ Example: `outputs/classifier-test/logs/log_20260216_143022.log`
 
 **Implementation Checklist:**
 
-- [ ] Add logging section to `README.md`
-- [ ] Document log levels
-- [ ] Document configuration options
-- [ ] Document log file locations
-- [ ] Add examples of log output
+- [x] Add logging section to `README.md`
+- [x] Document log levels
+- [x] Document configuration options
+- [x] Document log file locations
+- [x] Add examples of log output
 
 #### Step 5.2: Update Architecture Documentation
 
@@ -910,11 +910,11 @@ epoch_010.pt
 
 **Implementation Checklist:**
 
-- [ ] Add logging section to architecture doc
-- [ ] Clarify application vs metrics logging
-- [ ] Document logging patterns
-- [ ] Update directory structure diagrams
-- [ ] Add logging best practices
+- [x] Add logging section to architecture doc
+- [x] Clarify application vs metrics logging
+- [x] Document logging patterns
+- [x] Update directory structure diagrams
+- [x] Add logging best practices
 
 #### Step 5.3: Create Migration Guide
 
@@ -973,25 +973,26 @@ outputs/<experiment-name>/logs/log\_<timestamp>.log
 
 **Implementation Checklist:**
 
-- [ ] Create migration guide document
-- [ ] Add user-facing instructions
-- [ ] Add contributor guidelines
-- [ ] Include examples
-- [ ] Add troubleshooting section
+- [x] Create migration guide document
+- [x] Add user-facing instructions
+- [x] Add contributor guidelines
+- [x] Include examples
+- [x] Add troubleshooting section
 
 #### Step 5.4: Final Cleanup
 
 **Implementation Checklist:**
 
-- [ ] Remove all remaining `print()` statements in `/src`
-- [ ] Verify no print statements except in:
+- [x] Remove all remaining `print()` statements in `/src`
+- [x] Verify no print statements except in:
   - Docstring examples (acceptable)
   - `src/deprecated/` (not touching these)
-- [ ] Run full test suite
-- [ ] Test with different log levels
-- [ ] Verify log files are created correctly
-- [ ] Check log file sizes (reasonable, not massive)
-- [ ] Verify console output is clean and informative
+  - Intentional user-facing output (dataset.print_summary(), analyze_comparison.py)
+- [x] Run full test suite
+- [x] Test with different log levels
+- [x] Verify log files are created correctly
+- [x] Check log file sizes (reasonable, not massive)
+- [x] Verify console output is clean and informative
 
 ## Technical Specifications
 
@@ -1000,17 +1001,17 @@ outputs/<experiment-name>/logs/log\_<timestamp>.log
 **Default Format:**
 
 ```
-%(asctime)s - %(name)s - %(levelname)s - %(message)s
+%(asctime)s | %(name)s | %(levelname)s | %(message)s
 ```
 
 **Example Output:**
 
 ```
-2026-02-16 14:30:22 - src.main - INFO - CLASSIFIER EXPERIMENT STARTED
-2026-02-16 14:30:22 - src.main - INFO - Using device: cuda
-2026-02-16 14:30:22 - src.main - INFO - Checkpoint directory: outputs/...
-2026-02-16 14:30:23 - src.experiments.classifier.trainer - INFO - Starting training for 100 epochs
-2026-02-16 14:30:24 - src.base.trainer - DEBUG - Epoch 1/100 started
+2026-02-16 14:30:22 | src.main | INFO | CLASSIFIER EXPERIMENT STARTED
+2026-02-16 14:30:22 | src.main | INFO | Using device: cuda
+2026-02-16 14:30:22 | src.main | INFO | Checkpoint directory: outputs/...
+2026-02-16 14:30:23 | src.experiments.classifier.trainer | INFO | Starting training for 100 epochs
+2026-02-16 14:30:24 | src.base.trainer | DEBUG | Epoch 1/100 started
 ```
 
 ### Log File Naming

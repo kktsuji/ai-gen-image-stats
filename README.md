@@ -340,6 +340,109 @@ generation:
 
 See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete, documented example configuration.
 
+## Logging
+
+The project uses Python's `logging` library for application-level logging, providing both console output and persistent log files with configurable verbosity levels.
+
+### Application Logging vs Metrics Logging
+
+The project maintains two complementary logging systems:
+
+- **Application Logging** (Python `logging` library): Runtime events, debugging information, system messages, errors
+  - Handles: INFO, DEBUG, WARNING, ERROR, CRITICAL messages
+  - Output: Console + log files
+  - Examples: "Training started", "Checkpoint saved", "Device detected: cuda"
+
+- **Metrics Logging** (Experiment-specific loggers): Training metrics, generated images, evaluation results
+  - Handles: Scalar metrics, confusion matrices, sample images
+  - Output: CSV files, PNG images, YAML hyperparams
+  - Examples: Loss curves, accuracy metrics, generated samples
+
+### Log Levels
+
+Logging verbosity can be controlled through five standard levels:
+
+- **DEBUG** (10): Detailed diagnostic information (batch shapes, memory usage, internal state)
+- **INFO** (20): Important progress and status messages (default)
+- **WARNING** (30): Warnings about potential issues (low learning rate, missing optional parameters)
+- **ERROR** (40): Errors that affect results but don't crash the application
+- **CRITICAL** (50): Unrecoverable errors that require stopping execution
+
+### Configuration
+
+Configure logging in your experiment YAML file:
+
+```yaml
+logging:
+  # Console logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  console_level: INFO
+
+  # File logging level (can be more verbose than console)
+  file_level: DEBUG
+
+  # Log format string
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+
+  # Date format for timestamps
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+  # Module-specific log levels (optional)
+  module_levels:
+    src.experiments.classifier.trainer: DEBUG
+    src.base.trainer: INFO
+    src.utils.device: WARNING
+```
+
+**Configuration Notes:**
+
+- `console_level` and `file_level` can differ, allowing verbose file logs while keeping console clean
+- If the `logging` section is omitted, defaults to INFO for console and DEBUG for file
+- Module-specific levels provide fine-grained control over logging verbosity
+
+### Log Files
+
+Logs are automatically saved to timestamped files in your experiment's output directory:
+
+**Location Pattern:** `{output.base_dir}/{output.subdirs.logs}/log_YYYYMMDD_HHMMSS.log`
+
+**Examples:**
+
+- `outputs/classifier-test/logs/log_20260217_143022.log`
+- `outputs/diffusion-test/logs/log_20260217_091530.log`
+
+### Example Log Output
+
+```
+2026-02-17 14:30:22 | src.main | INFO | ================================================================================
+2026-02-17 14:30:22 | src.main | INFO | CLASSIFIER EXPERIMENT STARTED
+2026-02-17 14:30:22 | src.main | INFO | ================================================================================
+2026-02-17 14:30:22 | src.main | INFO | Log file: outputs/classifier-test/logs/log_20260217_143022.log
+2026-02-17 14:30:22 | src.main | INFO | Console log level: INFO
+2026-02-17 14:30:22 | src.main | INFO | File log level: DEBUG
+2026-02-17 14:30:22 | src.main | INFO | Using device: cuda
+2026-02-17 14:30:22 | src.main | INFO | Random seed set to: 42
+2026-02-17 14:30:23 | src.experiments.classifier.trainer | INFO | Starting training for 100 epochs
+2026-02-17 14:30:24 | src.base.trainer | INFO | Epoch 1/100 started
+2026-02-17 14:30:45 | src.base.trainer | INFO | Epoch 1 completed | Avg Loss: 0.6234, Accuracy: 65.23%, Time: 21.3s
+2026-02-17 14:30:46 | src.base.trainer | INFO | Checkpoint saved: outputs/classifier-test/checkpoints/epoch_001.pt
+```
+
+### Enabling Verbose Logging
+
+For troubleshooting, change the console log level to DEBUG:
+
+```yaml
+logging:
+  console_level: DEBUG # Show detailed diagnostic information
+```
+
+This will display additional information such as:
+
+- Batch shapes and data loading details
+- Memory usage statistics
+- Model architecture details
+- Optimizer and scheduler state
+
 ## Testing
 
 This project uses a comprehensive **four-tier testing strategy** that balances speed, coverage, and practical validation needs. All code is testable on CPU without GPU requirements.
