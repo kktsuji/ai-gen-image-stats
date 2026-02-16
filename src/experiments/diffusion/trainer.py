@@ -5,6 +5,7 @@ It inherits from BaseTrainer and provides diffusion-specific
 training and generation logic.
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -18,6 +19,9 @@ from src.base.model import BaseModel
 from src.base.trainer import BaseTrainer
 from src.experiments.diffusion.model import EMA
 from src.experiments.diffusion.sampler import DiffusionSampler
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class DiffusionTrainer(BaseTrainer):
@@ -151,12 +155,14 @@ class DiffusionTrainer(BaseTrainer):
         self.ema = None
         if use_ema:
             self.ema = EMA(model, decay=ema_decay, device=device)
+            logger.info(f"EMA enabled with decay={ema_decay}")
 
         # Setup automatic mixed precision
         self.use_amp = use_amp and device == "cuda"
         self.scaler = None
         if self.use_amp:
             self.scaler = torch.amp.GradScaler(device)
+            logger.info("Automatic mixed precision (AMP) enabled")
 
         # Loss criterion
         self.criterion = nn.MSELoss()
@@ -231,9 +237,13 @@ class DiffusionTrainer(BaseTrainer):
                 # Gradient clipping (unscale first for accurate clipping)
                 if self.gradient_clip_norm is not None:
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.gradient_clip_norm
                     )
+                    if grad_norm > self.gradient_clip_norm:
+                        logger.debug(
+                            f"Gradient clipped: norm {grad_norm:.4f} -> {self.gradient_clip_norm}"
+                        )
 
                 # Optimizer step with scaler
                 self.scaler.step(self.optimizer)
@@ -249,9 +259,13 @@ class DiffusionTrainer(BaseTrainer):
 
                 # Gradient clipping
                 if self.gradient_clip_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.gradient_clip_norm
                     )
+                    if grad_norm > self.gradient_clip_norm:
+                        logger.debug(
+                            f"Gradient clipped: norm {grad_norm:.4f} -> {self.gradient_clip_norm}"
+                        )
 
                 # Optimizer step
                 self.optimizer.step()
@@ -271,6 +285,11 @@ class DiffusionTrainer(BaseTrainer):
 
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+
+        logger.info(f"Epoch {self._current_epoch} [Train] - Loss: {avg_loss:.6f}")
+        logger.debug(f"Training batches: {num_batches}")
+        if self.use_ema:
+            logger.debug("EMA weights updated")
 
         return {"loss": avg_loss}
 
@@ -343,6 +362,9 @@ class DiffusionTrainer(BaseTrainer):
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
 
+        logger.info(f"Epoch {self._current_epoch} [Val] - Loss: {avg_loss:.6f}")
+        logger.debug(f"Validation batches: {num_batches}")
+
         return {"val_loss": avg_loss}
 
     def train(
@@ -398,8 +420,13 @@ class DiffusionTrainer(BaseTrainer):
 
             # Learning rate scheduler step
             if self.scheduler is not None:
+                old_lr = self.optimizer.param_groups[0]["lr"]
                 self.scheduler.step()
                 current_lr = self.scheduler.get_last_lr()[0]
+                if old_lr != current_lr:
+                    logger.info(
+                        f"Learning rate changed: {old_lr:.6f} -> {current_lr:.6f}"
+                    )
                 logger.log_metrics(
                     {"learning_rate": current_lr},
                     step=self._global_step,
@@ -412,6 +439,7 @@ class DiffusionTrainer(BaseTrainer):
                 and self.sample_interval > 0
                 and (epoch + 1) % self.sample_interval == 0
             ):
+                logger.info(f"Generating sample images at epoch {self._current_epoch}")
                 self._generate_samples(logger, self._global_step)
 
             # Determine current metric value for best model tracking

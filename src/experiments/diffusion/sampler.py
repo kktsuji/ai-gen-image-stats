@@ -5,6 +5,7 @@ diffusion models. It separates sampling/inference logic from training,
 enabling efficient inference without requiring training dependencies.
 """
 
+import logging
 from typing import List, Optional, Tuple
 
 import torch
@@ -12,6 +13,9 @@ from tqdm import tqdm
 
 from src.base.model import BaseModel
 from src.experiments.diffusion.model import EMA
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class DiffusionSampler:
@@ -85,6 +89,10 @@ class DiffusionSampler:
         # Move model to device
         self.model.to(self.device)
 
+        logger.debug(f"DiffusionSampler initialized on device: {device}")
+        if ema is not None:
+            logger.debug("EMA weights available for sampling")
+
     def sample(
         self,
         num_samples: int,
@@ -137,10 +145,26 @@ class DiffusionSampler:
         # Validate inputs
         if class_labels is not None:
             if len(class_labels) != num_samples:
+                logger.error(
+                    f"class_labels length ({len(class_labels)}) doesn't match "
+                    f"num_samples ({num_samples})"
+                )
                 raise ValueError(
                     f"class_labels length ({len(class_labels)}) must match "
                     f"num_samples ({num_samples})"
                 )
+
+        logger.info(f"Starting sample generation: {num_samples} samples")
+        if class_labels is not None:
+            unique_classes = torch.unique(class_labels).tolist()
+            logger.debug(f"Conditional generation for classes: {unique_classes}")
+            if guidance_scale > 0:
+                logger.debug(f"Using classifier-free guidance (scale={guidance_scale})")
+        else:
+            logger.debug("Unconditional generation")
+
+        if use_ema and self.ema is not None:
+            logger.debug("Using EMA weights for sampling")
 
         # Set model to evaluation mode
         self.model.eval()
@@ -164,6 +188,7 @@ class DiffusionSampler:
                     guidance_scale=guidance_scale,
                 )
 
+            logger.info(f"Sample generation completed: {samples.shape}")
             return samples
 
         finally:
@@ -214,6 +239,11 @@ class DiffusionSampler:
         samples_list = []
         class_labels_list = []
 
+        logger.info(
+            f"Generating {samples_per_class} samples per class for {num_classes} classes "
+            f"(total: {samples_per_class * num_classes} samples)"
+        )
+
         # Create iterator with optional progress bar
         class_range = range(num_classes)
         if show_progress:
@@ -242,5 +272,10 @@ class DiffusionSampler:
 
         # Concatenate all samples
         all_samples = torch.cat(samples_list, dim=0)
+
+        logger.info(
+            f"Class-based sample generation completed: {all_samples.shape}, "
+            f"{len(class_labels_list)} labels"
+        )
 
         return all_samples, class_labels_list

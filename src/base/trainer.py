@@ -5,6 +5,7 @@ All experiment-specific trainers should inherit from BaseTrainer and implement
 the required abstract methods.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -15,6 +16,9 @@ from torch.utils.data import DataLoader
 from src.base.dataloader import BaseDataLoader
 from src.base.logger import BaseLogger
 from src.base.model import BaseModel
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class BaseTrainer(ABC):
@@ -243,25 +247,36 @@ class BaseTrainer(ABC):
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self._best_metric_name = best_metric
-        logger = self.get_logger()
+        metrics_logger = self.get_logger()
+
+        logger.info(f"Starting training for {num_epochs} epochs")
+        logger.debug(f"Checkpoint directory: {checkpoint_dir}")
+        logger.debug(f"Validate frequency: {validate_frequency}")
+        logger.debug(f"Checkpoint frequency: {checkpoint_frequency}")
 
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
+            logger.info(f"Epoch {self._current_epoch}/{num_epochs} started")
 
             # Training epoch
             train_metrics = self.train_epoch()
+            logger.debug(
+                f"Epoch {self._current_epoch} training metrics: {train_metrics}"
+            )
 
             # Log training metrics
-            logger.log_metrics(
+            metrics_logger.log_metrics(
                 train_metrics, step=self._global_step, epoch=self._current_epoch
             )
 
             # Validation
             val_metrics = None
             if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
+                logger.info(f"Running validation for epoch {self._current_epoch}")
                 val_metrics = self.validate_epoch()
                 if val_metrics is not None:
-                    logger.log_metrics(
+                    logger.info(f"Validation metrics: {val_metrics}")
+                    metrics_logger.log_metrics(
                         val_metrics, step=self._global_step, epoch=self._current_epoch
                     )
 
@@ -278,7 +293,12 @@ class BaseTrainer(ABC):
                     )
 
                     if is_best:
+                        prev_best = self._best_metric
                         self._best_metric = current_metric_value
+                        logger.info(
+                            f"New best {best_metric}: {current_metric_value:.6f} "
+                            f"(previous: {prev_best:.6f if prev_best is not None else 'N/A'})"
+                        )
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
                             self.save_checkpoint(
@@ -290,6 +310,7 @@ class BaseTrainer(ABC):
                                     **(val_metrics if val_metrics else {}),
                                 },
                             )
+                            logger.info(f"Best model checkpoint saved: {best_path}")
 
             # Regular checkpoint saving
             if checkpoint_dir is not None:
@@ -306,6 +327,7 @@ class BaseTrainer(ABC):
                             **(val_metrics if val_metrics else {}),
                         },
                     )
+                    logger.info(f"Checkpoint saved: {checkpoint_path}")
 
                 # Always save latest checkpoint
                 latest_path = checkpoint_dir / "latest_checkpoint.pth"
@@ -315,6 +337,7 @@ class BaseTrainer(ABC):
                     is_best=False,
                     metrics={**train_metrics, **(val_metrics if val_metrics else {})},
                 )
+                logger.debug(f"Latest checkpoint updated: {latest_path}")
 
     def save_checkpoint(
         self,
@@ -370,6 +393,7 @@ class BaseTrainer(ABC):
         checkpoint.update(kwargs)
 
         torch.save(checkpoint, path)
+        logger.debug(f"Checkpoint saved to {path} (epoch {epoch})")
 
     def load_checkpoint(
         self,
@@ -399,8 +423,10 @@ class BaseTrainer(ABC):
         """
         path = Path(path)
         if not path.exists():
+            logger.error(f"Checkpoint not found: {path}")
             raise FileNotFoundError(f"Checkpoint not found: {path}")
 
+        logger.info(f"Loading checkpoint from {path}")
         checkpoint = torch.load(path, map_location="cpu")
 
         # Load model state
@@ -417,6 +443,11 @@ class BaseTrainer(ABC):
         self._global_step = checkpoint.get("global_step", 0)
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
+
+        logger.info(f"Checkpoint loaded successfully (epoch {self._current_epoch})")
+        logger.debug(f"Global step: {self._global_step}")
+        if self._best_metric is not None:
+            logger.debug(f"Best metric ({self._best_metric_name}): {self._best_metric}")
 
         return checkpoint
 
@@ -455,7 +486,8 @@ class BaseTrainer(ABC):
         """
         checkpoint_info = self.load_checkpoint(checkpoint_path)
         start_epoch = checkpoint_info["epoch"]
-        print(f"Resuming training from epoch {start_epoch}")
+        logger.info(f"Resuming training from epoch {start_epoch}")
+        logger.info(f"Will train for {num_epochs} additional epochs")
 
         # Adjust for resume: we'll train for num_epochs total epochs starting from checkpoint
         if checkpoint_dir is not None:
@@ -463,25 +495,31 @@ class BaseTrainer(ABC):
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self._best_metric_name = best_metric
-        logger = self.get_logger()
+        metrics_logger = self.get_logger()
 
         for epoch in range(num_epochs):
             self._current_epoch = start_epoch + epoch + 1
+            logger.info(f"Epoch {self._current_epoch} started (resumed)")
 
             # Training epoch
             train_metrics = self.train_epoch()
+            logger.debug(
+                f"Epoch {self._current_epoch} training metrics: {train_metrics}"
+            )
 
             # Log training metrics
-            logger.log_metrics(
+            metrics_logger.log_metrics(
                 train_metrics, step=self._global_step, epoch=self._current_epoch
             )
 
             # Validation
             val_metrics = None
             if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
+                logger.info(f"Running validation for epoch {self._current_epoch}")
                 val_metrics = self.validate_epoch()
                 if val_metrics is not None:
-                    logger.log_metrics(
+                    logger.info(f"Validation metrics: {val_metrics}")
+                    metrics_logger.log_metrics(
                         val_metrics, step=self._global_step, epoch=self._current_epoch
                     )
 
@@ -498,7 +536,12 @@ class BaseTrainer(ABC):
                     )
 
                     if is_best:
+                        prev_best = self._best_metric
                         self._best_metric = current_metric_value
+                        logger.info(
+                            f"New best {best_metric}: {current_metric_value:.6f} "
+                            f"(previous: {prev_best:.6f if prev_best is not None else 'N/A'})"
+                        )
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
                             self.save_checkpoint(
@@ -510,6 +553,7 @@ class BaseTrainer(ABC):
                                     **(val_metrics if val_metrics else {}),
                                 },
                             )
+                            logger.info(f"Best model checkpoint saved: {best_path}")
 
             # Regular checkpoint saving
             if checkpoint_dir is not None:
@@ -526,6 +570,7 @@ class BaseTrainer(ABC):
                             **(val_metrics if val_metrics else {}),
                         },
                     )
+                    logger.info(f"Checkpoint saved: {checkpoint_path_new}")
 
                 # Always save latest checkpoint
                 latest_path = checkpoint_dir / "latest_checkpoint.pth"
@@ -535,6 +580,7 @@ class BaseTrainer(ABC):
                     is_best=False,
                     metrics={**train_metrics, **(val_metrics if val_metrics else {})},
                 )
+                logger.debug(f"Latest checkpoint updated: {latest_path}")
 
     def _is_best_metric(self, current_value: float, mode: str) -> bool:
         """Check if current metric value is the best so far.

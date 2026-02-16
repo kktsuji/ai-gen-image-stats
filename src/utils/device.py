@@ -5,9 +5,13 @@ Provides utilities for CPU/GPU device detection and management,
 with support for forcing CPU-only mode for testing.
 """
 
+import logging
 from typing import Optional, Union
 
 import torch
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class DeviceManager:
@@ -34,19 +38,27 @@ class DeviceManager:
             torch.device: The selected device
         """
         if self._force_cpu:
+            logger.debug("Device selection: CPU (forced)")
             return torch.device("cpu")
 
         if not torch.cuda.is_available():
+            logger.debug("Device selection: CPU (CUDA not available)")
             return torch.device("cpu")
 
         if self._device_id is not None:
             if self._device_id >= torch.cuda.device_count():
+                logger.error(
+                    f"GPU device {self._device_id} not available. "
+                    f"Only {torch.cuda.device_count()} device(s) found."
+                )
                 raise ValueError(
                     f"GPU device {self._device_id} not available. "
                     f"Only {torch.cuda.device_count()} device(s) found."
                 )
+            logger.debug(f"Device selection: cuda:{self._device_id}")
             return torch.device(f"cuda:{self._device_id}")
 
+        logger.debug("Device selection: cuda (default GPU)")
         return torch.device("cuda")
 
     @property

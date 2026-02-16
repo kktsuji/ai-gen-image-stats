@@ -486,17 +486,18 @@ logger.info(f"Using device: {device}")
 - `WARNING`: Missing optional configs, fallback to defaults
 
 **Implementation Checklist:**
+21q
 
-- [ ] Add `logger = logging.getLogger(__name__)` at module top
-- [ ] Replace device info print → `logger.info`
-- [ ] Replace seed info print → `logger.info`
-- [ ] Replace directory prints → `logger.info`
-- [ ] Replace model info prints → `logger.info`
-- [ ] Replace optimizer prints → `logger.info`
-- [ ] Replace training start → `logger.info`
-- [ ] Replace class/dataset info → `logger.debug`
-- [ ] Add startup banner with `logger.info`
-- [ ] Add shutdown/completion message with `logger.info`
+- [x] Add `logger = logging.getLogger(__name__)` at module top
+- [x] Replace device info print → `logger.info`
+- [x] Replace seed info print → `logger.info`
+- [x] Replace directory prints → `logger.info`
+- [x] Replace model info prints → `logger.info`
+- [x] Replace optimizer prints → `logger.info`
+- [x] Replace training start → `logger.info`
+- [x] Replace class/dataset info → `logger.debug`
+- [x] Add startup banner with `logger.info`
+- [x] Add shutdown/completion message with `logger.info`
 
 #### Step 2.2: Update `src/base/trainer.py`
 
@@ -518,15 +519,15 @@ print(f"Resuming training from epoch {start_epoch}")
 
 **Implementation Checklist:**
 
-- [ ] Add `logger = logging.getLogger(__name__)` at module top
-- [ ] Replace resume print → `logger.info`
-- [ ] Add training loop start log
-- [ ] Add epoch start/end logs with timing
-- [ ] Add checkpoint save confirmations → `logger.info`
-- [ ] Add validation epoch logs → `logger.info`
-- [ ] Add best metric update logs → `logger.info`
-- [ ] Add error/exception logs → `logger.error`
-- [ ] Add debug logs for internal state (if useful)
+- [x] Add `logger = logging.getLogger(__name__)` at module top
+- [x] Replace resume print → `logger.info`
+- [x] Add training loop start log
+- [x] Add epoch start/end logs with timing
+- [x] Add checkpoint save confirmations → `logger.info`
+- [x] Add validation epoch logs → `logger.info`
+- [x] Add best metric update logs → `logger.info`
+- [x] Add error/exception logs → `logger.error`
+- [x] Add debug logs for internal state (if useful)
 
 #### Step 2.3: Update `src/experiments/classifier/trainer.py`
 
@@ -540,13 +541,13 @@ print(f"Resuming training from epoch {start_epoch}")
 
 **Implementation Checklist:**
 
-- [ ] Add `logger = logging.getLogger(__name__)` at module top
-- [ ] Add epoch summary logs (avg loss, accuracy)
-- [ ] Add validation summary logs
-- [ ] Add best model update logs
-- [ ] Add debug logs for loss/gradient anomalies
-- [ ] Add confusion matrix computation logs
-- [ ] Log scheduler learning rate changes
+- [x] Add `logger = logging.getLogger(__name__)` at module top
+- [x] Add epoch summary logs (avg loss, accuracy)
+- [x] Add validation summary logs
+- [x] Add best model update logs
+- [x] Add debug logs for loss/gradient anomalies
+- [x] Add confusion matrix computation logs
+- [x] Log scheduler learning rate changes
 
 #### Step 2.4: Update `src/experiments/diffusion/trainer.py`
 
@@ -560,13 +561,13 @@ print(f"Resuming training from epoch {start_epoch}")
 
 **Implementation Checklist:**
 
-- [ ] Add `logger = logging.getLogger(__name__)` at module top
-- [ ] Add epoch summary logs
-- [ ] Add diffusion loss component logs
-- [ ] Add sample generation trigger logs
-- [ ] Add EMA update logs (if verbose)
-- [ ] Add gradient clipping logs → `logger.warning`
-- [ ] Add checkpoint save logs
+- [x] Add `logger = logging.getLogger(__name__)` at module top
+- [x] Add epoch summary logs
+- [x] Add diffusion loss component logs
+- [x] Add sample generation trigger logs
+- [x] Add EMA update logs (if verbose)
+- [x] Add gradient clipping logs → `logger.warning`
+- [x] Add checkpoint save logs
 
 #### Step 2.5: Update `src/experiments/diffusion/sampler.py`
 
@@ -579,12 +580,12 @@ print(f"Resuming training from epoch {start_epoch}")
 
 **Implementation Checklist:**
 
-- [ ] Add `logger = logging.getLogger(__name__)` at module top
-- [ ] Add sampling initialization logs
-- [ ] Add checkpoint loading confirmation
-- [ ] Add generation progress logs (every N steps)
-- [ ] Add class distribution logs for conditional generation
-- [ ] Add sampling completion summary
+- [x] Add `logger = logging.getLogger(__name__)` at module top
+- [x] Add sampling initialization logs
+- [x] Add checkpoint loading confirmation
+- [x] Add generation progress logs (every N steps)
+- [x] Add class distribution logs for conditional generation
+- [x] Add sampling completion summary
 
 #### Step 2.6: Update Other Source Files
 
@@ -599,10 +600,10 @@ print(f"Resuming training from epoch {start_epoch}")
 
 **Implementation Checklist:**
 
-- [ ] Review each file for logging opportunities
-- [ ] Add loggers where meaningful (avoid over-logging)
-- [ ] Focus on INFO/DEBUG for these utilities
-- [ ] Log warnings for edge cases/fallbacks
+- [x] Review each file for logging opportunities
+- [x] Add loggers where meaningful (avoid over-logging)
+- [x] Focus on INFO/DEBUG for these utilities
+- [x] Log warnings for edge cases/fallbacks
 
 ### Phase 3: Add Enhanced Logging (Week 3)
 

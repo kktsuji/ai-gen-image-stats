@@ -5,6 +5,7 @@ It inherits from BaseTrainer and provides classification-specific
 training and validation logic.
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -17,6 +18,9 @@ from src.base.dataloader import BaseDataLoader
 from src.base.logger import BaseLogger
 from src.base.model import BaseModel
 from src.base.trainer import BaseTrainer
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class ClassifierTrainer(BaseTrainer):
@@ -158,6 +162,12 @@ class ClassifierTrainer(BaseTrainer):
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         accuracy = 100.0 * correct / total if total > 0 else 0.0
 
+        logger.info(
+            f"Epoch {self._current_epoch} [Train] - "
+            f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%"
+        )
+        logger.debug(f"Training batches: {num_batches}, Total samples: {total}")
+
         return {
             "loss": avg_loss,
             "accuracy": accuracy,
@@ -201,7 +211,11 @@ class ClassifierTrainer(BaseTrainer):
 
             # Step the scheduler if provided
             if self.scheduler is not None:
+                old_lr = self.optimizer.param_groups[0]["lr"]
                 self.scheduler.step()
+                new_lr = self.optimizer.param_groups[0]["lr"]
+                if old_lr != new_lr:
+                    logger.info(f"Learning rate changed: {old_lr:.6f} -> {new_lr:.6f}")
 
             # Log training metrics
             logger.log_metrics(
@@ -334,6 +348,12 @@ class ClassifierTrainer(BaseTrainer):
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         accuracy = 100.0 * correct / total if total > 0 else 0.0
+
+        logger.info(
+            f"Epoch {self._current_epoch} [Val] - "
+            f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%"
+        )
+        logger.debug(f"Validation batches: {num_batches}, Total samples: {total}")
 
         return {
             "val_loss": avg_loss,
