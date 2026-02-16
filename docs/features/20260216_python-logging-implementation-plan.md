@@ -259,17 +259,17 @@ def get_logger(name: str) -> logging.Logger:
 
 **Implementation Checklist:**
 
-- [ ] Create `src/utils/logging.py`
-- [ ] Implement `setup_logging()` function
-  - [ ] Configure root logger
-  - [ ] Add console handler with formatter
-  - [ ] Add file handler with formatter
-  - [ ] Support custom log levels per module
-  - [ ] Handle log file directory creation
-- [ ] Implement `get_log_file_path()` helper
-- [ ] Implement `get_logger()` wrapper
-- [ ] Add docstrings with examples
-- [ ] Export functions in `src/utils/__init__.py`
+- [x] Create `src/utils/logging.py`
+- [x] Implement `setup_logging()` function
+  - [x] Configure root logger
+  - [x] Add console handler with formatter
+  - [x] Add file handler with formatter
+  - [x] Support custom log levels per module
+  - [x] Handle log file directory creation
+- [x] Implement `get_log_file_path()` helper
+- [x] Implement `get_logger()` wrapper
+- [x] Add docstrings with examples
+- [x] Export functions in `src/utils/__init__.py`
 
 #### Step 1.2: Add Tests for Logging Utility
 
@@ -348,13 +348,13 @@ class TestGetLogger:
 
 **Implementation Checklist:**
 
-- [ ] Create `tests/utils/test_logging.py`
-- [ ] Implement unit tests for `setup_logging()`
-- [ ] Implement unit tests for `get_log_file_path()`
-- [ ] Implement unit tests for `get_logger()`
-- [ ] Verify log messages appear in both console and file
-- [ ] Test custom formatters and log levels
-- [ ] Ensure tests run on CPU, no GPU required
+- [x] Create `tests/utils/test_logging.py`
+- [x] Implement unit tests for `setup_logging()`
+- [x] Implement unit tests for `get_log_file_path()`
+- [x] Implement unit tests for `get_logger()`
+- [x] Verify log messages appear in both console and file
+- [x] Test custom formatters and log levels
+- [x] Ensure tests run on CPU, no GPU required
 
 #### Step 1.3: Update Configuration Schema
 
@@ -381,11 +381,11 @@ logging:
 
 **Implementation Checklist:**
 
-- [ ] Add `logging` section to `configs/classifier.yaml`
-- [ ] Add `logging` section to `configs/diffusion.yaml`
-- [ ] Add `logging` section to `src/experiments/classifier/default.yaml`
-- [ ] Add `logging` section to `src/experiments/diffusion/default.yaml`
-- [ ] Document logging parameters in config comments
+- [x] Add `logging` section to `configs/classifier.yaml`
+- [x] Add `logging` section to `configs/diffusion.yaml`
+- [x] Add `logging` section to `src/experiments/classifier/default.yaml`
+- [x] Add `logging` section to `src/experiments/diffusion/default.yaml`
+- [x] Document logging parameters in config comments
 - [ ] Update config validation in `src/experiments/*/config.py` (optional defaults)
 
 #### Step 1.4: Initialize Logging in Main Entry Point
@@ -444,13 +444,13 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
 **Implementation Checklist:**
 
-- [ ] Import logging utilities in `src/main.py`
-- [ ] Initialize logging in `setup_experiment_classifier()`
-- [ ] Initialize logging in `setup_experiment_diffusion()`
-- [ ] Replace initial print statements with logger calls
-- [ ] Add experiment start/end log markers
-- [ ] Log configuration summary at startup
-- [ ] Handle missing logging config gracefully (use defaults)
+- [x] Import logging utilities in `src/main.py`
+- [x] Initialize logging in `setup_experiment_classifier()`
+- [x] Initialize logging in `setup_experiment_diffusion()`
+- [x] Replace initial print statements with logger calls
+- [x] Add experiment start/end log markers
+- [x] Log configuration summary at startup
+- [x] Handle missing logging config gracefully (use defaults)
 
 ### Phase 2: Replace Print Statements in `/src` (Week 2)
 

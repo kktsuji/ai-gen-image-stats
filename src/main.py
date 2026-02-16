@@ -33,6 +33,7 @@ Note:
     CLI parameter overrides are not supported.
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -43,6 +44,10 @@ import yaml
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
 from src.utils.device import get_device
+from src.utils.logging import get_log_file_path, setup_logging
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
@@ -70,6 +75,46 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Validate classifier config (strict mode - no defaults)
     validate_classifier_config(config)
 
+    # Create output directories first (needed for log file)
+    checkpoint_dir = resolve_output_path(config, "checkpoints")
+    log_dir = resolve_output_path(config, "logs")
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup logging FIRST (before any other operations)
+    log_file = get_log_file_path(
+        output_base_dir=config["output"]["base_dir"],
+        log_subdir=config["output"]["subdirs"]["logs"],
+    )
+
+    # Get logging configuration (with defaults)
+    logging_config = config.get("logging", {})
+    console_level = logging_config.get("console_level", "INFO")
+    file_level = logging_config.get("file_level", "DEBUG")
+    log_format = logging_config.get("format")
+    date_format = logging_config.get("date_format")
+    module_levels = logging_config.get("module_levels")
+
+    # Initialize logging
+    setup_logging(
+        log_file=log_file,
+        console_level=console_level,
+        file_level=file_level,
+        log_format=log_format,
+        date_format=date_format,
+        module_levels=module_levels,
+    )
+
+    # Log experiment start with banner
+    logger.info("=" * 80)
+    logger.info("CLASSIFIER EXPERIMENT STARTED")
+    logger.info("=" * 80)
+    logger.info(f"Log file: {log_file}")
+    logger.info(f"Console log level: {console_level}")
+    logger.info(f"File log level: {file_level}")
+    logger.info(f"Checkpoint directory: {checkpoint_dir}")
+    logger.info(f"Log directory: {log_dir}")
+
     # Set up device
     device_config = config.get("compute", {}).get("device", "auto")
 
@@ -78,7 +123,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     else:
         device = device_config
 
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # Set random seed if specified
     seed = config.get("compute", {}).get("seed")
@@ -87,23 +132,13 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         torch.manual_seed(seed)
         if device == "cuda":
             torch.cuda.manual_seed_all(seed)
-        print(f"Random seed set to: {seed}")
-
-    # Create output directories
-    checkpoint_dir = resolve_output_path(config, "checkpoints")
-    log_dir = resolve_output_path(config, "logs")
-
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Checkpoint directory: {checkpoint_dir}")
-    print(f"Log directory: {log_dir}")
+        logger.info(f"Random seed set to: {seed}")
 
     # Save configuration to log directory
     config_save_path = log_dir / "config.yaml"
     with open(config_save_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-    print(f"Configuration saved to: {config_save_path}")
+    logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize dataloader
     data_config = config["data"]
@@ -150,8 +185,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         num_classes = config["model"]["architecture"]["num_classes"]
         class_names = [f"Class {i}" for i in range(num_classes)]
 
-    print(f"Number of classes: {len(class_names)}")
-    print(f"Classes: {class_names}")
+    logger.info(f"Number of classes: {len(class_names)}")
+    logger.debug(f"Classes: {class_names}")
 
     # Initialize model
     model_config = config["model"]
@@ -184,9 +219,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         )
 
     model = model.to(device)
-    print(f"Model: {model_name}")
-    print(f"Pretrained: {pretrained}")
-    print(f"Freeze backbone: {freeze_backbone}")
+    logger.info(f"Model: {model_name}")
+    logger.info(f"Pretrained: {pretrained}")
+    logger.info(f"Freeze backbone: {freeze_backbone}")
 
     # Initialize optimizer
     training_config = config["training"]
@@ -224,8 +259,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             f"Unknown optimizer: {optimizer_name}. Supported: adam, adamw, sgd"
         )
 
-    print(f"Optimizer: {optimizer_name}")
-    print(f"Learning rate: {learning_rate}")
+    logger.info(f"Optimizer: {optimizer_name}")
+    logger.info(f"Learning rate: {learning_rate}")
 
     # Initialize scheduler if specified
     scheduler = None
@@ -260,17 +295,17 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
                 f"Unknown scheduler: {scheduler_name}. "
                 f"Supported: cosine, step, plateau, none"
             )
-        print(f"Scheduler: {scheduler_name}")
+        logger.info(f"Scheduler: {scheduler_name}")
 
-    # Initialize logger
-    logger = ClassifierLogger(log_dir=log_dir, class_names=class_names)
+    # Initialize metrics logger (for training metrics)
+    metrics_logger = ClassifierLogger(log_dir=log_dir, class_names=class_names)
 
     # Initialize trainer
     trainer = ClassifierTrainer(
         model=model,
         dataloader=dataloader,
         optimizer=optimizer,
-        logger=logger,
+        logger=metrics_logger,
         device=device,
         show_progress=True,
     )
@@ -286,7 +321,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     validate_frequency = training_config["validation"].get("frequency", 1)
     best_metric = training_config["validation"].get("metric", "accuracy")
 
-    print(f"\nStarting training for {num_epochs} epochs...")
+    logger.info("")
+    logger.info(f"Starting training for {num_epochs} epochs...")
 
     try:
         trainer.train(
@@ -298,17 +334,20 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             best_metric=best_metric,
         )
     except KeyboardInterrupt:
-        print("\n\nTraining interrupted by user")
-        logger.close()
+        logger.warning("")
+        logger.warning("Training interrupted by user")
+        metrics_logger.close()
         sys.exit(0)
     except Exception as e:
-        print(f"\n\nTraining failed with error: {e}")
-        logger.close()
+        logger.error("")
+        logger.error(f"Training failed with error: {e}")
+        metrics_logger.close()
         raise
 
-    # Close logger
-    logger.close()
-    print("\nTraining completed successfully!")
+    # Close metrics logger
+    metrics_logger.close()
+    logger.info("")
+    logger.info("Training completed successfully!")
 
 
 def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
@@ -353,6 +392,43 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Get mode (train or generate)
     mode = config.get("mode", "train")
 
+    # Create output directories first (needed for log file)
+    log_dir = resolve_output_path(config, "logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup logging FIRST (before any other operations)
+    log_file = get_log_file_path(
+        output_base_dir=config["output"]["base_dir"],
+        log_subdir=config["output"]["subdirs"]["logs"],
+    )
+
+    # Get logging configuration (with defaults)
+    logging_config = config.get("logging", {})
+    console_level = logging_config.get("console_level", "INFO")
+    file_level = logging_config.get("file_level", "DEBUG")
+    log_format = logging_config.get("format")
+    date_format = logging_config.get("date_format")
+    module_levels = logging_config.get("module_levels")
+
+    # Initialize logging
+    setup_logging(
+        log_file=log_file,
+        console_level=console_level,
+        file_level=file_level,
+        log_format=log_format,
+        date_format=date_format,
+        module_levels=module_levels,
+    )
+
+    # Log experiment start with banner
+    logger.info("=" * 80)
+    logger.info(f"DIFFUSION EXPERIMENT STARTED - Mode: {mode.upper()}")
+    logger.info("=" * 80)
+    logger.info(f"Log file: {log_file}")
+    logger.info(f"Console log level: {console_level}")
+    logger.info(f"File log level: {file_level}")
+    logger.info(f"Log directory: {log_dir}")
+
     # Set up device (now in compute section)
     compute_config = config.get("compute", {})
     device_config = compute_config.get("device", "auto")
@@ -361,7 +437,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     else:
         device = device_config
 
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # Set random seed if specified (now in compute section)
     seed = compute_config.get("seed")
@@ -369,19 +445,13 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         torch.manual_seed(seed)
         if device == "cuda":
             torch.cuda.manual_seed_all(seed)
-        print(f"Random seed set to: {seed}")
-
-    # Create output directories
-    log_dir = resolve_output_path(config, "logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Log directory: {log_dir}")
+        logger.info(f"Random seed set to: {seed}")
 
     # Save configuration to log directory
     config_save_path = log_dir / "config.yaml"
     with open(config_save_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-    print(f"Configuration saved to: {config_save_path}")
+    logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize model
     model_config = config["model"]
@@ -404,10 +474,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         device=device,
     )
 
-    print(f"Model: DDPM")
-    print(f"Image size: {arch_config['image_size']}")
-    print(f"Num classes: {cond_config['num_classes']}")
-    print(f"Num timesteps: {diff_config['num_timesteps']}")
+    logger.info(f"Model: DDPM")
+    logger.info(f"Image size: {arch_config['image_size']}")
+    logger.info(f"Num classes: {cond_config['num_classes']}")
+    logger.info(f"Num timesteps: {diff_config['num_timesteps']}")
 
     # Check if in generation mode
     if mode == "generate":
@@ -424,7 +494,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        print(f"\nLoading checkpoint: {checkpoint_path}")
+        logger.info("")
+        logger.info(f"Loading checkpoint: {checkpoint_path}")
 
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -455,8 +526,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Validate compatibility with conditional generation
         if num_classes is not None and num_samples < num_classes:
-            print(
-                f"Warning: num_samples ({num_samples}) < num_classes ({num_classes}). "
+            logger.warning(
+                f"num_samples ({num_samples}) < num_classes ({num_classes}). "
                 f"Some classes will have no samples."
             )
 
@@ -468,14 +539,14 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
                 ema = EMA(model, decay=0.9999, device=device)
                 ema.load_state_dict(checkpoint["ema_state_dict"])
-                print("Loaded EMA weights from checkpoint")
+                logger.info("Loaded EMA weights from checkpoint")
             else:
-                print("Warning: use_ema=True but checkpoint has no EMA weights")
-                print("Falling back to standard model weights")
+                logger.warning("use_ema=True but checkpoint has no EMA weights")
+                logger.warning("Falling back to standard model weights")
                 sampling_config["use_ema"] = False
 
-        # Initialize logger for metadata
-        logger = DiffusionLogger(log_dir=log_dir)
+        # Initialize metrics logger for metadata
+        metrics_logger = DiffusionLogger(log_dir=log_dir)
 
         # Create sampler (no optimizer or dataloader needed!)
         sampler = DiffusionSampler(
@@ -484,7 +555,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             ema=ema,
         )
 
-        print(f"\nGenerating {num_samples} samples...")
+        logger.info("")
+        logger.info(f"Generating {num_samples} samples...")
 
         # Prepare class labels if conditional generation
         class_labels = None
@@ -522,16 +594,19 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 nrow=grid_nrow,
                 normalize=True,
             )
-            print(f"Saved generated grid to: {output_dir / 'generated_samples.png'}")
+            logger.info(
+                f"Saved generated grid to: {output_dir / 'generated_samples.png'}"
+            )
 
         # Save individual samples if configured
         if output_config["save_individual"]:
             for i, sample in enumerate(samples):
                 save_image(sample, output_dir / f"sample_{i:04d}.png", normalize=True)
-            print(f"Saved {len(samples)} individual samples to: {output_dir}")
+            logger.info(f"Saved {len(samples)} individual samples to: {output_dir}")
 
-        logger.close()
-        print("\nGeneration completed successfully!")
+        metrics_logger.close()
+        logger.info("")
+        logger.info("Generation completed successfully!")
 
     else:
         # Training mode
@@ -540,7 +615,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Create checkpoint directory from output.subdirs
         checkpoint_dir = resolve_output_path(config, "checkpoints")
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Checkpoint directory: {checkpoint_dir}")
+        logger.info(f"Checkpoint directory: {checkpoint_dir}")
 
         # Initialize dataloader
         data_config = config["data"]
@@ -569,7 +644,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         if performance_config.get("use_tf32", True) and torch.cuda.is_available():
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
-            print("Enabled TF32 for faster training on Ampere+ GPUs")
+            logger.info("Enabled TF32 for faster training on Ampere+ GPUs")
 
         # Enable cuDNN benchmark mode
         if (
@@ -577,18 +652,18 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             and torch.cuda.is_available()
         ):
             torch.backends.cudnn.benchmark = True
-            print("Enabled cuDNN benchmark mode")
+            logger.info("Enabled cuDNN benchmark mode")
 
         # Compile model (PyTorch 2.0+)
         if performance_config.get("compile_model", False):
             try:
                 model = torch.compile(model)
-                print("Compiled model with torch.compile()")
+                logger.info("Compiled model with torch.compile()")
             except Exception as e:
-                print(f"Warning: Failed to compile model: {e}")
+                logger.warning(f"Failed to compile model: {e}")
 
-        # Initialize logger
-        logger = DiffusionLogger(log_dir=log_dir)
+        # Initialize metrics logger
+        metrics_logger = DiffusionLogger(log_dir=log_dir)
 
         # Initialize optimizer
         optimizer_config = training_config["optimizer"]
@@ -618,8 +693,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 f"Unknown optimizer: {optimizer_name}. Supported: adam, adamw"
             )
 
-        print(f"Optimizer: {optimizer_name}")
-        print(f"Learning rate: {optimizer_config['learning_rate']}")
+        logger.info(f"Optimizer: {optimizer_name}")
+        logger.info(f"Learning rate: {optimizer_config['learning_rate']}")
 
         # Initialize scheduler if specified
         scheduler = None
@@ -653,7 +728,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                     f"Supported: cosine, step, plateau, none"
                 )
 
-            print(f"Scheduler: {scheduler_name}")
+            logger.info(f"Scheduler: {scheduler_name}")
 
         # Get configuration sections
         ema_config = training_config["ema"]
@@ -668,7 +743,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             model=model,
             dataloader=dataloader,
             optimizer=optimizer,
-            logger=logger,
+            logger=metrics_logger,
             device=device,
             show_progress=True,
             use_ema=ema_config["enabled"],
@@ -684,7 +759,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Train the model
         num_epochs = training_config["epochs"]
-        print(f"\nStarting training for {num_epochs} epochs...")
+        logger.info("")
+        logger.info(f"Starting training for {num_epochs} epochs...")
 
         try:
             trainer.train(
@@ -696,17 +772,20 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 best_metric=validation_config["metric"],
             )
         except KeyboardInterrupt:
-            print("\n\nTraining interrupted by user")
-            logger.close()
+            logger.warning("")
+            logger.warning("Training interrupted by user")
+            metrics_logger.close()
             sys.exit(0)
         except Exception as e:
-            print(f"\n\nTraining failed with error: {e}")
-            logger.close()
+            logger.error("")
+            logger.error(f"Training failed with error: {e}")
+            metrics_logger.close()
             raise
 
-        # Close logger
-        logger.close()
-        print("\nTraining completed successfully!")
+        # Close metrics logger
+        metrics_logger.close()
+        logger.info("")
+        logger.info("Training completed successfully!")
 
 
 def setup_experiment_gan(config: Dict[str, Any]) -> None:

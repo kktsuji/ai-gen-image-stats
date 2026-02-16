@@ -1,7 +1,7 @@
 """Utility functions and helpers.
 
 This module provides cross-cutting utilities for CLI parsing,
-configuration management, device handling, and metrics computation.
+configuration management, device handling, metrics computation, and logging.
 """
 
 # Import only modules that have been implemented
@@ -15,6 +15,7 @@ from src.utils.device import (
     is_cuda_available,
     to_device,
 )
+from src.utils.logging import get_log_file_path, get_logger, setup_logging
 
 __all__ = [
     "DeviceManager",
@@ -24,4 +25,7 @@ __all__ = [
     "get_cuda_device_count",
     "to_device",
     "get_device_info",
+    "setup_logging",
+    "get_log_file_path",
+    "get_logger",
 ]

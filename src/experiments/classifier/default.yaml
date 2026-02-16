@@ -28,6 +28,33 @@ compute:
   seed: null # Random seed for reproducibility (null for random)
 
 # ------------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# Application-level logging settings (not to be confused with metrics logging)
+# ------------------------------------------------------------------------------
+logging:
+  # Console logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # INFO shows important progress messages; DEBUG shows detailed diagnostics
+  console_level: INFO
+
+  # File logging level (can be more verbose than console)
+  # Logs are saved to: {output.base_dir}/{output.subdirs.logs}/log_<timestamp>.log
+  file_level: DEBUG
+
+  # Log message format string
+  # Available fields: asctime, name, levelname, message, funcName, lineno
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Timestamp format in log messages
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+  # Optional: Module-specific log levels for fine-grained control
+  # Uncomment and customize as needed
+  # module_levels:
+  #   src.experiments.classifier.trainer: DEBUG
+  #   src.base.trainer: INFO
+  #   src.utils.device: WARNING
+
+# ------------------------------------------------------------------------------
 # MODEL CONFIGURATION
 # Architecture, initialization, and regularization settings
 # ------------------------------------------------------------------------------

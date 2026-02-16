@@ -19,6 +19,29 @@ compute:
   seed: null # Random seed for reproducibility (null to disable)
 
 # ------------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# ------------------------------------------------------------------------------
+# Application-level logging settings (not to be confused with metrics logging)
+
+logging:
+  # Console logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  console_level: INFO
+
+  # File logging level (can be more verbose than console)
+  file_level: DEBUG
+
+  # Log message format string
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Timestamp format in log messages
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+  # Optional: Module-specific log levels
+  # module_levels:
+  #   src.experiments.diffusion.trainer: DEBUG
+  #   src.base.trainer: INFO
+
+# ------------------------------------------------------------------------------
 # MODEL CONFIGURATION
 # ------------------------------------------------------------------------------
 # Model architecture, diffusion process, and conditioning settings
