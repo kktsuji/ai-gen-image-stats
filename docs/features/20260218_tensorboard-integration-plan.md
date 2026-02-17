@@ -138,6 +138,19 @@ outputs/experiment_name/
 - [x] 6.2: Create `docs/features/20260218_tensorboard-user-guide.md`
 - [x] 6.3: Update `docs/standards/architecture.md`
 
+### Phase 7: Config Structure Refactoring — TensorBoard Output Directory
+
+- [ ] 7.1: Add `output.subdirs.tensorboard` to `src/experiments/classifier/default.yaml`
+- [ ] 7.2: Add `output.subdirs.tensorboard` to `src/experiments/diffusion/default.yaml`
+- [ ] 7.3: Add `output.subdirs.tensorboard` to `configs/classifier.yaml`
+- [ ] 7.4: Add `output.subdirs.tensorboard` to `configs/diffusion.yaml`
+- [ ] 7.5: Remove `logging.metrics.tensorboard.log_dir` from `configs/classifier.yaml` and `configs/diffusion.yaml`
+- [ ] 7.6: Update `src/main.py` to resolve tensorboard path via `resolve_output_path`
+- [ ] 7.7: Update `src/experiments/classifier/logger.py` — replace internal `log_dir` lookup with explicit `tb_log_dir` parameter
+- [ ] 7.8: Update `src/experiments/diffusion/logger.py` — same as 7.7
+- [ ] 7.9: Update logger tests and integration tests
+- [ ] 7.10: Validate YAML syntax and run full test suite
+
 ### Deployment
 
 - [ ] Update requirements in production environment
@@ -970,6 +983,206 @@ Content: configuration reference, usage examples, visualization guide, troublesh
 
 ---
 
+### Phase 7: Config Structure Refactoring — TensorBoard Output Directory
+
+**Motivation**: The TensorBoard log directory is an output artifact, not a logging knob. Keeping it under `logging.metrics.tensorboard.log_dir` mixes two concerns — on/off behaviour belongs in `logging`, but _where_ to write belongs in `output`. Moving it to `output.subdirs.tensorboard` aligns it with the existing `logs`, `checkpoints`, `samples`, and `generated` subdirs and gives a single source of truth for all output paths.
+
+**Files Changed**:
+
+| File                                                | Action                                                                            |
+| --------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `src/experiments/classifier/default.yaml`           | Add `output.subdirs.tensorboard` (canonical default)                              |
+| `src/experiments/diffusion/default.yaml`            | Same                                                                              |
+| `configs/classifier.yaml`                           | Add `output.subdirs.tensorboard`, remove `logging.metrics.tensorboard.log_dir`    |
+| `configs/diffusion.yaml`                            | Same                                                                              |
+| `src/main.py`                                       | Resolve tensorboard dir via `resolve_output_path`; pass as explicit arg to logger |
+| `src/experiments/classifier/logger.py`              | Add `tb_log_dir` parameter; stop reading `log_dir` from `tensorboard_config`      |
+| `src/experiments/diffusion/logger.py`               | Same                                                                              |
+| `tests/experiments/classifier/test_logger.py`       | Pass `tb_log_dir` in test setup                                                   |
+| `tests/experiments/diffusion/test_logger.py`        | Same                                                                              |
+| `tests/integration/test_tensorboard_integration.py` | Assert tensorboard dir matches `output.subdirs.tensorboard`                       |
+
+#### Tasks 7.1–7.2: Update `default.yaml` Files
+
+The `default.yaml` files in `src/experiments/classifier/` and `src/experiments/diffusion/` are the canonical baseline configuration. They never contained `logging.metrics.tensorboard.log_dir` (TensorBoard metrics config was only added to the user-facing `configs/` files), so the only change needed is adding `tensorboard` to `output.subdirs`.
+
+**`src/experiments/classifier/default.yaml`** — current `output` block:
+
+```yaml
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+```
+
+**After**:
+
+```yaml
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    tensorboard: tensorboard # NEW
+```
+
+**`src/experiments/diffusion/default.yaml`** — current `output` block:
+
+```yaml
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    samples: samples
+    generated: generated
+```
+
+**After**:
+
+```yaml
+output:
+  base_dir: outputs
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    samples: samples
+    generated: generated
+    tensorboard: tensorboard # NEW
+```
+
+#### Tasks 7.3–7.5: Update `configs/` Files
+
+The user-facing configs in `configs/` override the defaults and also carry the `logging.metrics.tensorboard` section (including the `log_dir` key to remove).
+
+**Before** (both `configs/*.yaml`, under `logging.metrics.tensorboard`):
+
+```yaml
+tensorboard:
+  enabled: false
+  log_dir: null # ← REMOVE this key
+  flush_secs: 30
+  log_images: true
+  log_histograms: false
+  log_graph: false
+```
+
+**After** — remove `log_dir` from `logging.metrics.tensorboard`:
+
+```yaml
+tensorboard:
+  enabled: false # on/off still lives with logging options
+  flush_secs: 30
+  log_images: true
+  log_histograms: false
+  log_graph: false
+```
+
+And add `tensorboard` under the existing `output.subdirs` block (mirroring the defaults):
+
+```yaml
+output:
+  base_dir: outputs/my-experiment
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    samples: samples # diffusion only
+    generated: generated # diffusion only
+    tensorboard: tensorboard # NEW
+```
+
+#### Task 7.6: Update `src/main.py`
+
+In both the classifier and diffusion branches, resolve the tensorboard directory the same way `logs` and `checkpoints` are resolved, then pass it as an explicit argument to the logger:
+
+```python
+# Before
+tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+metrics_logger = ClassifierLogger(
+    log_dir=log_dir,
+    class_names=class_names,
+    tensorboard_config=tensorboard_config,
+)
+
+# After
+tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+tb_log_dir = resolve_output_path(config, "tensorboard")
+metrics_logger = ClassifierLogger(
+    log_dir=log_dir,
+    class_names=class_names,
+    tensorboard_config=tensorboard_config,
+    tb_log_dir=tb_log_dir,
+)
+```
+
+The same pattern applies to `DiffusionLogger` in the diffusion branch.
+
+#### Tasks 7.7–7.8: Update Logger `__init__` Signatures
+
+**Files**: `src/experiments/classifier/logger.py`, `src/experiments/diffusion/logger.py`
+
+Add an explicit `tb_log_dir` parameter and stop reading `log_dir` from `tensorboard_config`:
+
+```python
+# Before
+def __init__(
+    self,
+    log_dir: Union[str, Path],
+    class_names: Optional[List[str]] = None,  # classifier only
+    tensorboard_config: Optional[Dict[str, Any]] = None,
+):
+    ...
+    tb_log_dir = self.tensorboard_config.get("log_dir")        # ← reads from config
+    if tb_log_dir is None:
+        tb_log_dir = self.log_dir.parent / "tensorboard"       # ← fallback
+    ...
+
+# After
+def __init__(
+    self,
+    log_dir: Union[str, Path],
+    class_names: Optional[List[str]] = None,  # classifier only
+    tensorboard_config: Optional[Dict[str, Any]] = None,
+    tb_log_dir: Optional[Union[str, Path]] = None,             # NEW explicit param
+):
+    ...
+    # tb_log_dir comes from the caller (resolved from output.subdirs.tensorboard).
+    # Fall back to sibling directory only when not provided (e.g. in unit tests).
+    if tb_log_dir is None:
+        tb_log_dir = self.log_dir.parent / "tensorboard"
+    ...
+```
+
+The `tensorboard_config` dict no longer carries a `log_dir` key. Update the docstring for `tensorboard_config` accordingly.
+
+#### Task 7.9: Update Tests
+
+- In all logger unit tests that construct a `ClassifierLogger`/`DiffusionLogger` directly, pass a `tb_log_dir` pointing to a `tmp_path` subdirectory instead of relying on the old `tensorboard_config["log_dir"]`.
+- In the integration test, assert that TensorBoard event files are created inside `{output.base_dir}/{output.subdirs.tensorboard}` (e.g. `outputs/test-exp/tensorboard/`) rather than a path derived from the logger's `log_dir`.
+
+#### Task 7.10: Validate and Test
+
+```bash
+# Syntax check — all four config files
+python -c "
+import yaml
+for f in [
+    'src/experiments/classifier/default.yaml',
+    'src/experiments/diffusion/default.yaml',
+    'configs/classifier.yaml',
+    'configs/diffusion.yaml',
+]:
+    yaml.safe_load(open(f))
+    print(f'OK: {f}')
+"
+
+# Full test suite
+pytest tests/ -v
+```
+
+---
+
 ## Risk Mitigation
 
 | Risk                     | Mitigation                                                                                          |
@@ -991,15 +1204,16 @@ Content: configuration reference, usage examples, visualization guide, troublesh
 
 ## Timeline Estimate
 
-| Phase                        | Tasks        | Estimated Time  |
-| ---------------------------- | ------------ | --------------- |
-| Phase 1: Foundation          | 4 tasks      | 2-3 hours       |
-| Phase 2: Logger Integration  | 3 tasks      | 4-5 hours       |
-| Phase 3: Configuration       | 3 tasks      | 1 hour          |
-| Phase 4: Trainer Integration | 3 tasks      | 2-3 hours       |
-| Phase 5: Testing             | 6 tasks      | 4-5 hours       |
-| Phase 6: Documentation       | 3 tasks      | 2-3 hours       |
-| **Total**                    | **22 tasks** | **15-20 hours** |
+| Phase                                 | Tasks        | Estimated Time  |
+| ------------------------------------- | ------------ | --------------- |
+| Phase 1: Foundation                   | 4 tasks      | 2-3 hours       |
+| Phase 2: Logger Integration           | 3 tasks      | 4-5 hours       |
+| Phase 3: Configuration                | 3 tasks      | 1 hour          |
+| Phase 4: Trainer Integration          | 3 tasks      | 2-3 hours       |
+| Phase 5: Testing                      | 6 tasks      | 4-5 hours       |
+| Phase 6: Documentation                | 3 tasks      | 2-3 hours       |
+| Phase 7: Config Structure Refactoring | 10 tasks     | 1-2 hours       |
+| **Total**                             | **30 tasks** | **16-22 hours** |
 
 ## Future Enhancements
 
@@ -1040,12 +1254,16 @@ tensorboard --logdir outputs/experiment/tensorboard --reload_interval 5
 
 ### Configuration Key Reference
 
-| Key                                          | Type      | Default | Description                      |
-| -------------------------------------------- | --------- | ------- | -------------------------------- |
-| `logging.metrics.csv.enabled`                | bool      | true    | Enable CSV logging (always true) |
-| `logging.metrics.tensorboard.enabled`        | bool      | false   | Enable TensorBoard logging       |
-| `logging.metrics.tensorboard.log_dir`        | str\|null | null    | Custom TensorBoard directory     |
-| `logging.metrics.tensorboard.flush_secs`     | int       | 30      | Flush frequency (seconds)        |
-| `logging.metrics.tensorboard.log_images`     | bool      | true    | Log images to TensorBoard        |
-| `logging.metrics.tensorboard.log_histograms` | bool      | false   | Log weight/gradient histograms   |
-| `logging.metrics.tensorboard.log_graph`      | bool      | false   | Log model computational graph    |
+| Key                                          | Type | Default       | Description                                  |
+| -------------------------------------------- | ---- | ------------- | -------------------------------------------- |
+| `logging.metrics.csv.enabled`                | bool | true          | Enable CSV logging (always true)             |
+| `logging.metrics.tensorboard.enabled`        | bool | false         | Enable TensorBoard logging                   |
+| `logging.metrics.tensorboard.flush_secs`     | int  | 30            | Flush frequency (seconds)                    |
+| `logging.metrics.tensorboard.log_images`     | bool | true          | Log images to TensorBoard                    |
+| `logging.metrics.tensorboard.log_histograms` | bool | false         | Log weight/gradient histograms               |
+| `logging.metrics.tensorboard.log_graph`      | bool | false         | Log model computational graph                |
+| `output.subdirs.tensorboard`                 | str  | `tensorboard` | TensorBoard event log subdirectory (Phase 7) |
+
+> **Note (Phase 7)**: `logging.metrics.tensorboard.log_dir` has been removed. The TensorBoard
+> output directory is now controlled exclusively by `output.subdirs.tensorboard`, consistent with
+> all other output subdirectories (`logs`, `checkpoints`, `samples`, etc.).
