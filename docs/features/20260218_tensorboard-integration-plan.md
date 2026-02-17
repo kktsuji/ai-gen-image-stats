@@ -134,9 +134,9 @@ outputs/experiment_name/
 
 ### Phase 6: Documentation
 
-- [ ] 6.1: Update `README.md` with TensorBoard section
-- [ ] 6.2: Create `docs/features/20260218_tensorboard-user-guide.md`
-- [ ] 6.3: Update `docs/standards/architecture.md`
+- [x] 6.1: Update `README.md` with TensorBoard section
+- [x] 6.2: Create `docs/features/20260218_tensorboard-user-guide.md`
+- [x] 6.3: Update `docs/standards/architecture.md`
 
 ### Deployment
 

@@ -443,6 +443,92 @@ This will display additional information such as:
 - Model architecture details
 - Optimizer and scheduler state
 
+## TensorBoard Integration
+
+The project supports TensorBoard for real-time training visualization alongside traditional CSV logging.
+
+### Quick Start
+
+1. **Enable TensorBoard** in your config file:
+
+```yaml
+logging:
+  metrics:
+    tensorboard:
+      enabled: true
+```
+
+2. **Run training** as usual:
+
+```bash
+python -m src.main configs/classifier.yaml
+```
+
+3. **Launch TensorBoard**:
+
+```bash
+tensorboard --logdir outputs/your-experiment/tensorboard
+```
+
+4. **View in browser**: Navigate to http://localhost:6006
+
+### Features
+
+- **Scalar Metrics**: Loss, accuracy, and learning rate curves updated every epoch
+- **Image Visualization**: Sample predictions, confusion matrices, and generated images
+- **Denoising Process**: Step-by-step denoising sequence visualization (diffusion only)
+- **Histogram Analysis**: Weight and gradient distributions (optional, disabled by default)
+- **Hyperparameter Tracking**: Full training configuration logged at run start
+
+### Output Structure
+
+TensorBoard logs are saved alongside existing CSV outputs:
+
+```
+outputs/experiment_name/
+├── logs/          # Application logs
+├── checkpoints/   # Model checkpoints
+├── metrics/       # CSV metrics
+├── samples/       # Image samples
+└── tensorboard/   # TensorBoard event files
+    └── events.out.tfevents.*
+```
+
+### Configuration Options
+
+```yaml
+logging:
+  metrics:
+    csv:
+      enabled: true # CSV logging is always enabled
+
+    tensorboard:
+      enabled: false # Set to true to enable TensorBoard
+      log_dir: null # null = auto (outputs/<name>/tensorboard)
+      flush_secs: 30 # Flush frequency in seconds
+      log_images: true # Log images (confusion matrices, samples)
+      log_histograms: false # Log weight/gradient histograms (expensive)
+      log_graph: false # Log model computational graph (once at start)
+```
+
+See `configs/classifier.yaml` or `configs/diffusion.yaml` for full option reference.
+
+### Comparing Multiple Runs
+
+```bash
+# Compare two experiments side by side
+tensorboard --logdir_spec=run1:outputs/exp1/tensorboard,run2:outputs/exp2/tensorboard
+
+# Custom port
+tensorboard --logdir outputs/experiment/tensorboard --port 6007
+```
+
+### Metrics Naming
+
+**Classifier**: `metrics/train_loss`, `metrics/train_accuracy`, `metrics/val_loss`, `metrics/val_accuracy`, `metrics/learning_rate`, `images/predictions`, `confusion_matrix/matrix`
+
+**Diffusion**: `metrics/train_loss`, `metrics/val_loss`, `metrics/ema_decay`, `images/samples`, `denoising/process`, `denoising/figure`
+
 ## Testing
 
 This project uses a comprehensive **four-tier testing strategy** that balances speed, coverage, and practical validation needs. All code is testable on CPU without GPU requirements.

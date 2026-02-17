@@ -82,7 +82,8 @@ ai-gen-image-stats/
 │   │   ├── config.py                    # Config loading (YAML)
 │   │   ├── device.py                    # Device management (CPU/GPU)
 │   │   ├── logging.py                   # Logging configuration and setup
-│   │   └── metrics.py                   # Common metrics (FID, IS, PR-AUC, ROC-AUC)
+│   │   ├── metrics.py                   # Common metrics (FID, IS, PR-AUC, ROC-AUC)
+│   │   └── tensorboard.py               # TensorBoard utility functions (optional)
 │   │
 │   ├── deprecated/                      # Old code being phased out
 │   │   ├── ddpm_train.py
@@ -188,7 +189,7 @@ ai-gen-image-stats/
 
 **Utilities (`src/utils/`)**: Cross-cutting concerns
 
-- CLI, config loading, device management, common metrics, logging configuration
+- CLI, config loading, device management, common metrics, logging configuration, TensorBoard utilities
 
 **Data Pipeline (`src/data/`)**: Dataset management
 
@@ -216,14 +217,17 @@ The project uses two complementary logging systems with distinct purposes:
 **2. Metrics Logging** (`BaseLogger` classes in `src/base/logger.py` and experiment-specific loggers):
 
 - **Purpose**: Training metrics, evaluation results, generated artifacts
-- **Output**: CSV files, PNG images, YAML hyperparams
-- **Configuration**: Experiment-specific settings
+- **Output**: CSV files, PNG images, YAML hyperparams, and optionally TensorBoard event files
+- **Configuration**: `logging.metrics` section in YAML configs
 - **Use Cases**:
   - Loss curves (training/validation)
   - Accuracy metrics
   - Confusion matrices
   - Generated sample images
+  - Denoising process visualizations
   - Evaluation metrics (FID, IS, etc.)
+
+**Hybrid Metrics Strategy**: CSV logging is always active and provides lightweight, portable metrics records. TensorBoard is an optional layer on top, enabled via `logging.metrics.tensorboard.enabled: true`, providing interactive plots, image panels, and hyperparameter comparison. Both write the same data redundantly so either artifact alone is sufficient for reproducing results.
 
 **Key Distinction**: Application logging tracks _what the system is doing_, while metrics logging tracks _how well the model is performing_.
 
@@ -422,9 +426,11 @@ outputs/
 │   ├── checkpoints/
 │   │   ├── epoch_010.pt
 │   │   └── best_model.pt
-│   └── samples/                        # Generated images (metrics logging)
-│       ├── epoch_010_samples.png
-│       └── confusion_matrix_epoch_010.png
+│   ├── samples/                        # Generated images (metrics logging)
+│   │   ├── epoch_010_samples.png
+│   │   └── confusion_matrix_epoch_010.png
+│   └── tensorboard/                    # TensorBoard event files (optional)
+│       └── events.out.tfevents.*
 └── diffusion-experiment/
     ├── logs/
     │   └── log_20260217_162045.log    # Application logs
@@ -432,9 +438,55 @@ outputs/
     │   └── metrics.csv                 # Training metrics
     ├── checkpoints/
     │   └── epoch_050.pt
-    └── generated/                      # Generated samples (metrics logging)
-        └── samples_epoch_050.png
+    ├── generated/                      # Generated samples (metrics logging)
+    │   └── samples_epoch_050.png
+    └── tensorboard/                    # TensorBoard event files (optional)
+        └── events.out.tfevents.*
 ```
+
+### TensorBoard Integration
+
+TensorBoard is an optional visualization layer over the CSV metrics system. It is disabled by default and requires no changes to existing code or workflows.
+
+**Architecture:**
+
+```
+BaseLogger (Abstract)
+    ├── log_metrics()          # Writes to CSV; optionally to TensorBoard
+    ├── log_images()           # Saves PNG; optionally to TensorBoard
+    ├── log_histogram()        # TensorBoard only (optional)
+    └── log_hyperparams()      # TensorBoard HPARAMS tab
+
+ClassifierLogger(BaseLogger)
+    ├── _csv_writer            # Always active
+    └── _tensorboard_writer    # Active when enabled in config
+
+DiffusionLogger(BaseLogger)
+    ├── _csv_writer            # Always active
+    └── _tensorboard_writer    # Active when enabled in config
+```
+
+**Utility module** (`src/utils/tensorboard.py`): All TensorBoard calls are made through safe wrappers that accept `Optional[SummaryWriter]` and handle `None` gracefully. This means experiment loggers contain no conditional checks — TensorBoard is simply a no-op when disabled.
+
+**Configuration** (`logging.metrics.tensorboard` in YAML):
+
+```yaml
+logging:
+  metrics:
+    csv:
+      enabled: true # Always active; cannot be disabled
+    tensorboard:
+      enabled: false # Set to true to activate
+      log_dir: null # null = auto (outputs/<name>/tensorboard)
+      flush_secs: 30
+      log_images: true
+      log_histograms: false
+      log_graph: false
+```
+
+**Graceful degradation**: If the `tensorboard` package is not installed and `enabled: true` is set, a warning is logged and training continues without TensorBoard. Zero breaking changes.
+
+See [docs/features/20260218_tensorboard-user-guide.md](../features/20260218_tensorboard-user-guide.md) for usage details.
 
 ### Best Practices
 
