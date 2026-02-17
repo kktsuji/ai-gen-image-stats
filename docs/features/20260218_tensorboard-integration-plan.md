@@ -125,12 +125,12 @@ outputs/experiment_name/
 
 ### Phase 5: Testing
 
-- [ ] 5.1: Write `tests/utils/test_tensorboard.py`
-- [ ] 5.2: Update `tests/experiments/classifier/test_logger.py`
-- [ ] 5.3: Update `tests/experiments/diffusion/test_logger.py`
-- [ ] 5.4: Write `tests/integration/test_tensorboard_integration.py`
-- [ ] 5.5: Run full test suite
-- [ ] 5.6: Manual testing with sample data
+- [x] 5.1: Write `tests/utils/test_tensorboard.py`
+- [x] 5.2: Update `tests/experiments/classifier/test_logger.py`
+- [x] 5.3: Update `tests/experiments/diffusion/test_logger.py`
+- [x] 5.4: Write `tests/integration/test_tensorboard_integration.py`
+- [x] 5.5: Run full test suite
+- [x] 5.6: Manual testing with sample data
 
 ### Phase 6: Documentation
 

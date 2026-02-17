@@ -555,3 +555,197 @@ class TestEdgeCases:
             Path(temp_log_dir) / "confusion_matrices" / "confusion_matrix_step100.png"
         )
         assert viz_file.exists()
+
+
+@pytest.mark.unit
+class TestTensorBoardIntegration:
+    """Test TensorBoard integration in ClassifierLogger."""
+
+    def test_tb_writer_none_by_default(self, temp_log_dir):
+        """tb_writer is None when TensorBoard is not configured."""
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        assert logger.tb_writer is None
+
+    def test_tb_writer_none_when_disabled(self, temp_log_dir):
+        """tb_writer is None when TensorBoard is explicitly disabled."""
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": False},
+        )
+        assert logger.tb_writer is None
+
+    def test_tb_writer_created_when_enabled(self, temp_log_dir):
+        """tb_writer is created when TensorBoard is enabled."""
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True},
+        )
+        assert logger.tb_writer is not None
+        logger.close()
+
+    def test_tb_log_dir_defaults_to_sibling_tensorboard(self, temp_log_dir):
+        """Default TensorBoard log_dir is a sibling 'tensorboard' directory."""
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True},
+        )
+        assert logger.tb_writer is not None
+        # The default is log_dir.parent / "tensorboard"
+        expected_dir = Path(temp_log_dir).parent / "tensorboard"
+        assert expected_dir.exists()
+        logger.close()
+
+    def test_tb_log_dir_custom(self, tmp_path):
+        """Custom log_dir places TensorBoard files in the specified directory."""
+        log_dir = tmp_path / "logs"
+        tb_dir = tmp_path / "tb_custom"
+
+        logger = ClassifierLogger(
+            log_dir=log_dir,
+            tensorboard_config={"enabled": True, "log_dir": str(tb_dir)},
+        )
+        assert tb_dir.exists()
+        logger.close()
+
+    def test_log_metrics_calls_add_scalar_when_tb_enabled(self, temp_log_dir):
+        """log_metrics() calls writer.add_scalar when TensorBoard is enabled."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        mock_writer = MagicMock()
+        logger.tb_writer = mock_writer
+
+        logger.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=10)
+
+        assert mock_writer.add_scalar.call_count == 2
+        call_tags = {call[0][0] for call in mock_writer.add_scalar.call_args_list}
+        assert "metrics/loss" in call_tags
+        assert "metrics/accuracy" in call_tags
+
+    def test_log_metrics_does_not_call_add_scalar_when_tb_disabled(self, temp_log_dir):
+        """log_metrics() does not call add_scalar when TensorBoard is disabled."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        assert logger.tb_writer is None
+
+        # CSV still works
+        logger.log_metrics({"loss": 0.5}, step=1)
+        assert len(logger.logged_metrics_history) == 1
+
+    def test_log_images_calls_add_images_when_tb_enabled(self, temp_log_dir):
+        """log_images() calls writer.add_images when TensorBoard is enabled."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True, "log_images": True},
+        )
+        logger.tb_writer = MagicMock()
+
+        images = torch.randn(4, 3, 32, 32)
+        logger.log_images(images, tag="samples", step=5)
+
+        logger.tb_writer.add_images.assert_called_once()
+
+    def test_log_images_skipped_when_log_images_false(self, temp_log_dir):
+        """log_images() skips TensorBoard when log_images config is False."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True, "log_images": False},
+        )
+        mock_writer = MagicMock()
+        logger.tb_writer = mock_writer
+        logger.tb_log_images = False
+
+        images = torch.randn(4, 3, 32, 32)
+        logger.log_images(images, tag="samples", step=5)
+
+        mock_writer.add_images.assert_not_called()
+
+    def test_log_confusion_matrix_calls_add_figure_when_tb_enabled(self, temp_log_dir):
+        """log_confusion_matrix() calls writer.add_figure when TensorBoard is enabled."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        mock_writer = MagicMock()
+        logger.tb_writer = mock_writer
+        logger.tb_log_images = True
+
+        cm = np.array([[50, 10], [5, 35]])
+        logger.log_confusion_matrix(cm, step=100)
+
+        mock_writer.add_figure.assert_called_once()
+
+    def test_log_hyperparams_calls_add_hparams_when_tb_enabled(self, temp_log_dir):
+        """log_hyperparams() calls writer.add_hparams when TensorBoard is enabled."""
+        from unittest.mock import MagicMock
+
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        mock_writer = MagicMock()
+        logger.tb_writer = mock_writer
+
+        logger.log_hyperparams({"lr": 0.001, "batch_size": 32})
+
+        mock_writer.add_hparams.assert_called_once()
+
+    def test_close_sets_tb_writer_to_none(self, temp_log_dir):
+        """close() sets tb_writer to None."""
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True},
+        )
+        assert logger.tb_writer is not None
+        logger.close()
+        assert logger.tb_writer is None
+
+    def test_csv_logging_unchanged_when_tb_enabled(self, temp_log_dir):
+        """CSV logging works correctly regardless of TensorBoard state."""
+        logger = ClassifierLogger(
+            log_dir=temp_log_dir,
+            tensorboard_config={"enabled": True},
+        )
+        logger.log_metrics({"loss": 0.5, "acc": 0.95}, step=1, epoch=1)
+
+        csv_file = Path(temp_log_dir) / "metrics.csv"
+        assert csv_file.exists()
+        import csv as csv_module
+
+        with open(csv_file) as f:
+            rows = list(csv_module.DictReader(f))
+        assert len(rows) == 1
+        assert rows[0]["loss"] == "0.5"
+        logger.close()
+
+    def test_tb_event_files_created_when_enabled(self, tmp_path):
+        """TensorBoard event files are created in the log directory when enabled."""
+        log_dir = tmp_path / "logs"
+        tb_dir = tmp_path / "tb"
+
+        logger = ClassifierLogger(
+            log_dir=log_dir,
+            tensorboard_config={"enabled": True, "log_dir": str(tb_dir)},
+        )
+        logger.log_metrics({"loss": 0.5}, step=1)
+        logger.close()
+
+        event_files = list(tb_dir.glob("events.out.tfevents.*"))
+        assert len(event_files) > 0
+
+    def test_graceful_when_tensorboard_not_installed(self, temp_log_dir):
+        """Logger degrades gracefully when tensorboard package is missing."""
+        from unittest.mock import patch
+
+        with patch("src.utils.tensorboard.TENSORBOARD_AVAILABLE", False):
+            logger = ClassifierLogger(
+                log_dir=temp_log_dir,
+                tensorboard_config={"enabled": True},
+            )
+            # tb_writer should be None even though enabled=True
+            assert logger.tb_writer is None
+
+            # All logging should still work via CSV
+            logger.log_metrics({"loss": 0.5}, step=1)
+            assert len(logger.logged_metrics_history) == 1
