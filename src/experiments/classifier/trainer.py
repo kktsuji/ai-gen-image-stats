@@ -67,6 +67,7 @@ class ClassifierTrainer(BaseTrainer):
         show_progress: bool = True,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         log_interval: int = 100,
+        config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize the classifier trainer.
 
@@ -79,6 +80,8 @@ class ClassifierTrainer(BaseTrainer):
             show_progress: Whether to show progress bars during training
             scheduler: Optional learning rate scheduler
             log_interval: Log batch-level metrics every N batches (0 to disable)
+            config: Full experiment configuration dictionary used for hyperparameter
+                logging and model graph visualization
         """
         super().__init__()
         self.model = model
@@ -89,6 +92,7 @@ class ClassifierTrainer(BaseTrainer):
         self.show_progress = show_progress
         self.scheduler = scheduler
         self.log_interval = log_interval
+        self.config = config or {}
 
         # Move model to device
         self.model.to(self.device)
@@ -102,6 +106,27 @@ class ClassifierTrainer(BaseTrainer):
         _logger.debug(f"Total parameters: {total_params:,}")
         _logger.debug(f"Trainable parameters: {trainable_params:,}")
         _logger.debug(f"Device: {self.device}")
+
+        # Optional model graph logging to TensorBoard
+        tb_config = (
+            self.config.get("logging", {}).get("metrics", {}).get("tensorboard", {})
+        )
+        if (
+            hasattr(self.logger, "tb_writer")
+            and self.logger.tb_writer is not None
+            and tb_config.get("log_graph", False)
+        ):
+            try:
+                crop_size = (
+                    self.config.get("data", {})
+                    .get("preprocessing", {})
+                    .get("crop_size", 224)
+                )
+                dummy_input = torch.randn(1, 3, crop_size, crop_size).to(self.device)
+                self.logger.tb_writer.add_graph(self.model, dummy_input)
+                _logger.info("Logged model graph to TensorBoard")
+            except Exception as e:
+                _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
 
     def train_epoch(self) -> Dict[str, float]:
         """Execute one training epoch.
@@ -247,6 +272,10 @@ class ClassifierTrainer(BaseTrainer):
 
         self._best_metric_name = best_metric
         logger = self.get_logger()
+
+        # Log hyperparameters to TensorBoard at start of training
+        if self.config:
+            logger.log_hyperparams(self.config)
 
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1

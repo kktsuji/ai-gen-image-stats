@@ -310,7 +310,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         logger.info(f"Scheduler: {scheduler_name}")
 
     # Initialize metrics logger (for training metrics)
-    metrics_logger = ClassifierLogger(log_dir=log_dir, class_names=class_names)
+    tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+    metrics_logger = ClassifierLogger(
+        log_dir=log_dir,
+        class_names=class_names,
+        tensorboard_config=tensorboard_config,
+    )
 
     # Initialize trainer
     trainer = ClassifierTrainer(
@@ -320,6 +325,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         logger=metrics_logger,
         device=device,
         show_progress=True,
+        config=config,
     )
 
     # Set scheduler if available
@@ -684,7 +690,11 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 logger.warning(f"Failed to compile model: {e}")
 
         # Initialize metrics logger
-        metrics_logger = DiffusionLogger(log_dir=log_dir)
+        tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+        metrics_logger = DiffusionLogger(
+            log_dir=log_dir,
+            tensorboard_config=tensorboard_config,
+        )
 
         # Initialize optimizer
         optimizer_config = training_config["optimizer"]
@@ -776,6 +786,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             sample_interval=visualization_config["interval"],
             samples_per_class=2,  # Will calculate based on num_samples internally
             guidance_scale=visualization_config["guidance_scale"],
+            config=config,
         )
 
         # Train the model

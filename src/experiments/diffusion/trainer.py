@@ -112,6 +112,7 @@ class DiffusionTrainer(BaseTrainer):
         samples_per_class: int = 2,
         guidance_scale: float = 3.0,
         log_interval: int = 100,
+        config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize the diffusion trainer.
 
@@ -132,6 +133,8 @@ class DiffusionTrainer(BaseTrainer):
             samples_per_class: Number of samples per class to generate
             guidance_scale: Classifier-free guidance scale
             log_interval: Log batch-level metrics every N batches (0 to disable)
+            config: Full experiment configuration dictionary used for hyperparameter
+                logging and model graph visualization
         """
         super().__init__()
         self.model = model
@@ -143,6 +146,7 @@ class DiffusionTrainer(BaseTrainer):
         self.scheduler = scheduler
         self.gradient_clip_norm = gradient_clip_norm
         self.log_interval = log_interval
+        self.config = config or {}
 
         # Sample generation settings
         self.sample_images = sample_images
@@ -186,6 +190,34 @@ class DiffusionTrainer(BaseTrainer):
             device=self.device,
             ema=self.ema,
         )
+
+        # Optional model graph logging to TensorBoard
+        tb_config = (
+            self.config.get("logging", {}).get("metrics", {}).get("tensorboard", {})
+        )
+        if (
+            hasattr(self.logger, "tb_writer")
+            and self.logger.tb_writer is not None
+            and tb_config.get("log_graph", False)
+        ):
+            try:
+                image_size = (
+                    self.config.get("model", {})
+                    .get("architecture", {})
+                    .get("image_size", 64)
+                )
+                in_channels = (
+                    self.config.get("model", {})
+                    .get("architecture", {})
+                    .get("in_channels", 3)
+                )
+                dummy_input = torch.randn(1, in_channels, image_size, image_size).to(
+                    self.device
+                )
+                self.logger.tb_writer.add_graph(self.model, dummy_input)
+                _logger.info("Logged model graph to TensorBoard")
+            except Exception as e:
+                _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
 
     def train_epoch(self) -> Dict[str, float]:
         """Execute one training epoch.
@@ -445,6 +477,10 @@ class DiffusionTrainer(BaseTrainer):
 
         self._best_metric_name = best_metric
         logger = self.get_logger()
+
+        # Log hyperparameters to TensorBoard at start of training
+        if self.config:
+            logger.log_hyperparams(self.config)
 
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
@@ -724,7 +760,9 @@ class DiffusionTrainer(BaseTrainer):
         self._best_metric_name = checkpoint.get("best_metric_name", None)
 
         _logger.info(f"✓ Checkpoint loaded successfully")
-        _logger.info(f"  Epoch: {self._current_epoch}, Global step: {self._global_step}")
+        _logger.info(
+            f"  Epoch: {self._current_epoch}, Global step: {self._global_step}"
+        )
 
         if "metrics" in checkpoint:
             metrics_str = ", ".join(

@@ -113,15 +113,15 @@ outputs/experiment_name/
 
 ### Phase 4: Trainer Integration
 
-- [ ] 4.1: Update `src/experiments/classifier/trainer.py`
-  - [ ] Pass `tensorboard_config` to logger
-  - [ ] Add optional model graph logging
-  - [ ] Add hyperparameter logging at training start
-- [ ] 4.2: Update `src/experiments/diffusion/trainer.py`
-  - [ ] Pass `tensorboard_config` to logger
-  - [ ] Add optional model graph logging
-  - [ ] Add hyperparameter logging at training start
-- [ ] 4.3: Run trainer unit tests
+- [x] 4.1: Update `src/experiments/classifier/trainer.py`
+  - [x] Pass `tensorboard_config` to logger
+  - [x] Add optional model graph logging
+  - [x] Add hyperparameter logging at training start
+- [x] 4.2: Update `src/experiments/diffusion/trainer.py`
+  - [x] Pass `tensorboard_config` to logger
+  - [x] Add optional model graph logging
+  - [x] Add hyperparameter logging at training start
+- [x] 4.3: Run trainer unit tests
 
 ### Phase 5: Testing
 
