@@ -46,16 +46,16 @@ DiffusionLogger(BaseLogger)
 
 **Files Changed**:
 
-| File | Action |
-| --- | --- |
-| `requirements.txt` | Add `tensorboard>=2.14.0` |
-| `src/utils/tensorboard.py` | NEW: TensorBoard utility functions |
-| `src/experiments/classifier/logger.py` | Add TensorBoard support |
-| `src/experiments/diffusion/logger.py` | Add TensorBoard support |
-| `configs/classifier.yaml` | Add `metrics.tensorboard` config |
-| `configs/diffusion.yaml` | Add `metrics.tensorboard` config |
-| `src/experiments/classifier/trainer.py` | Pass tensorboard config to logger |
-| `src/experiments/diffusion/trainer.py` | Pass tensorboard config to logger |
+| File                                    | Action                             |
+| --------------------------------------- | ---------------------------------- |
+| `requirements.txt`                      | Add `tensorboard>=2.14.0`          |
+| `src/utils/tensorboard.py`              | NEW: TensorBoard utility functions |
+| `src/experiments/classifier/logger.py`  | Add TensorBoard support            |
+| `src/experiments/diffusion/logger.py`   | Add TensorBoard support            |
+| `configs/classifier.yaml`               | Add `metrics.tensorboard` config   |
+| `configs/diffusion.yaml`                | Add `metrics.tensorboard` config   |
+| `src/experiments/classifier/trainer.py` | Pass tensorboard config to logger  |
+| `src/experiments/diffusion/trainer.py`  | Pass tensorboard config to logger  |
 
 **Output Directory Structure**:
 
@@ -75,15 +75,15 @@ outputs/experiment_name/
 
 ### Prerequisites
 
-- [ ] Review and approve this plan
-- [ ] Ensure PyTorch 2.0+ and Python 3.8+ available
+- [x] Review and approve this plan
+- [x] Ensure PyTorch 2.0+ and Python 3.8+ available
 
 ### Phase 1: Foundation Setup
 
-- [ ] 1.1: Add `tensorboard>=2.14.0` to `requirements.txt`
-- [ ] 1.2: Create `src/utils/tensorboard.py`
-- [ ] 1.3: Install and verify: `pip install tensorboard>=2.14.0`
-- [ ] 1.4: Write `tests/utils/test_tensorboard.py`
+- [x] 1.1: Add `tensorboard>=2.14.0` to `requirements.txt`
+- [x] 1.2: Create `src/utils/tensorboard.py`
+- [x] 1.3: Install and verify: `pip install tensorboard>=2.14.0`
+- [x] 1.4: Write `tests/utils/test_tensorboard.py`
 
 ### Phase 2: Logger Integration
 
@@ -774,18 +774,18 @@ Add `metrics` subsection under `logging` in both config files. Insert after the 
 **File**: `configs/classifier.yaml` — insert after `timezone: local`:
 
 ```yaml
-  # Metrics Logging Configuration
-  metrics:
-    csv:
-      enabled: true
+# Metrics Logging Configuration
+metrics:
+  csv:
+    enabled: true
 
-    tensorboard:
-      enabled: false        # Set to true to enable TensorBoard
-      log_dir: null          # null = auto ({output.base_dir}/tensorboard)
-      flush_secs: 30         # Flush frequency in seconds
-      log_images: true       # Log confusion matrices, predictions, samples
-      log_histograms: false  # Log weight/gradient histograms (expensive)
-      log_graph: false       # Log model computational graph (once at start)
+  tensorboard:
+    enabled: false # Set to true to enable TensorBoard
+    log_dir: null # null = auto ({output.base_dir}/tensorboard)
+    flush_secs: 30 # Flush frequency in seconds
+    log_images: true # Log confusion matrices, predictions, samples
+    log_histograms: false # Log weight/gradient histograms (expensive)
+    log_graph: false # Log model computational graph (once at start)
 ```
 
 #### Task 3.2: Update Diffusion Config
@@ -793,18 +793,18 @@ Add `metrics` subsection under `logging` in both config files. Insert after the 
 **File**: `configs/diffusion.yaml` — insert after `timezone: local`:
 
 ```yaml
-  # Metrics Logging Configuration
-  metrics:
-    csv:
-      enabled: true
+# Metrics Logging Configuration
+metrics:
+  csv:
+    enabled: true
 
-    tensorboard:
-      enabled: false        # Set to true to enable TensorBoard
-      log_dir: null          # null = auto ({output.base_dir}/tensorboard)
-      flush_secs: 30         # Flush frequency in seconds
-      log_images: true       # Log generated samples, denoising sequences
-      log_histograms: false  # Log weight/gradient histograms (expensive)
-      log_graph: false       # Log model computational graph (once at start)
+  tensorboard:
+    enabled: false # Set to true to enable TensorBoard
+    log_dir: null # null = auto ({output.base_dir}/tensorboard)
+    flush_secs: 30 # Flush frequency in seconds
+    log_images: true # Log generated samples, denoising sequences
+    log_histograms: false # Log weight/gradient histograms (expensive)
+    log_graph: false # Log model computational graph (once at start)
 ```
 
 #### Task 3.3: Validate YAML Syntax
@@ -972,12 +972,12 @@ Content: configuration reference, usage examples, visualization guide, troublesh
 
 ## Risk Mitigation
 
-| Risk | Mitigation |
-| --- | --- |
+| Risk                     | Mitigation                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------------- |
 | **Performance overhead** | TensorBoard disabled by default; reasonable `flush_secs` (30s); histogram/graph logging opt-in only |
-| **Disk space usage** | Document expected usage; provide cleanup guidance |
-| **Missing dependencies** | Graceful degradation with warning; clear install instructions |
-| **Breaking changes** | TensorBoard disabled by default; CSV logging unchanged; comprehensive regression tests |
+| **Disk space usage**     | Document expected usage; provide cleanup guidance                                                   |
+| **Missing dependencies** | Graceful degradation with warning; clear install instructions                                       |
+| **Breaking changes**     | TensorBoard disabled by default; CSV logging unchanged; comprehensive regression tests              |
 
 ## Success Criteria
 
@@ -991,15 +991,15 @@ Content: configuration reference, usage examples, visualization guide, troublesh
 
 ## Timeline Estimate
 
-| Phase | Tasks | Estimated Time |
-| --- | --- | --- |
-| Phase 1: Foundation | 4 tasks | 2-3 hours |
-| Phase 2: Logger Integration | 3 tasks | 4-5 hours |
-| Phase 3: Configuration | 3 tasks | 1 hour |
-| Phase 4: Trainer Integration | 3 tasks | 2-3 hours |
-| Phase 5: Testing | 6 tasks | 4-5 hours |
-| Phase 6: Documentation | 3 tasks | 2-3 hours |
-| **Total** | **22 tasks** | **15-20 hours** |
+| Phase                        | Tasks        | Estimated Time  |
+| ---------------------------- | ------------ | --------------- |
+| Phase 1: Foundation          | 4 tasks      | 2-3 hours       |
+| Phase 2: Logger Integration  | 3 tasks      | 4-5 hours       |
+| Phase 3: Configuration       | 3 tasks      | 1 hour          |
+| Phase 4: Trainer Integration | 3 tasks      | 2-3 hours       |
+| Phase 5: Testing             | 6 tasks      | 4-5 hours       |
+| Phase 6: Documentation       | 3 tasks      | 2-3 hours       |
+| **Total**                    | **22 tasks** | **15-20 hours** |
 
 ## Future Enhancements
 
@@ -1040,12 +1040,12 @@ tensorboard --logdir outputs/experiment/tensorboard --reload_interval 5
 
 ### Configuration Key Reference
 
-| Key | Type | Default | Description |
-| --- | --- | --- | --- |
-| `logging.metrics.csv.enabled` | bool | true | Enable CSV logging (always true) |
-| `logging.metrics.tensorboard.enabled` | bool | false | Enable TensorBoard logging |
-| `logging.metrics.tensorboard.log_dir` | str\|null | null | Custom TensorBoard directory |
-| `logging.metrics.tensorboard.flush_secs` | int | 30 | Flush frequency (seconds) |
-| `logging.metrics.tensorboard.log_images` | bool | true | Log images to TensorBoard |
-| `logging.metrics.tensorboard.log_histograms` | bool | false | Log weight/gradient histograms |
-| `logging.metrics.tensorboard.log_graph` | bool | false | Log model computational graph |
+| Key                                          | Type      | Default | Description                      |
+| -------------------------------------------- | --------- | ------- | -------------------------------- |
+| `logging.metrics.csv.enabled`                | bool      | true    | Enable CSV logging (always true) |
+| `logging.metrics.tensorboard.enabled`        | bool      | false   | Enable TensorBoard logging       |
+| `logging.metrics.tensorboard.log_dir`        | str\|null | null    | Custom TensorBoard directory     |
+| `logging.metrics.tensorboard.flush_secs`     | int       | 30      | Flush frequency (seconds)        |
+| `logging.metrics.tensorboard.log_images`     | bool      | true    | Log images to TensorBoard        |
+| `logging.metrics.tensorboard.log_histograms` | bool      | false   | Log weight/gradient histograms   |
+| `logging.metrics.tensorboard.log_graph`      | bool      | false   | Log model computational graph    |
