@@ -57,6 +57,19 @@ logging:
   #   src.base.trainer: INFO
   #   src.utils.device: WARNING
 
+  # Metrics Logging Configuration
+  metrics:
+    csv:
+      enabled: true
+
+    tensorboard:
+      enabled: true # Set to true to enable TensorBoard
+      log_dir: null # null = auto ({output.base_dir}/tensorboard)
+      flush_secs: 30 # Flush frequency in seconds
+      log_images: true # Log generated samples, denoising sequences
+      log_histograms: false # Log weight/gradient histograms (expensive)
+      log_graph: false # Log model computational graph (once at start)
+
 # ------------------------------------------------------------------------------
 # MODEL CONFIGURATION
 # Architecture, initialization, and regularization settings
