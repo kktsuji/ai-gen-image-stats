@@ -17,6 +17,14 @@ import torch
 from torchvision.utils import make_grid, save_image
 
 from src.base.logger import BaseLogger
+from src.utils.tensorboard import (
+    close_tensorboard_writer,
+    create_tensorboard_writer,
+    safe_log_figure,
+    safe_log_hparams,
+    safe_log_images,
+    safe_log_scalar,
+)
 
 # Use non-interactive backend for headless environments
 matplotlib.use("Agg")
@@ -48,12 +56,20 @@ class ClassifierLogger(BaseLogger):
         self,
         log_dir: Union[str, Path],
         class_names: Optional[List[str]] = None,
+        tensorboard_config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize the classifier logger.
 
         Args:
             log_dir: Directory to save logs and visualizations
             class_names: Names of classes for confusion matrix labels
+            tensorboard_config: TensorBoard configuration dict with keys:
+                - enabled (bool): Enable TensorBoard logging
+                - log_dir (str): Custom TensorBoard directory (optional)
+                - flush_secs (int): Flush frequency in seconds
+                - log_images (bool): Log images to TensorBoard
+                - log_histograms (bool): Log weight/gradient histograms
+                - log_graph (bool): Log model computational graph
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +95,23 @@ class ClassifierLogger(BaseLogger):
             with open(self.metrics_file, "r") as f:
                 reader = csv.DictReader(f)
                 self.csv_fieldnames = reader.fieldnames
+
+        # Initialize TensorBoard logging
+        self.tensorboard_config = tensorboard_config or {}
+        self.tb_enabled = self.tensorboard_config.get("enabled", False)
+        self.tb_log_images = self.tensorboard_config.get("log_images", True)
+        self.tb_log_histograms = self.tensorboard_config.get("log_histograms", False)
+
+        tb_log_dir = self.tensorboard_config.get("log_dir")
+        if tb_log_dir is None:
+            tb_log_dir = self.log_dir.parent / "tensorboard"
+        flush_secs = self.tensorboard_config.get("flush_secs", 30)
+
+        self.tb_writer = create_tensorboard_writer(
+            log_dir=tb_log_dir,
+            flush_secs=flush_secs,
+            enabled=self.tb_enabled,
+        )
 
         # Track logged data for testing
         self.logged_metrics_history = []
@@ -116,6 +149,11 @@ class ClassifierLogger(BaseLogger):
 
         # Write to CSV
         self._write_metrics_to_csv(log_entry)
+
+        # Write to TensorBoard
+        if self.tb_writer is not None:
+            for key, value in processed_metrics.items():
+                safe_log_scalar(self.tb_writer, f"metrics/{key}", value, step)
 
     def _write_metrics_to_csv(self, log_entry: Dict[str, Any]) -> None:
         """Write a single metrics entry to CSV file.
@@ -206,6 +244,10 @@ class ClassifierLogger(BaseLogger):
         # Save image grid
         image_path = self.predictions_dir / filename
         save_image(images, image_path, normalize=normalize, nrow=nrow)
+
+        # Save to TensorBoard
+        if self.tb_writer is not None and self.tb_log_images:
+            safe_log_images(self.tb_writer, f"images/{tag}", images, step)
 
         # If labels/predictions provided, create annotated visualization
         if labels is not None or predictions is not None:
@@ -362,10 +404,17 @@ class ClassifierLogger(BaseLogger):
         save_path = self.confusion_dir / filename
         plt.tight_layout()
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
+
+        # Save to TensorBoard
+        if self.tb_writer is not None and self.tb_log_images:
+            safe_log_figure(
+                self.tb_writer, "confusion_matrix/matrix", fig, step, close=False
+            )
+
         plt.close(fig)
 
     def log_hyperparams(self, hyperparams: Dict[str, Any]) -> None:
-        """Log hyperparameters to a YAML file.
+        """Log hyperparameters to a YAML file and TensorBoard.
 
         Args:
             hyperparams: Dictionary of hyperparameter names to values
@@ -376,7 +425,13 @@ class ClassifierLogger(BaseLogger):
         with open(hyperparams_file, "w") as f:
             yaml.dump(hyperparams, f, default_flow_style=False, sort_keys=False)
 
+        # Log to TensorBoard
+        if self.tb_writer is not None:
+            safe_log_hparams(self.tb_writer, hyperparams)
+
     def close(self) -> None:
         """Cleanup and finalize logging."""
+        close_tensorboard_writer(self.tb_writer)
+        self.tb_writer = None
         # Flush any remaining matplotlib figures
         plt.close("all")

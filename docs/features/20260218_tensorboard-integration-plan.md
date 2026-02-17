@@ -87,23 +87,23 @@ outputs/experiment_name/
 
 ### Phase 2: Logger Integration
 
-- [ ] 2.1: Modify `src/experiments/classifier/logger.py`
-  - [ ] Add TensorBoard imports
-  - [ ] Update `__init__` to accept `tensorboard_config`
-  - [ ] Update `log_metrics` for dual logging
-  - [ ] Update `log_images` for TensorBoard
-  - [ ] Update `log_confusion_matrix` for TensorBoard
-  - [ ] Add `log_hyperparams` method
-  - [ ] Update `close` method
-- [ ] 2.2: Modify `src/experiments/diffusion/logger.py`
-  - [ ] Add TensorBoard imports
-  - [ ] Update `__init__` to accept `tensorboard_config`
-  - [ ] Update `log_metrics` for dual logging
-  - [ ] Update `log_images` for TensorBoard
-  - [ ] Update `log_denoising_process` for TensorBoard
-  - [ ] Add `log_hyperparams` method
-  - [ ] Update `close` method
-- [ ] 2.3: Run logger unit tests
+- [x] 2.1: Modify `src/experiments/classifier/logger.py`
+  - [x] Add TensorBoard imports
+  - [x] Update `__init__` to accept `tensorboard_config`
+  - [x] Update `log_metrics` for dual logging
+  - [x] Update `log_images` for TensorBoard
+  - [x] Update `log_confusion_matrix` for TensorBoard
+  - [x] Add `log_hyperparams` method
+  - [x] Update `close` method
+- [x] 2.2: Modify `src/experiments/diffusion/logger.py`
+  - [x] Add TensorBoard imports
+  - [x] Update `__init__` to accept `tensorboard_config`
+  - [x] Update `log_metrics` for dual logging
+  - [x] Update `log_images` for TensorBoard
+  - [x] Update `log_denoising_process` for TensorBoard
+  - [x] Add `log_hyperparams` method
+  - [x] Update `close` method
+- [x] 2.3: Run logger unit tests
 
 ### Phase 3: Configuration
 
