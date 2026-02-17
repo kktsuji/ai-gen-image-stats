@@ -628,20 +628,22 @@ This project is undergoing active refactoring according to the plan in [docs/res
 3. **Train with Synthetic Augmentation**: Train on real + synthetic data
 4. **Compare Results**: Analyze performance differences using built-in tools
 
-## Docker Usage (Legacy)
+## Docker Usage
 
 The project also supports Docker for consistent environments:
 
 ```bash
+cd ai-gen-image-stats
+
 # Build the docker image
-docker build -t kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 .
+docker build -t kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 .
 
 # Run training
 docker run --rm -it --gpus all --network=host \
   -v $PWD:/work -w /work \
   --user $(id -u):$(id -g) \
-  kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 \
-  python -m src.main --experiment classifier
+  kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
+  python3 -m src.main configs/diffusion.yaml
 ```
 
 ## Contributing
