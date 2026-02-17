@@ -6,6 +6,7 @@ COPY requirements.txt requirements-dev.txt ./
 
 RUN apt-get update && \
     apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     python3 -m pip install --no-cache-dir -U pip && \

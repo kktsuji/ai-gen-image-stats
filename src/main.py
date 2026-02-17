@@ -44,6 +44,7 @@ import yaml
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
 from src.utils.device import get_device
+from src.utils.git import get_git_info
 from src.utils.logging import get_log_file_path, setup_logging
 
 # Module-level logger
@@ -112,6 +113,14 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     logger.info("=" * 80)
     logger.info("CLASSIFIER EXPERIMENT STARTED")
     logger.info("=" * 80)
+
+    # Log Git information for reproducibility
+    git_info = get_git_info()
+    if git_info["repository_url"]:
+        logger.info(f"Repository: {git_info['repository_url']}")
+    if git_info["commit_hash"]:
+        logger.info(f"Commit: {git_info['commit_hash']}")
+
     logger.info(f"Log file: {log_file}")
     logger.info(f"Console log level: {console_level}")
     logger.info(f"File log level: {file_level}")
@@ -428,6 +437,14 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     logger.info("=" * 80)
     logger.info(f"DIFFUSION EXPERIMENT STARTED - Mode: {mode.upper()}")
     logger.info("=" * 80)
+
+    # Log Git information for reproducibility
+    git_info = get_git_info()
+    if git_info["repository_url"]:
+        logger.info(f"Repository: {git_info['repository_url']}")
+    if git_info["commit_hash"]:
+        logger.info(f"Commit: {git_info['commit_hash']}")
+
     logger.info(f"Log file: {log_file}")
     logger.info(f"Console log level: {console_level}")
     logger.info(f"File log level: {file_level}")
