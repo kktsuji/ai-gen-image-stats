@@ -107,9 +107,9 @@ outputs/experiment_name/
 
 ### Phase 3: Configuration
 
-- [ ] 3.1: Add `metrics` section to `configs/classifier.yaml`
-- [ ] 3.2: Add `metrics` section to `configs/diffusion.yaml`
-- [ ] 3.3: Validate YAML syntax
+- [x] 3.1: Add `metrics` section to `configs/classifier.yaml`
+- [x] 3.2: Add `metrics` section to `configs/diffusion.yaml`
+- [x] 3.3: Validate YAML syntax
 
 ### Phase 4: Trainer Integration
 
