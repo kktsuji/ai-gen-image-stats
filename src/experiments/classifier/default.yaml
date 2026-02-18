@@ -282,6 +282,7 @@ training:
     # true: enables perfect resume but larger checkpoint files
     # false: model weights only, smaller files but can't resume optimization state
     save_optimizer: true
+    save_latest: true # Always save latest_checkpoint.pth after every epoch
 
   validation:
     # Enable validation during training (recommended)

@@ -380,6 +380,8 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
             raise ValueError(
                 "training.checkpointing.save_frequency must be a positive integer"
             )
+    if "save_latest" in ckpt and not isinstance(ckpt["save_latest"], bool):
+        raise ValueError("training.checkpointing.save_latest must be a boolean")
 
     # Validate validation subsection
     if "validation" in training:

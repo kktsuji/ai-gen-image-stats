@@ -242,6 +242,12 @@ def validate_config(config: Dict[str, Any]) -> None:
         # Validate scheduler
         validate_scheduler_section(training["scheduler"])
 
+        # Validate checkpointing
+        if "checkpointing" in training:
+            ckpt = training["checkpointing"]
+            if "save_latest" in ckpt and not isinstance(ckpt["save_latest"], bool):
+                raise ValueError("training.checkpointing.save_latest must be a boolean")
+
     elif config["mode"] == "evaluate":
         if "evaluation" not in config:
             raise KeyError(

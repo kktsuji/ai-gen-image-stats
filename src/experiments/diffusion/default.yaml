@@ -157,6 +157,7 @@ training:
     save_frequency: 10 # Save every N epochs
     save_best_only: false # Save all checkpoints
     save_optimizer: true # Include optimizer state in checkpoints
+    save_latest: true # Always save latest_checkpoint.pth after every epoch
 
   # Validation: Validation during training
   validation:
