@@ -635,6 +635,44 @@ class TestTrainLoop:
         # Should have saved best model
         assert (checkpoint_dir / "best_model.pth").exists()
 
+    def test_latest_checkpoint_written_when_enabled(self, tmp_path):
+        """latest_checkpoint.pth is created when save_latest_checkpoint=True."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_dir = tmp_path / "checkpoints"
+
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_latest_checkpoint=True,
+        )
+
+        assert (checkpoint_dir / "latest_checkpoint.pth").exists()
+
+    def test_latest_checkpoint_not_written_when_disabled(self, tmp_path):
+        """latest_checkpoint.pth is NOT created when save_latest_checkpoint=False."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_dir = tmp_path / "checkpoints"
+
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_latest_checkpoint=False,
+        )
+
+        assert not (checkpoint_dir / "latest_checkpoint.pth").exists()
+
 
 @pytest.mark.component
 class TestResumeTraining:

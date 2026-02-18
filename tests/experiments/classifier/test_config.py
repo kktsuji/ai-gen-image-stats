@@ -520,6 +520,31 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
+    def test_save_latest_valid_true(self):
+        """save_latest: true is accepted."""
+        config = get_v2_default_config()
+        config["training"]["checkpointing"]["save_latest"] = True
+        validate_config(config)  # should not raise
+
+    def test_save_latest_valid_false(self):
+        """save_latest: false is accepted."""
+        config = get_v2_default_config()
+        config["training"]["checkpointing"]["save_latest"] = False
+        validate_config(config)  # should not raise
+
+    def test_save_latest_missing_defaults_to_true(self):
+        """save_latest absent from config is accepted (defaults to True)."""
+        config = get_v2_default_config()
+        config["training"]["checkpointing"].pop("save_latest", None)
+        validate_config(config)  # should not raise
+
+    def test_save_latest_invalid_type(self):
+        """save_latest with non-bool raises ValueError."""
+        config = get_v2_default_config()
+        config["training"]["checkpointing"]["save_latest"] = "yes"
+        with pytest.raises(ValueError, match="save_latest must be a boolean"):
+            validate_config(config)
+
 
 @pytest.mark.unit
 @pytest.mark.component

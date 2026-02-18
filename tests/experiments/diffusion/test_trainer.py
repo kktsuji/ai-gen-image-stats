@@ -456,6 +456,70 @@ def test_diffusion_trainer_full_workflow():
 
 
 @pytest.mark.integration
+def test_diffusion_trainer_latest_checkpoint_written_when_enabled():
+    """latest_checkpoint.pth is created when save_latest_checkpoint=True."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        sample_images=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_latest_checkpoint=True,
+        )
+
+        assert (Path(tmpdir) / "latest_checkpoint.pth").exists()
+
+
+@pytest.mark.integration
+def test_diffusion_trainer_latest_checkpoint_not_written_when_disabled():
+    """latest_checkpoint.pth is NOT created when save_latest_checkpoint=False."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        sample_images=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_latest_checkpoint=False,
+        )
+
+        assert not (Path(tmpdir) / "latest_checkpoint.pth").exists()
+
+
+@pytest.mark.integration
 def test_diffusion_trainer_checkpoint_save_and_load():
     """Test checkpoint saving and loading."""
     # Create components

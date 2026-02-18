@@ -384,6 +384,40 @@ def test_training_with_checkpointing(classifier_trainer):
 
 
 @pytest.mark.integration
+def test_latest_checkpoint_written_when_enabled(classifier_trainer):
+    """latest_checkpoint.pth is created when save_latest_checkpoint=True."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        classifier_trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_best=False,
+            save_latest_checkpoint=True,
+        )
+
+        assert (checkpoint_dir / "latest_checkpoint.pth").exists()
+
+
+@pytest.mark.integration
+def test_latest_checkpoint_not_written_when_disabled(classifier_trainer):
+    """latest_checkpoint.pth is NOT created when save_latest_checkpoint=False."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        classifier_trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_best=False,
+            save_latest_checkpoint=False,
+        )
+
+        assert not (checkpoint_dir / "latest_checkpoint.pth").exists()
+
+
+@pytest.mark.integration
 def test_training_with_best_model_saving(classifier_trainer):
     """Test training with best model saving."""
     with tempfile.TemporaryDirectory() as tmpdir:

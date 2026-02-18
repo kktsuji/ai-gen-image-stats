@@ -1,7 +1,7 @@
 # Implementation Plan: Configurable Save-Latest-Checkpoint
 
 **Date:** 2026-02-18  
-**Status:** Draft  
+**Status:** Complete  
 **Scope:** `BaseTrainer`, diffusion and classifier experiment trainers, both default configs, config validators, `main.py`, tests
 
 ---
@@ -38,9 +38,9 @@ This plan introduces a boolean flag `training.checkpointing.save_latest` that le
 - [x] Phase 4: Wiring in `main.py`
   - [x] Task 4.1: Read `training.checkpointing.save_latest` from config and pass it to `trainer.train()`
 
-- [ ] Phase 5: Tests
-  - [ ] Task 5.1: Unit tests — validate config parsing of `save_latest`
-  - [ ] Task 5.2: Component tests — verify `latest_checkpoint.pth` is (not) written based on flag
+- [x] Phase 5: Tests
+  - [x] Task 5.1: Unit tests — validate config parsing of `save_latest`
+  - [x] Task 5.2: Component tests — verify `latest_checkpoint.pth` is (not) written based on flag
 
 ---
 
