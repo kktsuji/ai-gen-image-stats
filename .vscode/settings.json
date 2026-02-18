@@ -14,4 +14,7 @@
     "chat.tools.terminal.autoApprove": {
         "venv/bin/python": true
     }
+    "chat.promptFilesRecommendations": {
+        "kktsuji.plan": true
+    },
 }
