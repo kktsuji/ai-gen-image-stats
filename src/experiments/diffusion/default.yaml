@@ -51,7 +51,6 @@ logging:
 
     tensorboard:
       enabled: false # Set to true to enable TensorBoard
-      log_dir: null # null = auto ({output.base_dir}/tensorboard)
       flush_secs: 30 # Flush frequency in seconds
       log_images: true # Log confusion matrices, predictions, samples
       log_histograms: false # Log weight/gradient histograms (expensive)
@@ -123,6 +122,7 @@ output:
     checkpoints: checkpoints # Model checkpoints
     samples: samples # Training samples
     generated: generated # Generated images
+    tensorboard: tensorboard # TensorBoard event logs
 
 # ------------------------------------------------------------------------------
 # TRAINING MODE CONFIGURATION

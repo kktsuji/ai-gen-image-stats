@@ -140,16 +140,16 @@ outputs/experiment_name/
 
 ### Phase 7: Config Structure Refactoring — TensorBoard Output Directory
 
-- [ ] 7.1: Add `output.subdirs.tensorboard` to `src/experiments/classifier/default.yaml`
-- [ ] 7.2: Add `output.subdirs.tensorboard` to `src/experiments/diffusion/default.yaml`
-- [ ] 7.3: Add `output.subdirs.tensorboard` to `configs/classifier.yaml`
-- [ ] 7.4: Add `output.subdirs.tensorboard` to `configs/diffusion.yaml`
-- [ ] 7.5: Remove `logging.metrics.tensorboard.log_dir` from `configs/classifier.yaml` and `configs/diffusion.yaml`
-- [ ] 7.6: Update `src/main.py` to resolve tensorboard path via `resolve_output_path`
-- [ ] 7.7: Update `src/experiments/classifier/logger.py` — replace internal `log_dir` lookup with explicit `tb_log_dir` parameter
-- [ ] 7.8: Update `src/experiments/diffusion/logger.py` — same as 7.7
-- [ ] 7.9: Update logger tests and integration tests
-- [ ] 7.10: Validate YAML syntax and run full test suite
+- [x] 7.1: Add `output.subdirs.tensorboard` to `src/experiments/classifier/default.yaml`
+- [x] 7.2: Add `output.subdirs.tensorboard` to `src/experiments/diffusion/default.yaml`
+- [x] 7.3: Add `output.subdirs.tensorboard` to `configs/classifier.yaml`
+- [x] 7.4: Add `output.subdirs.tensorboard` to `configs/diffusion.yaml`
+- [x] 7.5: Remove `logging.metrics.tensorboard.log_dir` from `configs/classifier.yaml` and `configs/diffusion.yaml`
+- [x] 7.6: Update `src/main.py` to resolve tensorboard path via `resolve_output_path`
+- [x] 7.7: Update `src/experiments/classifier/logger.py` — replace internal `log_dir` lookup with explicit `tb_log_dir` parameter
+- [x] 7.8: Update `src/experiments/diffusion/logger.py` — same as 7.7
+- [x] 7.9: Update logger tests and integration tests
+- [x] 7.10: Validate YAML syntax and run full test suite
 
 ### Deployment
 

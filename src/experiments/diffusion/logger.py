@@ -56,6 +56,7 @@ class DiffusionLogger(BaseLogger):
         self,
         log_dir: Union[str, Path],
         tensorboard_config: Optional[Dict[str, Any]] = None,
+        tb_log_dir: Optional[Union[str, Path]] = None,
     ):
         """Initialize the diffusion logger.
 
@@ -63,11 +64,12 @@ class DiffusionLogger(BaseLogger):
             log_dir: Directory to save logs and visualizations
             tensorboard_config: TensorBoard configuration dict with keys:
                 - enabled (bool): Enable TensorBoard logging
-                - log_dir (str): Custom TensorBoard directory (optional)
                 - flush_secs (int): Flush frequency in seconds
                 - log_images (bool): Log images to TensorBoard
                 - log_histograms (bool): Log weight/gradient histograms
                 - log_graph (bool): Log model computational graph
+            tb_log_dir: Directory for TensorBoard event logs. Resolved via
+                output.subdirs.tensorboard. Defaults to {log_dir}/../tensorboard.
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -100,7 +102,6 @@ class DiffusionLogger(BaseLogger):
         self.tb_log_images = self.tensorboard_config.get("log_images", True)
         self.tb_log_histograms = self.tensorboard_config.get("log_histograms", False)
 
-        tb_log_dir = self.tensorboard_config.get("log_dir")
         if tb_log_dir is None:
             tb_log_dir = self.log_dir.parent / "tensorboard"
         flush_secs = self.tensorboard_config.get("flush_secs", 30)

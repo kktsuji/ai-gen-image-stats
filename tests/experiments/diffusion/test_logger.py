@@ -525,13 +525,14 @@ class TestTensorBoardIntegration:
         logger.close()
 
     def test_tb_log_dir_custom(self, tmp_path):
-        """Custom log_dir places TensorBoard files in the specified directory."""
+        """Custom tb_log_dir places TensorBoard files in the specified directory."""
         log_dir = tmp_path / "logs"
         tb_dir = tmp_path / "tb_custom"
 
         logger = DiffusionLogger(
             log_dir=log_dir,
-            tensorboard_config={"enabled": True, "log_dir": str(tb_dir)},
+            tensorboard_config={"enabled": True},
+            tb_log_dir=tb_dir,
         )
         assert tb_dir.exists()
         logger.close()
@@ -661,7 +662,8 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(
             log_dir=log_dir,
-            tensorboard_config={"enabled": True, "log_dir": str(tb_dir)},
+            tensorboard_config={"enabled": True},
+            tb_log_dir=tb_dir,
         )
         logger.log_metrics({"loss": 0.05}, step=1)
         logger.close()

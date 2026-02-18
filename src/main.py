@@ -311,10 +311,16 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     # Initialize metrics logger (for training metrics)
     tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+    tb_log_dir = (
+        resolve_output_path(config, "tensorboard")
+        if "tensorboard" in config.get("output", {}).get("subdirs", {})
+        else None
+    )
     metrics_logger = ClassifierLogger(
         log_dir=log_dir,
         class_names=class_names,
         tensorboard_config=tensorboard_config,
+        tb_log_dir=tb_log_dir,
     )
 
     # Initialize trainer
@@ -691,9 +697,15 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Initialize metrics logger
         tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
+        tb_log_dir = (
+            resolve_output_path(config, "tensorboard")
+            if "tensorboard" in config.get("output", {}).get("subdirs", {})
+            else None
+        )
         metrics_logger = DiffusionLogger(
             log_dir=log_dir,
             tensorboard_config=tensorboard_config,
+            tb_log_dir=tb_log_dir,
         )
 
         # Initialize optimizer

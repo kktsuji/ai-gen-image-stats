@@ -40,7 +40,6 @@ def classifier_tb_config(tmp_path):
     tb_dir = tmp_path / "tensorboard"
     config = {
         "enabled": True,
-        "log_dir": str(tb_dir),
         "flush_secs": 1,
         "log_images": True,
         "log_histograms": False,
@@ -56,7 +55,6 @@ def diffusion_tb_config(tmp_path):
     tb_dir = tmp_path / "tensorboard"
     config = {
         "enabled": True,
-        "log_dir": str(tb_dir),
         "flush_secs": 1,
         "log_images": True,
         "log_histograms": False,
@@ -83,6 +81,7 @@ class TestClassifierTensorBoardEnabled:
             log_dir=log_dir,
             class_names=["Normal", "Abnormal"],
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             for step in range(3):
                 logger.log_metrics(
@@ -112,6 +111,7 @@ class TestClassifierTensorBoardEnabled:
         with ClassifierLogger(
             log_dir=log_dir,
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             logger.log_metrics(
                 {"val_loss": 0.4, "val_accuracy": 0.85}, step=10, epoch=1
@@ -129,6 +129,7 @@ class TestClassifierTensorBoardEnabled:
             log_dir=log_dir,
             class_names=["Normal", "Abnormal"],
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             cm = np.array([[80, 20], [10, 90]])
             logger.log_confusion_matrix(cm, step=5, epoch=1)
@@ -148,6 +149,7 @@ class TestClassifierTensorBoardEnabled:
         with ClassifierLogger(
             log_dir=log_dir,
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             images = torch.randn(4, 3, 32, 32)
             logger.log_images(images, tag="predictions", step=5, epoch=1)
@@ -165,6 +167,7 @@ class TestClassifierTensorBoardEnabled:
         with ClassifierLogger(
             log_dir=log_dir,
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             logger.log_hyperparams({"lr": 0.001, "batch_size": 32, "epochs": 10})
 
@@ -180,6 +183,7 @@ class TestClassifierTensorBoardEnabled:
             log_dir=log_dir,
             class_names=["Normal", "Abnormal"],
             tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             logger.log_hyperparams({"lr": 0.001, "epochs": 3})
 
@@ -219,7 +223,9 @@ class TestDiffusionTensorBoardEnabled:
         """CSV and TensorBoard event files are both created during a diffusion run."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(log_dir=log_dir, tensorboard_config=config) as logger:
+        with DiffusionLogger(
+            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        ) as logger:
             for step in range(3):
                 logger.log_metrics(
                     {"loss": 1.0 - step * 0.1, "timestep": 1000 - step * 100},
@@ -239,7 +245,9 @@ class TestDiffusionTensorBoardEnabled:
         """Denoising process is saved to file and TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(log_dir=log_dir, tensorboard_config=config) as logger:
+        with DiffusionLogger(
+            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        ) as logger:
             sequence = torch.rand(8, 3, 32, 32)
             logger.log_denoising_process(sequence, step=1000, epoch=1)
 
@@ -253,7 +261,9 @@ class TestDiffusionTensorBoardEnabled:
         """Generated samples are saved to file and TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(log_dir=log_dir, tensorboard_config=config) as logger:
+        with DiffusionLogger(
+            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        ) as logger:
             samples = torch.rand(8, 3, 32, 32)
             logger.log_images(samples, tag="samples", step=1000, epoch=1)
 
@@ -267,7 +277,9 @@ class TestDiffusionTensorBoardEnabled:
         """Hyperparams are saved to YAML and TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(log_dir=log_dir, tensorboard_config=config) as logger:
+        with DiffusionLogger(
+            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        ) as logger:
             logger.log_hyperparams(
                 {"lr": 0.0001, "timesteps": 1000, "beta_schedule": "linear"}
             )
@@ -395,16 +407,14 @@ class TestCustomLogDir:
     """Verify TensorBoard logs are written to custom directories."""
 
     def test_classifier_uses_custom_log_dir(self, tmp_path):
-        """ClassifierLogger respects custom TensorBoard log_dir."""
+        """ClassifierLogger respects custom TensorBoard tb_log_dir."""
         log_dir = tmp_path / "logs"
         custom_tb_dir = tmp_path / "my_custom_tb"
 
         with ClassifierLogger(
             log_dir=log_dir,
-            tensorboard_config={
-                "enabled": True,
-                "log_dir": str(custom_tb_dir),
-            },
+            tensorboard_config={"enabled": True},
+            tb_log_dir=custom_tb_dir,
         ) as logger:
             logger.log_metrics({"loss": 0.5}, step=1)
 
@@ -423,16 +433,14 @@ class TestCustomLogDir:
         assert len(event_files) > 0
 
     def test_diffusion_uses_custom_log_dir(self, tmp_path):
-        """DiffusionLogger respects custom TensorBoard log_dir."""
+        """DiffusionLogger respects custom TensorBoard tb_log_dir."""
         log_dir = tmp_path / "logs"
         custom_tb_dir = tmp_path / "diffusion_tb"
 
         with DiffusionLogger(
             log_dir=log_dir,
-            tensorboard_config={
-                "enabled": True,
-                "log_dir": str(custom_tb_dir),
-            },
+            tensorboard_config={"enabled": True},
+            tb_log_dir=custom_tb_dir,
         ) as logger:
             logger.log_metrics({"loss": 0.05}, step=1000)
 
@@ -441,16 +449,14 @@ class TestCustomLogDir:
         assert len(event_files) > 0
 
     def test_custom_log_dir_created_if_not_exists(self, tmp_path):
-        """Nested custom log_dir is created automatically."""
+        """Nested custom tb_log_dir is created automatically."""
         log_dir = tmp_path / "logs"
         nested_tb_dir = tmp_path / "deep" / "nested" / "tensorboard"
 
         with ClassifierLogger(
             log_dir=log_dir,
-            tensorboard_config={
-                "enabled": True,
-                "log_dir": str(nested_tb_dir),
-            },
+            tensorboard_config={"enabled": True},
+            tb_log_dir=nested_tb_dir,
         ) as logger:
             logger.log_metrics({"loss": 0.5}, step=1)
 
