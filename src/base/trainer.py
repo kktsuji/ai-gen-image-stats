@@ -355,6 +355,20 @@ class BaseTrainer(ABC):
                     )
                     logger.debug(f"Latest checkpoint updated: {latest_path}")
 
+        # Save final checkpoint after all epochs complete
+        if checkpoint_dir is not None:
+            final_path = checkpoint_dir / "final_model.pth"
+            self.save_checkpoint(
+                final_path,
+                epoch=self._current_epoch,
+                is_best=False,
+                metrics={
+                    **train_metrics,
+                    **(val_metrics if val_metrics else {}),
+                },
+            )
+            logger.info(f"Final model checkpoint saved: {final_path}")
+
     def save_checkpoint(
         self,
         path: Union[str, Path],
@@ -658,6 +672,20 @@ class BaseTrainer(ABC):
                         },
                     )
                     logger.debug(f"Latest checkpoint updated: {latest_path}")
+
+        # Save final checkpoint after all epochs complete
+        if checkpoint_dir is not None:
+            final_path = checkpoint_dir / "final_model.pth"
+            self.save_checkpoint(
+                final_path,
+                epoch=self._current_epoch,
+                is_best=False,
+                metrics={
+                    **train_metrics,
+                    **(val_metrics if val_metrics else {}),
+                },
+            )
+            logger.info(f"Final model checkpoint saved: {final_path}")
 
     def _is_best_metric(self, current_value: float, mode: str) -> bool:
         """Check if current metric value is the best so far.

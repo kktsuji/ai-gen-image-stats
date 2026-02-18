@@ -381,6 +381,7 @@ def test_training_with_checkpointing(classifier_trainer):
         assert (checkpoint_dir / "latest_checkpoint.pth").exists()
         assert (checkpoint_dir / "checkpoint_epoch_1.pth").exists()
         assert (checkpoint_dir / "checkpoint_epoch_2.pth").exists()
+        assert (checkpoint_dir / "final_model.pth").exists()
 
 
 @pytest.mark.integration

@@ -22,17 +22,17 @@ No config parameter is added; saving `final_model.pth` is always done when a `ch
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Base trainer
-  - [ ] Task 1.1: Add final checkpoint save after the epoch loop in `BaseTrainer.train()`
-  - [ ] Task 1.2: Add final checkpoint save after the epoch loop in `BaseTrainer.resume_training()`
-- [ ] Phase 2: Classifier trainer
-  - [ ] Task 2.1: Add final checkpoint save after the epoch loop in `ClassifierTrainer.train()`
-- [ ] Phase 3: Diffusion trainer
-  - [ ] Task 3.1: Add final checkpoint save after the epoch loop in `DiffusionTrainer.train()`
-- [ ] Phase 4: Tests
-  - [ ] Task 4.1: Add / update tests for `BaseTrainer.train()` to assert `final_model.pth` exists
-  - [ ] Task 4.2: Add / update tests for `ClassifierTrainer.train()` to assert `final_model.pth` exists
-  - [ ] Task 4.3: Add / update tests for `DiffusionTrainer.train()` to assert `final_model.pth` exists
+- [x] Phase 1: Base trainer
+  - [x] Task 1.1: Add final checkpoint save after the epoch loop in `BaseTrainer.train()`
+  - [x] Task 1.2: Add final checkpoint save after the epoch loop in `BaseTrainer.resume_training()`
+- [x] Phase 2: Classifier trainer
+  - [x] Task 2.1: Add final checkpoint save after the epoch loop in `ClassifierTrainer.train()`
+- [x] Phase 3: Diffusion trainer
+  - [x] Task 3.1: Add final checkpoint save after the epoch loop in `DiffusionTrainer.train()`
+- [x] Phase 4: Tests
+  - [x] Task 4.1: Add / update tests for `BaseTrainer.train()` to assert `final_model.pth` exists
+  - [x] Task 4.2: Add / update tests for `ClassifierTrainer.train()` to assert `final_model.pth` exists
+  - [x] Task 4.3: Add / update tests for `DiffusionTrainer.train()` to assert `final_model.pth` exists
 - [ ] Phase 5: Confirm all tests pass
   - [ ] Task 5.1: Run the full test suite and verify no regressions
 - [ ] Phase 6: Update documentation

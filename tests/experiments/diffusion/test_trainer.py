@@ -453,6 +453,7 @@ def test_diffusion_trainer_full_workflow():
         # Check that checkpoints were saved
         checkpoint_dir = Path(tmpdir)
         assert (checkpoint_dir / "latest_checkpoint.pth").exists()
+        assert (checkpoint_dir / "final_model.pth").exists()
 
 
 @pytest.mark.integration

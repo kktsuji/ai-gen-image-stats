@@ -611,6 +611,7 @@ class TestTrainLoop:
         assert (checkpoint_dir / "checkpoint_epoch_2.pth").exists()
         assert (checkpoint_dir / "checkpoint_epoch_4.pth").exists()
         assert (checkpoint_dir / "latest_checkpoint.pth").exists()
+        assert (checkpoint_dir / "final_model.pth").exists()
 
     def test_train_saves_best_model(self, tmp_path):
         """Test that train() saves best model based on metrics."""

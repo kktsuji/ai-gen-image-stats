@@ -593,6 +593,20 @@ class DiffusionTrainer(BaseTrainer):
                         },
                     )
 
+        # Save final checkpoint after all epochs complete
+        if checkpoint_dir is not None:
+            final_path = checkpoint_dir / "final_model.pth"
+            self.save_checkpoint(
+                final_path,
+                epoch=self._current_epoch,
+                is_best=False,
+                metrics={
+                    **train_metrics,
+                    **(val_metrics if val_metrics else {}),
+                },
+            )
+            _logger.info(f"Final model checkpoint saved: {final_path}")
+
     def save_checkpoint(
         self,
         path: Union[str, Path],
