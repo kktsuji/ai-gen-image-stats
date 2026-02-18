@@ -342,6 +342,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     num_epochs = training_config["epochs"]
     save_best = training_config["checkpointing"].get("save_best_only", True)
     checkpoint_frequency = training_config["checkpointing"].get("save_frequency", 10)
+    save_latest = training_config["checkpointing"].get("save_latest", True)
     validate_frequency = training_config["validation"].get("frequency", 1)
     best_metric = training_config["validation"].get("metric", "accuracy")
 
@@ -355,6 +356,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             checkpoint_frequency=checkpoint_frequency,
             validate_frequency=validate_frequency,
             best_metric=best_metric,
+            save_latest_checkpoint=save_latest,
         )
     except KeyboardInterrupt:
         logger.warning("")
@@ -811,6 +813,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 checkpoint_dir=str(checkpoint_dir),
                 save_best=checkpointing_config["save_best_only"],
                 checkpoint_frequency=checkpointing_config["save_frequency"],
+                save_latest_checkpoint=checkpointing_config.get("save_latest", True),
                 validate_frequency=validation_config["frequency"],
                 best_metric=validation_config["metric"],
             )

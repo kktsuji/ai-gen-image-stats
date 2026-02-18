@@ -29,14 +29,14 @@ This plan introduces a boolean flag `training.checkpointing.save_latest` that le
   - [x] Task 2.3: Add `save_latest_checkpoint: bool = True` parameter to `BaseTrainer.resume_training()`
   - [x] Task 2.4: Gate the latest-checkpoint block in `BaseTrainer.resume_training()` behind the flag
 
-- [ ] Phase 3: Experiment trainers
-  - [ ] Task 3.1: Add `save_latest_checkpoint` parameter to `ClassifierTrainer.train()`
-  - [ ] Task 3.2: Gate the latest-checkpoint block in `ClassifierTrainer.train()` behind the flag
-  - [ ] Task 3.3: Add `save_latest_checkpoint` parameter to `DiffusionTrainer.train()`
-  - [ ] Task 3.4: Gate the latest-checkpoint block in `DiffusionTrainer.train()` behind the flag
+- [x] Phase 3: Experiment trainers
+  - [x] Task 3.1: Add `save_latest_checkpoint` parameter to `ClassifierTrainer.train()`
+  - [x] Task 3.2: Gate the latest-checkpoint block in `ClassifierTrainer.train()` behind the flag
+  - [x] Task 3.3: Add `save_latest_checkpoint` parameter to `DiffusionTrainer.train()`
+  - [x] Task 3.4: Gate the latest-checkpoint block in `DiffusionTrainer.train()` behind the flag
 
-- [ ] Phase 4: Wiring in `main.py`
-  - [ ] Task 4.1: Read `training.checkpointing.save_latest` from config and pass it to `trainer.train()`
+- [x] Phase 4: Wiring in `main.py`
+  - [x] Task 4.1: Read `training.checkpointing.save_latest` from config and pass it to `trainer.train()`
 
 - [ ] Phase 5: Tests
   - [ ] Task 5.1: Unit tests — validate config parsing of `save_latest`

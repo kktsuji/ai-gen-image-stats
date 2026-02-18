@@ -456,6 +456,7 @@ class DiffusionTrainer(BaseTrainer):
         save_best: bool = True,
         best_metric: str = "loss",
         best_metric_mode: str = "min",
+        save_latest_checkpoint: bool = True,
     ) -> None:
         """Main training loop with scheduler and sample generation support.
 
@@ -470,6 +471,8 @@ class DiffusionTrainer(BaseTrainer):
             save_best: Whether to save the best model separately
             best_metric: Metric name to use for best model selection
             best_metric_mode: 'min' or 'max' for best metric comparison
+            save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
+                                     If False, only periodic and best checkpoints are written.
         """
         if checkpoint_dir is not None:
             checkpoint_dir = Path(checkpoint_dir)
@@ -578,14 +581,17 @@ class DiffusionTrainer(BaseTrainer):
                         },
                     )
 
-                # Always save latest checkpoint
-                latest_path = checkpoint_dir / "latest_checkpoint.pth"
-                self.save_checkpoint(
-                    latest_path,
-                    epoch=self._current_epoch,
-                    is_best=False,
-                    metrics={**train_metrics, **(val_metrics if val_metrics else {})},
-                )
+                if save_latest_checkpoint:
+                    latest_path = checkpoint_dir / "latest_checkpoint.pth"
+                    self.save_checkpoint(
+                        latest_path,
+                        epoch=self._current_epoch,
+                        is_best=False,
+                        metrics={
+                            **train_metrics,
+                            **(val_metrics if val_metrics else {}),
+                        },
+                    )
 
     def save_checkpoint(
         self,
