@@ -160,8 +160,8 @@ class TestClassifierTensorBoardEnabled:
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
-    def test_hyperparams_logged_to_both_outputs(self, classifier_tb_config):
-        """Hyperparams are saved to YAML and TensorBoard."""
+    def test_hyperparams_logged_to_tensorboard(self, classifier_tb_config):
+        """Hyperparams are logged to TensorBoard."""
         log_dir, tb_dir, config = classifier_tb_config
 
         with ClassifierLogger(
@@ -171,7 +171,6 @@ class TestClassifierTensorBoardEnabled:
         ) as logger:
             logger.log_hyperparams({"lr": 0.001, "batch_size": 32, "epochs": 10})
 
-        assert (log_dir / "hyperparams.yaml").exists()
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
@@ -203,7 +202,6 @@ class TestClassifierTensorBoardEnabled:
                 logger.log_confusion_matrix(cm, step=epoch, epoch=epoch)
 
         assert (log_dir / "metrics.csv").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
         assert len(list((log_dir / "predictions").glob("*.png"))) == 3
         assert len(list((log_dir / "confusion_matrices").glob("*.png"))) == 3
         assert len(list(tb_dir.glob("events.out.tfevents.*"))) > 0
@@ -273,8 +271,8 @@ class TestDiffusionTensorBoardEnabled:
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
-    def test_hyperparams_logged_to_both_outputs(self, diffusion_tb_config):
-        """Hyperparams are saved to YAML and TensorBoard."""
+    def test_hyperparams_logged_to_tensorboard(self, diffusion_tb_config):
+        """Hyperparams are logged to TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
         with DiffusionLogger(
@@ -284,7 +282,6 @@ class TestDiffusionTensorBoardEnabled:
                 {"lr": 0.0001, "timesteps": 1000, "beta_schedule": "linear"}
             )
 
-        assert (log_dir / "hyperparams.yaml").exists()
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
@@ -373,7 +370,6 @@ class TestBackwardCompatibility:
             logger.log_confusion_matrix(cm, step=1)
 
         assert (log_dir / "metrics.csv").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
 
     def test_diffusion_all_methods_work_without_tensorboard(self, tmp_path):
         """All DiffusionLogger methods work when TensorBoard is disabled."""
@@ -393,7 +389,6 @@ class TestBackwardCompatibility:
             logger.log_denoising_process(sequence, step=1000)
 
         assert (log_dir / "metrics.csv").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
 
 
 # ============================================================================
@@ -496,7 +491,6 @@ class TestGracefulDegradation:
 
         # CSV should still be present
         assert (log_dir / "metrics.csv").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
 
         with open(log_dir / "metrics.csv") as f:
             rows = list(csv.DictReader(f))
@@ -525,7 +519,6 @@ class TestGracefulDegradation:
                 logger.log_hyperparams({"lr": 0.0001})
 
         assert (log_dir / "metrics.csv").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
 
         with open(log_dir / "metrics.csv") as f:
             rows = list(csv.DictReader(f))

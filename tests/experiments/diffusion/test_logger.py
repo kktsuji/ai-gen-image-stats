@@ -345,47 +345,30 @@ class TestLogSampleComparison:
 class TestLogHyperparams:
     """Test the log_hyperparams() method."""
 
-    def test_log_hyperparams_creates_json_file(self, logger, temp_log_dir):
-        """log_hyperparams() creates JSON file."""
+    def test_log_hyperparams_does_not_raise(self, logger, temp_log_dir):
+        """log_hyperparams() completes without raising."""
         hyperparams = {
             "learning_rate": 0.0001,
             "batch_size": 64,
             "timesteps": 1000,
             "beta_schedule": "linear",
         }
-        logger.log_hyperparams(hyperparams)
+        logger.log_hyperparams(hyperparams)  # should not raise
+
+    def test_log_hyperparams_does_not_write_yaml(self, logger, temp_log_dir):
+        """log_hyperparams() no longer writes hyperparams.yaml (config.yaml is used instead)."""
+        logger.log_hyperparams({"learning_rate": 0.0001, "timesteps": 1000})
 
         hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
-        assert hyperparams_file.exists()
-
-    def test_log_hyperparams_saves_correct_data(self, logger, temp_log_dir):
-        """log_hyperparams() saves correct hyperparameter data."""
-        hyperparams = {
-            "learning_rate": 0.0001,
-            "timesteps": 1000,
-            "model": "unet",
-        }
-        logger.log_hyperparams(hyperparams)
-
-        hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
-        with open(hyperparams_file, "r") as f:
-            saved_hyperparams = yaml.safe_load(f)
-
-        assert saved_hyperparams == hyperparams
+        assert not hyperparams_file.exists()
 
     def test_log_hyperparams_with_nested_dict(self, logger, temp_log_dir):
-        """log_hyperparams() handles nested dictionaries."""
+        """log_hyperparams() handles nested dictionaries without raising."""
         hyperparams = {
             "model": {"type": "unet", "channels": [64, 128, 256]},
             "training": {"lr": 0.0001, "epochs": 100},
         }
-        logger.log_hyperparams(hyperparams)
-
-        hyperparams_file = Path(temp_log_dir) / "hyperparams.yaml"
-        with open(hyperparams_file, "r") as f:
-            saved_hyperparams = yaml.safe_load(f)
-
-        assert saved_hyperparams == hyperparams
+        logger.log_hyperparams(hyperparams)  # should not raise
 
 
 @pytest.mark.unit
@@ -443,7 +426,6 @@ class TestDiffusionLoggerWorkflow:
         assert (log_dir / "samples" / "samples_epoch10_step1000.png").exists()
         assert (log_dir / "denoising" / "denoising_epoch10_step1000.png").exists()
         assert (log_dir / "quality" / "quality_epoch10_step1000.png").exists()
-        assert (log_dir / "hyperparams.yaml").exists()
 
     def test_multiple_metrics_over_time(self, logger, temp_log_dir):
         """Can log multiple metrics entries over time."""

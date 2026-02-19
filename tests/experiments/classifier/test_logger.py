@@ -336,25 +336,25 @@ class TestLogConfusionMatrix:
 class TestLogHyperparams:
     """Test the log_hyperparams() method."""
 
-    def test_log_hyperparams_writes_json_file(self, logger, temp_log_dir):
-        """log_hyperparams() writes hyperparameters to YAML file."""
+    def test_log_hyperparams_does_not_raise(self, logger, temp_log_dir):
+        """log_hyperparams() completes without raising."""
         hyperparams = {
             "learning_rate": 0.001,
             "batch_size": 32,
             "epochs": 10,
             "optimizer": "adam",
         }
-        logger.log_hyperparams(hyperparams)
+        logger.log_hyperparams(hyperparams)  # should not raise
+
+    def test_log_hyperparams_does_not_write_yaml(self, logger, temp_log_dir):
+        """log_hyperparams() no longer writes hyperparams.yaml (config.yaml is used instead)."""
+        logger.log_hyperparams({"learning_rate": 0.001, "epochs": 10})
 
         yaml_file = Path(temp_log_dir) / "hyperparams.yaml"
-        assert yaml_file.exists()
-
-        with open(yaml_file, "r") as f:
-            loaded = yaml.safe_load(f)
-            assert loaded == hyperparams
+        assert not yaml_file.exists()
 
     def test_log_hyperparams_handles_various_types(self, logger, temp_log_dir):
-        """log_hyperparams() handles various data types."""
+        """log_hyperparams() handles various data types without raising."""
         hyperparams = {
             "float_val": 0.001,
             "int_val": 32,
@@ -363,12 +363,7 @@ class TestLogHyperparams:
             "list_val": [1, 2, 3],
             "dict_val": {"nested": "value"},
         }
-        logger.log_hyperparams(hyperparams)
-
-        yaml_file = Path(temp_log_dir) / "hyperparams.yaml"
-        with open(yaml_file, "r") as f:
-            loaded = yaml.safe_load(f)
-            assert loaded == hyperparams
+        logger.log_hyperparams(hyperparams)  # should not raise
 
 
 @pytest.mark.unit
@@ -475,7 +470,6 @@ class TestLoggerIntegration:
 
         # Verify all files were created
         log_dir = Path(temp_log_dir)
-        assert (log_dir / "hyperparams.yaml").exists()
         assert (log_dir / "metrics.csv").exists()
         assert len(list((log_dir / "predictions").glob("*.png"))) >= 3
         assert len(list((log_dir / "confusion_matrices").glob("*.png"))) == 3

@@ -39,10 +39,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
-import yaml
 
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
+from src.utils.config import save_config
 from src.utils.device import get_device
 from src.utils.git import get_git_info
 from src.utils.logging import get_log_file_path, setup_logging
@@ -148,8 +148,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     # Save configuration to log directory
     config_save_path = log_dir / "config.yaml"
-    with open(config_save_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    save_config(config, config_save_path)
     logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize dataloader
@@ -484,8 +483,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
     # Save configuration to log directory
     config_save_path = log_dir / "config.yaml"
-    with open(config_save_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    save_config(config, config_save_path)
     logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize model

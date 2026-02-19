@@ -415,18 +415,11 @@ class ClassifierLogger(BaseLogger):
         plt.close(fig)
 
     def log_hyperparams(self, hyperparams: Dict[str, Any]) -> None:
-        """Log hyperparameters to a YAML file and TensorBoard.
+        """Log hyperparameters to TensorBoard.
 
         Args:
             hyperparams: Dictionary of hyperparameter names to values
         """
-        import yaml
-
-        hyperparams_file = self.log_dir / "hyperparams.yaml"
-        with open(hyperparams_file, "w") as f:
-            yaml.dump(hyperparams, f, default_flow_style=False, sort_keys=False)
-
-        # Log to TensorBoard
         if self.tb_writer is not None:
             safe_log_hparams(self.tb_writer, hyperparams)
 
