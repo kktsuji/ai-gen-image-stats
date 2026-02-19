@@ -35,9 +35,9 @@ No config parameter is added; saving `final_model.pth` is always done when a `ch
   - [x] Task 4.3: Add / update tests for `DiffusionTrainer.train()` to assert `final_model.pth` exists
 - [x] Phase 5: Confirm all tests pass
   - [x] Task 5.1: Run the full test suite and verify no regressions
-- [ ] Phase 6: Update documentation
-  - [ ] Task 6.1: Update `README.md` — add `final_model.pth` to the checkpoint output structure example
-  - [ ] Task 6.2: Update `docs/standards/architecture.md` — add `final_model.pth` to the checkpoint directory example in the Log File Structure section
+- [x] Phase 6: Update documentation
+  - [x] Task 6.1: Update `README.md` — add `final_model.pth` to the checkpoint output structure example
+  - [x] Task 6.2: Update `docs/standards/architecture.md` — add `final_model.pth` to the checkpoint directory example in the Log File Structure section
 
 ---
 

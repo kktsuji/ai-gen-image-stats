@@ -487,7 +487,11 @@ TensorBoard logs are saved alongside existing CSV outputs:
 ```
 outputs/experiment_name/
 ├── logs/          # Application logs
-├── checkpoints/   # Model checkpoints
+├── checkpoints/
+│   ├── checkpoint_epoch_N.pth
+│   ├── best_model.pth
+│   ├── latest_checkpoint.pth
+│   └── final_model.pth
 ├── metrics/       # CSV metrics
 ├── samples/       # Image samples
 └── tensorboard/   # TensorBoard event files

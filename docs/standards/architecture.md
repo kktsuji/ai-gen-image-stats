@@ -425,7 +425,9 @@ outputs/
 │   │   └── hyperparams.yaml
 │   ├── checkpoints/
 │   │   ├── epoch_010.pt
-│   │   └── best_model.pt
+│   │   ├── best_model.pth
+│   │   ├── latest_checkpoint.pth
+│   │   └── final_model.pth
 │   ├── samples/                        # Generated images (metrics logging)
 │   │   ├── epoch_010_samples.png
 │   │   └── confusion_matrix_epoch_010.png
@@ -437,7 +439,10 @@ outputs/
     ├── metrics/
     │   └── metrics.csv                 # Training metrics
     ├── checkpoints/
-    │   └── epoch_050.pt
+    │   ├── epoch_050.pt
+    │   ├── best_model.pth
+    │   ├── latest_checkpoint.pth
+    │   └── final_model.pth
     ├── generated/                      # Generated samples (metrics logging)
     │   └── samples_epoch_050.png
     └── tensorboard/                    # TensorBoard event files (optional)
