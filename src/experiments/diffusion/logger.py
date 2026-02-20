@@ -86,7 +86,7 @@ class DiffusionLogger(BaseLogger):
         self.quality_dir.mkdir(exist_ok=True)
 
         # Initialize metrics CSV file
-        self.metrics_file = self.log_dir / "metrics.csv"
+        self.metrics_file = self.metrics_dir / "metrics.csv"
         self.csv_initialized = self.metrics_file.exists()
         self.csv_fieldnames = None
 

@@ -120,7 +120,7 @@ class TestLogMetrics:
         """log_metrics() writes metrics to CSV file."""
         logger.log_metrics({"loss": 0.05, "timestep": 500}, step=1, epoch=1)
 
-        csv_file = Path(temp_log_dir) / "metrics.csv"
+        csv_file = Path(temp_log_dir) / "metrics" / "metrics.csv"
         assert csv_file.exists()
 
         with open(csv_file, "r") as f:
@@ -146,7 +146,7 @@ class TestLogMetrics:
         logger.log_metrics({"loss": 0.05}, step=1)
         logger.log_metrics({"loss": 0.04, "timestep": 500}, step=2)
 
-        csv_file = Path(temp_log_dir) / "metrics.csv"
+        csv_file = Path(temp_log_dir) / "metrics" / "metrics.csv"
         with open(csv_file, "r") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -422,7 +422,7 @@ class TestDiffusionLoggerWorkflow:
 
         # Verify all outputs exist
         log_dir = Path(temp_log_dir)
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
         assert (log_dir / "samples" / "samples_epoch10_step1000.png").exists()
         assert (log_dir / "denoising" / "denoising_epoch10_step1000.png").exists()
         assert (log_dir / "quality" / "quality_epoch10_step1000.png").exists()
@@ -434,7 +434,7 @@ class TestDiffusionLoggerWorkflow:
             logger.log_metrics({"loss": loss, "step_num": step}, step=step)
 
         # Verify CSV has all entries
-        csv_file = Path(temp_log_dir) / "metrics.csv"
+        csv_file = Path(temp_log_dir) / "metrics" / "metrics.csv"
         with open(csv_file, "r") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -627,7 +627,7 @@ class TestTensorBoardIntegration:
         )
         logger.log_metrics({"loss": 0.05, "timestep": 500}, step=1, epoch=1)
 
-        csv_file = Path(temp_log_dir) / "metrics.csv"
+        csv_file = Path(temp_log_dir) / "metrics" / "metrics.csv"
         assert csv_file.exists()
         import csv as csv_module
 
