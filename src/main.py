@@ -908,6 +908,8 @@ def main(args: Optional[list] = None) -> None:
                 f"Unknown experiment type: {experiment}. "
                 f"Supported experiments: classifier, diffusion, gan"
             )
+    except NotImplementedError:
+        raise
     except Exception as e:
         logger.exception(f"Experiment '{experiment}' failed with error: {e}")
         sys.exit(1)
