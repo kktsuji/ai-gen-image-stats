@@ -64,8 +64,9 @@ class DiffusionTrainer(BaseTrainer):
         use_amp: Whether to use automatic mixed precision training
         gradient_clip_norm: Maximum gradient norm for clipping (None to disable)
         scheduler: Optional learning rate scheduler
-        sample_images: Whether to generate sample images during training
-        sample_interval: Generate samples every N epochs
+        log_images_interval: Save sample grid every N epochs (None to disable)
+        log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
+        log_denoising_interval: Save denoising process every N epochs (None to disable)
         samples_per_class: Number of samples to generate per class
         guidance_scale: Classifier-free guidance scale for conditional generation
 
@@ -87,8 +88,9 @@ class DiffusionTrainer(BaseTrainer):
         ...     device="cuda",
         ...     use_ema=True,
         ...     use_amp=True,
-        ...     sample_images=True,
-        ...     sample_interval=10
+        ...     log_images_interval=10,
+        ...     log_sample_comparison_interval=10,
+        ...     log_denoising_interval=10,
         ... )
         >>>
         >>> trainer.train(num_epochs=200, checkpoint_dir="outputs/checkpoints")
@@ -107,8 +109,9 @@ class DiffusionTrainer(BaseTrainer):
         use_amp: bool = False,
         gradient_clip_norm: Optional[float] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        sample_images: bool = True,
-        sample_interval: int = 10,
+        log_images_interval: Optional[int] = 10,
+        log_sample_comparison_interval: Optional[int] = 10,
+        log_denoising_interval: Optional[int] = 10,
         samples_per_class: int = 2,
         guidance_scale: float = 3.0,
         log_interval: int = 100,
@@ -128,8 +131,9 @@ class DiffusionTrainer(BaseTrainer):
             use_amp: Whether to use automatic mixed precision
             gradient_clip_norm: Maximum gradient norm for clipping
             scheduler: Optional learning rate scheduler
-            sample_images: Whether to generate samples during training
-            sample_interval: Generate samples every N epochs
+            log_images_interval: Save sample grid every N epochs (None to disable)
+            log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
+            log_denoising_interval: Save denoising process every N epochs (None to disable)
             samples_per_class: Number of samples per class to generate
             guidance_scale: Classifier-free guidance scale
             log_interval: Log batch-level metrics every N batches (0 to disable)
@@ -149,10 +153,20 @@ class DiffusionTrainer(BaseTrainer):
         self.config = config or {}
 
         # Sample generation settings
-        self.sample_images = sample_images
-        self.sample_interval = sample_interval
+        self.log_images_interval = log_images_interval
+        self.log_sample_comparison_interval = log_sample_comparison_interval
+        self.log_denoising_interval = log_denoising_interval
         self.samples_per_class = samples_per_class
         self.guidance_scale = guidance_scale
+
+        # Derived: visualization is enabled if any interval is set
+        self.viz_enabled = any(
+            [
+                self.log_images_interval,
+                self.log_sample_comparison_interval,
+                self.log_denoising_interval,
+            ]
+        )
 
         # Move model to device
         self.model.to(self.device)
@@ -531,13 +545,9 @@ class DiffusionTrainer(BaseTrainer):
                 )
 
             # Generate sample images
-            if (
-                self.sample_images
-                and self.sample_interval > 0
-                and (epoch + 1) % self.sample_interval == 0
-            ):
+            if self.viz_enabled and self._should_visualize(epoch + 1):
                 _logger.info(f"Generating sample images at epoch {self._current_epoch}")
-                self._generate_samples(logger, self._global_step)
+                self._generate_samples(logger, self._global_step, epoch=epoch + 1)
 
             # Determine current metric value for best model tracking
             current_metric_value = None
@@ -795,47 +805,93 @@ class DiffusionTrainer(BaseTrainer):
 
         return checkpoint
 
-    def _generate_samples(self, logger: BaseLogger, step: int) -> None:
+    def _should_visualize(self, epoch: int) -> bool:
+        """Check if any visualization interval triggers at the given epoch.
+
+        Args:
+            epoch: Current epoch number (1-based)
+
+        Returns:
+            True if any of the three intervals triggers at this epoch
+        """
+        for interval in [
+            self.log_images_interval,
+            self.log_sample_comparison_interval,
+            self.log_denoising_interval,
+        ]:
+            if interval is not None and interval > 0 and epoch % interval == 0:
+                return True
+        return False
+
+    def _generate_samples(self, logger: BaseLogger, step: int, epoch: int) -> None:
         """Generate and log sample images during training.
 
-        Internal method called periodically during training to generate
-        samples for visual quality assessment. Uses DiffusionSampler for generation.
+        Generates samples once and dispatches to each logger method whose
+        interval triggers at the given epoch.
 
         Args:
             logger: Logger to save generated samples
             step: Current training step
+            epoch: Current epoch number (1-based)
         """
         # Check if model supports conditional generation
         num_classes = getattr(self.model, "num_classes", None)
 
+        # 1. Generate samples and denoising sequence ONCE
         if num_classes is not None and num_classes > 0:
-            # Conditional generation: generate samples for each class using sampler
-            all_samples, class_labels_list = self.sampler.sample_by_class(
-                samples_per_class=self.samples_per_class,
-                num_classes=num_classes,
+            # Build class labels for conditional generation
+            class_labels = torch.arange(
+                num_classes, device=self.device
+            ).repeat_interleave(self.samples_per_class)
+
+            samples, denoising_seq = self.sampler.sample_with_intermediates(
+                num_samples=len(class_labels),
+                class_labels=class_labels,
                 guidance_scale=self.guidance_scale,
                 use_ema=self.use_ema,
                 show_progress=False,
             )
-
-            # Log samples
-            logger.log_images(
-                all_samples,
-                tag=f"samples_epoch_{self._current_epoch}",
-                step=step,
-                class_labels=class_labels_list,
-            )
+            class_labels_list = class_labels.tolist()
         else:
-            # Unconditional generation using sampler
-            samples = self.sampler.sample(
+            samples, denoising_seq = self.sampler.sample_with_intermediates(
                 num_samples=8,  # Fixed number for visualization
                 guidance_scale=0.0,
                 use_ema=self.use_ema,
+                show_progress=False,
+            )
+            class_labels_list = None
+
+        # 2. log_images
+        if self.log_images_interval and epoch % self.log_images_interval == 0:
+            kwargs: Dict[str, Any] = {}
+            if class_labels_list is not None:
+                kwargs["class_labels"] = class_labels_list
+            logger.log_images(
+                samples,
+                tag=f"samples_epoch_{epoch}",
+                step=step,
+                epoch=epoch,
+                **kwargs,
             )
 
-            # Log samples
-            logger.log_images(
-                samples, tag=f"samples_epoch_{self._current_epoch}", step=step
+        # 3. log_sample_comparison
+        if (
+            self.log_sample_comparison_interval
+            and epoch % self.log_sample_comparison_interval == 0
+        ):
+            logger.log_sample_comparison(
+                samples,
+                tag="quality_comparison",
+                step=step,
+                epoch=epoch,
+            )
+
+        # 4. log_denoising_process
+        if self.log_denoising_interval and epoch % self.log_denoising_interval == 0:
+            logger.log_denoising_process(
+                denoising_seq,
+                step=step,
+                epoch=epoch,
             )
 
     def get_model(self) -> BaseModel:

@@ -88,8 +88,9 @@ class TestDiffusionPipelineBasic:
                     "metric": "loss",
                 },
                 "visualization": {
-                    "sample_images": True,
-                    "sample_interval": 1,
+                    "log_images_interval": 1,
+                    "log_sample_comparison_interval": 1,
+                    "log_denoising_interval": 1,
                     "samples_per_class": 2,
                     "guidance_scale": 0.0,
                 },
@@ -141,8 +142,15 @@ class TestDiffusionPipelineBasic:
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
             use_amp=config["training"]["use_amp"],
-            sample_images=config["training"]["visualization"]["sample_images"],
-            sample_interval=config["training"]["visualization"]["sample_interval"],
+            log_images_interval=config["training"]["visualization"][
+                "log_images_interval"
+            ],
+            log_sample_comparison_interval=config["training"]["visualization"][
+                "log_sample_comparison_interval"
+            ],
+            log_denoising_interval=config["training"]["visualization"][
+                "log_denoising_interval"
+            ],
             samples_per_class=config["training"]["visualization"]["samples_per_class"],
             guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
@@ -166,7 +174,7 @@ class TestDiffusionPipelineBasic:
         assert len(checkpoint_files) > 0, "No checkpoint files saved"
 
         # Verify metrics CSV
-        metrics_csv = log_dir / "metrics.csv"
+        metrics_csv = log_dir / "metrics" / "metrics.csv"
         assert metrics_csv.exists(), "Metrics CSV not created"
 
         # Read and verify metrics
@@ -236,8 +244,9 @@ class TestDiffusionPipelineBasic:
                     "metric": "loss",
                 },
                 "visualization": {
-                    "sample_images": True,
-                    "sample_interval": 1,
+                    "log_images_interval": 1,
+                    "log_sample_comparison_interval": 1,
+                    "log_denoising_interval": 1,
                     "samples_per_class": 2,
                     "guidance_scale": 2.0,
                 },
@@ -290,8 +299,15 @@ class TestDiffusionPipelineBasic:
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
             use_amp=config["training"]["use_amp"],
-            sample_images=config["training"]["visualization"]["sample_images"],
-            sample_interval=config["training"]["visualization"]["sample_interval"],
+            log_images_interval=config["training"]["visualization"][
+                "log_images_interval"
+            ],
+            log_sample_comparison_interval=config["training"]["visualization"][
+                "log_sample_comparison_interval"
+            ],
+            log_denoising_interval=config["training"]["visualization"][
+                "log_denoising_interval"
+            ],
             samples_per_class=config["training"]["visualization"]["samples_per_class"],
             guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
@@ -315,7 +331,7 @@ class TestDiffusionPipelineBasic:
         assert len(checkpoint_files) > 0, "No checkpoint files saved"
 
         # Verify metrics CSV
-        metrics_csv = log_dir / "metrics.csv"
+        metrics_csv = log_dir / "metrics" / "metrics.csv"
         assert metrics_csv.exists(), "Metrics CSV not created"
 
         # Verify generated samples (should have samples for each class)
@@ -973,8 +989,9 @@ class TestDiffusionPipelineAdvanced:
                     "metric": "loss",
                 },
                 "visualization": {
-                    "sample_images": False,
-                    "sample_interval": 1,
+                    "log_images_interval": None,
+                    "log_sample_comparison_interval": None,
+                    "log_denoising_interval": None,
                     "samples_per_class": 2,
                     "guidance_scale": 0.0,
                 },
@@ -1094,8 +1111,9 @@ class TestDiffusionPipelineAdvanced:
                     "num_validation_samples": 0,
                 },
                 "visualization": {
-                    "sample_images": False,
-                    "save_interval": 1,
+                    "log_images_interval": None,
+                    "log_sample_comparison_interval": None,
+                    "log_denoising_interval": None,
                 },
             },
             "generation": {

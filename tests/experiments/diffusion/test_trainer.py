@@ -82,8 +82,21 @@ class SimpleDiffusionModel(BaseModel):
         device = next(self.parameters()).device
         shape = (batch_size, self.in_channels, self.image_size, self.image_size)
 
-        # Return random samples for testing
-        return torch.randn(shape, device=device)
+        samples = torch.randn(shape, device=device)
+        if return_intermediates:
+            # Return (T+1, N, C, H, W) — simulate 11 denoising steps
+            num_steps = 11
+            intermediates = torch.randn(
+                num_steps,
+                batch_size,
+                self.in_channels,
+                self.image_size,
+                self.image_size,
+                device=device,
+            )
+            intermediates[-1] = samples
+            return intermediates
+        return samples
 
 
 class SimpleDiffusionDataLoader(BaseDataLoader):
@@ -143,6 +156,8 @@ class SimpleDiffusionLogger(BaseLogger):
     def __init__(self):
         self.logged_metrics = []
         self.logged_images = []
+        self.logged_sample_comparisons = []
+        self.logged_denoising_sequences = []
 
     def log_metrics(
         self,
@@ -162,6 +177,28 @@ class SimpleDiffusionLogger(BaseLogger):
     ) -> None:
         self.logged_images.append(
             {"images": images, "tag": tag, "step": step, "epoch": epoch, **kwargs}
+        )
+
+    def log_sample_comparison(
+        self,
+        images: torch.Tensor,
+        tag: str,
+        step: int,
+        epoch: Optional[int] = None,
+    ) -> None:
+        self.logged_sample_comparisons.append(
+            {"images": images, "tag": tag, "step": step, "epoch": epoch}
+        )
+
+    def log_denoising_process(
+        self,
+        denoising_sequence: torch.Tensor,
+        step: int,
+        epoch: Optional[int] = None,
+        num_steps_to_show: int = 8,
+    ) -> None:
+        self.logged_denoising_sequences.append(
+            {"sequence": denoising_sequence, "step": step, "epoch": epoch}
         )
 
 
@@ -239,7 +276,9 @@ def diffusion_trainer(
         show_progress=False,
         use_ema=False,  # Disable EMA for simplicity in tests
         use_amp=False,  # Disable AMP for CPU tests
-        sample_images=False,  # Disable sampling during training for speed
+        log_images_interval=None,  # Disable sampling during training for speed
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
     )
 
 
@@ -436,7 +475,9 @@ def test_diffusion_trainer_full_workflow():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        sample_images=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
     )
 
     # Run training for 2 epochs
@@ -474,7 +515,9 @@ def test_diffusion_trainer_latest_checkpoint_written_when_enabled():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        sample_images=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -506,7 +549,9 @@ def test_diffusion_trainer_latest_checkpoint_not_written_when_disabled():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        sample_images=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -668,8 +713,9 @@ def test_diffusion_trainer_sample_generation_during_training():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        sample_images=True,
-        sample_interval=1,  # Generate every epoch
+        log_images_interval=1,  # Generate every epoch
+        log_sample_comparison_interval=1,
+        log_denoising_interval=1,
         samples_per_class=2,
     )
 
@@ -685,6 +731,10 @@ def test_diffusion_trainer_sample_generation_during_training():
         assert "images" in log_entry
         assert "tag" in log_entry
         assert log_entry["images"].shape[1] == 3  # RGB
+
+    # Check that sample comparisons and denoising were also logged
+    assert len(logger.logged_sample_comparisons) > 0
+    assert len(logger.logged_denoising_sequences) > 0
 
 
 @pytest.mark.integration
@@ -710,8 +760,9 @@ def test_diffusion_trainer_unconditional_sample_generation():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        sample_images=True,
-        sample_interval=1,
+        log_images_interval=1,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
     )
 
     # Train for 1 epoch
@@ -765,8 +816,9 @@ def test_diffusion_trainer_logs_sample_generation(
         logger=simple_diffusion_logger,
         device="cpu",
         show_progress=False,
-        sample_images=True,
-        sample_interval=1,
+        log_images_interval=1,
+        log_sample_comparison_interval=1,
+        log_denoising_interval=1,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -834,3 +886,182 @@ def test_diffusion_trainer_logs_checkpoint_operations(
         log_text = capture_logs.text.lower()
         # Should have some logging activity
         assert len(capture_logs.records) >= 0
+
+
+# ---- New tests for per-interval visualization ----
+
+
+@pytest.mark.integration
+def test_log_images_called_at_interval():
+    """Verify log_images is called at the correct interval."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=2,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(num_epochs=4, checkpoint_dir=tmpdir, validate_frequency=0)
+
+    # log_images called at epoch 2 and 4 (every 2 epochs)
+    assert len(logger.logged_images) == 2
+    # sample_comparison and denoising should NOT be called
+    assert len(logger.logged_sample_comparisons) == 0
+    assert len(logger.logged_denoising_sequences) == 0
+
+
+@pytest.mark.integration
+def test_log_sample_comparison_called_at_interval():
+    """Verify log_sample_comparison is called at the correct interval."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=3,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(num_epochs=6, checkpoint_dir=tmpdir, validate_frequency=0)
+
+    # Only log_sample_comparison at epochs 3, 6
+    assert len(logger.logged_sample_comparisons) == 2
+    assert len(logger.logged_images) == 0
+    assert len(logger.logged_denoising_sequences) == 0
+
+
+@pytest.mark.integration
+def test_log_denoising_called_at_interval():
+    """Verify log_denoising_process is called at the correct interval."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=2,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(num_epochs=4, checkpoint_dir=tmpdir, validate_frequency=0)
+
+    # log_denoising_process at epochs 2, 4
+    assert len(logger.logged_denoising_sequences) == 2
+    assert len(logger.logged_images) == 0
+    assert len(logger.logged_sample_comparisons) == 0
+
+
+@pytest.mark.integration
+def test_samples_generated_once_when_all_intervals_trigger():
+    """Verify sampler is called once when all three intervals trigger simultaneously."""
+    from unittest.mock import patch
+
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=1,
+        log_sample_comparison_interval=1,
+        log_denoising_interval=1,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch.object(
+            trainer.sampler,
+            "sample_with_intermediates",
+            wraps=trainer.sampler.sample_with_intermediates,
+        ) as mock_sample:
+            trainer.train(num_epochs=1, checkpoint_dir=tmpdir, validate_frequency=0)
+
+            # Sampler called exactly once per epoch - one epoch means one call
+            assert mock_sample.call_count == 1
+
+    # All three logger methods should have been called
+    assert len(logger.logged_images) == 1
+    assert len(logger.logged_sample_comparisons) == 1
+    assert len(logger.logged_denoising_sequences) == 1
+
+
+@pytest.mark.integration
+def test_visualization_disabled_when_all_intervals_null():
+    """Verify no sampling occurs when all intervals are None."""
+    from unittest.mock import patch
+
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch.object(trainer.sampler, "sample_with_intermediates") as mock_sample:
+            trainer.train(num_epochs=3, checkpoint_dir=tmpdir, validate_frequency=0)
+
+            # Sampler should never be called
+            assert mock_sample.call_count == 0
+
+    assert len(logger.logged_images) == 0
+    assert len(logger.logged_sample_comparisons) == 0
+    assert len(logger.logged_denoising_sequences) == 0

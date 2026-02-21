@@ -169,11 +169,13 @@ class TestGetDefaultConfig:
         assert "visualization" in config["training"]
         visualization = config["training"]["visualization"]
         assert "enabled" in visualization
-        assert "interval" in visualization
+        assert "log_images_interval" in visualization
+        assert "log_sample_comparison_interval" in visualization
+        assert "log_denoising_interval" in visualization
         assert "num_samples" in visualization
         assert "guidance_scale" in visualization
         assert isinstance(visualization["enabled"], bool)
-        assert isinstance(visualization["interval"], int)
+        assert isinstance(visualization["log_images_interval"], int)
         assert isinstance(visualization["num_samples"], int)
         assert isinstance(visualization["guidance_scale"], (int, float))
 
@@ -647,11 +649,13 @@ class TestValidateConfig:
             validate_config(config)
 
     def test_invalid_sample_interval(self):
-        """Test validation fails with invalid interval in visualization (V2)."""
+        """Test validation fails with invalid log_images_interval in visualization (V2)."""
         config = get_default_config()
-        config["training"]["visualization"]["interval"] = 0
+        config["training"]["visualization"]["log_images_interval"] = 0
 
-        with pytest.raises(ValueError, match="interval must be a positive integer"):
+        with pytest.raises(
+            ValueError, match="interval must be.*positive integer or null"
+        ):
             validate_config(config)
 
     def test_invalid_samples_per_class(self):
@@ -738,9 +742,11 @@ class TestModeAwareValidation:
     def test_training_visualization_nested(self):
         """Test that training.visualization section is properly validated (V2)."""
         config = get_default_config()
-        config["training"]["visualization"]["interval"] = 0
+        config["training"]["visualization"]["log_images_interval"] = 0
 
-        with pytest.raises(ValueError, match="training.visualization.interval"):
+        with pytest.raises(
+            ValueError, match="interval must be.*positive integer or null"
+        ):
             validate_config(config)
 
     def test_generation_use_ema(self):

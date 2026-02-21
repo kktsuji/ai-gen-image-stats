@@ -196,6 +196,92 @@ class DiffusionSampler:
             if use_ema and self.ema is not None:
                 self.ema.restore()
 
+    def sample_with_intermediates(
+        self,
+        num_samples: int = 1,
+        class_labels: Optional[torch.Tensor] = None,
+        guidance_scale: float = 0.0,
+        use_ema: bool = True,
+        num_steps_to_capture: int = 8,
+        show_progress: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Generate samples and return intermediate denoising steps.
+
+        Uses the model's ``return_intermediates`` capability to capture the
+        full denoising trajectory, then selects evenly-spaced frames from
+        sample index 0 to keep memory bounded.
+
+        Args:
+            num_samples: Number of samples to generate
+            class_labels: Class labels for conditional generation
+            guidance_scale: Classifier-free guidance scale
+            use_ema: Whether to use EMA weights for generation
+            num_steps_to_capture: Number of evenly-spaced intermediate frames
+                to keep from the denoising trajectory of sample 0
+            show_progress: Whether to display progress bar during sampling
+
+        Returns:
+            Tuple of:
+            - samples: Final generated images, shape (N, C, H, W)
+            - denoising_sequence: Intermediate steps for one sample,
+              shape (num_steps_to_capture, C, H, W)
+        """
+        logger.info(
+            f"Starting sample generation with intermediates: {num_samples} samples"
+        )
+
+        # Set model to evaluation mode
+        self.model.eval()
+
+        # Apply EMA weights if requested
+        if use_ema and self.ema is not None:
+            self.ema.apply_shadow()
+
+        try:
+            with torch.no_grad():
+                if class_labels is not None:
+                    class_labels = class_labels.to(self.device)
+
+                # Generate samples with full intermediate trajectory
+                all_steps = self.model.sample(
+                    batch_size=num_samples,
+                    class_labels=class_labels,
+                    guidance_scale=guidance_scale,
+                    return_intermediates=True,
+                )
+                # all_steps shape: (T+1, N, C, H, W)
+                # where T+1 includes the initial noise + each denoising step
+
+                # Final samples are the last timestep
+                samples = all_steps[-1]  # (N, C, H, W)
+
+                # Extract denoising trajectory for sample index 0
+                trajectory = all_steps[:, 0]  # (T+1, C, H, W)
+
+                # Select evenly-spaced frames
+                total_steps = trajectory.shape[0]
+                if total_steps <= num_steps_to_capture:
+                    denoising_sequence = trajectory
+                else:
+                    import numpy as np
+
+                    indices = np.linspace(
+                        0, total_steps - 1, num_steps_to_capture, dtype=int
+                    )
+                    denoising_sequence = trajectory[
+                        indices
+                    ]  # (num_steps_to_capture, C, H, W)
+
+            logger.info(
+                f"Sample generation with intermediates completed: "
+                f"samples={samples.shape}, denoising_sequence={denoising_sequence.shape}"
+            )
+            return samples, denoising_sequence
+
+        finally:
+            if use_ema and self.ema is not None:
+                self.ema.restore()
+
     def sample_by_class(
         self,
         samples_per_class: int,

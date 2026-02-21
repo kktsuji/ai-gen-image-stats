@@ -101,8 +101,9 @@ def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, de
         use_ema=True,
         ema_decay=0.999,
         show_progress=False,  # Disable for tests
-        sample_images=True,
-        sample_interval=1,
+        log_images_interval=1,
+        log_sample_comparison_interval=1,
+        log_denoising_interval=1,
     )
 
     return trainer
@@ -315,7 +316,7 @@ class TestTrainingSampleGeneration:
         logger = trainer_with_sampler.logger
 
         # Simulate training and sample generation
-        trainer_with_sampler._generate_samples(logger, step=1)
+        trainer_with_sampler._generate_samples(logger, step=1, epoch=1)
 
         # Verify that samples were logged (images should exist)
         # Note: Actual file existence check depends on logger implementation
@@ -326,9 +327,9 @@ class TestTrainingSampleGeneration:
         # The model has num_classes=2, so it's conditional
         assert trainer_with_sampler.model.num_classes == 2
 
-        # Generate samples (should use sampler.sample_by_class)
+        # Generate samples (should use sampler.sample_with_intermediates)
         logger = trainer_with_sampler.logger
-        trainer_with_sampler._generate_samples(logger, step=1)
+        trainer_with_sampler._generate_samples(logger, step=1, epoch=1)
 
         # If this runs without error, the integration is working
 

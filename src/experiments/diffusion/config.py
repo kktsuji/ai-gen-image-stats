@@ -399,11 +399,18 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
         vis = training["visualization"]
         if "enabled" in vis and not isinstance(vis["enabled"], bool):
             raise ValueError("training.visualization.enabled must be a boolean")
-        if "interval" in vis:
-            if not isinstance(vis["interval"], int) or vis["interval"] < 1:
-                raise ValueError(
-                    "training.visualization.interval must be a positive integer"
-                )
+        # Validate each interval key: must be positive int or null (None)
+        for interval_key in [
+            "log_images_interval",
+            "log_sample_comparison_interval",
+            "log_denoising_interval",
+        ]:
+            if interval_key in vis and vis[interval_key] is not None:
+                if not isinstance(vis[interval_key], int) or vis[interval_key] < 1:
+                    raise ValueError(
+                        f"training.visualization.{interval_key} "
+                        "interval must be a positive integer or null"
+                    )
         if "num_samples" in vis:
             if not isinstance(vis["num_samples"], int) or vis["num_samples"] < 1:
                 raise ValueError(

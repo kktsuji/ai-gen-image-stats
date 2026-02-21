@@ -794,8 +794,21 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             use_amp=performance_config["use_amp"],
             gradient_clip_norm=optimizer_config.get("gradient_clip_norm"),
             scheduler=scheduler,
-            sample_images=visualization_config["enabled"],
-            sample_interval=visualization_config["interval"],
+            log_images_interval=(
+                visualization_config.get("log_images_interval")
+                if visualization_config["enabled"]
+                else None
+            ),
+            log_sample_comparison_interval=(
+                visualization_config.get("log_sample_comparison_interval")
+                if visualization_config["enabled"]
+                else None
+            ),
+            log_denoising_interval=(
+                visualization_config.get("log_denoising_interval")
+                if visualization_config["enabled"]
+                else None
+            ),
             samples_per_class=2,  # Will calculate based on num_samples internally
             guidance_scale=visualization_config["guidance_scale"],
             config=config,

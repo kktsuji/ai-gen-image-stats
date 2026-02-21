@@ -231,8 +231,8 @@ class TestDiffusionTensorBoardEnabled:
                     epoch=0,
                 )
 
-        assert (log_dir / "metrics.csv").exists()
-        with open(log_dir / "metrics.csv") as f:
+        assert (log_dir / "metrics" / "metrics.csv").exists()
+        with open(log_dir / "metrics" / "metrics.csv") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 3
 
@@ -323,7 +323,7 @@ class TestBackwardCompatibility:
         with tempfile.TemporaryDirectory() as log_dir_a:
             with DiffusionLogger(log_dir=log_dir_a) as logger_a:
                 logger_a.log_metrics(metrics, step=100)
-            rows_a = _read_csv(Path(log_dir_a) / "metrics.csv")
+            rows_a = _read_csv(Path(log_dir_a) / "metrics" / "metrics.csv")
 
         with tempfile.TemporaryDirectory() as log_dir_b:
             with DiffusionLogger(
@@ -331,7 +331,7 @@ class TestBackwardCompatibility:
                 tensorboard_config={"enabled": False},
             ) as logger_b:
                 logger_b.log_metrics(metrics, step=100)
-            rows_b = _read_csv(Path(log_dir_b) / "metrics.csv")
+            rows_b = _read_csv(Path(log_dir_b) / "metrics" / "metrics.csv")
 
         assert rows_a == rows_b
 
@@ -388,7 +388,7 @@ class TestBackwardCompatibility:
             sequence = torch.rand(8, 3, 32, 32)
             logger.log_denoising_process(sequence, step=1000)
 
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
 
 
 # ============================================================================
@@ -518,9 +518,9 @@ class TestGracefulDegradation:
 
                 logger.log_hyperparams({"lr": 0.0001})
 
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
 
-        with open(log_dir / "metrics.csv") as f:
+        with open(log_dir / "metrics" / "metrics.csv") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 1
 
