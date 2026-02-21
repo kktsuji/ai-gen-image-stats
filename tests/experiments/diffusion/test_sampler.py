@@ -10,6 +10,8 @@ Tests verify:
 - Input validation and error handling
 """
 
+from unittest.mock import patch
+
 import pytest
 import torch
 
@@ -234,8 +236,12 @@ class TestEMAWeightManagement:
             name: param.clone() for name, param in conditional_model.named_parameters()
         }
 
-        # Generate samples with EMA
-        samples = sampler.sample(num_samples=2, use_ema=True)
+        # Generate samples with EMA.
+        # Mock model.sample() to skip the expensive diffusion loop — this test
+        # only needs to verify that EMA weights are applied and then restored.
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(conditional_model, "sample", return_value=fake_samples):
+            sampler.sample(num_samples=2, use_ema=True)
 
         # After sampling, original weights should be restored
         for name, param in conditional_model.named_parameters():
@@ -522,4 +528,5 @@ class TestSamplerPerformance:
         elapsed = time.time() - start
 
         # Should complete in reasonable time (adjust threshold as needed)
+        assert elapsed < 30.0  # 30 seconds should be enough for small model
         assert elapsed < 30.0  # 30 seconds should be enough for small model
