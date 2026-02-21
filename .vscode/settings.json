@@ -17,7 +17,8 @@
         "tail": true,
         "source venv/bin/activate": true,
         "venv/bin/python -m pytest": true,
-        "python -m pytest": true
+        "python -m pytest": true,
+        "pytest": true,
     },
     "chat.promptFilesRecommendations": {
         "kktsuji.plan": true,
