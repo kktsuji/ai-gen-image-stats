@@ -525,8 +525,20 @@ class DiffusionTrainer(BaseTrainer):
             # Learning rate scheduler step
             if self.scheduler is not None:
                 old_lr = self.optimizer.param_groups[0]["lr"]
-                self.scheduler.step()
-                current_lr = self.scheduler.get_last_lr()[0]
+                if isinstance(
+                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                ):
+                    # ReduceLROnPlateau needs a metric value
+                    metric_for_plateau = train_metrics.get("loss", 0.0)
+                    if val_metrics is not None:
+                        metric_for_plateau = val_metrics.get(
+                            "val_loss", metric_for_plateau
+                        )
+                    self.scheduler.step(metric_for_plateau)
+                    current_lr = self.optimizer.param_groups[0]["lr"]
+                else:
+                    self.scheduler.step()
+                    current_lr = self.scheduler.get_last_lr()[0]
 
                 # Warning for very low learning rate
                 if current_lr < 1e-7:
@@ -558,6 +570,10 @@ class DiffusionTrainer(BaseTrainer):
                 # Try validation metrics first, then training metrics
                 metrics_to_check = val_metrics if val_metrics else train_metrics
                 current_metric_value = metrics_to_check.get(best_metric)
+
+                # Fallback: if key not found in validation metrics, try training metrics
+                if current_metric_value is None and val_metrics is not None:
+                    current_metric_value = train_metrics.get(best_metric)
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -607,6 +623,173 @@ class DiffusionTrainer(BaseTrainer):
                     )
 
         # Save final checkpoint after all epochs complete
+        if checkpoint_dir is not None:
+            final_path = checkpoint_dir / "final_model.pth"
+            self.save_checkpoint(
+                final_path,
+                epoch=self._current_epoch,
+                is_best=False,
+                metrics={
+                    **train_metrics,
+                    **(val_metrics if val_metrics else {}),
+                },
+            )
+            _logger.info(f"Final model checkpoint saved: {final_path}")
+
+    def resume_training(
+        self,
+        checkpoint_path: Union[str, Path],
+        num_epochs: int,
+        checkpoint_dir: Optional[Union[str, Path]] = None,
+        checkpoint_frequency: int = 1,
+        validate_frequency: int = 1,
+        save_best: bool = True,
+        best_metric: str = "loss",
+        best_metric_mode: str = "min",
+        save_latest_checkpoint: bool = True,
+    ) -> None:
+        """Resume training from a checkpoint.
+
+        Overrides BaseTrainer.resume_training() to include:
+        - Learning rate scheduler stepping
+        - Sample generation / visualization
+        - Hyperparameter logging
+        """
+        checkpoint_info = self.load_checkpoint(checkpoint_path)
+        start_epoch = checkpoint_info["epoch"]
+        _logger.info(f"Resuming training from epoch {start_epoch}")
+        _logger.info(f"Will train for {num_epochs} additional epochs")
+
+        if checkpoint_dir is not None:
+            checkpoint_dir = Path(checkpoint_dir)
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        self._best_metric_name = best_metric
+        logger = self.get_logger()
+
+        # Log hyperparameters to TensorBoard at start of resumed training
+        if self.config:
+            logger.log_hyperparams(self.config)
+
+        for epoch in range(num_epochs):
+            self._current_epoch = start_epoch + epoch + 1
+
+            # Training epoch
+            train_metrics = self.train_epoch()
+
+            # Log training metrics
+            logger.log_metrics(
+                train_metrics, step=self._global_step, epoch=self._current_epoch
+            )
+
+            # Validation
+            val_metrics = None
+            if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
+                val_metrics = self.validate_epoch()
+                if val_metrics is not None:
+                    logger.log_metrics(
+                        val_metrics, step=self._global_step, epoch=self._current_epoch
+                    )
+
+            # Learning rate scheduler step (same logic as train())
+            if self.scheduler is not None:
+                old_lr = self.optimizer.param_groups[0]["lr"]
+                if isinstance(
+                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                ):
+                    metric_for_plateau = train_metrics.get("loss", 0.0)
+                    if val_metrics is not None:
+                        metric_for_plateau = val_metrics.get(
+                            "val_loss", metric_for_plateau
+                        )
+                    self.scheduler.step(metric_for_plateau)
+                    current_lr = self.optimizer.param_groups[0]["lr"]
+                else:
+                    self.scheduler.step()
+                    current_lr = self.scheduler.get_last_lr()[0]
+
+                if current_lr < 1e-7:
+                    _logger.warning(
+                        f"Very low learning rate: {current_lr:.2e} - "
+                        f"training may be ineffective"
+                    )
+                if old_lr != current_lr:
+                    _logger.info(
+                        f"Learning rate changed: {old_lr:.6e} -> {current_lr:.6e} "
+                        f"(epoch {self._current_epoch})"
+                    )
+                else:
+                    _logger.debug(f"Learning rate: {current_lr:.6e}")
+                logger.log_metrics(
+                    {"learning_rate": current_lr},
+                    step=self._global_step,
+                    epoch=self._current_epoch,
+                )
+
+            # Generate sample images
+            if self.viz_enabled and self._should_visualize(self._current_epoch):
+                _logger.info(
+                    f"Generating sample images at epoch {self._current_epoch}"
+                )
+                self._generate_samples(
+                    logger, self._global_step, epoch=self._current_epoch
+                )
+
+            # Best model tracking (with fallback from Bug 2 fix)
+            current_metric_value = None
+            if save_best:
+                metrics_to_check = val_metrics if val_metrics else train_metrics
+                current_metric_value = metrics_to_check.get(best_metric)
+                if current_metric_value is None and val_metrics is not None:
+                    current_metric_value = train_metrics.get(best_metric)
+
+                if current_metric_value is not None:
+                    is_best = self._is_best_metric(
+                        current_metric_value, best_metric_mode
+                    )
+                    if is_best:
+                        self._best_metric = current_metric_value
+                        if checkpoint_dir is not None:
+                            best_path = checkpoint_dir / "best_model.pth"
+                            self.save_checkpoint(
+                                best_path,
+                                epoch=self._current_epoch,
+                                is_best=True,
+                                metrics={
+                                    **train_metrics,
+                                    **(val_metrics if val_metrics else {}),
+                                },
+                            )
+
+            # Regular checkpoint saving
+            if checkpoint_dir is not None:
+                if (epoch + 1) % checkpoint_frequency == 0:
+                    checkpoint_path_new = (
+                        checkpoint_dir
+                        / f"checkpoint_epoch_{self._current_epoch}.pth"
+                    )
+                    self.save_checkpoint(
+                        checkpoint_path_new,
+                        epoch=self._current_epoch,
+                        is_best=False,
+                        metrics={
+                            **train_metrics,
+                            **(val_metrics if val_metrics else {}),
+                        },
+                    )
+                if save_latest_checkpoint:
+                    latest_path = checkpoint_dir / "latest_checkpoint.pth"
+                    self.save_checkpoint(
+                        latest_path,
+                        epoch=self._current_epoch,
+                        is_best=False,
+                        metrics={
+                            **train_metrics,
+                            **(val_metrics if val_metrics else {}),
+                        },
+                    )
+
+        # Save final checkpoint
         if checkpoint_dir is not None:
             final_path = checkpoint_dir / "final_model.pth"
             self.save_checkpoint(

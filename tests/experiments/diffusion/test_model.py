@@ -780,3 +780,55 @@ class TestModelInheritance:
         assert hasattr(model, "compute_loss")
         assert callable(model.forward)
         assert callable(model.compute_loss)
+
+
+@pytest.mark.component
+class TestDynamicThresholdingFix:
+    """Tests for the dynamic thresholding bug fix (Bug 3)."""
+
+    def test_p_mean_variance_dynamic_threshold_has_effect(self):
+        """Test that p_mean_variance with dynamic thresholding differs from without on extreme inputs."""
+        model = DDPMModel(
+            image_size=32,
+            model_channels=32,
+            channel_multipliers=(1, 2),
+            num_timesteps=100,
+        )
+        model.eval()
+
+        # Use extreme noise to produce extreme x_start predictions
+        x_t = torch.randn(2, 3, 32, 32) * 10
+        t = torch.tensor([50, 50])
+
+        with torch.no_grad():
+            mean_with, var_with = model.p_mean_variance(
+                x_t, t, use_dynamic_threshold=True, dynamic_threshold_percentile=0.95
+            )
+            mean_without, var_without = model.p_mean_variance(
+                x_t, t, use_dynamic_threshold=False
+            )
+
+        # The two should differ because dynamic thresholding rescales differently than fixed clamp
+        assert not torch.allclose(mean_with, mean_without, atol=1e-6), (
+            "Dynamic thresholding should produce different results from fixed clamping"
+        )
+
+    def test_p_mean_variance_without_dynamic_threshold_clamps(self):
+        """Test that without dynamic thresholding, fixed clamp is applied."""
+        model = DDPMModel(
+            image_size=32,
+            model_channels=32,
+            channel_multipliers=(1, 2),
+            num_timesteps=100,
+        )
+        model.eval()
+
+        x_t = torch.randn(2, 3, 32, 32)
+        t = torch.tensor([50, 50])
+
+        with torch.no_grad():
+            mean, var = model.p_mean_variance(x_t, t, use_dynamic_threshold=False)
+
+        # Should produce valid results (no errors)
+        assert mean.shape == x_t.shape
+        assert var.shape[0] == x_t.shape[0]

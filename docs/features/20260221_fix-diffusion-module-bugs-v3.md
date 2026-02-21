@@ -24,24 +24,24 @@ This plan addresses four **new** bugs discovered during a deeper investigation o
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Fix `ReduceLROnPlateau` scheduler crash (Bug 1)
-  - [ ] Task 1.1: Add `ReduceLROnPlateau`-specific handling in `train()` scheduler step
-  - [ ] Task 1.2: Add test that training with `ReduceLROnPlateau` runs without error
-  - [ ] Task 1.3: Add test that `ReduceLROnPlateau` receives metric value and adjusts LR
-- [ ] Phase 2: Fix best-model checkpoint not saved with validation data (Bug 2)
-  - [ ] Task 2.1: Add fallback to `train_metrics` when `best_metric` key not found in `val_metrics`
-  - [ ] Task 2.2: Add test that best-model checkpoint is saved when using `best_metric="loss"` with validation data
-  - [ ] Task 2.3: Add test that best-model checkpoint is saved when `best_metric` key exists in `val_metrics` directly (happy path)
-- [ ] Phase 3: Fix dynamic thresholding no-op (Bug 3)
-  - [ ] Task 3.1: Make fixed clamp and dynamic thresholding mutually exclusive in `p_mean_variance`
-  - [ ] Task 3.2: Update existing `test_dynamic_threshold` to verify values change from unclamped input
-  - [ ] Task 3.3: Add test that `p_mean_variance` with `use_dynamic_threshold=True` differs from `use_dynamic_threshold=False` on extreme inputs
-- [ ] Phase 4: Fix `resume_training()` missing scheduler and visualization (Bug 4)
-  - [ ] Task 4.1: Override `resume_training()` in `DiffusionTrainer` with scheduler stepping and visualization
-  - [ ] Task 4.2: Add test that LR scheduler advances during resumed training
-  - [ ] Task 4.3: Add test that visualization is generated during resumed training when intervals trigger
-- [ ] Phase 5: Run all tests and verify no regressions
-  - [ ] Task 5.1: Run the full test suite and confirm all tests pass
+- [x] Phase 1: Fix `ReduceLROnPlateau` scheduler crash (Bug 1)
+  - [x] Task 1.1: Add `ReduceLROnPlateau`-specific handling in `train()` scheduler step
+  - [x] Task 1.2: Add test that training with `ReduceLROnPlateau` runs without error
+  - [x] Task 1.3: Add test that `ReduceLROnPlateau` receives metric value and adjusts LR
+- [x] Phase 2: Fix best-model checkpoint not saved with validation data (Bug 2)
+  - [x] Task 2.1: Add fallback to `train_metrics` when `best_metric` key not found in `val_metrics`
+  - [x] Task 2.2: Add test that best-model checkpoint is saved when using `best_metric="loss"` with validation data
+  - [x] Task 2.3: Add test that best-model checkpoint is saved when `best_metric` key exists in `val_metrics` directly (happy path)
+- [x] Phase 3: Fix dynamic thresholding no-op (Bug 3)
+  - [x] Task 3.1: Make fixed clamp and dynamic thresholding mutually exclusive in `p_mean_variance`
+  - [x] Task 3.2: Update existing `test_dynamic_threshold` to verify values change from unclamped input
+  - [x] Task 3.3: Add test that `p_mean_variance` with `use_dynamic_threshold=True` differs from `use_dynamic_threshold=False` on extreme inputs
+- [x] Phase 4: Fix `resume_training()` missing scheduler and visualization (Bug 4)
+  - [x] Task 4.1: Override `resume_training()` in `DiffusionTrainer` with scheduler stepping and visualization
+  - [x] Task 4.2: Add test that LR scheduler advances during resumed training
+  - [x] Task 4.3: Add test that visualization is generated during resumed training when intervals trigger
+- [x] Phase 5: Run all tests and verify no regressions
+  - [x] Task 5.1: Run the full test suite and confirm all tests pass
 
 ## Phase Details
 

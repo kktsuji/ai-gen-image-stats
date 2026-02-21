@@ -976,11 +976,12 @@ class DDPMModel(BaseModel):
 
         # Predict x_0
         x_start = self.predict_start_from_noise(x_t, t, predicted_noise)
-        x_start = torch.clamp(x_start, -1.0, 1.0)
 
-        # Apply dynamic thresholding if enabled
+        # Apply dynamic thresholding or fixed clamp
         if use_dynamic_threshold:
             x_start = self.dynamic_threshold(x_start, dynamic_threshold_percentile)
+        else:
+            x_start = torch.clamp(x_start, -1.0, 1.0)
 
         # Compute posterior
         model_mean, model_variance = self.q_posterior(x_start, x_t, t)

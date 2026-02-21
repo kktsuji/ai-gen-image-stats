@@ -1264,3 +1264,255 @@ def test_train_epoch_unexpected_batch_length():
             with pytest.raises(ValueError, match="Unexpected batch data length"):
                 trainer.train_epoch()
             mock_logger.critical.assert_called()
+
+
+@pytest.mark.component
+def test_diffusion_trainer_with_plateau_scheduler():
+    """Test that training with ReduceLROnPlateau runs without error (Bug 1)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=8, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", patience=0, factor=0.5
+    )
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        scheduler=scheduler,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Should not raise TypeError or AttributeError
+        trainer.train(num_epochs=2, checkpoint_dir=tmpdir, validate_frequency=1)
+
+
+@pytest.mark.component
+def test_diffusion_trainer_plateau_scheduler_receives_metric():
+    """Test that ReduceLROnPlateau receives metric and adjusts LR (Bug 1)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        patience=0,
+        factor=0.5,
+        threshold=1e10,
+        threshold_mode="abs",
+    )
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        scheduler=scheduler,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    initial_lr = optimizer.param_groups[0]["lr"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(num_epochs=4, checkpoint_dir=tmpdir, validate_frequency=0)
+
+    # With patience=0 and factor=0.5, LR should decrease after seeing metrics
+    final_lr = optimizer.param_groups[0]["lr"]
+    assert final_lr < initial_lr, (
+        f"LR should have decreased from {initial_lr} but is {final_lr}"
+    )
+
+
+@pytest.mark.component
+def test_best_model_saved_with_validation_data():
+    """Test best_model.pth is saved when best_metric='loss' with validation data (Bug 2)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=8, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=2,
+            checkpoint_dir=tmpdir,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="loss",
+        )
+        assert (Path(tmpdir) / "best_model.pth").exists(), (
+            "best_model.pth should be created with best_metric='loss' and validation data"
+        )
+
+
+@pytest.mark.component
+def test_best_model_saved_with_matching_val_metric_key():
+    """Test best_model.pth is saved when best_metric='val_loss' matches key directly (Bug 2)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=8, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=2,
+            checkpoint_dir=tmpdir,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="val_loss",
+        )
+        assert (Path(tmpdir) / "best_model.pth").exists(), (
+            "best_model.pth should be created with best_metric='val_loss'"
+        )
+
+
+@pytest.mark.component
+def test_resume_training_scheduler_advances():
+    """Test that LR scheduler advances during resumed training (Bug 4)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        scheduler=scheduler,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Train for 2 epochs, save checkpoint
+        trainer.train(
+            num_epochs=2,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+        )
+        lr_after_initial = optimizer.param_groups[0]["lr"]
+        checkpoint_path = Path(tmpdir) / "latest_checkpoint.pth"
+        assert checkpoint_path.exists()
+
+        # Resume for 2 more epochs
+        trainer.resume_training(
+            checkpoint_path=checkpoint_path,
+            num_epochs=2,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+        )
+        lr_after_resume = optimizer.param_groups[0]["lr"]
+
+    # LR should continue decreasing from the checkpoint value
+    assert lr_after_resume < lr_after_initial, (
+        f"LR should decrease during resumed training: {lr_after_initial} -> {lr_after_resume}"
+    )
+
+
+@pytest.mark.integration
+def test_resume_training_generates_samples():
+    """Test that visualization is generated during resumed training (Bug 4)."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        log_images_interval=1,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Train for 1 epoch, save checkpoint
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+        )
+        images_after_initial = len(logger.logged_images)
+        checkpoint_path = Path(tmpdir) / "latest_checkpoint.pth"
+
+        # Resume for 2 more epochs
+        trainer.resume_training(
+            checkpoint_path=checkpoint_path,
+            num_epochs=2,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+        )
+
+    # Should have logged images during resumed training
+    assert len(logger.logged_images) > images_after_initial, (
+        "Visualization should be generated during resumed training"
+    )
