@@ -253,13 +253,12 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
 
     data = config["data"]
 
-    # Validate paths subsection
-    if "paths" not in data:
-        raise KeyError("Missing required config key: data.paths")
+    # Validate split_file
+    if "split_file" not in data or data["split_file"] is None:
+        raise ValueError("data.split_file is required and cannot be None")
 
-    paths = data["paths"]
-    if "train" not in paths or paths["train"] is None:
-        raise ValueError("data.paths.train is required and cannot be None")
+    if not isinstance(data["split_file"], str) or not data["split_file"]:
+        raise ValueError("data.split_file must be a non-empty string")
 
     # Validate loading subsection
     validate_data_loading_section(data)

@@ -4,13 +4,100 @@ This module contains comprehensive tests for the DiffusionDataLoader class.
 Tests are organized by tiers: unit tests, component tests, and integration tests.
 """
 
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 from src.base.dataloader import BaseDataLoader
 from src.experiments.diffusion.dataloader import DiffusionDataLoader
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+
+def _create_split_json(tmp_path, train_per_class=4, val_per_class=4, num_classes=2):
+    """Create mock images and a split JSON file.
+
+    Returns:
+        Path string to the created split JSON file.
+    """
+    class_names = [f"{i}.Class{i}" for i in range(num_classes)]
+    train_entries = []
+    val_entries = []
+    classes_dict = {name: idx for idx, name in enumerate(class_names)}
+
+    images_dir = tmp_path / "images"
+
+    for idx, class_name in enumerate(class_names):
+        class_dir = images_dir / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in range(train_per_class):
+            img_path = class_dir / f"train_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            train_entries.append({"path": str(img_path), "label": idx})
+
+        for i in range(val_per_class):
+            img_path = class_dir / f"val_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            val_entries.append({"path": str(img_path), "label": idx})
+
+    split_data = {
+        "metadata": {
+            "classes": classes_dict,
+            "total_samples": len(train_entries) + len(val_entries),
+        },
+        "train": train_entries,
+        "val": val_entries,
+    }
+
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
+    return str(split_file)
+
+
+def _create_split_json_train_only(tmp_path, train_per_class=4, num_classes=2):
+    """Create a split JSON with only training data (empty val)."""
+    class_names = [f"{i}.Class{i}" for i in range(num_classes)]
+    train_entries = []
+    classes_dict = {name: idx for idx, name in enumerate(class_names)}
+
+    images_dir = tmp_path / "images"
+
+    for idx, class_name in enumerate(class_names):
+        class_dir = images_dir / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in range(train_per_class):
+            img_path = class_dir / f"train_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            train_entries.append({"path": str(img_path), "label": idx})
+
+    split_data = {
+        "metadata": {"classes": classes_dict},
+        "train": train_entries,
+        "val": [],
+    }
+
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
+    return str(split_file)
+
 
 # ==============================================================================
 # Unit Tests - Fast, no data loading
@@ -24,73 +111,32 @@ def test_diffusion_dataloader_inherits_from_base():
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_initialization_with_train_only(tmp_data_dir):
-    """Test basic initialization with only training path."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-
-    # Create minimal directory structure
-    (train_path / "class1").mkdir()
+def test_diffusion_dataloader_initialization(tmp_path):
+    """Test basic initialization with split file."""
+    split_file = _create_split_json(tmp_path)
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path), val_path=None, batch_size=16, num_workers=0
+        split_file=split_file, batch_size=16, num_workers=0
     )
 
-    assert dataloader.train_path == str(train_path)
-    assert dataloader.val_path is None
+    assert dataloader.split_file == split_file
     assert dataloader.batch_size == 16
     assert dataloader.num_workers == 0
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_initialization_with_train_and_val(tmp_data_dir):
-    """Test initialization with both training and validation paths."""
-    train_path = tmp_data_dir / "train"
-    val_path = tmp_data_dir / "val"
-    train_path.mkdir()
-    val_path.mkdir()
-
-    # Create minimal directory structure
-    (train_path / "class1").mkdir()
-    (val_path / "class1").mkdir()
-
-    dataloader = DiffusionDataLoader(
-        train_path=str(train_path), val_path=str(val_path), batch_size=32
-    )
-
-    assert dataloader.train_path == str(train_path)
-    assert dataloader.val_path == str(val_path)
-    assert dataloader.batch_size == 32
+def test_diffusion_dataloader_invalid_split_file():
+    """Test that initialization fails with invalid split file path."""
+    with pytest.raises(FileNotFoundError, match="Split file not found"):
+        DiffusionDataLoader(split_file="/nonexistent/split.json", batch_size=32)
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_invalid_train_path():
-    """Test that initialization fails with invalid training path."""
-    with pytest.raises(FileNotFoundError, match="Training data path not found"):
-        DiffusionDataLoader(train_path="/nonexistent/path", batch_size=32)
-
-
-@pytest.mark.unit
-def test_diffusion_dataloader_invalid_val_path(tmp_data_dir):
-    """Test that initialization fails with invalid validation path."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
-
-    with pytest.raises(FileNotFoundError, match="Validation data path not found"):
-        DiffusionDataLoader(
-            train_path=str(train_path), val_path="/nonexistent/val/path", batch_size=32
-        )
-
-
-@pytest.mark.unit
-def test_diffusion_dataloader_default_parameters(tmp_data_dir):
+def test_diffusion_dataloader_default_parameters(tmp_path):
     """Test default parameter values."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
-    dataloader = DiffusionDataLoader(train_path=str(train_path))
+    dataloader = DiffusionDataLoader(split_file=split_file)
 
     assert dataloader.batch_size == 32
     assert dataloader.num_workers == 4
@@ -106,14 +152,12 @@ def test_diffusion_dataloader_default_parameters(tmp_data_dir):
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_custom_parameters(tmp_data_dir):
+def test_diffusion_dataloader_custom_parameters(tmp_path):
     """Test custom parameter values."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=128,
         num_workers=2,
         image_size=128,
@@ -149,53 +193,24 @@ def test_diffusion_dataloader_custom_parameters(tmp_data_dir):
 def mock_diffusion_dataset(tmp_path):
     """Create a minimal mock dataset for diffusion testing.
 
-    Creates a small ImageFolder-style dataset with 2 classes.
+    Returns:
+        Path string to the split JSON file.
     """
-    import numpy as np
-    from PIL import Image
-
-    # Create train directory
-    train_path = tmp_path / "train"
-    train_path.mkdir()
-
-    # Create validation directory
-    val_path = tmp_path / "val"
-    val_path.mkdir()
-
-    # Create class directories
-    for split_path in [train_path, val_path]:
-        for class_name in ["0.Normal", "1.Abnormal"]:
-            class_dir = split_path / class_name
-            class_dir.mkdir()
-
-            # Create a few dummy images
-            for i in range(4):
-                img = Image.fromarray(
-                    np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
-                )
-                img.save(class_dir / f"img_{i}.jpg")
-
-    return train_path, val_path
+    return _create_split_json(tmp_path, train_per_class=4, val_per_class=4)
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_get_config(tmp_data_dir):
+def test_diffusion_dataloader_get_config(tmp_path):
     """Test that get_config returns expected configuration."""
-    train_path = tmp_data_dir / "train"
-    val_path = tmp_data_dir / "val"
-    train_path.mkdir()
-    val_path.mkdir()
-    (train_path / "class1").mkdir()
-    (val_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path), val_path=str(val_path), batch_size=16, num_workers=2
+        split_file=split_file, batch_size=16, num_workers=2
     )
 
     config = dataloader.get_config()
 
-    assert "train_path" in config
-    assert "val_path" in config
+    assert "split_file" in config
     assert "batch_size" in config
     assert "num_workers" in config
     assert config["batch_size"] == 16
@@ -203,13 +218,11 @@ def test_diffusion_dataloader_get_config(tmp_data_dir):
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_repr(tmp_data_dir):
+def test_diffusion_dataloader_repr(tmp_path):
     """Test string representation of dataloader."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
-    dataloader = DiffusionDataLoader(train_path=str(train_path), batch_size=32)
+    dataloader = DiffusionDataLoader(split_file=split_file, batch_size=32)
 
     repr_str = repr(dataloader)
     assert "DiffusionDataLoader" in repr_str
@@ -224,10 +237,10 @@ def test_diffusion_dataloader_repr(tmp_data_dir):
 @pytest.mark.component
 def test_get_train_loader_basic(mock_diffusion_dataset):
     """Test basic train loader creation."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -243,10 +256,10 @@ def test_get_train_loader_basic(mock_diffusion_dataset):
 @pytest.mark.component
 def test_get_train_loader_with_labels(mock_diffusion_dataset):
     """Test train loader returns images and labels when return_labels=True."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -269,10 +282,10 @@ def test_get_train_loader_with_labels(mock_diffusion_dataset):
 @pytest.mark.component
 def test_get_train_loader_without_labels(mock_diffusion_dataset):
     """Test train loader returns only images when return_labels=False."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -291,11 +304,11 @@ def test_get_train_loader_without_labels(mock_diffusion_dataset):
 @pytest.mark.component
 def test_train_loader_image_shape(mock_diffusion_dataset):
     """Test that images have correct shape."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     image_size = 32
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=image_size,
@@ -310,10 +323,10 @@ def test_train_loader_image_shape(mock_diffusion_dataset):
 @pytest.mark.component
 def test_train_loader_image_normalization(mock_diffusion_dataset):
     """Test that images are normalized to [-1, 1] range."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=4,
         num_workers=0,
         image_size=32,
@@ -335,11 +348,10 @@ def test_train_loader_image_normalization(mock_diffusion_dataset):
 @pytest.mark.component
 def test_get_val_loader_basic(mock_diffusion_dataset):
     """Test basic validation loader creation."""
-    train_path, val_path = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -353,13 +365,12 @@ def test_get_val_loader_basic(mock_diffusion_dataset):
 
 
 @pytest.mark.component
-def test_get_val_loader_returns_none_when_no_val_path(mock_diffusion_dataset):
-    """Test that get_val_loader returns None when no validation path specified."""
-    train_path, _ = mock_diffusion_dataset
+def test_get_val_loader_returns_none_when_empty_val(tmp_path):
+    """Test that get_val_loader returns None when val split is empty."""
+    split_file = _create_split_json_train_only(tmp_path)
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=None,
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
     )
@@ -371,11 +382,10 @@ def test_get_val_loader_returns_none_when_no_val_path(mock_diffusion_dataset):
 @pytest.mark.component
 def test_val_loader_no_shuffle(mock_diffusion_dataset):
     """Test that validation loader does not shuffle."""
-    train_path, val_path = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
     )
@@ -409,11 +419,10 @@ def test_val_loader_no_shuffle(mock_diffusion_dataset):
 @pytest.mark.component
 def test_val_loader_no_drop_last(mock_diffusion_dataset):
     """Test that validation loader does not drop last batch."""
-    train_path, val_path = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=3,  # Use odd batch size to ensure incomplete last batch
         num_workers=0,
     )
@@ -425,10 +434,10 @@ def test_val_loader_no_drop_last(mock_diffusion_dataset):
 @pytest.mark.component
 def test_get_num_classes_with_labels(mock_diffusion_dataset):
     """Test get_num_classes returns correct number when return_labels=True."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         return_labels=True,
         num_workers=0,
     )
@@ -440,10 +449,10 @@ def test_get_num_classes_with_labels(mock_diffusion_dataset):
 @pytest.mark.component
 def test_get_num_classes_without_labels(mock_diffusion_dataset):
     """Test get_num_classes returns None when return_labels=False."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         return_labels=False,
         num_workers=0,
     )
@@ -455,10 +464,10 @@ def test_get_num_classes_without_labels(mock_diffusion_dataset):
 @pytest.mark.component
 def test_train_loader_with_augmentation(mock_diffusion_dataset):
     """Test train loader with augmentation enabled."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -479,10 +488,10 @@ def test_train_loader_with_augmentation(mock_diffusion_dataset):
 @pytest.mark.component
 def test_train_loader_without_augmentation(mock_diffusion_dataset):
     """Test train loader without augmentation."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -501,11 +510,11 @@ def test_train_loader_without_augmentation(mock_diffusion_dataset):
 @pytest.mark.component
 def test_different_image_sizes(mock_diffusion_dataset):
     """Test dataloader with different image sizes."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     for image_size in [32, 64, 128]:
         dataloader = DiffusionDataLoader(
-            train_path=str(train_path),
+            split_file=split_file,
             batch_size=2,
             num_workers=0,
             image_size=image_size,
@@ -520,11 +529,10 @@ def test_different_image_sizes(mock_diffusion_dataset):
 @pytest.mark.component
 def test_train_and_val_consistency(mock_diffusion_dataset):
     """Test that train and val loaders have consistent behavior."""
-    train_path, val_path = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -555,11 +563,10 @@ def test_train_and_val_consistency(mock_diffusion_dataset):
 @pytest.mark.integration
 def test_full_training_loop_simulation(mock_diffusion_dataset):
     """Test simulating a mini training loop with the dataloader."""
-    train_path, val_path = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -594,10 +601,10 @@ def test_full_training_loop_simulation(mock_diffusion_dataset):
 @pytest.mark.integration
 def test_unconditional_diffusion_workflow(mock_diffusion_dataset):
     """Test unconditional diffusion training workflow (no labels)."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=4,
         num_workers=0,
         image_size=32,
@@ -623,10 +630,10 @@ def test_unconditional_diffusion_workflow(mock_diffusion_dataset):
 @pytest.mark.integration
 def test_conditional_diffusion_workflow(mock_diffusion_dataset):
     """Test conditional diffusion training workflow (with labels)."""
-    train_path, _ = mock_diffusion_dataset
+    split_file = mock_diffusion_dataset
 
     dataloader = DiffusionDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=4,
         num_workers=0,
         image_size=32,

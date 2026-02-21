@@ -57,6 +57,8 @@ def small_conditional_model(device):
 @pytest.fixture
 def small_dataloader(temp_dir):
     """Create a minimal dataloader for testing."""
+    import json
+
     import numpy as np
     from PIL import Image
 
@@ -64,6 +66,7 @@ def small_dataloader(temp_dir):
     train_dir = temp_dir / "train"
     train_dir.mkdir()
 
+    train_entries = []
     for class_idx in [0, 1]:
         class_dir = train_dir / str(class_idx)
         class_dir.mkdir()
@@ -73,11 +76,22 @@ def small_dataloader(temp_dir):
             # Create a random RGB image
             img_array = np.random.randint(0, 256, (32, 32, 3), dtype=np.uint8)
             img = Image.fromarray(img_array)
-            img.save(class_dir / f"img_{i}.png")
+            img_path = class_dir / f"img_{i}.png"
+            img.save(img_path)
+            train_entries.append({"path": str(img_path), "label": class_idx})
+
+    # Create split JSON file
+    split_file = temp_dir / "split.json"
+    split_data = {
+        "metadata": {"classes": {"0": 0, "1": 1}},
+        "train": train_entries,
+        "val": [],
+    }
+    split_file.write_text(json.dumps(split_data))
 
     # Create dataloader
     dataloader = DiffusionDataLoader(
-        train_path=str(train_dir),
+        split_file=str(split_file),
         batch_size=2,
         num_workers=0,
         image_size=32,

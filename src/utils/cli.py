@@ -89,11 +89,11 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     if "experiment" not in config:
         raise ValueError(
             "Missing required 'experiment' field in config file. "
-            "Must be one of: classifier, diffusion, gan"
+            "Must be one of: classifier, diffusion, gan, data_preparation"
         )
 
     # Validate experiment type
-    valid_experiments = ["classifier", "diffusion", "gan"]
+    valid_experiments = ["classifier", "diffusion", "gan", "data_preparation"]
     if config["experiment"] not in valid_experiments:
         raise ValueError(
             f"Invalid experiment type: {config['experiment']}. "
@@ -122,7 +122,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     if "experiment" not in config:
         raise ValueError("'experiment' field is required in config")
 
-    valid_experiments = ["classifier", "diffusion", "gan"]
+    valid_experiments = ["classifier", "diffusion", "gan", "data_preparation"]
     if config["experiment"] not in valid_experiments:
         raise ValueError(
             f"Invalid experiment type: {config['experiment']}. "

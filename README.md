@@ -14,6 +14,7 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
 ## Features
 
 - **Multiple Experiment Types**:
+  - **Data Preparation**: Reproducible train/val splitting with JSON split files
   - **Diffusion Models**: DDPM for synthetic image generation
   - **Classifiers**: InceptionV3, ResNet (50/101), WRN for classification tasks
   - **GANs**: (Planned) Adversarial training for image generation
@@ -30,6 +31,10 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
 src/
 ├── base/              # Base classes for trainers, models, data loaders
 ├── experiments/       # Self-contained experiment implementations
+│   ├── data_preparation/  # Dataset splitting and preparation
+│   │   ├── config.py       # Config loading and validation
+│   │   ├── default.yaml    # Default configuration values
+│   │   └── prepare.py      # Scanning and splitting logic
 │   ├── classifier/    # Classification models and training
 │   │   ├── config.py       # Config loading and validation
 │   │   ├── default.yaml    # Default configuration values
@@ -78,6 +83,15 @@ pip install -r requirements-dev.txt
 ```
 
 ## Quick Start
+
+### Preparing a Dataset Split
+
+```bash
+# Prepare reproducible train/val split
+python -m src.main configs/data_preparation/default.yaml
+```
+
+This scans the class directories, shuffles with a fixed seed, and writes a JSON split file used by all downstream experiments.
 
 ### Training a Classifier
 

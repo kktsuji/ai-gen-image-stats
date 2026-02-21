@@ -4,13 +4,100 @@ This module contains comprehensive tests for the ClassifierDataLoader class.
 Tests are organized by tiers: unit tests, component tests, and integration tests.
 """
 
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 from src.base.dataloader import BaseDataLoader
 from src.experiments.classifier.dataloader import ClassifierDataLoader
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+
+def _create_split_json(tmp_path, train_per_class=3, val_per_class=3, num_classes=2):
+    """Create mock images and a split JSON file.
+
+    Returns:
+        Path string to the created split JSON file.
+    """
+    class_names = ["0.Normal", "1.Abnormal"][:num_classes]
+    train_entries = []
+    val_entries = []
+    classes_dict = {name: idx for idx, name in enumerate(class_names)}
+
+    images_dir = tmp_path / "images"
+
+    for idx, class_name in enumerate(class_names):
+        class_dir = images_dir / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in range(train_per_class):
+            img_path = class_dir / f"train_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            train_entries.append({"path": str(img_path), "label": idx})
+
+        for i in range(val_per_class):
+            img_path = class_dir / f"val_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            val_entries.append({"path": str(img_path), "label": idx})
+
+    split_data = {
+        "metadata": {
+            "classes": classes_dict,
+            "total_samples": len(train_entries) + len(val_entries),
+        },
+        "train": train_entries,
+        "val": val_entries,
+    }
+
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
+    return str(split_file)
+
+
+def _create_split_json_train_only(tmp_path, train_per_class=3, num_classes=2):
+    """Create a split JSON with only training data (empty val)."""
+    class_names = ["0.Normal", "1.Abnormal"][:num_classes]
+    train_entries = []
+    classes_dict = {name: idx for idx, name in enumerate(class_names)}
+
+    images_dir = tmp_path / "images"
+
+    for idx, class_name in enumerate(class_names):
+        class_dir = images_dir / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in range(train_per_class):
+            img_path = class_dir / f"train_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            train_entries.append({"path": str(img_path), "label": idx})
+
+    split_data = {
+        "metadata": {"classes": classes_dict},
+        "train": train_entries,
+        "val": [],
+    }
+
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
+    return str(split_file)
+
 
 # ==============================================================================
 # Unit Tests - Fast, no data loading
@@ -24,73 +111,32 @@ def test_classifier_dataloader_inherits_from_base():
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_initialization_with_train_only(tmp_data_dir):
-    """Test basic initialization with only training path."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-
-    # Create minimal directory structure
-    (train_path / "class1").mkdir()
+def test_classifier_dataloader_initialization(tmp_path):
+    """Test basic initialization with split file."""
+    split_file = _create_split_json(tmp_path)
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), val_path=None, batch_size=16, num_workers=0
+        split_file=split_file, batch_size=16, num_workers=0
     )
 
-    assert dataloader.train_path == str(train_path)
-    assert dataloader.val_path is None
+    assert dataloader.split_file == split_file
     assert dataloader.batch_size == 16
     assert dataloader.num_workers == 0
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_initialization_with_train_and_val(tmp_data_dir):
-    """Test initialization with both training and validation paths."""
-    train_path = tmp_data_dir / "train"
-    val_path = tmp_data_dir / "val"
-    train_path.mkdir()
-    val_path.mkdir()
-
-    # Create minimal directory structure
-    (train_path / "class1").mkdir()
-    (val_path / "class1").mkdir()
-
-    dataloader = ClassifierDataLoader(
-        train_path=str(train_path), val_path=str(val_path), batch_size=32
-    )
-
-    assert dataloader.train_path == str(train_path)
-    assert dataloader.val_path == str(val_path)
-    assert dataloader.batch_size == 32
+def test_classifier_dataloader_invalid_split_file():
+    """Test that initialization fails with invalid split file path."""
+    with pytest.raises(FileNotFoundError, match="Split file not found"):
+        ClassifierDataLoader(split_file="/nonexistent/split.json", batch_size=32)
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_invalid_train_path():
-    """Test that initialization fails with invalid training path."""
-    with pytest.raises(FileNotFoundError, match="Training data path not found"):
-        ClassifierDataLoader(train_path="/nonexistent/path", batch_size=32)
-
-
-@pytest.mark.unit
-def test_classifier_dataloader_invalid_val_path(tmp_data_dir):
-    """Test that initialization fails with invalid validation path."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
-
-    with pytest.raises(FileNotFoundError, match="Validation data path not found"):
-        ClassifierDataLoader(
-            train_path=str(train_path), val_path="/nonexistent/val/path", batch_size=32
-        )
-
-
-@pytest.mark.unit
-def test_classifier_dataloader_default_parameters(tmp_data_dir):
+def test_classifier_dataloader_default_parameters(tmp_path):
     """Test default parameter values."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
-    dataloader = ClassifierDataLoader(train_path=str(train_path))
+    dataloader = ClassifierDataLoader(split_file=split_file)
 
     assert dataloader.batch_size == 32
     assert dataloader.num_workers == 4
@@ -106,14 +152,12 @@ def test_classifier_dataloader_default_parameters(tmp_data_dir):
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_custom_parameters(tmp_data_dir):
+def test_classifier_dataloader_custom_parameters(tmp_path):
     """Test custom parameter values."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=64,
         num_workers=2,
         image_size=128,
@@ -141,23 +185,17 @@ def test_classifier_dataloader_custom_parameters(tmp_data_dir):
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_get_config(tmp_data_dir):
+def test_classifier_dataloader_get_config(tmp_path):
     """Test that get_config returns expected configuration."""
-    train_path = tmp_data_dir / "train"
-    val_path = tmp_data_dir / "val"
-    train_path.mkdir()
-    val_path.mkdir()
-    (train_path / "class1").mkdir()
-    (val_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), val_path=str(val_path), batch_size=16, num_workers=2
+        split_file=split_file, batch_size=16, num_workers=2
     )
 
     config = dataloader.get_config()
 
-    assert "train_path" in config
-    assert "val_path" in config
+    assert "split_file" in config
     assert "batch_size" in config
     assert "num_workers" in config
     assert config["batch_size"] == 16
@@ -165,17 +203,30 @@ def test_classifier_dataloader_get_config(tmp_data_dir):
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_repr(tmp_data_dir):
+def test_classifier_dataloader_repr(tmp_path):
     """Test string representation of dataloader."""
-    train_path = tmp_data_dir / "train"
-    train_path.mkdir()
-    (train_path / "class1").mkdir()
+    split_file = _create_split_json(tmp_path)
 
-    dataloader = ClassifierDataLoader(train_path=str(train_path), batch_size=32)
+    dataloader = ClassifierDataLoader(split_file=split_file, batch_size=32)
 
     repr_str = repr(dataloader)
     assert "ClassifierDataLoader" in repr_str
     assert "batch_size=32" in repr_str
+
+
+# ==============================================================================
+# Test Fixtures
+# ==============================================================================
+
+
+@pytest.fixture
+def mock_classifier_dataset(tmp_path):
+    """Create a minimal mock dataset for classifier testing.
+
+    Returns:
+        Path string to the split JSON file.
+    """
+    return _create_split_json(tmp_path, train_per_class=3, val_per_class=3)
 
 
 # ==============================================================================
@@ -186,10 +237,10 @@ def test_classifier_dataloader_repr(tmp_data_dir):
 @pytest.mark.component
 def test_get_train_loader_basic(mock_classifier_dataset):
     """Test basic train loader creation."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -208,11 +259,10 @@ def test_get_train_loader_basic(mock_classifier_dataset):
 @pytest.mark.component
 def test_get_val_loader_basic(mock_classifier_dataset):
     """Test basic validation loader creation."""
-    train_path, val_path = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -229,12 +279,12 @@ def test_get_val_loader_basic(mock_classifier_dataset):
 
 
 @pytest.mark.component
-def test_get_val_loader_returns_none_when_no_val_path(mock_classifier_dataset):
-    """Test that val loader returns None when no val_path specified."""
-    train_path, _ = mock_classifier_dataset
+def test_get_val_loader_returns_none_when_empty_val(tmp_path):
+    """Test that val loader returns None when val split is empty."""
+    split_file = _create_split_json_train_only(tmp_path)
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), val_path=None, batch_size=2, num_workers=0
+        split_file=split_file, batch_size=2, num_workers=0
     )
 
     val_loader = dataloader.get_val_loader()
@@ -244,10 +294,10 @@ def test_get_val_loader_returns_none_when_no_val_path(mock_classifier_dataset):
 @pytest.mark.component
 def test_train_loader_batch_iteration(mock_classifier_dataset):
     """Test iterating through train loader batches."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -276,11 +326,10 @@ def test_train_loader_batch_iteration(mock_classifier_dataset):
 @pytest.mark.component
 def test_val_loader_batch_iteration(mock_classifier_dataset):
     """Test iterating through validation loader batches."""
-    train_path, val_path = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -305,10 +354,10 @@ def test_val_loader_batch_iteration(mock_classifier_dataset):
 @pytest.mark.component
 def test_train_loader_with_imagenet_normalization(mock_classifier_dataset):
     """Test train loader with ImageNet normalization."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -328,10 +377,10 @@ def test_train_loader_with_imagenet_normalization(mock_classifier_dataset):
 @pytest.mark.component
 def test_train_loader_with_cifar10_normalization(mock_classifier_dataset):
     """Test train loader with CIFAR10 normalization."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -351,10 +400,10 @@ def test_train_loader_with_cifar10_normalization(mock_classifier_dataset):
 @pytest.mark.component
 def test_train_loader_without_normalization(mock_classifier_dataset):
     """Test train loader without normalization."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -374,10 +423,10 @@ def test_train_loader_without_normalization(mock_classifier_dataset):
 @pytest.mark.component
 def test_get_num_classes(mock_classifier_dataset):
     """Test getting number of classes from dataset."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), batch_size=2, num_workers=0
+        split_file=split_file, batch_size=2, num_workers=0
     )
 
     num_classes = dataloader.get_num_classes()
@@ -389,10 +438,10 @@ def test_get_num_classes(mock_classifier_dataset):
 @pytest.mark.component
 def test_get_class_names(mock_classifier_dataset):
     """Test getting class names from dataset."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), batch_size=2, num_workers=0
+        split_file=split_file, batch_size=2, num_workers=0
     )
 
     class_names = dataloader.get_class_names()
@@ -407,11 +456,11 @@ def test_get_class_names(mock_classifier_dataset):
 @pytest.mark.component
 def test_different_image_sizes(mock_classifier_dataset):
     """Test dataloader with different image sizes."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     # Test with 64x64 images
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=64,
@@ -430,10 +479,10 @@ def test_different_image_sizes(mock_classifier_dataset):
 @pytest.mark.component
 def test_shuffle_train_enabled(mock_classifier_dataset):
     """Test that training data is shuffled when shuffle_train=True."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path), batch_size=2, num_workers=0, shuffle_train=True
+        split_file=split_file, batch_size=2, num_workers=0, shuffle_train=True
     )
 
     train_loader = dataloader.get_train_loader()
@@ -446,11 +495,11 @@ def test_shuffle_train_enabled(mock_classifier_dataset):
 @pytest.mark.component
 def test_drop_last_behavior(mock_classifier_dataset):
     """Test drop_last parameter behavior."""
-    train_path, _ = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     # With drop_last=True, incomplete batches should be dropped
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
+        split_file=split_file,
         batch_size=3,  # Not divisible by dataset size
         num_workers=0,
         drop_last=True,
@@ -463,44 +512,6 @@ def test_drop_last_behavior(mock_classifier_dataset):
 
 
 # ==============================================================================
-# Test Fixtures
-# ==============================================================================
-
-
-@pytest.fixture
-def mock_classifier_dataset(tmp_path):
-    """Create a minimal mock dataset for classifier testing.
-
-    Creates a small ImageFolder-style dataset with 2 classes.
-    """
-    import numpy as np
-    from PIL import Image
-
-    # Create train directory
-    train_path = tmp_path / "train"
-    train_path.mkdir()
-
-    # Create validation directory
-    val_path = tmp_path / "val"
-    val_path.mkdir()
-
-    # Create class directories
-    for split_path in [train_path, val_path]:
-        for class_name in ["0.Normal", "1.Abnormal"]:
-            class_dir = split_path / class_name
-            class_dir.mkdir()
-
-            # Create a few dummy images
-            for i in range(3):
-                img = Image.fromarray(
-                    np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
-                )
-                img.save(class_dir / f"img_{i}.jpg")
-
-    return train_path, val_path
-
-
-# ==============================================================================
 # Integration Tests - Mini workflows
 # ==============================================================================
 
@@ -509,12 +520,11 @@ def mock_classifier_dataset(tmp_path):
 @pytest.mark.slow
 def test_full_dataloader_workflow(mock_classifier_dataset):
     """Test complete dataloader workflow from creation to iteration."""
-    train_path, val_path = mock_classifier_dataset
+    split_file = mock_classifier_dataset
 
     # Create dataloader
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=split_file,
         batch_size=2,
         num_workers=0,
         image_size=32,
@@ -556,29 +566,21 @@ def test_full_dataloader_workflow(mock_classifier_dataset):
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_dataloader_with_fixtures_config(tmp_path):
+def test_dataloader_with_fixtures_config():
     """Test dataloader using fixtures/mock_data directory structure."""
-    import shutil
     from pathlib import Path
 
     # Get the project root
     project_root = Path(__file__).parent.parent.parent.parent
-    fixtures_path = project_root / "tests" / "fixtures" / "mock_data"
+    split_file = project_root / "tests" / "fixtures" / "splits" / "mock_split.json"
 
-    # Check if fixtures exist
-    if not fixtures_path.exists():
+    # Check if fixture exists
+    if not split_file.exists():
         pytest.skip("Test fixtures not found")
-
-    train_path = fixtures_path / "train"
-    val_path = fixtures_path / "val"
-
-    if not train_path.exists() or not val_path.exists():
-        pytest.skip("Test fixtures not properly set up")
 
     # Create dataloader
     dataloader = ClassifierDataLoader(
-        train_path=str(train_path),
-        val_path=str(val_path),
+        split_file=str(split_file),
         batch_size=2,
         num_workers=0,
         image_size=32,

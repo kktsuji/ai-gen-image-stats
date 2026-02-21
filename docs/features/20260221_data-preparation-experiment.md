@@ -115,37 +115,37 @@ src/experiments/
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Create `data_preparation` experiment
-  - [ ] Task 1.1: Create `src/experiments/data_preparation/__init__.py`
-  - [ ] Task 1.2: Create `src/experiments/data_preparation/default.yaml`
-  - [ ] Task 1.3: Create `src/experiments/data_preparation/config.py` (validation)
-  - [ ] Task 1.4: Create `src/experiments/data_preparation/prepare.py` (split logic)
-- [ ] Phase 2: Add `SplitFileDataset` to `src/data/datasets.py`
-  - [ ] Task 2.1: Implement `SplitFileDataset` that reads split JSON and loads images
-  - [ ] Task 2.2: Update `get_dataset()` factory to include new dataset type
-- [ ] Phase 3: Update diffusion experiment
-  - [ ] Task 3.1: Modify `src/experiments/diffusion/default.yaml` (`data.paths` → `data.split_file`)
-  - [ ] Task 3.2: Modify `src/experiments/diffusion/dataloader.py` to read split JSON
-  - [ ] Task 3.3: Modify `src/experiments/diffusion/config.py` to validate new data section
-- [ ] Phase 4: Update classifier experiment
-  - [ ] Task 4.1: Modify `src/experiments/classifier/default.yaml` (`data.paths` → `data.split_file`)
-  - [ ] Task 4.2: Modify `src/experiments/classifier/dataloader.py` to read split JSON
-  - [ ] Task 4.3: Modify `src/experiments/classifier/config.py` to validate new data section
-- [ ] Phase 5: Update entry points
-  - [ ] Task 5.1: Add `setup_experiment_data_preparation()` to `src/main.py`
-  - [ ] Task 5.2: Add `data_preparation` to valid experiments in `src/utils/cli.py`
-- [ ] Phase 6: Tests
-  - [ ] Task 6.1: Create `tests/experiments/data_preparation/` with unit tests for `prepare.py`
-  - [ ] Task 6.2: Create `tests/experiments/data_preparation/test_config.py`
-  - [ ] Task 6.3: Add `tests/data/test_split_file_dataset.py` for `SplitFileDataset`
-  - [ ] Task 6.4: Update `tests/experiments/diffusion/test_dataloader.py` for split JSON loading
-  - [ ] Task 6.5: Update `tests/experiments/classifier/test_dataloader.py` for split JSON loading
-  - [ ] Task 6.6: Add test fixtures: mock split JSON files in `tests/fixtures/`
-  - [ ] Task 6.7: Update `tests/test_main.py` for `data_preparation` dispatch
-  - [ ] Task 6.8: Run all tests to verify no regressions
-- [ ] Phase 7: Documentation
-  - [ ] Task 7.1: Update `docs/standards/architecture.md` with `data_preparation` experiment
-  - [ ] Task 7.2: Update `README.md` with new experiment usage
+- [x] Phase 1: Create `data_preparation` experiment
+  - [x] Task 1.1: Create `src/experiments/data_preparation/__init__.py`
+  - [x] Task 1.2: Create `src/experiments/data_preparation/default.yaml`
+  - [x] Task 1.3: Create `src/experiments/data_preparation/config.py` (validation)
+  - [x] Task 1.4: Create `src/experiments/data_preparation/prepare.py` (split logic)
+- [x] Phase 2: Add `SplitFileDataset` to `src/data/datasets.py`
+  - [x] Task 2.1: Implement `SplitFileDataset` that reads split JSON and loads images
+  - [x] Task 2.2: Update `get_dataset()` factory to include new dataset type
+- [x] Phase 3: Update diffusion experiment
+  - [x] Task 3.1: Modify `src/experiments/diffusion/default.yaml` (`data.paths` → `data.split_file`)
+  - [x] Task 3.2: Modify `src/experiments/diffusion/dataloader.py` to read split JSON
+  - [x] Task 3.3: Modify `src/experiments/diffusion/config.py` to validate new data section
+- [x] Phase 4: Update classifier experiment
+  - [x] Task 4.1: Modify `src/experiments/classifier/default.yaml` (`data.paths` → `data.split_file`)
+  - [x] Task 4.2: Modify `src/experiments/classifier/dataloader.py` to read split JSON
+  - [x] Task 4.3: Modify `src/experiments/classifier/config.py` to validate new data section
+- [x] Phase 5: Update entry points
+  - [x] Task 5.1: Add `setup_experiment_data_preparation()` to `src/main.py`
+  - [x] Task 5.2: Add `data_preparation` to valid experiments in `src/utils/cli.py`
+- [x] Phase 6: Tests
+  - [x] Task 6.1: Create `tests/experiments/data_preparation/` with unit tests for `prepare.py`
+  - [x] Task 6.2: Create `tests/experiments/data_preparation/test_config.py`
+  - [x] Task 6.3: Add `tests/data/test_split_file_dataset.py` for `SplitFileDataset`
+  - [x] Task 6.4: Update `tests/experiments/diffusion/test_dataloader.py` for split JSON loading
+  - [x] Task 6.5: Update `tests/experiments/classifier/test_dataloader.py` for split JSON loading
+  - [x] Task 6.6: Add test fixtures: mock split JSON files in `tests/fixtures/`
+  - [x] Task 6.7: Update `tests/test_main.py` for `data_preparation` dispatch
+  - [x] Task 6.8: Run all tests to verify no regressions
+- [x] Phase 7: Documentation
+  - [x] Task 7.1: Update `docs/standards/architecture.md` with `data_preparation` experiment
+  - [x] Task 7.2: Update `README.md` with new experiment usage
 
 ## Phase Details
 

@@ -17,6 +17,7 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,34 @@ from src.experiments.diffusion.trainer import DiffusionTrainer
 TEST_DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
 
 
+def _create_split_json(data_dir, split_json_path, include_val=True):
+    """Create a split JSON file from a directory structure."""
+    from pathlib import Path
+
+    entries = []
+    data_path = Path(data_dir)
+    for class_dir in sorted(data_path.iterdir()):
+        if class_dir.is_dir():
+            # Support directory names like '0.Normal' or plain '0'
+            label = int(class_dir.name.split(".")[0])
+            for img_file in sorted(class_dir.iterdir()):
+                if img_file.suffix in (".png", ".jpg", ".jpeg"):
+                    entries.append({"path": str(img_file), "label": label})
+
+    class_names = sorted(set(str(e["label"]) for e in entries))
+    classes = {name: int(name) for name in class_names}
+
+    split_data = {
+        "metadata": {"classes": classes},
+        "train": entries,
+        "val": entries if include_val else [],
+    }
+
+    split_json_path = Path(split_json_path)
+    split_json_path.write_text(json.dumps(split_data))
+    return str(split_json_path)
+
+
 class TestDiffusionPipelineBasic:
     """Test basic diffusion pipeline with minimal configuration."""
 
@@ -48,6 +77,8 @@ class TestDiffusionPipelineBasic:
         - Checkpoint saving
         - Metrics logging
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Setup configuration
         config = {
             "device": TEST_DEVICE,
@@ -63,8 +94,7 @@ class TestDiffusionPipelineBasic:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -118,8 +148,7 @@ class TestDiffusionPipelineBasic:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -203,6 +232,8 @@ class TestDiffusionPipelineBasic:
         - Training with class labels
         - Sample generation for each class
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Setup configuration
         config = {
             "device": TEST_DEVICE,
@@ -219,8 +250,7 @@ class TestDiffusionPipelineBasic:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -275,8 +305,7 @@ class TestDiffusionPipelineBasic:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -356,6 +385,8 @@ class TestDiffusionPipelineCheckpoints:
         - Model can be loaded from checkpoint
         - Loaded model produces same outputs
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
 
@@ -372,8 +403,7 @@ class TestDiffusionPipelineCheckpoints:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -406,8 +436,7 @@ class TestDiffusionPipelineCheckpoints:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -481,6 +510,8 @@ class TestDiffusionPipelineCheckpoints:
         - Epoch counter continues correctly
         - Optimizer state is restored
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
 
@@ -497,8 +528,7 @@ class TestDiffusionPipelineCheckpoints:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -531,8 +561,7 @@ class TestDiffusionPipelineCheckpoints:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -627,6 +656,8 @@ class TestDiffusionPipelineGeneration:
         - Generate samples
         - Save samples to disk
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
         output_dir = tmp_path / "generated"
@@ -644,8 +675,7 @@ class TestDiffusionPipelineGeneration:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -678,8 +708,7 @@ class TestDiffusionPipelineGeneration:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -784,6 +813,8 @@ class TestDiffusionPipelineGeneration:
         - Generate samples for specific classes
         - Use classifier-free guidance
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
         output_dir = tmp_path / "generated"
@@ -802,8 +833,7 @@ class TestDiffusionPipelineGeneration:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -837,8 +867,7 @@ class TestDiffusionPipelineGeneration:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -951,6 +980,8 @@ class TestDiffusionPipelineAdvanced:
         - Training with cosine annealing scheduler
         - Learning rate is adjusted correctly
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Setup configuration
         config = {
             "device": TEST_DEVICE,
@@ -966,8 +997,7 @@ class TestDiffusionPipelineAdvanced:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -1018,8 +1048,7 @@ class TestDiffusionPipelineAdvanced:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -1073,6 +1102,8 @@ class TestDiffusionPipelineAdvanced:
         - Use config to initialize all components
         - Run complete training
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Create config file
         config_file = tmp_path / "config.yaml"
         config = {
@@ -1090,8 +1121,7 @@ class TestDiffusionPipelineAdvanced:
                 "use_attention": [False, True],
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 32,
@@ -1143,8 +1173,7 @@ class TestDiffusionPipelineAdvanced:
         )
 
         dataloader = DiffusionDataLoader(
-            train_path=loaded_config["data"]["train_path"],
-            val_path=loaded_config["data"]["val_path"],
+            split_file=loaded_config["data"]["split_file"],
             batch_size=loaded_config["data"]["batch_size"],
             num_workers=loaded_config["data"]["num_workers"],
             image_size=loaded_config["data"]["image_size"],

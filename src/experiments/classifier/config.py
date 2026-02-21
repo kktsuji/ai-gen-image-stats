@@ -172,15 +172,14 @@ def validate_config(config: Dict[str, Any]) -> None:
 
     # Validate data configuration
     data = config["data"]
-    required_data_sections = ["paths", "loading", "preprocessing", "augmentation"]
+    required_data_sections = ["split_file", "loading", "preprocessing", "augmentation"]
     for section in required_data_sections:
         if section not in data:
             raise KeyError(f"Missing required field: data.{section}")
 
-    # Validate paths
-    paths = data["paths"]
-    if "train" not in paths:
-        raise KeyError("Missing required field: data.paths.train")
+    # Validate split_file
+    if not isinstance(data["split_file"], str) or not data["split_file"]:
+        raise ValueError("data.split_file must be a non-empty string")
 
     # Validate loading
     validate_data_loading_section(data)

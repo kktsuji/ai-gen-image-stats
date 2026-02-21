@@ -15,6 +15,7 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,34 @@ from src.experiments.classifier.trainer import ClassifierTrainer
 TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def _create_split_json(data_dir, split_json_path, include_val=True):
+    """Create a split JSON file from a directory structure."""
+    from pathlib import Path
+
+    entries = []
+    data_path = Path(data_dir)
+    for class_dir in sorted(data_path.iterdir()):
+        if class_dir.is_dir():
+            # Support directory names like '0.Normal' or plain '0'
+            label = int(class_dir.name.split(".")[0])
+            for img_file in sorted(class_dir.iterdir()):
+                if img_file.suffix in (".png", ".jpg", ".jpeg"):
+                    entries.append({"path": str(img_file), "label": label})
+
+    class_names = sorted(set(str(e["label"]) for e in entries))
+    classes = {name: int(name) for name in class_names}
+
+    split_data = {
+        "metadata": {"classes": classes},
+        "train": entries,
+        "val": entries if include_val else [],
+    }
+
+    split_json_path = Path(split_json_path)
+    split_json_path.write_text(json.dumps(split_data))
+    return str(split_json_path)
+
+
 class TestClassifierPipelineBasic:
     """Test basic classifier pipeline with minimal configuration."""
 
@@ -47,6 +76,8 @@ class TestClassifierPipelineBasic:
         - Checkpoint saving
         - Metrics logging
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Setup configuration
         config = {
             "model": {
@@ -55,8 +86,7 @@ class TestClassifierPipelineBasic:
                 "pretrained": False,
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 64,
@@ -83,8 +113,7 @@ class TestClassifierPipelineBasic:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"].get("image_size", 224),
@@ -144,6 +173,8 @@ class TestClassifierPipelineBasic:
         - Training with auxiliary loss
         - Checkpoint saving
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Setup configuration
         config = {
             "model": {
@@ -153,8 +184,7 @@ class TestClassifierPipelineBasic:
                 "dropout": 0.5,
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 299,
@@ -180,8 +210,7 @@ class TestClassifierPipelineBasic:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -230,6 +259,8 @@ class TestClassifierPipelineCheckpoints:
         - Load checkpoint into new model
         - Verify state dict matches
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
 
@@ -237,8 +268,7 @@ class TestClassifierPipelineCheckpoints:
         model1 = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
 
         dataloader = ClassifierDataLoader(
-            train_path=str(mock_dataset_medium),
-            val_path=str(mock_dataset_medium),
+            split_file=str(split_file),
             batch_size=4,
             num_workers=0,
             image_size=64,
@@ -288,6 +318,8 @@ class TestClassifierPipelineCheckpoints:
         - Resume training for 1 more epoch
         - Verify epoch counter continues correctly
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         checkpoint_dir = tmp_path / "checkpoints"
         log_dir = tmp_path / "logs"
 
@@ -295,8 +327,7 @@ class TestClassifierPipelineCheckpoints:
         model = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
 
         dataloader = ClassifierDataLoader(
-            train_path=str(mock_dataset_medium),
-            val_path=str(mock_dataset_medium),
+            split_file=str(split_file),
             batch_size=4,
             num_workers=0,
             image_size=64,
@@ -371,11 +402,12 @@ class TestClassifierPipelineWithScheduler:
         - Scheduler initialization
         - Learning rate changes over epochs
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         config = {
             "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 64,
@@ -401,8 +433,7 @@ class TestClassifierPipelineWithScheduler:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -454,11 +485,12 @@ class TestClassifierPipelineWithScheduler:
         - Step scheduler initialization
         - Learning rate decay at step boundaries
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         config = {
             "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 64,
@@ -484,8 +516,7 @@ class TestClassifierPipelineWithScheduler:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -533,11 +564,12 @@ class TestClassifierPipelineValidation:
         - Metrics computation (loss, accuracy)
         - Metrics logging to CSV
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         config = {
             "model": {"name": "resnet50", "num_classes": 2, "pretrained": False},
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 64,
@@ -563,8 +595,7 @@ class TestClassifierPipelineValidation:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],
@@ -619,11 +650,12 @@ class TestClassifierPipelineMultipleModels:
     @pytest.mark.slow
     def test_pipeline_resnet101(self, tmp_path, mock_dataset_medium):
         """Test pipeline with ResNet101 model."""
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         model = ResNetClassifier(num_classes=2, variant="resnet101", pretrained=False)
 
         dataloader = ClassifierDataLoader(
-            train_path=str(mock_dataset_medium),
-            val_path=str(mock_dataset_medium),
+            split_file=str(split_file),
             batch_size=4,
             num_workers=0,
             image_size=64,
@@ -660,6 +692,8 @@ class TestClassifierPipelineMultipleModels:
         - SGD optimizer
         - AdamW optimizer
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         optimizers_to_test = [
             ("adam", torch.optim.Adam),
             ("sgd", torch.optim.SGD),
@@ -676,8 +710,7 @@ class TestClassifierPipelineMultipleModels:
             )
 
             dataloader = ClassifierDataLoader(
-                train_path=str(mock_dataset_medium),
-                val_path=str(mock_dataset_medium),
+                split_file=str(split_file),
                 batch_size=4,
                 num_workers=0,
                 image_size=64,
@@ -726,6 +759,8 @@ class TestClassifierPipelineConfigDriven:
 
         This is the closest to real-world usage.
         """
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
         # Create a config file
         config_file = tmp_path / "test_config.yaml"
         config_data = {
@@ -736,8 +771,7 @@ class TestClassifierPipelineConfigDriven:
                 "pretrained": False,
             },
             "data": {
-                "train_path": str(mock_dataset_medium),
-                "val_path": str(mock_dataset_medium),
+                "split_file": str(split_file),
                 "batch_size": 4,
                 "num_workers": 0,
                 "image_size": 64,
@@ -771,8 +805,7 @@ class TestClassifierPipelineConfigDriven:
         )
 
         dataloader = ClassifierDataLoader(
-            train_path=config["data"]["train_path"],
-            val_path=config["data"]["val_path"],
+            split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
             num_workers=config["data"]["num_workers"],
             image_size=config["data"]["image_size"],

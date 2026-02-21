@@ -57,10 +57,7 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -140,10 +137,7 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": True, "freeze_backbone": False},
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 16,
                     "num_workers": 0,
@@ -207,10 +201,7 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 32,
                     "num_workers": 0,
@@ -278,10 +269,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -355,10 +343,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -423,10 +408,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -491,10 +473,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -565,10 +544,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -628,10 +604,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -691,10 +664,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -759,10 +729,7 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",
-                    "val": "tests/fixtures/mock_data/val",
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -828,7 +795,7 @@ class TestExperimentDispatcher:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "paths": {"train": "tests/fixtures/mock_data/train"},
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -891,7 +858,7 @@ class TestExperimentDispatcher:
                 "use_attention": [False, True, False],
             },
             "data": {
-                "train_path": "tests/fixtures/mock_data/train",
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "batch_size": 16,
                 "num_workers": 0,
                 "image_size": 32,
@@ -929,6 +896,32 @@ class TestExperimentDispatcher:
         with pytest.raises(SystemExit) as exc_info:
             main([str(config_file)])
         assert exc_info.value.code == 1
+
+    @pytest.mark.unit
+    def test_dispatcher_routes_to_data_preparation(self, tmp_path):
+        """Test that dispatcher correctly routes to data_preparation."""
+        config_file = tmp_path / "data_prep_config.yaml"
+        config_data = {
+            "experiment": "data_preparation",
+            "classes": {
+                "normal": "tests/fixtures/mock_data/train/0.Normal",
+                "abnormal": "tests/fixtures/mock_data/train/1.Abnormal",
+            },
+            "split": {
+                "seed": 42,
+                "train_ratio": 0.8,
+                "save_dir": str(tmp_path / "splits"),
+                "split_file": "split.json",
+                "force": True,
+            },
+        }
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with patch("src.main.setup_experiment_data_preparation") as mock_dp:
+            main([str(config_file)])
+
+            mock_dp.assert_called_once()
 
 
 class TestDiffusionGenerationMode:
@@ -1293,9 +1286,7 @@ class TestDiffusionGenerationMode:
                 },
             },
             "data": {
-                "paths": {
-                    "train": "tests/fixtures/mock_data/train",  # Required by validator
-                },
+                "split_file": "tests/fixtures/splits/mock_split.json",
                 "loading": {
                     "batch_size": 16,
                     "num_workers": 0,

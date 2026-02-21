@@ -1,0 +1,17 @@
+# ------------------------------------------------------------------------------
+# DATA PREPARATION CONFIGURATION
+# ------------------------------------------------------------------------------
+experiment: data_preparation
+
+# Class directories to scan for images
+classes:
+  normal: "data/0.Normal"
+  abnormal: "data/1.Abnormal"
+
+# Split configuration
+split:
+  seed: 42
+  train_ratio: 0.8
+  save_dir: "outputs/splits"
+  split_file: "train_val_split.json"
+  force: false

@@ -53,6 +53,12 @@ ai-gen-image-stats/
 │   ├── experiments/                     # Vertical slices
 │   │   ├── __init__.py
 │   │   │
+│   │   ├── data_preparation/
+│   │   │   ├── __init__.py
+│   │   │   ├── prepare.py               # Dataset scanning and splitting
+│   │   │   ├── config.py                # Data preparation config validation
+│   │   │   └── default.yaml             # Default data preparation configuration
+│   │   │
 │   │   ├── diffusion/
 │   │   │   ├── __init__.py
 │   │   │   ├── trainer.py               # Diffusion-specific trainer
@@ -106,6 +112,7 @@ ai-gen-image-stats/
 │   ├── base/                            # Mirror src/base/
 │   ├── experiments/                     # Mirror src/experiments/
 │   │   ├── classifier/
+│   │   ├── data_preparation/
 │   │   ├── diffusion/
 │   │   └── gan/                         # Placeholder for future implementation
 │   ├── utils/                           # Mirror src/utils/
@@ -155,6 +162,12 @@ ai-gen-image-stats/
 
 **Currently Implemented:**
 
+**Data Preparation Experiment** (`src/experiments/data_preparation/`):
+
+- **Prepare**: Scans class directories, splits files into train/val with seeded shuffle, writes JSON split file
+- **Config**: Configuration validation for classes, split ratio, seed, and output paths
+- **default.yaml**: Default configuration template
+
 **Diffusion Experiment** (`src/experiments/diffusion/`):
 
 - **Trainer**: DDPM training logic with EMA support
@@ -192,6 +205,8 @@ ai-gen-image-stats/
 - CLI, config loading, device management, common metrics, logging configuration, TensorBoard utilities
 
 **Data Pipeline (`src/data/`)**: Dataset management
+
+- `SplitFileDataset`: Loads train/val datasets from JSON split files produced by data_preparation
 
 - Dataset implementations, transforms, samplers
 

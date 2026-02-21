@@ -104,13 +104,13 @@ class TestGetDefaultConfig:
         data = config["data"]
 
         assert isinstance(data, dict)
-        assert "paths" in data
+        assert "split_file" in data
         assert "loading" in data
         assert "augmentation" in data
 
-        # Check paths subsection
-        paths = data["paths"]
-        assert "train" in paths
+        # Check split_file
+        assert isinstance(data["split_file"], str)
+        assert data["split_file"]
 
         # Check loading subsection
         loading = data["loading"]
@@ -1008,7 +1008,7 @@ class TestConfigFileValidation:
         assert config["model"]["diffusion"]["beta_schedule"] == "cosine"
 
         # Check data configuration (V2 - no image_size here)
-        assert "paths" in config["data"]
+        assert "split_file" in config["data"]
         assert "loading" in config["data"]
 
         # Check training configuration (V2)

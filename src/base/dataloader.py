@@ -115,6 +115,7 @@ class BaseDataLoader(ABC):
             "drop_last",
             "train_path",
             "val_path",
+            "split_file",
         ]
 
         for attr in common_attrs:

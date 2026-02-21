@@ -81,7 +81,7 @@ class TestGetDefaultConfig:
         data = config["data"]
 
         assert isinstance(data, dict)
-        assert "paths" in data
+        assert "split_file" in data
         assert "loading" in data
         assert "preprocessing" in data
         assert "augmentation" in data
@@ -297,7 +297,7 @@ def get_v2_default_config():
             "regularization": {"dropout": 0.5},
         },
         "data": {
-            "paths": {"train": "data/train", "val": "data/val"},
+            "split_file": "outputs/splits/train_val_split.json",
             "loading": {
                 "batch_size": 32,
                 "num_workers": 4,
@@ -453,7 +453,7 @@ class TestValidateConfig:
         """Test validation fails with missing data sections."""
         config = get_v2_default_config()
 
-        for section in ["paths", "loading", "preprocessing", "augmentation"]:
+        for section in ["split_file", "loading", "preprocessing", "augmentation"]:
             config_copy = get_v2_default_config()
             del config_copy["data"][section]
 

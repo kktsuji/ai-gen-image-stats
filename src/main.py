@@ -153,8 +153,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     # Initialize dataloader
     data_config = config["data"]
-    train_path = data_config["paths"]["train"]
-    val_path = data_config["paths"].get("val")
+    split_file = data_config["split_file"]
     batch_size = data_config["loading"]["batch_size"]
     num_workers = data_config["loading"]["num_workers"]
     pin_memory = data_config["loading"].get("pin_memory", True)
@@ -173,8 +172,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     )
 
     dataloader = ClassifierDataLoader(
-        train_path=train_path,
-        val_path=val_path,
+        split_file=split_file,
         batch_size=batch_size,
         num_workers=num_workers,
         image_size=image_size,
@@ -666,8 +664,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Initialize dataloader
         data_config = config["data"]
         dataloader = DiffusionDataLoader(
-            train_path=data_config["paths"]["train"],
-            val_path=data_config["paths"].get("val"),
+            split_file=data_config["split_file"],
             batch_size=data_config["loading"]["batch_size"],
             num_workers=data_config["loading"]["num_workers"],
             image_size=derive_image_size_from_model(config),
@@ -872,6 +869,28 @@ def setup_experiment_gan(config: Dict[str, Any]) -> None:
     )
 
 
+def setup_experiment_data_preparation(config: Dict[str, Any]) -> None:
+    """Setup and run data preparation experiment.
+
+    This experiment scans class directories, performs a stratified train/val split,
+    and saves the result as a JSON file for use by training experiments.
+
+    Args:
+        config: Configuration dictionary with 'classes' and 'split' sections
+
+    Raises:
+        ValueError: If configuration is invalid
+        FileNotFoundError: If class directories don't exist
+    """
+    from src.experiments.data_preparation.config import (
+        validate_config as validate_data_preparation_config,
+    )
+    from src.experiments.data_preparation.prepare import prepare_split
+
+    validate_data_preparation_config(config)
+    prepare_split(config)
+
+
 def main(args: Optional[list] = None) -> None:
     """Main entry point for the application.
 
@@ -902,10 +921,12 @@ def main(args: Optional[list] = None) -> None:
             setup_experiment_diffusion(config)
         elif experiment == "gan":
             setup_experiment_gan(config)
+        elif experiment == "data_preparation":
+            setup_experiment_data_preparation(config)
         else:
             raise ValueError(
                 f"Unknown experiment type: {experiment}. "
-                f"Supported experiments: classifier, diffusion, gan"
+                f"Supported experiments: classifier, diffusion, gan, data_preparation"
             )
     except NotImplementedError as e:
         logger.error(f"Experiment '{experiment}' is not yet implemented: {e}")
