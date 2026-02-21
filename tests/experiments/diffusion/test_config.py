@@ -673,10 +673,36 @@ class TestValidateConfig:
     def test_invalid_guidance_scale(self):
         """Test validation fails with invalid guidance_scale."""
         config = get_default_config()
-        config["training"]["visualization"]["guidance_scale"] = 0.5
+        config["training"]["visualization"]["guidance_scale"] = -1.0
 
         with pytest.raises(
-            ValueError, match="training.visualization.guidance_scale must be >= 1.0"
+            ValueError, match="training.visualization.guidance_scale must be >= 0.0"
+        ):
+            validate_config(config)
+
+    def test_valid_guidance_scale_zero(self):
+        """Test that guidance_scale: 0.0 (disable guidance) is accepted."""
+        config = get_default_config()
+        config["training"]["visualization"]["guidance_scale"] = 0.0
+        # Should not raise
+        validate_config(config)
+
+    def test_valid_guidance_scale_less_than_one(self):
+        """Test that guidance_scale: 0.5 (weak guidance) is accepted."""
+        config = get_default_config()
+        config["training"]["visualization"]["guidance_scale"] = 0.5
+        # Should not raise
+        validate_config(config)
+
+    def test_invalid_generation_guidance_scale(self):
+        """Test validation fails with invalid generation.sampling.guidance_scale."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["guidance_scale"] = -1.0
+
+        with pytest.raises(
+            ValueError, match="generation.sampling.guidance_scale must be >= 0.0"
         ):
             validate_config(config)
 

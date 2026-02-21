@@ -25,23 +25,23 @@ This plan addresses four bugs discovered during code investigation of `src/exper
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Fix `logger` → `_logger` in `load_checkpoint` (Bug 1)
-  - [ ] Task 1.1: Replace all 3 `logger.exception(...)` calls with `_logger.exception(...)` in `load_checkpoint`
-  - [ ] Task 1.2: Add test that `load_checkpoint` handles a missing file without `NameError`
-  - [ ] Task 1.3: Add test that `load_checkpoint` handles a corrupt checkpoint without `NameError`
-- [ ] Phase 2: Fix unreachable code in `train_epoch` (Bug 2)
-  - [ ] Task 2.1: Remove the premature `raise` on line 286, retaining the `_logger.critical()` call followed by the `raise`
-  - [ ] Task 2.2: Add test that verifies the critical log message is emitted when batch data has unexpected length
-- [ ] Phase 3: Fix `guidance_scale` validation logic (Bug 3)
-  - [ ] Task 3.1: Change validation in `_validate_training_config` from `< 1.0` to `< 0.0`
-  - [ ] Task 3.2: Change validation in `_validate_generation_config` from `< 1.0` to `< 0.0`
-  - [ ] Task 3.3: Update existing test `test_invalid_guidance_scale` to use a truly invalid value (e.g., `-1.0`)
-  - [ ] Task 3.4: Add tests that `guidance_scale: 0.0` and `guidance_scale: 0.5` are accepted
-  - [ ] Task 3.5: Add test for `generation.sampling.guidance_scale` validation
-- [ ] Phase 4: Fix YAML comment typos (Bug 4)
-  - [ ] Task 4.1: Fix 4 comment typos in `default.yaml`
-- [ ] Phase 5: Run all tests and verify no regressions
-  - [ ] Task 5.1: Run the full test suite and confirm all tests pass
+- [x] Phase 1: Fix `logger` → `_logger` in `load_checkpoint` (Bug 1)
+  - [x] Task 1.1: Replace all 3 `logger.exception(...)` calls with `_logger.exception(...)` in `load_checkpoint`
+  - [x] Task 1.2: Add test that `load_checkpoint` handles a missing file without `NameError`
+  - [x] Task 1.3: Add test that `load_checkpoint` handles a corrupt checkpoint without `NameError`
+- [x] Phase 2: Fix unreachable code in `train_epoch` (Bug 2)
+  - [x] Task 2.1: Remove the premature `raise` on line 286, retaining the `_logger.critical()` call followed by the `raise`
+  - [x] Task 2.2: Add test that verifies the critical log message is emitted when batch data has unexpected length
+- [x] Phase 3: Fix `guidance_scale` validation logic (Bug 3)
+  - [x] Task 3.1: Change validation in `_validate_training_config` from `< 1.0` to `< 0.0`
+  - [x] Task 3.2: Change validation in `_validate_generation_config` from `< 1.0` to `< 0.0`
+  - [x] Task 3.3: Update existing test `test_invalid_guidance_scale` to use a truly invalid value (e.g., `-1.0`)
+  - [x] Task 3.4: Add tests that `guidance_scale: 0.0` and `guidance_scale: 0.5` are accepted
+  - [x] Task 3.5: Add test for `generation.sampling.guidance_scale` validation
+- [x] Phase 4: Fix YAML comment typos (Bug 4)
+  - [x] Task 4.1: Fix 4 comment typos in `default.yaml`
+- [x] Phase 5: Run all tests and verify no regressions
+  - [x] Task 5.1: Run the full test suite and confirm all tests pass
 
 ## Phase Details
 

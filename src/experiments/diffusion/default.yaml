@@ -71,7 +71,7 @@ model:
   # Conditioning: Class conditioning for guided generation
   conditioning:
     type: null # Options: null (unconditional), "class" (class-conditional)
-    num_classes: null # Number of classes (required if type-"class")
+    num_classes: null # Number of classes (required if type="class")
     class_dropout_prob: 0.1 # Dropout for classifier-free guidance
 
 # ------------------------------------------------------------------------------
@@ -118,7 +118,7 @@ output:
 # ------------------------------------------------------------------------------
 # TRAINING MODE CONFIGURATION
 # ------------------------------------------------------------------------------
-# Only used when mode-train
+# Only used when mode: train
 
 training:
   # Core Training Parameters
@@ -182,7 +182,7 @@ training:
 # ------------------------------------------------------------------------------
 # GENERATION MODE CONFIGURATION
 # ------------------------------------------------------------------------------
-# Only used when mode-generate
+# Only used when mode: generate
 
 generation:
   checkpoint: null # Path to trained model checkpoint (required)
@@ -191,7 +191,7 @@ generation:
   sampling:
     num_samples: 100 # Total number of samples to generate
     batch_size: 50 # Max samples per forward pass (prevents OOM for large num_samples)
-    guidance_scale: 3.0 # Classifier-free guidance scale (>-1.0)
+    guidance_scale: 3.0 # Classifier-free guidance scale (>= 0.0)
     use_ema: true # Use EMA weights if available
     ema_decay: 0.9999 # EMA decay rate for generation (should match training.ema.decay)
 

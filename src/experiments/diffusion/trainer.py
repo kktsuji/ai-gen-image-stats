@@ -283,7 +283,6 @@ class DiffusionTrainer(BaseTrainer):
                     images = batch_data[0].to(self.device)
                     labels = None
                 else:
-                    raise ValueError(f"Unexpected batch data length: {len(batch_data)}")
                     _logger.critical(
                         f"Unexpected batch data format: length {len(batch_data)}"
                     )
@@ -737,7 +736,7 @@ class DiffusionTrainer(BaseTrainer):
             checkpoint = torch.load(path, map_location="cpu")
         except Exception as e:
             _logger.critical(f"Failed to load checkpoint from {path}")
-            logger.exception(f"Error details: {e}")
+            _logger.exception(f"Error details: {e}")
             raise
 
         _logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
@@ -749,7 +748,7 @@ class DiffusionTrainer(BaseTrainer):
             model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
         except Exception as e:
             _logger.error(f"Failed to load model state dict")
-            logger.exception(f"Error details: {e}")
+            _logger.exception(f"Error details: {e}")
             if strict:
                 raise
             else:
@@ -765,7 +764,7 @@ class DiffusionTrainer(BaseTrainer):
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             except Exception as e:
                 _logger.error(f"Failed to load optimizer state dict")
-                logger.exception(f"Error details: {e}")
+                _logger.exception(f"Error details: {e}")
                 _logger.warning("Continuing without optimizer state")
 
         # Load EMA state

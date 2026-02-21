@@ -1067,3 +1067,83 @@ def test_visualization_disabled_when_all_intervals_null():
     assert len(logger.logged_images) == 0
     assert len(logger.logged_sample_comparisons) == 0
     assert len(logger.logged_denoising_sequences) == 0
+
+
+# Bug fix tests
+
+
+@pytest.mark.unit
+def test_load_checkpoint_missing_file(diffusion_trainer):
+    """Test load_checkpoint with missing file raises FileNotFoundError, not NameError.
+
+    Bug 1: logger was undefined in load_checkpoint error handling.
+    """
+    nonexistent_path = Path("/tmp/nonexistent_checkpoint_12345.pth")
+    with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+        diffusion_trainer.load_checkpoint(nonexistent_path)
+
+
+@pytest.mark.unit
+def test_load_checkpoint_corrupt_file(diffusion_trainer):
+    """Test load_checkpoint with corrupt file propagates original error, not NameError.
+
+    Bug 1: logger was undefined in load_checkpoint error handling.
+    """
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
+        f.write(b"this is not a valid checkpoint file")
+        corrupt_path = Path(f.name)
+
+    try:
+        with pytest.raises(Exception, match="(?!NameError)"):
+            diffusion_trainer.load_checkpoint(corrupt_path)
+    finally:
+        corrupt_path.unlink(missing_ok=True)
+
+
+@pytest.mark.unit
+def test_train_epoch_unexpected_batch_length():
+    """Test train_epoch emits critical log when batch data has unexpected length.
+
+    Bug 2: premature raise made the _logger.critical() call unreachable.
+    """
+    import logging
+    from unittest.mock import MagicMock, patch
+
+    # Create a dataset that yields 3-element tuples
+    images = torch.randn(4, 3, 8, 8)
+    extra1 = torch.randint(0, 2, (4,))
+    extra2 = torch.randint(0, 2, (4,))
+    dataset = TensorDataset(images, extra1, extra2)
+    loader = DataLoader(dataset, batch_size=4)
+
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        log_images_interval=None,
+        log_sample_comparison_interval=None,
+        log_denoising_interval=None,
+    )
+
+    with patch.object(trainer.dataloader, "get_train_loader", return_value=loader):
+        with pytest.raises(ValueError, match="Unexpected batch data length"):
+            with patch("src.experiments.diffusion.trainer._logger") as mock_logger:
+                trainer.train_epoch()
+
+        # Re-run to verify the critical log is emitted
+        with patch("src.experiments.diffusion.trainer._logger") as mock_logger:
+            with pytest.raises(ValueError, match="Unexpected batch data length"):
+                trainer.train_epoch()
+            mock_logger.critical.assert_called()

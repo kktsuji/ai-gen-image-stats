@@ -419,9 +419,9 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
         if "guidance_scale" in vis:
             if (
                 not isinstance(vis["guidance_scale"], (int, float))
-                or vis["guidance_scale"] < 1.0
+                or vis["guidance_scale"] < 0.0
             ):
-                raise ValueError("training.visualization.guidance_scale must be >= 1.0")
+                raise ValueError("training.visualization.guidance_scale must be >= 0.0")
 
     # Validate performance subsection
     if "performance" in training:
@@ -468,9 +468,9 @@ def _validate_generation_config(config: Dict[str, Any]) -> None:
         if "guidance_scale" in sampling:
             if (
                 not isinstance(sampling["guidance_scale"], (int, float))
-                or sampling["guidance_scale"] < 1.0
+                or sampling["guidance_scale"] < 0.0
             ):
-                raise ValueError("generation.sampling.guidance_scale must be >= 1.0")
+                raise ValueError("generation.sampling.guidance_scale must be >= 0.0")
 
         if "use_ema" in sampling and not isinstance(sampling["use_ema"], bool):
             raise ValueError("generation.sampling.use_ema must be a boolean")
