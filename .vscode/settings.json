@@ -16,6 +16,7 @@
     },
     "chat.promptFilesRecommendations": {
         "kktsuji.plan": true,
+        "kktsuji.implement": true,
         "kktsuji.venv": true
     },
 }
