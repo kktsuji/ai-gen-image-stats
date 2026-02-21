@@ -364,7 +364,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         sys.exit(0)
     except Exception as e:
         logger.error("")
-        logger.error(f"Training failed with error: {e}")
+        logger.exception(f"Training failed with error: {e}")
         metrics_logger.close()
         raise
 
@@ -835,7 +835,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             sys.exit(0)
         except Exception as e:
             logger.error("")
-            logger.error(f"Training failed with error: {e}")
+            logger.exception(f"Training failed with error: {e}")
             metrics_logger.close()
             raise
 
@@ -882,17 +882,21 @@ def main(args: Optional[list] = None) -> None:
     experiment = config["experiment"]
 
     # Dispatch to experiment
-    if experiment == "classifier":
-        setup_experiment_classifier(config)
-    elif experiment == "diffusion":
-        setup_experiment_diffusion(config)
-    elif experiment == "gan":
-        setup_experiment_gan(config)
-    else:
-        raise ValueError(
-            f"Unknown experiment type: {experiment}. "
-            f"Supported experiments: classifier, diffusion, gan"
-        )
+    try:
+        if experiment == "classifier":
+            setup_experiment_classifier(config)
+        elif experiment == "diffusion":
+            setup_experiment_diffusion(config)
+        elif experiment == "gan":
+            setup_experiment_gan(config)
+        else:
+            raise ValueError(
+                f"Unknown experiment type: {experiment}. "
+                f"Supported experiments: classifier, diffusion, gan"
+            )
+    except Exception as e:
+        logger.exception(f"Experiment '{experiment}' failed with error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

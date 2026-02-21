@@ -113,7 +113,7 @@ class TestMainEntryPoint:
 
     @pytest.mark.integration
     def test_main_dispatcher_gan_not_implemented(self, tmp_path):
-        """Test that GAN experiment raises NotImplementedError."""
+        """Test that GAN experiment exits with code 1."""
         config_file = tmp_path / "gan_config.yaml"
         config_data = {
             "experiment": "gan",
@@ -122,8 +122,9 @@ class TestMainEntryPoint:
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
-        with pytest.raises(NotImplementedError, match="GAN experiment"):
+        with pytest.raises(SystemExit) as exc_info:
             main([str(config_file)])
+        assert exc_info.value.code == 1
 
     @pytest.mark.integration
     def test_main_config_file_loading(self, tmp_path):
