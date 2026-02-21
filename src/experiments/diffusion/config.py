@@ -475,6 +475,26 @@ def _validate_generation_config(config: Dict[str, Any]) -> None:
         if "use_ema" in sampling and not isinstance(sampling["use_ema"], bool):
             raise ValueError("generation.sampling.use_ema must be a boolean")
 
+        if "ema_decay" in sampling:
+            if sampling["use_ema"] if "use_ema" in sampling else True:
+                if (
+                    not isinstance(sampling["ema_decay"], (int, float))
+                    or sampling["ema_decay"] <= 0
+                    or sampling["ema_decay"] >= 1
+                ):
+                    raise ValueError(
+                        "generation.sampling.ema_decay must be a number between 0 and 1"
+                    )
+
+        if "batch_size" in sampling:
+            if (
+                not isinstance(sampling["batch_size"], int)
+                or sampling["batch_size"] < 1
+            ):
+                raise ValueError(
+                    "generation.sampling.batch_size must be a positive integer"
+                )
+
     # Validate output subsection
     if "output" in generation:
         out = generation["output"]

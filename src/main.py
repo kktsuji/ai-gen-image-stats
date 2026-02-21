@@ -570,7 +570,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             if "ema_state_dict" in checkpoint:
                 from src.experiments.diffusion.model import EMA
 
-                ema = EMA(model, decay=0.9999, device=device)
+                ema_decay = sampling_config.get("ema_decay", 0.9999)
+                ema = EMA(model, decay=ema_decay, device=device)
                 ema.load_state_dict(checkpoint["ema_state_dict"])
                 logger.info("Loaded EMA weights from checkpoint")
             else:
@@ -604,13 +605,25 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             class_labels = torch.tensor(class_labels, device=device)
 
         # Generate samples using sampler
-        samples = sampler.sample(
-            num_samples=num_samples,
-            class_labels=class_labels,
-            guidance_scale=sampling_config["guidance_scale"],
-            use_ema=sampling_config["use_ema"],
-            show_progress=True,
-        )
+        batch_size = sampling_config.get("batch_size", num_samples)
+        all_samples = []
+
+        for start_idx in range(0, num_samples, batch_size):
+            end_idx = min(start_idx + batch_size, num_samples)
+            batch_labels = (
+                class_labels[start_idx:end_idx] if class_labels is not None else None
+            )
+
+            batch_samples = sampler.sample(
+                num_samples=end_idx - start_idx,
+                class_labels=batch_labels,
+                guidance_scale=sampling_config["guidance_scale"],
+                use_ema=sampling_config["use_ema"],
+                show_progress=True,
+            )
+            all_samples.append(batch_samples)
+
+        samples = torch.cat(all_samples, dim=0)
 
         # Save generated samples to configured generated directory
         output_dir = resolve_output_path(config, "generated")
@@ -810,6 +823,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 else None
             ),
             samples_per_class=2,  # Will calculate based on num_samples internally
+            num_samples=visualization_config["num_samples"],
             guidance_scale=visualization_config["guidance_scale"],
             config=config,
         )

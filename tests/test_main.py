@@ -1124,7 +1124,7 @@ class TestDiffusionGenerationMode:
 
     @pytest.mark.unit
     def test_generation_mode_loads_ema_when_available(self, tmp_path, capsys):
-        """Test that EMA weights are loaded when available."""
+        """Test that EMA weights are loaded with ema_decay from config."""
         import torch
 
         from src.main import setup_experiment_diffusion
@@ -1133,6 +1133,8 @@ class TestDiffusionGenerationMode:
         config = self._create_generation_config(
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
+        # Set a custom ema_decay to verify it's read from config
+        config["generation"]["sampling"]["ema_decay"] = 0.995
 
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
@@ -1151,8 +1153,10 @@ class TestDiffusionGenerationMode:
                     except SystemExit:
                         pass  # May exit after generation
 
-                    # Verify EMA was created and loaded
+                    # Verify EMA was created with decay from config
                     mock_ema.assert_called_once()
+                    call_kwargs = mock_ema.call_args
+                    assert call_kwargs[1]["decay"] == 0.995
 
                     captured = capsys.readouterr()
                     assert "Loaded EMA weights" in captured.out
@@ -1187,6 +1191,72 @@ class TestDiffusionGenerationMode:
                 assert "WARNING" in captured.out
                 assert "no EMA weights" in captured.out
                 assert "Falling back" in captured.out
+
+    @pytest.mark.unit
+    def test_generation_mode_batched_generation(self, tmp_path):
+        """Test that batched generation produces correct total number of samples."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=10
+        )
+        # Set batch_size smaller than num_samples to force multiple batches
+        config["generation"]["sampling"]["batch_size"] = 3
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+
+                # Each batch call returns appropriate number of samples
+                def sample_side_effect(**kwargs):
+                    n = kwargs.get("num_samples", 1)
+                    return torch.randn(n, 3, 32, 32)
+
+                mock_sampler_instance.sample.side_effect = sample_side_effect
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+                # With 10 samples and batch_size=3, expect 4 batches (3+3+3+1)
+                assert mock_sampler_instance.sample.call_count == 4
+
+    @pytest.mark.unit
+    def test_generation_mode_batch_size_larger_than_num_samples(self, tmp_path):
+        """Test that batch_size larger than num_samples results in single batch."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=5
+        )
+        # batch_size larger than num_samples
+        config["generation"]["sampling"]["batch_size"] = 100
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+                mock_sampler_instance.sample.return_value = torch.randn(5, 3, 32, 32)
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+                # Single batch since batch_size > num_samples
+                mock_sampler_instance.sample.assert_called_once()
 
     # Helper methods
     def _create_generation_config(
@@ -1245,8 +1315,10 @@ class TestDiffusionGenerationMode:
                 "checkpoint": checkpoint,
                 "sampling": {
                     "num_samples": num_samples,
+                    "batch_size": num_samples,
                     "guidance_scale": 3.0,
                     "use_ema": use_ema,
+                    "ema_decay": 0.9999,
                 },
                 "output": {
                     "save_grid": True,

@@ -33,28 +33,28 @@ Three configuration parameters in the diffusion experiment have wiring issues wh
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Config changes (YAML + validation)
-  - [ ] Task 1.1: Add `ema_decay` to `generation.sampling` in `default.yaml`
-  - [ ] Task 1.2: Add `batch_size` to `generation.sampling` in `default.yaml`
-  - [ ] Task 1.3: Add validation for `generation.sampling.ema_decay` in `config.py`
-  - [ ] Task 1.4: Add validation for `generation.sampling.batch_size` in `config.py`
-- [ ] Phase 2: Fix hardcoded EMA decay in generation mode (#1)
-  - [ ] Task 2.1: Read `generation.sampling.ema_decay` in `main.py` generation mode and pass to `EMA()` constructor
-- [ ] Phase 3: Wire `training.visualization.num_samples` (#4)
-  - [ ] Task 3.1: Replace hardcoded `samples_per_class=2` in `main.py` with `num_samples` from `visualization_config`
-  - [ ] Task 3.2: Add `num_samples` parameter to `DiffusionTrainer.__init__` (replacing `samples_per_class`)
-  - [ ] Task 3.3: Update `_generate_samples` to derive `samples_per_class` from `self.num_samples` and `num_classes` for conditional, use `self.num_samples` directly for unconditional
-- [ ] Phase 4: Add batched generation (#5)
-  - [ ] Task 4.1: Implement batched generation loop in `main.py` generation mode using `generation.sampling.batch_size`
-- [ ] Phase 5: Tests
-  - [ ] Task 5.1: Add config validation tests for `generation.sampling.ema_decay`
-  - [ ] Task 5.2: Add config validation tests for `generation.sampling.batch_size`
-  - [ ] Task 5.3: Update trainer tests for `num_samples` parameter
-  - [ ] Task 5.4: Update `main.py` generation mode tests for `ema_decay` from config
-  - [ ] Task 5.5: Add/update tests for batched generation
-  - [ ] Task 5.6: Run full test suite to confirm no regressions
-- [ ] Phase 6: Documentation
-  - [ ] Task 6.1: Update YAML comments in `default.yaml` if needed for clarity
+- [x] Phase 1: Config changes (YAML + validation)
+  - [x] Task 1.1: Add `ema_decay` to `generation.sampling` in `default.yaml`
+  - [x] Task 1.2: Add `batch_size` to `generation.sampling` in `default.yaml`
+  - [x] Task 1.3: Add validation for `generation.sampling.ema_decay` in `config.py`
+  - [x] Task 1.4: Add validation for `generation.sampling.batch_size` in `config.py`
+- [x] Phase 2: Fix hardcoded EMA decay in generation mode (#1)
+  - [x] Task 2.1: Read `generation.sampling.ema_decay` in `main.py` generation mode and pass to `EMA()` constructor
+- [x] Phase 3: Wire `training.visualization.num_samples` (#4)
+  - [x] Task 3.1: Replace hardcoded `samples_per_class=2` in `main.py` with `num_samples` from `visualization_config`
+  - [x] Task 3.2: Add `num_samples` parameter to `DiffusionTrainer.__init__` (replacing `samples_per_class`)
+  - [x] Task 3.3: Update `_generate_samples` to derive `samples_per_class` from `self.num_samples` and `num_classes` for conditional, use `self.num_samples` directly for unconditional
+- [x] Phase 4: Add batched generation (#5)
+  - [x] Task 4.1: Implement batched generation loop in `main.py` generation mode using `generation.sampling.batch_size`
+- [x] Phase 5: Tests
+  - [x] Task 5.1: Add config validation tests for `generation.sampling.ema_decay`
+  - [x] Task 5.2: Add config validation tests for `generation.sampling.batch_size`
+  - [x] Task 5.3: Update trainer tests for `num_samples` parameter
+  - [x] Task 5.4: Update `main.py` generation mode tests for `ema_decay` from config
+  - [x] Task 5.5: Add/update tests for batched generation
+  - [x] Task 5.6: Run full test suite to confirm no regressions
+- [x] Phase 6: Documentation
+  - [x] Task 6.1: Update YAML comments in `default.yaml` if needed for clarity
 
 ## Phase Details
 

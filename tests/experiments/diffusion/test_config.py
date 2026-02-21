@@ -192,11 +192,15 @@ class TestGetDefaultConfig:
         # Check sampling subsection
         sampling = generation["sampling"]
         assert "num_samples" in sampling
+        assert "batch_size" in sampling
         assert "guidance_scale" in sampling
         assert "use_ema" in sampling
+        assert "ema_decay" in sampling
         assert isinstance(sampling["num_samples"], int)
+        assert isinstance(sampling["batch_size"], int)
         assert isinstance(sampling["guidance_scale"], (int, float))
         assert isinstance(sampling["use_ema"], bool)
+        assert isinstance(sampling["ema_decay"], (int, float))
 
         # Check output subsection
         output = generation["output"]
@@ -768,6 +772,60 @@ class TestModeAwareValidation:
 
         with pytest.raises(ValueError, match="num_samples must be a positive"):
             validate_config(config)
+
+    def test_generation_ema_decay_valid(self):
+        """Test that generation.sampling.ema_decay passes validation with valid value."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["ema_decay"] = 0.9999
+
+        # Should not raise
+        validate_config(config)
+
+    def test_generation_ema_decay_invalid(self):
+        """Test that generation.sampling.ema_decay fails with out-of-range value."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["ema_decay"] = 1.5
+
+        with pytest.raises(
+            ValueError, match="ema_decay must be a number between 0 and 1"
+        ):
+            validate_config(config)
+
+    def test_generation_ema_decay_default(self):
+        """Test that default config has ema_decay in generation.sampling."""
+        config = get_default_config()
+        assert "ema_decay" in config["generation"]["sampling"]
+        assert config["generation"]["sampling"]["ema_decay"] == 0.9999
+
+    def test_generation_batch_size_valid(self):
+        """Test that generation.sampling.batch_size passes validation with valid value."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["batch_size"] = 50
+
+        # Should not raise
+        validate_config(config)
+
+    def test_generation_batch_size_invalid(self):
+        """Test that generation.sampling.batch_size fails with negative value."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["batch_size"] = -1
+
+        with pytest.raises(ValueError, match="batch_size must be a positive integer"):
+            validate_config(config)
+
+    def test_generation_batch_size_default(self):
+        """Test that default config has batch_size in generation.sampling."""
+        config = get_default_config()
+        assert "batch_size" in config["generation"]["sampling"]
+        assert config["generation"]["sampling"]["batch_size"] == 50
 
 
 @pytest.mark.unit

@@ -68,6 +68,7 @@ class DiffusionTrainer(BaseTrainer):
         log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
         log_denoising_interval: Save denoising process every N epochs (None to disable)
         samples_per_class: Number of samples to generate per class
+        num_samples: Total number of samples to generate during visualization
         guidance_scale: Classifier-free guidance scale for conditional generation
 
     Example:
@@ -113,6 +114,7 @@ class DiffusionTrainer(BaseTrainer):
         log_sample_comparison_interval: Optional[int] = 10,
         log_denoising_interval: Optional[int] = 10,
         samples_per_class: int = 2,
+        num_samples: int = 8,
         guidance_scale: float = 3.0,
         log_interval: int = 100,
         config: Optional[Dict[str, Any]] = None,
@@ -135,6 +137,7 @@ class DiffusionTrainer(BaseTrainer):
             log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
             log_denoising_interval: Save denoising process every N epochs (None to disable)
             samples_per_class: Number of samples per class to generate
+            num_samples: Total number of samples for visualization
             guidance_scale: Classifier-free guidance scale
             log_interval: Log batch-level metrics every N batches (0 to disable)
             config: Full experiment configuration dictionary used for hyperparameter
@@ -157,6 +160,7 @@ class DiffusionTrainer(BaseTrainer):
         self.log_sample_comparison_interval = log_sample_comparison_interval
         self.log_denoising_interval = log_denoising_interval
         self.samples_per_class = samples_per_class
+        self.num_samples = num_samples
         self.guidance_scale = guidance_scale
 
         # Derived: visualization is enabled if any interval is set
@@ -839,10 +843,12 @@ class DiffusionTrainer(BaseTrainer):
 
         # 1. Generate samples and denoising sequence ONCE
         if num_classes is not None and num_classes > 0:
+            # Derive samples_per_class from num_samples for conditional generation
+            samples_per_class = max(1, self.num_samples // num_classes)
             # Build class labels for conditional generation
             class_labels = torch.arange(
                 num_classes, device=self.device
-            ).repeat_interleave(self.samples_per_class)
+            ).repeat_interleave(samples_per_class)
 
             samples, denoising_seq = self.sampler.sample_with_intermediates(
                 num_samples=len(class_labels),
@@ -854,7 +860,7 @@ class DiffusionTrainer(BaseTrainer):
             class_labels_list = class_labels.tolist()
         else:
             samples, denoising_seq = self.sampler.sample_with_intermediates(
-                num_samples=8,  # Fixed number for visualization
+                num_samples=self.num_samples,
                 guidance_scale=0.0,
                 use_ema=self.use_ema,
                 show_progress=False,

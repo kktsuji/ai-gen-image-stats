@@ -717,6 +717,7 @@ def test_diffusion_trainer_sample_generation_during_training():
         log_sample_comparison_interval=1,
         log_denoising_interval=1,
         samples_per_class=2,
+        num_samples=4,
     )
 
     # Train for 2 epochs
@@ -763,6 +764,7 @@ def test_diffusion_trainer_unconditional_sample_generation():
         log_images_interval=1,
         log_sample_comparison_interval=None,
         log_denoising_interval=None,
+        num_samples=8,
     )
 
     # Train for 1 epoch

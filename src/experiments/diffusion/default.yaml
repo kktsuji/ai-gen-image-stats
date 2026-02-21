@@ -199,8 +199,10 @@ generation:
   # Sampling: Generation parameters
   sampling:
     num_samples: 100 # Total number of samples to generate
+    batch_size: 50 # Max samples per forward pass (prevents OOM for large num_samples)
     guidance_scale: 3.0 # Classifier-free guidance scale (>-1.0)
     use_ema: true # Use EMA weights if available
+    ema_decay: 0.9999 # EMA decay rate for generation (should match training.ema.decay)
 
   # Output: Generation output settings
   output:
