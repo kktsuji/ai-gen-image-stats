@@ -926,8 +926,9 @@ class TestExperimentDispatcher:
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(SystemExit) as exc_info:
             main([str(config_file)])
+        assert exc_info.value.code == 1
 
 
 class TestDiffusionGenerationMode:
