@@ -91,7 +91,6 @@ class TestDiffusionPipelineBasic:
                     "log_images_interval": 1,
                     "log_sample_comparison_interval": 1,
                     "log_denoising_interval": 1,
-                    "samples_per_class": 2,
                     "num_samples": 4,
                     "guidance_scale": 0.0,
                 },
@@ -152,7 +151,6 @@ class TestDiffusionPipelineBasic:
             log_denoising_interval=config["training"]["visualization"][
                 "log_denoising_interval"
             ],
-            samples_per_class=config["training"]["visualization"]["samples_per_class"],
             num_samples=config["training"]["visualization"]["num_samples"],
             guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
@@ -249,7 +247,6 @@ class TestDiffusionPipelineBasic:
                     "log_images_interval": 1,
                     "log_sample_comparison_interval": 1,
                     "log_denoising_interval": 1,
-                    "samples_per_class": 2,
                     "num_samples": 4,
                     "guidance_scale": 2.0,
                 },
@@ -311,7 +308,6 @@ class TestDiffusionPipelineBasic:
             log_denoising_interval=config["training"]["visualization"][
                 "log_denoising_interval"
             ],
-            samples_per_class=config["training"]["visualization"]["samples_per_class"],
             num_samples=config["training"]["visualization"]["num_samples"],
             guidance_scale=config["training"]["visualization"]["guidance_scale"],
         )
@@ -996,7 +992,6 @@ class TestDiffusionPipelineAdvanced:
                     "log_images_interval": None,
                     "log_sample_comparison_interval": None,
                     "log_denoising_interval": None,
-                    "samples_per_class": 2,
                     "num_samples": 4,
                     "guidance_scale": 0.0,
                 },

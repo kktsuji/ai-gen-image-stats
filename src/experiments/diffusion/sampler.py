@@ -99,7 +99,6 @@ class DiffusionSampler:
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
         use_ema: bool = True,
-        show_progress: bool = False,
     ) -> torch.Tensor:
         """Generate samples from the diffusion model.
 
@@ -117,8 +116,6 @@ class DiffusionSampler:
                 Typical values: 1.0-5.0
             use_ema: Whether to use EMA weights for generation
                 Recommended: True for better sample quality
-            show_progress: Whether to display progress bar during sampling
-                Useful for large batches or slow sampling
 
         Returns:
             Generated samples tensor
@@ -139,7 +136,6 @@ class DiffusionSampler:
             ...     num_samples=128,
             ...     class_labels=labels,
             ...     guidance_scale=3.0,
-            ...     show_progress=True
             ... )
         """
         # Validate inputs
@@ -203,7 +199,6 @@ class DiffusionSampler:
         guidance_scale: float = 0.0,
         use_ema: bool = True,
         num_steps_to_capture: int = 8,
-        show_progress: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate samples and return intermediate denoising steps.
 
@@ -218,7 +213,6 @@ class DiffusionSampler:
             use_ema: Whether to use EMA weights for generation
             num_steps_to_capture: Number of evenly-spaced intermediate frames
                 to keep from the denoising trajectory of sample 0
-            show_progress: Whether to display progress bar during sampling
 
         Returns:
             Tuple of:
@@ -350,7 +344,6 @@ class DiffusionSampler:
                 class_labels=class_labels,
                 guidance_scale=guidance_scale,
                 use_ema=use_ema,
-                show_progress=False,  # Don't show nested progress bars
             )
 
             samples_list.append(samples)

@@ -833,7 +833,6 @@ def test_diffusion_trainer_sample_generation_during_training():
         log_images_interval=1,  # Generate every epoch
         log_sample_comparison_interval=1,
         log_denoising_interval=1,
-        samples_per_class=2,
         num_samples=4,
     )
 
@@ -1516,3 +1515,62 @@ def test_resume_training_generates_samples():
     assert len(logger.logged_images) > images_after_initial, (
         "Visualization should be generated during resumed training"
     )
+
+
+@pytest.mark.unit
+def test_train_zero_epochs_no_crash():
+    """train() with num_epochs=0 does not crash with UnboundLocalError."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Should not raise UnboundLocalError
+        trainer.train(num_epochs=0, checkpoint_dir=tmpdir)
+
+
+@pytest.mark.unit
+def test_resume_training_zero_epochs_no_crash():
+    """resume_training() with num_epochs=0 does not crash with UnboundLocalError."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=0, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Train for 1 epoch to create a checkpoint
+        trainer.train(num_epochs=1, checkpoint_dir=tmpdir, validate_frequency=0)
+        checkpoint_path = Path(tmpdir) / "final_model.pth"
+
+        # Resume with 0 epochs — should not raise
+        trainer.resume_training(
+            checkpoint_path=checkpoint_path,
+            num_epochs=0,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+        )

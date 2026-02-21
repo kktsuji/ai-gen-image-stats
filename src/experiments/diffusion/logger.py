@@ -261,7 +261,10 @@ class DiffusionLogger(BaseLogger):
 
         # Save to TensorBoard
         if self.tb_writer is not None and self.tb_log_images:
-            safe_log_images(self.tb_writer, f"images/{tag}", images, step)
+            # Normalize [-1, 1] → [0, 1] for TensorBoard
+            tb_images = (images + 1.0) / 2.0
+            tb_images = torch.clamp(tb_images, 0, 1)
+            safe_log_images(self.tb_writer, f"images/{tag}", tb_images, step)
 
     def log_denoising_process(
         self,

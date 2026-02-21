@@ -227,6 +227,62 @@ class TestLogImages:
         image_file = Path(temp_log_dir) / "samples" / "samples_step1000.png"
         assert image_file.exists()
 
+    def test_log_images_tensorboard_normalization(self, tmp_path):
+        """TensorBoard images from log_images() are normalized to [0, 1]."""
+        from unittest.mock import MagicMock, patch
+
+        tb_dir = tmp_path / "tb"
+        logger = DiffusionLogger(
+            log_dir=tmp_path / "logs",
+            tensorboard_config={"enabled": True},
+            tb_log_dir=tb_dir,
+        )
+
+        # Images in [-1, 1] range
+        images = torch.randn(4, 3, 32, 32).clamp(-1, 1)
+
+        with patch(
+            "src.experiments.diffusion.logger.safe_log_images"
+        ) as mock_log_images:
+            logger.log_images(images, tag="test", step=1)
+
+            # Verify safe_log_images was called
+            mock_log_images.assert_called_once()
+            # Get the tensor that was passed
+            tb_tensor = mock_log_images.call_args[0][2]
+            assert tb_tensor.min() >= 0.0
+            assert tb_tensor.max() <= 1.0
+
+        logger.close()
+
+    def test_log_images_negative_values_not_black(self, tmp_path):
+        """Negative pixel values are properly mapped, not clipped to black."""
+        from unittest.mock import patch
+
+        tb_dir = tmp_path / "tb"
+        logger = DiffusionLogger(
+            log_dir=tmp_path / "logs",
+            tensorboard_config={"enabled": True},
+            tb_log_dir=tb_dir,
+        )
+
+        # All pixels at -1.0 should map to 0.0
+        images_neg1 = torch.full((2, 3, 8, 8), -1.0)
+        with patch("src.experiments.diffusion.logger.safe_log_images") as mock_log:
+            logger.log_images(images_neg1, tag="neg1", step=1)
+            tb_tensor = mock_log.call_args[0][2]
+            assert torch.allclose(tb_tensor, torch.zeros_like(tb_tensor))
+
+        # All pixels at -0.5 should map to ~0.25
+        images_neg05 = torch.full((2, 3, 8, 8), -0.5)
+        with patch("src.experiments.diffusion.logger.safe_log_images") as mock_log:
+            logger.log_images(images_neg05, tag="neg05", step=2)
+            tb_tensor = mock_log.call_args[0][2]
+            expected = torch.full_like(tb_tensor, 0.25)
+            assert torch.allclose(tb_tensor, expected)
+
+        logger.close()
+
 
 @pytest.mark.unit
 class TestLogDenoisingProcess:

@@ -13,7 +13,6 @@ from torchvision import transforms
 
 from src.base.dataloader import BaseDataLoader
 from src.data.datasets import ImageFolderDataset
-from src.data.transforms import get_normalization_transform
 
 
 class DiffusionDataLoader(BaseDataLoader):
@@ -296,4 +295,5 @@ class DiffusionDataLoader(BaseDataLoader):
             return_labels=True,
         )
 
+        return len(temp_dataset.classes)
         return len(temp_dataset.classes)

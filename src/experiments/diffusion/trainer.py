@@ -67,7 +67,6 @@ class DiffusionTrainer(BaseTrainer):
         log_images_interval: Save sample grid every N epochs (None to disable)
         log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
         log_denoising_interval: Save denoising process every N epochs (None to disable)
-        samples_per_class: Number of samples to generate per class
         num_samples: Total number of samples to generate during visualization
         guidance_scale: Classifier-free guidance scale for conditional generation
 
@@ -109,11 +108,15 @@ class DiffusionTrainer(BaseTrainer):
         ema_decay: float = 0.9999,
         use_amp: bool = False,
         gradient_clip_norm: Optional[float] = None,
-        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+        scheduler: Optional[
+            Union[
+                torch.optim.lr_scheduler._LRScheduler,
+                torch.optim.lr_scheduler.ReduceLROnPlateau,
+            ]
+        ] = None,
         log_images_interval: Optional[int] = 10,
         log_sample_comparison_interval: Optional[int] = 10,
         log_denoising_interval: Optional[int] = 10,
-        samples_per_class: int = 2,
         num_samples: int = 8,
         guidance_scale: float = 3.0,
         log_interval: int = 100,
@@ -136,7 +139,6 @@ class DiffusionTrainer(BaseTrainer):
             log_images_interval: Save sample grid every N epochs (None to disable)
             log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
             log_denoising_interval: Save denoising process every N epochs (None to disable)
-            samples_per_class: Number of samples per class to generate
             num_samples: Total number of samples for visualization
             guidance_scale: Classifier-free guidance scale
             log_interval: Log batch-level metrics every N batches (0 to disable)
@@ -159,7 +161,6 @@ class DiffusionTrainer(BaseTrainer):
         self.log_images_interval = log_images_interval
         self.log_sample_comparison_interval = log_sample_comparison_interval
         self.log_denoising_interval = log_denoising_interval
-        self.samples_per_class = samples_per_class
         self.num_samples = num_samples
         self.guidance_scale = guidance_scale
 
@@ -502,6 +503,9 @@ class DiffusionTrainer(BaseTrainer):
         if self.config:
             logger.log_hyperparams(self.config)
 
+        train_metrics = {}
+        val_metrics = None
+
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
 
@@ -671,6 +675,9 @@ class DiffusionTrainer(BaseTrainer):
         if self.config:
             logger.log_hyperparams(self.config)
 
+        train_metrics = {}
+        val_metrics = None
+
         for epoch in range(num_epochs):
             self._current_epoch = start_epoch + epoch + 1
 
@@ -728,9 +735,7 @@ class DiffusionTrainer(BaseTrainer):
 
             # Generate sample images
             if self.viz_enabled and self._should_visualize(self._current_epoch):
-                _logger.info(
-                    f"Generating sample images at epoch {self._current_epoch}"
-                )
+                _logger.info(f"Generating sample images at epoch {self._current_epoch}")
                 self._generate_samples(
                     logger, self._global_step, epoch=self._current_epoch
                 )
@@ -765,8 +770,7 @@ class DiffusionTrainer(BaseTrainer):
             if checkpoint_dir is not None:
                 if (epoch + 1) % checkpoint_frequency == 0:
                     checkpoint_path_new = (
-                        checkpoint_dir
-                        / f"checkpoint_epoch_{self._current_epoch}.pth"
+                        checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
                     )
                     self.save_checkpoint(
                         checkpoint_path_new,
@@ -1047,7 +1051,6 @@ class DiffusionTrainer(BaseTrainer):
                 class_labels=class_labels,
                 guidance_scale=self.guidance_scale,
                 use_ema=self.use_ema,
-                show_progress=False,
             )
             class_labels_list = class_labels.tolist()
         else:
@@ -1055,7 +1058,6 @@ class DiffusionTrainer(BaseTrainer):
                 num_samples=self.num_samples,
                 guidance_scale=0.0,
                 use_ema=self.use_ema,
-                show_progress=False,
             )
             class_labels_list = None
 

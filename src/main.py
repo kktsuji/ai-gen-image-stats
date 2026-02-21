@@ -822,7 +822,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 if visualization_config["enabled"]
                 else None
             ),
-            samples_per_class=2,  # Will calculate based on num_samples internally
             num_samples=visualization_config["num_samples"],
             guidance_scale=visualization_config["guidance_scale"],
             config=config,

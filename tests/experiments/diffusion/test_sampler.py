@@ -530,3 +530,26 @@ class TestSamplerPerformance:
         # Should complete in reasonable time (adjust threshold as needed)
         assert elapsed < 30.0  # 30 seconds should be enough for small model
         assert elapsed < 30.0  # 30 seconds should be enough for small model
+
+
+@pytest.mark.unit
+class TestSampleRejectsShowProgress:
+    """Test that show_progress is no longer accepted by sample methods."""
+
+    def test_sample_rejects_show_progress_kwarg(self, unconditional_model, device):
+        """sample() raises TypeError when show_progress is passed."""
+        sampler = DiffusionSampler(model=unconditional_model, device=device)
+
+        with pytest.raises(TypeError):
+            sampler.sample(num_samples=1, use_ema=False, show_progress=True)
+
+    def test_sample_with_intermediates_rejects_show_progress_kwarg(
+        self, unconditional_model, device
+    ):
+        """sample_with_intermediates() raises TypeError when show_progress is passed."""
+        sampler = DiffusionSampler(model=unconditional_model, device=device)
+
+        with pytest.raises(TypeError):
+            sampler.sample_with_intermediates(
+                num_samples=1, use_ema=False, show_progress=True
+            )
