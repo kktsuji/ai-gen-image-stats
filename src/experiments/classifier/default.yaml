@@ -22,20 +22,11 @@ compute:
 # Application-level logging settings (not to be confused with metrics logging)
 
 logging:
-  # Console logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-  console_level: INFO
-
-  # File logging level (can be more verbose than console)
-  file_level: DEBUG
-
-  # Log message format string
-  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-
-  # Timestamp format in log messages
-  date_format: "%Y-%m-%d %H:%M:%S"
-
-  # Timezone for timestamps: UTC, local, or IANA timezone (e.g., Asia/Tokyo)
-  timezone: UTC
+  console_level: INFO # Console logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file_level: DEBUG # File logging level (can be more verbose than console)
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s" # Log message format string
+  date_format: "%Y-%m-%d %H:%M:%S" # Timestamp format in log messages
+  timezone: local # Timezone for timestamps: UTC, local, or IANA timezone (e.g., Asia/Tokyo)
 
   # Optional: Module-specific log levels
   # module_levels:

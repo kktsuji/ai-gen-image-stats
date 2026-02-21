@@ -1,17 +1,17 @@
 # ------------------------------------------------------------------------------
 # DATA PREPARATION CONFIGURATION
 # ------------------------------------------------------------------------------
-experiment: data_preparation
+experiment: data_preparation # Name of the experiment to run
 
 # Class directories to scan for images
 classes:
-  normal: "data/0.Normal"
-  abnormal: "data/1.Abnormal"
+  normal: "data/0.Normal" # Path to the directory containing normal class images
+  abnormal: "data/1.Abnormal" # Path to the directory containing abnormal class images
 
 # Split configuration
 split:
-  seed: 42
-  train_ratio: 0.8
-  save_dir: "outputs/splits"
-  split_file: "train_val_split.json"
-  force: false
+  seed: 42 # Random seed for reproducible train/val splitting
+  train_ratio: 0.8 # Fraction of data to use for training (rest goes to validation)
+  save_dir: "outputs/splits" # Directory where the split file will be saved
+  split_file: "train_val_split.json" # Filename for the JSON file storing train/val indices
+  force: false # If true, overwrite existing split file even if it already exists
