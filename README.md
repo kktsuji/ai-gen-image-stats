@@ -80,6 +80,9 @@ pip install -r requirements.txt
 
 # Install development dependencies (for testing)
 pip install -r requirements-dev.txt
+
+# Build the docker image
+docker build -t kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 .
 ```
 
 ## Quick Start
@@ -119,6 +122,22 @@ The diffusion module provides two ways to generate samples from trained models:
 ```bash
 # Generate samples using config file (recommended for CLI)
 python -m src.main configs/diffusion/generate.yaml
+```
+
+#### Using Docker
+
+```bash
+# For training diffusion model
+docker run --rm -it --gpus all --network=host --shm-size=4g \
+  -v $PWD:/work -w /work --user $(id -u):$(id -g) \
+  kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
+  python3 -m src.main configs/diffusion.yaml
+
+# For classifier training
+docker run --rm -it --gpus all --network=host --shm-size=4g \
+  -v $PWD:/work -w /work --user $(id -u):$(id -g) \
+  kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
+  python3 -m src.main configs/classifier.yaml
 ```
 
 #### Using Python API (Inference-Only)
