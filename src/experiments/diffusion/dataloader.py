@@ -296,4 +296,3 @@ class DiffusionDataLoader(BaseDataLoader):
         )
 
         return len(temp_dataset.classes)
-        return len(temp_dataset.classes)
