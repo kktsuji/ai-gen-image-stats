@@ -17,9 +17,12 @@
         "tail": true,
         "timeout": true,
         "cat": true,
+        "grep": true,
+        "head": true,
         "source venv/bin/activate": true,
         "venv/bin/python -m pytest": true,
         "python -m pytest": true,
+        "python3 -m pytest": true,
         "pytest": true,
     },
     "chat.promptFilesRecommendations": {
