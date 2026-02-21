@@ -658,6 +658,123 @@ def test_diffusion_trainer_with_ema_checkpoint():
 
 
 @pytest.mark.integration
+def test_load_checkpoint_without_ema_reinitializes_shadow():
+    """Loading a checkpoint without ema_state_dict re-initializes shadow from model weights."""
+    # Create and train a model, then save checkpoint
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=8, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=True,
+        ema_decay=0.999,
+    )
+
+    # Train to update model weights away from init
+    trainer.train_epoch()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_path = Path(tmpdir) / "test_checkpoint.pth"
+        trainer.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Remove ema_state_dict from checkpoint to simulate old format
+        checkpoint = torch.load(checkpoint_path)
+        assert "ema_state_dict" in checkpoint
+        del checkpoint["ema_state_dict"]
+        torch.save(checkpoint, checkpoint_path)
+
+        # Create a new trainer with EMA and load the modified checkpoint
+        model2 = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+        optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.001)
+        trainer2 = DiffusionTrainer(
+            model=model2,
+            dataloader=dataloader,
+            optimizer=optimizer2,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=True,
+            ema_decay=0.999,
+        )
+
+        # Load checkpoint without ema_state_dict
+        trainer2.load_checkpoint(checkpoint_path)
+
+        # EMA shadow should match the loaded model weights, not the initial random weights
+        loaded_model = trainer2.get_model()
+        for name, param in loaded_model.named_parameters():
+            if param.requires_grad:
+                assert name in trainer2.ema.shadow
+                assert torch.allclose(trainer2.ema.shadow[name], param.data), (
+                    f"EMA shadow for {name} does not match model weights"
+                )
+
+
+@pytest.mark.integration
+def test_load_checkpoint_with_ema_restores_saved_state():
+    """Loading a checkpoint with ema_state_dict restores the saved EMA state."""
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=16, num_val_samples=8, batch_size=4
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=True,
+        ema_decay=0.999,
+    )
+
+    # Train to update EMA shadow
+    trainer.train_epoch()
+
+    # Capture EMA shadow state before saving
+    saved_shadow = {name: tensor.clone() for name, tensor in trainer.ema.shadow.items()}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_path = Path(tmpdir) / "test_ema_full.pth"
+        trainer.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Create a new trainer and load checkpoint
+        model2 = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+        optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.001)
+        trainer2 = DiffusionTrainer(
+            model=model2,
+            dataloader=dataloader,
+            optimizer=optimizer2,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=True,
+            ema_decay=0.999,
+        )
+
+        trainer2.load_checkpoint(checkpoint_path)
+
+        # EMA shadow should match the saved EMA state
+        for name, tensor in saved_shadow.items():
+            assert name in trainer2.ema.shadow
+            assert torch.allclose(trainer2.ema.shadow[name], tensor), (
+                f"EMA shadow for {name} does not match saved state"
+            )
+
+
+@pytest.mark.integration
 def test_diffusion_trainer_with_scheduler():
     """Test trainer with learning rate scheduler."""
     # Create components

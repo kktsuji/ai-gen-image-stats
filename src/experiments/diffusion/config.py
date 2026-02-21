@@ -152,6 +152,12 @@ def _validate_model_config(config: Dict[str, Any]) -> None:
     if not all(isinstance(m, int) and m > 0 for m in arch["channel_multipliers"]):
         raise ValueError("All channel_multipliers must be positive integers")
 
+    if arch["channel_multipliers"][0] != 1:
+        raise ValueError(
+            "model.architecture.channel_multipliers[0] must be 1 "
+            "(required by UNet output layer)"
+        )
+
     if not isinstance(arch["use_attention"], list):
         raise ValueError("model.architecture.use_attention must be a list")
 

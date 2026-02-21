@@ -312,6 +312,24 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
+    def test_invalid_channel_multipliers_first_not_one(self):
+        """Test validation fails when channel_multipliers[0] != 1."""
+        config = get_default_config()
+        config["model"]["architecture"]["channel_multipliers"] = [2, 4, 8]
+        config["model"]["architecture"]["use_attention"] = [False, False, False]
+
+        with pytest.raises(ValueError, match=r"channel_multipliers\[0\] must be 1"):
+            validate_config(config)
+
+    def test_valid_channel_multipliers_first_is_one(self):
+        """Test validation passes when channel_multipliers[0] == 1."""
+        config = get_default_config()
+        config["model"]["architecture"]["channel_multipliers"] = [1, 2, 4]
+        config["model"]["architecture"]["use_attention"] = [False, False, False]
+
+        # Should not raise
+        validate_config(config)
+
     def test_invalid_num_classes(self):
         """Test validation fails with invalid num_classes (V2)."""
         config = get_default_config()

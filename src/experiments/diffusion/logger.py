@@ -320,12 +320,13 @@ class DiffusionLogger(BaseLogger):
             img = selected_images[idx].cpu().numpy()
 
             # Convert to displayable format
+            # Diffusion models output in [-1, 1]; remap to [0, 1] for display
             if img.shape[0] == 3:  # RGB
                 img = np.transpose(img, (1, 2, 0))
-                img = np.clip(img, 0, 1)
+                img = np.clip((img + 1.0) / 2.0, 0, 1)
             elif img.shape[0] == 1:  # Grayscale
                 img = img[0]
-                img = np.clip(img, 0, 1)
+                img = np.clip((img + 1.0) / 2.0, 0, 1)
             else:
                 raise ValueError(f"Unexpected number of channels: {img.shape[0]}")
 
@@ -346,7 +347,10 @@ class DiffusionLogger(BaseLogger):
 
         # Save to TensorBoard
         if self.tb_writer is not None and self.tb_log_images:
-            safe_log_images(self.tb_writer, "denoising/process", selected_images, step)
+            # Normalize [-1, 1] → [0, 1] for TensorBoard
+            tb_images = (selected_images + 1.0) / 2.0
+            tb_images = torch.clamp(tb_images, 0, 1)
+            safe_log_images(self.tb_writer, "denoising/process", tb_images, step)
             safe_log_figure(self.tb_writer, "denoising/figure", fig, step, close=False)
 
         plt.close(fig)

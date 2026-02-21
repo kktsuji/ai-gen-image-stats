@@ -768,9 +768,19 @@ class DiffusionTrainer(BaseTrainer):
                 _logger.warning("Continuing without optimizer state")
 
         # Load EMA state
-        if self.use_ema and self.ema is not None and "ema_state_dict" in checkpoint:
-            self.ema.load_state_dict(checkpoint["ema_state_dict"])
-            _logger.debug("  EMA state restored")
+        if self.use_ema and self.ema is not None:
+            if "ema_state_dict" in checkpoint:
+                self.ema.load_state_dict(checkpoint["ema_state_dict"])
+                _logger.debug("  EMA state restored")
+            else:
+                # Re-initialize shadow from loaded model weights to prevent
+                # stale shadow from overwriting the model during sampling
+                for name, param in self.model.named_parameters():
+                    if param.requires_grad:
+                        self.ema.shadow[name] = param.data.clone().to(self.device)
+                _logger.warning(
+                    "No EMA state in checkpoint; shadow re-initialized from model weights"
+                )
 
         # Load scheduler state
         if self.scheduler is not None and "scheduler_state_dict" in checkpoint:

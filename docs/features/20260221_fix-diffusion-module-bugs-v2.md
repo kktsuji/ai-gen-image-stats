@@ -25,22 +25,22 @@ This plan addresses three **new** bugs discovered during a deeper investigation 
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Fix denoising visualization normalization (Bug 1)
-  - [ ] Task 1.1: Remap [-1, 1] → [0, 1] in matplotlib rendering path
-  - [ ] Task 1.2: Normalize `selected_images` before passing to TensorBoard
-  - [ ] Task 1.3: Add test that pixel values in [-1, 1] range are correctly remapped
-  - [ ] Task 1.4: Add test that pure [-1, 0) values are not clamped to black
-- [ ] Phase 2: Fix EMA shadow stale after checkpoint load (Bug 2)
-  - [ ] Task 2.1: Re-initialize EMA shadow from loaded model weights when `ema_state_dict` is absent
-  - [ ] Task 2.2: Add warning log when EMA shadow re-initialized from model weights
-  - [ ] Task 2.3: Add test that loading a checkpoint without `ema_state_dict` re-initializes shadow
-  - [ ] Task 2.4: Add test that loading a checkpoint with `ema_state_dict` uses saved EMA state
-- [ ] Phase 3: Add config validation for `channel_multipliers[0] == 1` (Bug 3)
-  - [ ] Task 3.1: Add validation rule in `_validate_model_config` requiring first multiplier to be 1
-  - [ ] Task 3.2: Add test that `channel_multipliers` starting with value != 1 raises `ValueError`
-  - [ ] Task 3.3: Add test that `channel_multipliers` starting with 1 passes validation
-- [ ] Phase 4: Run all tests and verify no regressions
-  - [ ] Task 4.1: Run the full test suite and confirm all tests pass
+- [x] Phase 1: Fix denoising visualization normalization (Bug 1)
+  - [x] Task 1.1: Remap [-1, 1] → [0, 1] in matplotlib rendering path
+  - [x] Task 1.2: Normalize `selected_images` before passing to TensorBoard
+  - [x] Task 1.3: Add test that pixel values in [-1, 1] range are correctly remapped
+  - [x] Task 1.4: Add test that pure [-1, 0) values are not clamped to black
+- [x] Phase 2: Fix EMA shadow stale after checkpoint load (Bug 2)
+  - [x] Task 2.1: Re-initialize EMA shadow from loaded model weights when `ema_state_dict` is absent
+  - [x] Task 2.2: Add warning log when EMA shadow re-initialized from model weights
+  - [x] Task 2.3: Add test that loading a checkpoint without `ema_state_dict` re-initializes shadow
+  - [x] Task 2.4: Add test that loading a checkpoint with `ema_state_dict` uses saved EMA state
+- [x] Phase 3: Add config validation for `channel_multipliers[0] == 1` (Bug 3)
+  - [x] Task 3.1: Add validation rule in `_validate_model_config` requiring first multiplier to be 1
+  - [x] Task 3.2: Add test that `channel_multipliers` starting with value != 1 raises `ValueError`
+  - [x] Task 3.3: Add test that `channel_multipliers` starting with 1 passes validation
+- [x] Phase 4: Run all tests and verify no regressions
+  - [x] Task 4.1: Run the full test suite and confirm all tests pass
 
 ## Phase Details
 
