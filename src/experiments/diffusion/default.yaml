@@ -16,7 +16,7 @@ mode: train # Options: train, generate
 
 compute:
   device: cuda # Options: cuda, cpu, auto
-  seed: null # Random seed for reproducibility (null to disable)
+  seed: 0 # Random seed for reproducibility (null to disable)
 
 # ------------------------------------------------------------------------------
 # LOGGING CONFIGURATION
@@ -41,11 +41,11 @@ logging:
       enabled: true # Set to true to enable CSV logging of metrics
 
     tensorboard:
-      enabled: false # Set to true to enable TensorBoard
+      enabled: true # Set to true to enable TensorBoard
       flush_secs: 30 # Flush frequency in seconds
       log_images: true # Log confusion matrices, predictions, samples
-      log_histograms: false # Log weight/gradient histograms (expensive)
-      log_graph: false # Log model computational graph (once at start)
+      log_histograms: true # Log weight/gradient histograms (expensive)
+      log_graph: true # Log model computational graph (once at start)
 
 # ------------------------------------------------------------------------------
 # MODEL CONFIGURATION
@@ -70,8 +70,8 @@ model:
 
   # Conditioning: Class conditioning for guided generation
   conditioning:
-    type: null # Options: null (unconditional), "class" (class-conditional)
-    num_classes: null # Number of classes (required if type="class")
+    type: class # Options: null (unconditional), "class" (class-conditional)
+    num_classes: 2 # Number of classes (required if type="class")
     class_dropout_prob: 0.1 # Dropout for classifier-free guidance
 
 # ------------------------------------------------------------------------------
@@ -85,7 +85,7 @@ data:
 
   # Loading: DataLoader parameters
   loading:
-    batch_size: 32 # Batch size for training/generation
+    batch_size: 8 # Batch size for training/generation
     num_workers: 4 # Number of data loading workers
     pin_memory: true # Pin memory for faster GPU transfer
     shuffle_train: true # Shuffle training data
@@ -94,7 +94,7 @@ data:
   # Augmentation: Data augmentation settings
   augmentation:
     horizontal_flip: true # Random horizontal flip
-    rotation_degrees: 0 # Random rotation (0 to disable)
+    rotation_degrees: 15 # Random rotation (0 to disable)
     color_jitter: # Color jitter augmentation
       enabled: false # Enable color jitter
       strength: 0.1 # Jitter strength (0.0-1.0)
@@ -105,7 +105,7 @@ data:
 # Output directory structure
 
 output:
-  base_dir: outputs # Base output directory
+  base_dir: outputs/diffusion # Base output directory
   subdirs: # Subdirectories for different outputs
     logs: logs # Logging files
     checkpoints: checkpoints # Model checkpoints
@@ -120,7 +120,7 @@ output:
 
 training:
   # Core Training Parameters
-  epochs: 200 # Number of training epochs
+  epochs: 500 # Number of training epochs
 
   # Optimizer: Optimization algorithm and parameters
   optimizer:
@@ -132,7 +132,7 @@ training:
 
   # Scheduler: Learning rate scheduling
   scheduler:
-    type: null # Options: cosine, step, plateau, null (none)
+    type: cosine # Options: cosine, step, plateau, null (none)
     T_max: auto # For cosine (auto - epochs)
     eta_min: 1.0e-6 # For cosine (minimum LR)
 
@@ -143,15 +143,15 @@ training:
 
   # Checkpointing: Model checkpoint saving
   checkpointing:
-    save_frequency: 10 # Save every N epochs
-    save_best_only: false # Save all checkpoints
+    save_frequency: 50 # Save every N epochs
     save_optimizer: true # Include optimizer state in checkpoints
-    save_latest: true # Always save latest_checkpoint.pth after every epoch
+    save_best_only: false # Save all checkpoints
+    save_latest: false # Always save latest_checkpoint.pth after every epoch
 
   # Validation: Validation during training
   validation:
     enabled: true # Run validation
-    frequency: 1 # Validate every N epochs
+    frequency: 50 # Validate every N epochs
     metric: loss # Metric to monitor
 
   # Visualization: Sample generation during training
@@ -159,16 +159,16 @@ training:
     enabled: true # Master switch: if false, no sampling occurs at all
     num_samples: 8 # Number of samples to generate (shared by all below)
     guidance_scale: 3.0 # Classifier-free guidance scale (shared by all below)
-    log_images_interval: 10 # Save sample grid every N epochs (null to disable)
-    log_sample_comparison_interval: 10 # Save quality comparison every N epochs (null to disable)
-    log_denoising_interval: 10 # Save denoising process every N epochs (null to disable)
+    log_images_interval: 50 # Save sample grid every N epochs (null to disable)
+    log_sample_comparison_interval: 50 # Save quality comparison every N epochs (null to disable)
+    log_denoising_interval: 50 # Save denoising process every N epochs (null to disable)
 
   # Performance: Performance optimization settings
   performance:
-    use_amp: false # Automatic mixed precision (CUDA only)
+    use_amp: true # Automatic mixed precision (CUDA only)
     use_tf32: true # Enable TF32 on Ampere+ GPUs
     cudnn_benchmark: true # cuDNN benchmark mode
-    compile_model: false # Use torch.compile (PyTorch 2.0+)
+    compile_model: true # Use torch.compile (PyTorch 2.0+)
 
   # Resume: Resume training from checkpoint
   resume:
