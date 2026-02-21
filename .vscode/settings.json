@@ -15,6 +15,8 @@
         "ls": true,
         "cd": true,
         "tail": true,
+        "timeout": true,
+        "cat": true,
         "source venv/bin/activate": true,
         "venv/bin/python -m pytest": true,
         "python -m pytest": true,
