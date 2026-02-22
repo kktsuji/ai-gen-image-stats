@@ -1022,3 +1022,152 @@ class TestConfigFileValidation:
         assert "checkpoint" in config["generation"]
         assert "sampling" in config["generation"]
         assert "use_ema" in config["generation"]["sampling"]
+
+
+# ============================================================================
+# Unit Tests - Balancing Config Validation
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestBalancingConfigValidation:
+    """Test data.balancing configuration validation."""
+
+    def test_valid_default_balancing_config(self):
+        """Test that default config with balancing passes validation."""
+        config = get_default_config()
+        # Default config should have balancing section and pass validation
+        assert "balancing" in config["data"]
+        validate_config(config)
+
+    def test_missing_balancing_key_is_ok(self):
+        """Test backwards compatibility: missing balancing key is OK."""
+        config = get_default_config()
+        del config["data"]["balancing"]
+        # Should not raise
+        validate_config(config)
+
+    def test_invalid_weighted_sampler_method(self):
+        """Test that invalid method raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["method"] = "invalid_method"
+
+        with pytest.raises(ValueError, match="method must be one of"):
+            validate_config(config)
+
+    def test_invalid_class_weights_method(self):
+        """Test that invalid class_weights method raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["class_weights"]["method"] = "bad_method"
+
+        with pytest.raises(ValueError, match="method must be one of"):
+            validate_config(config)
+
+    def test_manual_method_without_weights_raises(self):
+        """Test that manual method without manual_weights raises error."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
+        config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = None
+
+        with pytest.raises(ValueError, match="manual_weights must be a non-empty"):
+            validate_config(config)
+
+    def test_manual_method_with_empty_weights_raises(self):
+        """Test that manual method with empty weights raises error."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
+        config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = []
+
+        with pytest.raises(ValueError, match="manual_weights must be a non-empty"):
+            validate_config(config)
+
+    def test_manual_method_with_negative_weights_raises(self):
+        """Test that manual method with negative weights raises error."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
+        config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = [1.0, -0.5]
+
+        with pytest.raises(ValueError, match="positive numbers"):
+            validate_config(config)
+
+    def test_manual_method_with_valid_weights(self):
+        """Test that manual method with valid weights passes."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
+        config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = [1.0, 5.0]
+        validate_config(config)
+
+    def test_invalid_beta_zero(self):
+        """Test that beta=0 raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["beta"] = 0
+
+        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
+            validate_config(config)
+
+    def test_invalid_beta_one(self):
+        """Test that beta=1 raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["beta"] = 1
+
+        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
+            validate_config(config)
+
+    def test_invalid_target_ratio_zero(self):
+        """Test that target_ratio=0 raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["downsampling"]["target_ratio"] = 0
+
+        with pytest.raises(ValueError, match="target_ratio must be a positive float"):
+            validate_config(config)
+
+    def test_invalid_target_ratio_above_one(self):
+        """Test that target_ratio > 1.0 raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["downsampling"]["target_ratio"] = 1.5
+
+        with pytest.raises(ValueError, match="target_ratio must be a positive float"):
+            validate_config(config)
+
+    def test_valid_target_ratio(self):
+        """Test that valid target_ratio passes."""
+        config = get_default_config()
+        config["data"]["balancing"]["downsampling"]["target_ratio"] = 0.5
+        validate_config(config)
+
+    def test_invalid_replacement_type(self):
+        """Test that non-boolean replacement raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["replacement"] = "yes"
+
+        with pytest.raises(ValueError, match="replacement must be a boolean"):
+            validate_config(config)
+
+    def test_invalid_num_samples(self):
+        """Test that non-positive num_samples raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["num_samples"] = -1
+
+        with pytest.raises(ValueError, match="num_samples must be a positive"):
+            validate_config(config)
+
+    def test_invalid_normalize_type(self):
+        """Test that non-boolean normalize raises ValueError."""
+        config = get_default_config()
+        config["data"]["balancing"]["class_weights"]["normalize"] = "yes"
+
+        with pytest.raises(ValueError, match="normalize must be a boolean"):
+            validate_config(config)
+
+    def test_multiple_strategies_enabled_warns(self, caplog):
+        """Test that multiple strategies enabled logs a warning."""
+        import logging
+
+        config = get_default_config()
+        config["data"]["balancing"]["weighted_sampler"]["enabled"] = True
+        config["data"]["balancing"]["downsampling"]["enabled"] = True
+
+        with caplog.at_level(logging.WARNING):
+            validate_config(config)
+
+        assert "Multiple data balancing strategies enabled" in caplog.text

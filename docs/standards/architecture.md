@@ -105,6 +105,7 @@ ai-gen-image-stats/
 │   │
 │   └── data/
 │       ├── __init__.py
+│       ├── balancing.py                 # Dataset balancing (downsample/upsample)
 │       ├── datasets.py                  # Dataset implementations
 │       ├── transforms.py                # Common transformations
 │       └── samplers.py                  # Custom data samplers
@@ -209,7 +210,7 @@ ai-gen-image-stats/
 
 - `SplitFileDataset`: Loads train/val datasets from JSON split files produced by data_preparation
 
-- Dataset implementations, transforms, samplers
+- Dataset implementations, transforms, samplers, balancing strategies (downsample/upsample)
 
 ## Logging Strategy
 

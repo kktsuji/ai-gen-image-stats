@@ -23,6 +23,8 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
 
 - **Configuration Management**: YAML-based configs with CLI overrides
 
+- **Class Balancing**: WeightedRandomSampler, downsampling, upsampling, and class-weighted loss for imbalanced datasets
+
 - **Metrics & Evaluation**: FID, IS, PR-AUC, ROC-AUC for model evaluation
 
 ## Architecture
@@ -273,6 +275,25 @@ data:
     pin_memory: true
     shuffle_train: true
     drop_last: false
+
+  # Class balancing for imbalanced datasets (all disabled by default)
+  balancing:
+    weighted_sampler:
+      enabled: false
+      method: inverse_frequency # Options: inverse_frequency, effective_num, manual
+      beta: 0.999 # For effective_num method
+      replacement: true
+      num_samples: null # null = dataset length
+    downsampling:
+      enabled: false
+      target_ratio: 1.0 # 1.0 = perfectly balanced
+    upsampling:
+      enabled: false
+      target_ratio: 1.0
+    class_weights:
+      enabled: false
+      method: inverse_frequency
+      normalize: true
 
   augmentation:
     horizontal_flip: true

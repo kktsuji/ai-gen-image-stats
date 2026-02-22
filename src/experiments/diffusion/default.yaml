@@ -91,6 +91,34 @@ data:
     shuffle_train: true # Shuffle training data
     drop_last: false # Drop incomplete batches
 
+  # Class Balancing: Strategies for handling imbalanced datasets
+  # Only ONE data strategy should be enabled at a time.
+  # Priority (if multiple enabled): weighted_sampler > downsampling > upsampling
+  # class_weights is independent and can be combined with any data strategy.
+  balancing:
+    weighted_sampler:
+      enabled: false
+      method: inverse_frequency # Options: inverse_frequency, effective_num, manual
+      beta: 0.999 # Beta for effective_num method
+      manual_weights: null # e.g., [1.0, 5.0] (required if method=manual)
+      replacement: true # Sample with replacement
+      num_samples: null # Samples per epoch (null = len(dataset))
+
+    downsampling:
+      enabled: false
+      target_ratio: 1.0 # minority:majority ratio (1.0 = equal)
+
+    upsampling:
+      enabled: false
+      target_ratio: 1.0 # minority:majority ratio (1.0 = equal)
+
+    class_weights:
+      enabled: false
+      method: inverse_frequency # Options: inverse_frequency, effective_num, manual
+      beta: 0.999
+      manual_weights: null # e.g., [1.0, 5.0] (required if method=manual)
+      normalize: true # Normalize weights to sum to num_classes
+
   # Augmentation: Data augmentation settings
   augmentation:
     horizontal_flip: true # Random horizontal flip

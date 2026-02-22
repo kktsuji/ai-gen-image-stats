@@ -80,47 +80,47 @@ data:
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Configuration & Validation
-  - [ ] Task 1.1: Add `data.balancing` section to `configs/diffusion.yaml`
-  - [ ] Task 1.2: Add `data.balancing` defaults to `src/experiments/diffusion/default.yaml`
-  - [ ] Task 1.3: Add `_validate_balancing_config()` in `src/experiments/diffusion/config.py`
-  - [ ] Task 1.4: Add balancing validation call in `_validate_data_config()`
-- [ ] Phase 2: Weight Computation Utilities
-  - [ ] Task 2.1: Add `compute_effective_num_weights()` to `src/data/samplers.py`
-  - [ ] Task 2.2: Enhance `compute_class_weights()` to accept `beta` parameter for `effective_num` mode
-  - [ ] Task 2.3: Add `compute_weights_from_config()` helper that dispatches on `method` (inverse_frequency / effective_num / manual)
-- [ ] Phase 3: Dataset Balancing Module
-  - [ ] Task 3.1: Create `src/data/balancing.py` with `downsample_dataset()` function
-  - [ ] Task 3.2: Add `upsample_dataset()` function to `src/data/balancing.py`
-  - [ ] Task 3.3: Both functions use local `torch.Generator` seeded from `compute.seed` for reproducibility
-  - [ ] Task 3.4: Both functions operate on `SplitFileDataset` by returning a `torch.utils.data.Subset` or new index list
-- [ ] Phase 4: Weighted Sampling Integration
-  - [ ] Task 4.1: Add `balancing_config` and `seed` parameters to `DiffusionDataLoader.__init__()`
-  - [ ] Task 4.2: In `get_train_loader()`, create `WeightedRandomSampler` when `weighted_sampler.enabled=True`
-  - [ ] Task 4.3: When weighted_sampler is active, set `shuffle=False` (sampler and shuffle are mutually exclusive)
-  - [ ] Task 4.4: Apply downsampling/upsampling to dataset before creating DataLoader when those strategies are enabled
-  - [ ] Task 4.5: Log which balancing strategy is active and class distribution before/after
-- [ ] Phase 5: Class Weights in Loss Function
-  - [ ] Task 5.1: Add `class_weights` parameter to `DiffusionTrainer.__init__()`
-  - [ ] Task 5.2: Create `ClassWeightedMSELoss` in `src/experiments/diffusion/trainer.py` (or a utility module)
-  - [ ] Task 5.3: Replace `nn.MSELoss()` with weighted variant when `class_weights` config is enabled
-  - [ ] Task 5.4: `ClassWeightedMSELoss` computes per-sample MSE, multiplies by class weight, then averages
-  - [ ] Task 5.5: Pass labels to weighted loss in `compute_loss()` (extend model interface to return per-sample loss)
-- [ ] Phase 6: Main.py Integration
-  - [ ] Task 6.1: Read `data.balancing` config and pass to `DiffusionDataLoader`
-  - [ ] Task 6.2: Compute class weight tensor and pass to `DiffusionTrainer` when `class_weights.enabled=True`
-  - [ ] Task 6.3: Pass `compute.seed` to `DiffusionDataLoader` for local generator seeding
-  - [ ] Task 6.4: Log balancing configuration summary at startup
-- [ ] Phase 7: Tests
-  - [ ] Task 7.1: Add config validation tests in `tests/experiments/diffusion/test_config.py`
-  - [ ] Task 7.2: Add weight computation tests in `tests/data/test_samplers.py`
-  - [ ] Task 7.3: Create `tests/data/test_balancing.py` for downsample/upsample functions
-  - [ ] Task 7.4: Add dataloader integration tests in `tests/experiments/diffusion/test_dataloader.py`
-  - [ ] Task 7.5: Add weighted loss tests in `tests/experiments/diffusion/test_trainer.py`
-  - [ ] Task 7.6: Verify all existing tests still pass
-- [ ] Phase 8: Documentation
-  - [ ] Task 8.1: Update `docs/standards/architecture.md` to document `src/data/balancing.py`
-  - [ ] Task 8.2: Update `README.md` with class balancing usage examples
+- [x] Phase 1: Configuration & Validation
+  - [x] Task 1.1: Add `data.balancing` section to `configs/diffusion.yaml`
+  - [x] Task 1.2: Add `data.balancing` defaults to `src/experiments/diffusion/default.yaml`
+  - [x] Task 1.3: Add `_validate_balancing_config()` in `src/experiments/diffusion/config.py`
+  - [x] Task 1.4: Add balancing validation call in `_validate_data_config()`
+- [x] Phase 2: Weight Computation Utilities
+  - [x] Task 2.1: Add `compute_effective_num_weights()` to `src/data/samplers.py`
+  - [x] Task 2.2: Enhance `compute_class_weights()` to accept `beta` parameter for `effective_num` mode
+  - [x] Task 2.3: Add `compute_weights_from_config()` helper that dispatches on `method` (inverse_frequency / effective_num / manual)
+- [x] Phase 3: Dataset Balancing Module
+  - [x] Task 3.1: Create `src/data/balancing.py` with `downsample_dataset()` function
+  - [x] Task 3.2: Add `upsample_dataset()` function to `src/data/balancing.py`
+  - [x] Task 3.3: Both functions use local `torch.Generator` seeded from `compute.seed` for reproducibility
+  - [x] Task 3.4: Both functions operate on `SplitFileDataset` by returning a `torch.utils.data.Subset` or new index list
+- [x] Phase 4: Weighted Sampling Integration
+  - [x] Task 4.1: Add `balancing_config` and `seed` parameters to `DiffusionDataLoader.__init__()`
+  - [x] Task 4.2: In `get_train_loader()`, create `WeightedRandomSampler` when `weighted_sampler.enabled=True`
+  - [x] Task 4.3: When weighted_sampler is active, set `shuffle=False` (sampler and shuffle are mutually exclusive)
+  - [x] Task 4.4: Apply downsampling/upsampling to dataset before creating DataLoader when those strategies are enabled
+  - [x] Task 4.5: Log which balancing strategy is active and class distribution before/after
+- [x] Phase 5: Class Weights in Loss Function
+  - [x] Task 5.1: Add `class_weights` parameter to `DiffusionTrainer.__init__()`
+  - [x] Task 5.2: Create `ClassWeightedMSELoss` in `src/experiments/diffusion/trainer.py` (or a utility module)
+  - [x] Task 5.3: Replace `nn.MSELoss()` with weighted variant when `class_weights` config is enabled
+  - [x] Task 5.4: `ClassWeightedMSELoss` computes per-sample MSE, multiplies by class weight, then averages
+  - [x] Task 5.5: Pass labels to weighted loss in `compute_loss()` (extend model interface to return per-sample loss)
+- [x] Phase 6: Main.py Integration
+  - [x] Task 6.1: Read `data.balancing` config and pass to `DiffusionDataLoader`
+  - [x] Task 6.2: Compute class weight tensor and pass to `DiffusionTrainer` when `class_weights.enabled=True`
+  - [x] Task 6.3: Pass `compute.seed` to `DiffusionDataLoader` for local generator seeding
+  - [x] Task 6.4: Log balancing configuration summary at startup
+- [x] Phase 7: Tests
+  - [x] Task 7.1: Add config validation tests in `tests/experiments/diffusion/test_config.py`
+  - [x] Task 7.2: Add weight computation tests in `tests/data/test_samplers.py`
+  - [x] Task 7.3: Create `tests/data/test_balancing.py` for downsample/upsample functions
+  - [x] Task 7.4: Add dataloader integration tests in `tests/experiments/diffusion/test_dataloader.py`
+  - [x] Task 7.5: Add weighted loss tests in `tests/experiments/diffusion/test_trainer.py`
+  - [x] Task 7.6: Verify all existing tests still pass
+- [x] Phase 8: Documentation
+  - [x] Task 8.1: Update `docs/standards/architecture.md` to document `src/data/balancing.py`
+  - [x] Task 8.2: Update `README.md` with class balancing usage examples
 
 ## Phase Details
 

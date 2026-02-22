@@ -397,6 +397,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         FileNotFoundError: If checkpoint file not found in generation mode
         RuntimeError: If experiment execution fails
     """
+    from src.data.datasets import SplitFileDataset
     from src.experiments.diffusion.config import (
         validate_config as validate_diffusion_config,
     )
@@ -666,6 +667,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Initialize dataloader
         data_config = config["data"]
+        balancing_config = data_config.get("balancing")
+        seed = compute_config.get("seed", 0) or 0
+
         dataloader = DiffusionDataLoader(
             split_file=data_config["split_file"],
             batch_size=data_config["loading"]["batch_size"],
@@ -681,7 +685,48 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             drop_last=data_config["loading"]["drop_last"],
             shuffle_train=data_config["loading"]["shuffle_train"],
             return_labels=derive_return_labels_from_model(config),
+            balancing_config=balancing_config,
+            seed=seed,
         )
+
+        # Log balancing configuration summary
+        if balancing_config:
+            active = []
+            if balancing_config.get("weighted_sampler", {}).get("enabled"):
+                active.append("weighted_sampler")
+            if balancing_config.get("downsampling", {}).get("enabled"):
+                active.append("downsampling")
+            if balancing_config.get("upsampling", {}).get("enabled"):
+                active.append("upsampling")
+            if balancing_config.get("class_weights", {}).get("enabled"):
+                active.append("class_weights")
+            logger.info(f"Active balancing strategies: {active if active else 'none'}")
+
+        # Compute class weight tensor for weighted loss if enabled
+        class_weight_tensor = None
+        if balancing_config and balancing_config.get("class_weights", {}).get(
+            "enabled"
+        ):
+            from src.data.samplers import compute_weights_from_config
+
+            cw_config = balancing_config["class_weights"]
+            # Need to get targets from dataset to compute weights
+            temp_dataset = SplitFileDataset(
+                split_file=data_config["split_file"], split="train"
+            )
+            weights_dict = compute_weights_from_config(
+                targets=temp_dataset.targets,
+                method=cw_config["method"],
+                beta=cw_config.get("beta", 0.999),
+                manual_weights=cw_config.get("manual_weights"),
+                normalize=cw_config.get("normalize", True),
+                num_classes=config["model"]["conditioning"].get("num_classes"),
+            )
+            num_classes = config["model"]["conditioning"].get("num_classes", 2)
+            class_weight_tensor = torch.zeros(num_classes)
+            for cls_idx, weight in weights_dict.items():
+                class_weight_tensor[cls_idx] = weight
+            logger.info(f"Class weight tensor for loss: {class_weight_tensor.tolist()}")
 
         # Apply performance optimizations
         performance_config = training_config["performance"]
@@ -820,6 +865,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             num_samples=visualization_config["num_samples"],
             guidance_scale=visualization_config["guidance_scale"],
             config=config,
+            class_weights=class_weight_tensor,
         )
 
         # Train the model

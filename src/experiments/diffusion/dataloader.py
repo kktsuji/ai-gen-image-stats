@@ -5,14 +5,19 @@ It inherits from BaseDataLoader and provides diffusion-specific
 data loading and preprocessing functionality.
 """
 
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from src.base.dataloader import BaseDataLoader
+from src.data.balancing import downsample_dataset, upsample_dataset
 from src.data.datasets import SplitFileDataset
+from src.data.samplers import compute_weights_from_config, create_weighted_sampler
+
+_logger = logging.getLogger(__name__)
 
 
 class DiffusionDataLoader(BaseDataLoader):
@@ -44,6 +49,8 @@ class DiffusionDataLoader(BaseDataLoader):
         drop_last: Whether to drop the last incomplete batch (default: False)
         shuffle_train: Whether to shuffle training data (default: True)
         return_labels: Whether to return class labels for conditional generation (default: True)
+        balancing_config: Optional balancing configuration dictionary from data.balancing
+        seed: Random seed for balancing reproducibility (from compute.seed)
 
     Example:
         >>> # Unconditional diffusion model
@@ -87,6 +94,8 @@ class DiffusionDataLoader(BaseDataLoader):
         drop_last: bool = False,
         shuffle_train: bool = True,
         return_labels: bool = True,
+        balancing_config: Optional[Dict[str, Any]] = None,
+        seed: int = 0,
     ):
         """Initialize the diffusion dataloader.
 
@@ -103,6 +112,8 @@ class DiffusionDataLoader(BaseDataLoader):
             drop_last: Whether to drop the last incomplete batch
             shuffle_train: Whether to shuffle training data
             return_labels: Whether to return class labels for conditional generation
+            balancing_config: Optional balancing configuration from data.balancing
+            seed: Random seed for balancing reproducibility
         """
         self.split_file = str(split_file)
         self.batch_size = batch_size
@@ -116,6 +127,8 @@ class DiffusionDataLoader(BaseDataLoader):
         self.drop_last = drop_last
         self.shuffle_train = shuffle_train
         self.return_labels = return_labels
+        self.balancing_config = balancing_config
+        self.seed = seed
 
         # Validate split file exists
         if not Path(split_file).exists():
@@ -210,11 +223,56 @@ class DiffusionDataLoader(BaseDataLoader):
             return_labels=self.return_labels,
         )
 
+        sampler = None
+        shuffle = self.shuffle_train
+        dataset_to_use = train_dataset
+
+        # Apply balancing strategy if configured
+        if self.balancing_config:
+            ws_config = self.balancing_config.get("weighted_sampler", {})
+            ds_config = self.balancing_config.get("downsampling", {})
+            us_config = self.balancing_config.get("upsampling", {})
+
+            # Priority: weighted_sampler > downsampling > upsampling
+            if ws_config.get("enabled"):
+                _logger.info("Applying weighted_sampler balancing strategy")
+                weights = compute_weights_from_config(
+                    targets=train_dataset.targets,
+                    method=ws_config["method"],
+                    beta=ws_config.get("beta", 0.999),
+                    manual_weights=ws_config.get("manual_weights"),
+                )
+                _logger.info(f"Computed class weights: {weights}")
+                sampler = create_weighted_sampler(
+                    targets=train_dataset.targets,
+                    class_weights=weights,
+                    replacement=ws_config.get("replacement", True),
+                    num_samples=ws_config.get("num_samples"),
+                )
+                shuffle = False  # sampler and shuffle are mutually exclusive
+
+            elif ds_config.get("enabled"):
+                _logger.info("Applying downsampling balancing strategy")
+                dataset_to_use = downsample_dataset(
+                    train_dataset,
+                    target_ratio=ds_config.get("target_ratio", 1.0),
+                    seed=self.seed,
+                )
+
+            elif us_config.get("enabled"):
+                _logger.info("Applying upsampling balancing strategy")
+                dataset_to_use = upsample_dataset(
+                    train_dataset,
+                    target_ratio=us_config.get("target_ratio", 1.0),
+                    seed=self.seed,
+                )
+
         # Create dataloader
         train_loader = DataLoader(
-            train_dataset,
+            dataset_to_use,
             batch_size=self.batch_size,
-            shuffle=self.shuffle_train,
+            shuffle=shuffle,
+            sampler=sampler,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=self.drop_last,

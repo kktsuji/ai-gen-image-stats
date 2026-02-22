@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from src.base.dataloader import BaseDataLoader
@@ -22,6 +23,49 @@ from src.experiments.diffusion.sampler import DiffusionSampler
 
 # Module-level logger
 _logger = logging.getLogger(__name__)
+
+
+class ClassWeightedMSELoss(nn.Module):
+    """MSE loss weighted by class.
+
+    For each sample in the batch, compute MSE loss and multiply by
+    the weight of that sample's class. This makes the model pay
+    more attention to noise prediction for minority class images.
+
+    Args:
+        class_weights: Tensor of shape (num_classes,) with per-class weights
+    """
+
+    def __init__(self, class_weights: torch.Tensor):
+        super().__init__()
+        self.register_buffer("class_weights", class_weights)
+
+    def forward(
+        self,
+        predicted: torch.Tensor,  # (B, C, H, W)
+        target: torch.Tensor,  # (B, C, H, W)
+        class_labels: torch.Tensor,  # (B,)
+    ) -> torch.Tensor:
+        """Compute class-weighted MSE loss.
+
+        Args:
+            predicted: Predicted noise tensor (B, C, H, W)
+            target: Target noise tensor (B, C, H, W)
+            class_labels: Class label for each sample (B,)
+
+        Returns:
+            Weighted average MSE loss
+        """
+        # Per-sample MSE: mean over C, H, W dimensions
+        per_sample_mse = F.mse_loss(predicted, target, reduction="none")
+        per_sample_mse = per_sample_mse.mean(dim=tuple(range(1, per_sample_mse.ndim)))
+
+        # Look up weights for each sample's class
+        weights = self.class_weights[class_labels]  # (B,)
+
+        # Weighted average
+        loss = (per_sample_mse * weights).mean()
+        return loss
 
 
 class DiffusionTrainer(BaseTrainer):
@@ -118,6 +162,7 @@ class DiffusionTrainer(BaseTrainer):
         guidance_scale: float = 3.0,
         log_interval: int = 100,
         config: Optional[Dict[str, Any]] = None,
+        class_weights: Optional[torch.Tensor] = None,
     ):
         """Initialize the diffusion trainer.
 
@@ -140,6 +185,7 @@ class DiffusionTrainer(BaseTrainer):
             log_interval: Log batch-level metrics every N batches (0 to disable)
             config: Full experiment configuration dictionary used for hyperparameter
                 logging and model graph visualization
+            class_weights: Optional per-class weight tensor for weighted loss
         """
         super().__init__()
         self.model = model
@@ -196,6 +242,17 @@ class DiffusionTrainer(BaseTrainer):
 
         # Loss criterion
         self.criterion = nn.MSELoss()
+
+        # Class-weighted loss (for imbalanced datasets)
+        self.class_weights = class_weights
+        self.weighted_criterion = None
+        if class_weights is not None:
+            self.weighted_criterion = ClassWeightedMSELoss(
+                class_weights.to(self.device)
+            )
+            _logger.info(
+                f"Class-weighted MSE loss enabled with weights: {class_weights.tolist()}"
+            )
 
         # Initialize sampler for sample generation
         self.sampler = DiffusionSampler(
@@ -303,9 +360,14 @@ class DiffusionTrainer(BaseTrainer):
             # Forward pass with automatic mixed precision
             if self.use_amp:
                 with torch.amp.autocast(self.device):
-                    loss = self.model.compute_loss(
-                        images, class_labels=labels, criterion=self.criterion
-                    )
+                    if self.weighted_criterion is not None and labels is not None:
+                        # Use class-weighted loss
+                        predicted_noise, noise = self.model(images, class_labels=labels)
+                        loss = self.weighted_criterion(predicted_noise, noise, labels)
+                    else:
+                        loss = self.model.compute_loss(
+                            images, class_labels=labels, criterion=self.criterion
+                        )
 
                 # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
@@ -327,9 +389,14 @@ class DiffusionTrainer(BaseTrainer):
                 self.scaler.update()
             else:
                 # Standard float32 training
-                loss = self.model.compute_loss(
-                    images, class_labels=labels, criterion=self.criterion
-                )
+                if self.weighted_criterion is not None and labels is not None:
+                    # Use class-weighted loss
+                    predicted_noise, noise = self.model(images, class_labels=labels)
+                    loss = self.weighted_criterion(predicted_noise, noise, labels)
+                else:
+                    loss = self.model.compute_loss(
+                        images, class_labels=labels, criterion=self.criterion
+                    )
 
                 # Backward pass
                 loss.backward()

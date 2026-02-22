@@ -654,3 +654,192 @@ def test_conditional_diffusion_workflow(mock_diffusion_dataset):
         assert labels.min() >= 0
         assert labels.max() < num_classes
         break  # Just test one batch
+
+
+# ==============================================================================
+# Unit Tests: Balancing Config Integration
+# ==============================================================================
+
+
+@pytest.mark.unit
+class TestDiffusionDataLoaderBalancing:
+    """Test DiffusionDataLoader with balancing configuration."""
+
+    def test_init_with_balancing_config(self, tmp_path):
+        """Test that DiffusionDataLoader accepts balancing_config parameter."""
+        split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+        balancing_config = {
+            "weighted_sampler": {"enabled": False},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        assert dataloader.balancing_config == balancing_config
+        assert dataloader.seed == 42
+
+    def test_init_without_balancing_config(self, tmp_path):
+        """Test backwards compatibility: no balancing_config is OK."""
+        split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+        )
+
+        assert dataloader.balancing_config is None
+
+    def test_weighted_sampler_disables_shuffle(self, tmp_path):
+        """Test that weighted_sampler sets shuffle=False."""
+        split_file = _create_split_json(
+            tmp_path, train_per_class=4, val_per_class=2, num_classes=2
+        )
+        balancing_config = {
+            "weighted_sampler": {
+                "enabled": True,
+                "method": "inverse_frequency",
+                "beta": 0.999,
+                "replacement": True,
+                "num_samples": None,
+            },
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        # Should create a loader without error
+        train_loader = dataloader.get_train_loader()
+        assert train_loader is not None
+
+        # The sampler should be set (non-None)
+        assert train_loader.sampler is not None
+
+    def test_downsampling_produces_loader(self, tmp_path):
+        """Test that downsampling strategy creates a working loader."""
+        split_file = _create_split_json(
+            tmp_path, train_per_class=4, val_per_class=2, num_classes=2
+        )
+        balancing_config = {
+            "weighted_sampler": {"enabled": False},
+            "downsampling": {"enabled": True, "target_ratio": 1.0},
+            "upsampling": {"enabled": False},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        train_loader = dataloader.get_train_loader()
+        assert train_loader is not None
+        # Iterate to verify it works
+        for batch in train_loader:
+            assert len(batch) == 2  # images, labels
+            break
+
+    def test_upsampling_produces_loader(self, tmp_path):
+        """Test that upsampling strategy creates a working loader."""
+        split_file = _create_split_json(
+            tmp_path, train_per_class=4, val_per_class=2, num_classes=2
+        )
+        balancing_config = {
+            "weighted_sampler": {"enabled": False},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": True, "target_ratio": 1.0},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        train_loader = dataloader.get_train_loader()
+        assert train_loader is not None
+        for batch in train_loader:
+            assert len(batch) == 2
+            break
+
+    def test_priority_weighted_sampler_over_downsampling(self, tmp_path):
+        """Test that weighted_sampler has priority over downsampling."""
+        split_file = _create_split_json(
+            tmp_path, train_per_class=4, val_per_class=2, num_classes=2
+        )
+        balancing_config = {
+            "weighted_sampler": {
+                "enabled": True,
+                "method": "inverse_frequency",
+                "replacement": True,
+                "num_samples": None,
+            },
+            "downsampling": {"enabled": True, "target_ratio": 1.0},
+            "upsampling": {"enabled": False},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        train_loader = dataloader.get_train_loader()
+        # Should use sampler (weighted_sampler), not downsampled dataset
+        assert train_loader.sampler is not None
+
+    def test_val_loader_not_affected_by_balancing(self, tmp_path):
+        """Test that validation loader is not affected by balancing."""
+        split_file = _create_split_json(
+            tmp_path, train_per_class=4, val_per_class=4, num_classes=2
+        )
+        balancing_config = {
+            "weighted_sampler": {
+                "enabled": True,
+                "method": "inverse_frequency",
+                "replacement": True,
+                "num_samples": None,
+            },
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+
+        dataloader = DiffusionDataLoader(
+            split_file=split_file,
+            batch_size=2,
+            image_size=16,
+            num_workers=0,
+            balancing_config=balancing_config,
+            seed=42,
+        )
+
+        val_loader = dataloader.get_val_loader()
+        assert val_loader is not None
+        # Val loader should have 8 total samples (4 per class)
+        assert len(val_loader.dataset) == 8

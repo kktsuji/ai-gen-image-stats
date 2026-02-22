@@ -1047,7 +1047,9 @@ def test_quality_comparison_logged_via_log_images():
         trainer.train(num_epochs=6, checkpoint_dir=tmpdir, validate_frequency=0)
 
     # log_images at epochs 3, 6: each triggers samples + quality_comparison = 4 total
-    quality_entries = [e for e in logger.logged_images if e["tag"] == "quality_comparison"]
+    quality_entries = [
+        e for e in logger.logged_images if e["tag"] == "quality_comparison"
+    ]
     assert len(quality_entries) == 2
     assert len(logger.logged_denoising_sequences) == 0
 
@@ -1540,3 +1542,119 @@ def test_resume_training_zero_epochs_no_crash():
             checkpoint_dir=tmpdir,
             validate_frequency=0,
         )
+
+
+# =============================================================================
+# Unit Tests: ClassWeightedMSELoss
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestClassWeightedMSELoss:
+    """Test ClassWeightedMSELoss class."""
+
+    def test_equal_weights_matches_standard_mse(self):
+        """Test that equal weights produce same result as nn.MSELoss."""
+        from src.experiments.diffusion.trainer import ClassWeightedMSELoss
+
+        batch_size = 4
+        class_weights = torch.tensor([1.0, 1.0])
+        criterion = ClassWeightedMSELoss(class_weights)
+        standard_mse = nn.MSELoss()
+
+        predicted = torch.randn(batch_size, 3, 8, 8)
+        target = torch.randn(batch_size, 3, 8, 8)
+        labels = torch.tensor([0, 1, 0, 1])
+
+        weighted_loss = criterion(predicted, target, labels)
+        standard_loss = standard_mse(predicted, target)
+
+        assert weighted_loss.item() == pytest.approx(standard_loss.item(), rel=1e-5)
+
+    def test_higher_weight_increases_loss(self):
+        """Test that higher weight for a class increases its loss contribution."""
+        from src.experiments.diffusion.trainer import ClassWeightedMSELoss
+
+        batch_size = 4
+        predicted = torch.randn(batch_size, 3, 8, 8)
+        target = torch.randn(batch_size, 3, 8, 8)
+        labels = torch.tensor([0, 0, 1, 1])
+
+        # Equal weights
+        equal_criterion = ClassWeightedMSELoss(torch.tensor([1.0, 1.0]))
+        equal_loss = equal_criterion(predicted, target, labels)
+
+        # Higher weight for class 1
+        weighted_criterion = ClassWeightedMSELoss(torch.tensor([1.0, 5.0]))
+        weighted_loss = weighted_criterion(predicted, target, labels)
+
+        # Weighted loss should differ from equal loss
+        assert weighted_loss.item() != pytest.approx(equal_loss.item(), rel=1e-3)
+
+    def test_output_is_scalar(self):
+        """Test that loss output is a scalar tensor."""
+        from src.experiments.diffusion.trainer import ClassWeightedMSELoss
+
+        class_weights = torch.tensor([1.0, 2.0])
+        criterion = ClassWeightedMSELoss(class_weights)
+
+        predicted = torch.randn(4, 3, 8, 8)
+        target = torch.randn(4, 3, 8, 8)
+        labels = torch.tensor([0, 1, 0, 1])
+
+        loss = criterion(predicted, target, labels)
+        assert loss.ndim == 0  # Scalar
+
+    def test_gradient_flows(self):
+        """Test that gradients flow through the weighted loss."""
+        from src.experiments.diffusion.trainer import ClassWeightedMSELoss
+
+        class_weights = torch.tensor([1.0, 3.0])
+        criterion = ClassWeightedMSELoss(class_weights)
+
+        predicted = torch.randn(4, 3, 8, 8, requires_grad=True)
+        target = torch.randn(4, 3, 8, 8)
+        labels = torch.tensor([0, 1, 0, 1])
+
+        loss = criterion(predicted, target, labels)
+        loss.backward()
+
+        assert predicted.grad is not None
+        assert predicted.grad.shape == predicted.shape
+
+    def test_single_class_batch(self):
+        """Test with all samples from same class."""
+        from src.experiments.diffusion.trainer import ClassWeightedMSELoss
+
+        class_weights = torch.tensor([2.0, 1.0])
+        criterion = ClassWeightedMSELoss(class_weights)
+
+        predicted = torch.randn(4, 3, 8, 8)
+        target = torch.randn(4, 3, 8, 8)
+        labels = torch.tensor([0, 0, 0, 0])
+
+        loss = criterion(predicted, target, labels)
+        assert loss.item() > 0
+
+    def test_trainer_with_class_weights(self):
+        """Test DiffusionTrainer accepts class_weights parameter."""
+        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+        dataloader = SimpleDiffusionDataLoader(batch_size=4, return_labels=True)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        logger = SimpleDiffusionLogger()
+
+        class_weights = torch.tensor([1.0, 3.0])
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=False,
+            class_weights=class_weights,
+        )
+
+        assert trainer.weighted_criterion is not None
+        assert trainer.class_weights is not None

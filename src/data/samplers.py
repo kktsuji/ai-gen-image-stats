@@ -172,6 +172,7 @@ def create_balanced_sampler(
 def compute_class_weights(
     targets: List[int],
     weight_mode: str = "inverse_freq",
+    beta: float = 0.9999,
 ) -> Dict[int, float]:
     """
     Compute class weights based on the distribution of targets.
@@ -182,6 +183,7 @@ def compute_class_weights(
                     - "inverse_freq": 1 / class_frequency (default)
                     - "balanced": Same as inverse_freq but normalized
                     - "effective_num": Effective number of samples weighting
+        beta: Beta parameter for effective_num mode (default: 0.9999)
 
     Returns:
         Dictionary mapping class index to weight
@@ -220,7 +222,6 @@ def compute_class_weights(
         # Effective number of samples weighting
         # More robust for very imbalanced datasets
         # See: "Class-Balanced Loss Based on Effective Number of Samples"
-        beta = 0.9999
         weights = {}
         for label, count in class_counts.items():
             effective_num = (1.0 - beta**count) / (1.0 - beta)
@@ -231,6 +232,119 @@ def compute_class_weights(
             f"Unknown weight_mode: {weight_mode}. "
             f"Choose from: 'inverse_freq', 'balanced', 'effective_num'"
         )
+
+    return weights
+
+
+def compute_effective_num_weights(
+    targets: List[int],
+    beta: float = 0.9999,
+) -> Dict[int, float]:
+    """Compute class weights using the effective number of samples method.
+
+    Reference: 'Class-Balanced Loss Based on Effective Number of Samples' (CVPR 2019)
+
+    Effective number: E_n = (1 - beta^n) / (1 - beta)
+    Weight: w = 1 / E_n
+
+    Args:
+        targets: List of class indices for all samples
+        beta: Beta parameter controlling the effective number (default: 0.9999)
+
+    Returns:
+        Dictionary mapping class index to weight
+
+    Raises:
+        ValueError: If targets is empty or beta is out of range
+
+    Example:
+        >>> weights = compute_effective_num_weights([0, 0, 0, 1, 1, 2])
+        >>> # Class 2 (1 sample) gets highest weight
+    """
+    if not targets:
+        raise ValueError("targets list cannot be empty")
+
+    if beta <= 0 or beta >= 1:
+        raise ValueError(f"beta must be between 0 and 1 (exclusive), got {beta}")
+
+    # Count samples per class
+    class_counts: Dict[int, int] = {}
+    for target in targets:
+        class_counts[target] = class_counts.get(target, 0) + 1
+
+    weights: Dict[int, float] = {}
+    for label, count in class_counts.items():
+        effective_num = (1.0 - beta**count) / (1.0 - beta)
+        weights[label] = 1.0 / effective_num
+
+    return weights
+
+
+def compute_weights_from_config(
+    targets: List[int],
+    method: str,
+    beta: float = 0.999,
+    manual_weights: Optional[List[float]] = None,
+    normalize: bool = False,
+    num_classes: Optional[int] = None,
+) -> Dict[int, float]:
+    """Compute class weights based on config parameters.
+
+    Dispatcher function that computes weights using the specified method.
+
+    Args:
+        targets: List of class indices
+        method: 'inverse_frequency', 'effective_num', or 'manual'
+        beta: Beta for effective_num method
+        manual_weights: Per-class weights for manual mode
+        normalize: Normalize weights to sum to num_classes
+        num_classes: Number of classes (for normalization, inferred if None)
+
+    Returns:
+        Dict mapping class index to weight
+
+    Raises:
+        ValueError: If method is unknown or manual_weights invalid
+
+    Example:
+        >>> weights = compute_weights_from_config(
+        ...     targets=[0, 0, 0, 1],
+        ...     method="inverse_frequency",
+        ... )
+        >>> print(weights)
+        {0: 1.333..., 1: 4.0}
+    """
+    if not targets:
+        raise ValueError("targets list cannot be empty")
+
+    if method == "inverse_frequency":
+        weights = compute_class_weights(targets, weight_mode="inverse_freq")
+
+    elif method == "effective_num":
+        weights = compute_effective_num_weights(targets, beta=beta)
+
+    elif method == "manual":
+        if manual_weights is None or len(manual_weights) == 0:
+            raise ValueError(
+                "manual_weights must be a non-empty list when method='manual'"
+            )
+        # Map index to weight
+        weights = {i: w for i, w in enumerate(manual_weights)}
+
+    else:
+        raise ValueError(
+            f"Unknown weight method: {method}. "
+            f"Choose from: 'inverse_frequency', 'effective_num', 'manual'"
+        )
+
+    # Normalize weights to sum to num_classes
+    if normalize:
+        if num_classes is None:
+            num_classes = len(weights)
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            scale = num_classes / total_weight
+            weights = {k: v * scale for k, v in weights.items()}
 
     return weights
 

@@ -11,7 +11,10 @@ Key features:
 - Default values loaded from YAML for maintainability
 """
 
+import logging
 from typing import Any, Dict
+
+_logger = logging.getLogger(__name__)
 
 from src.utils.config import (
     get_default_config_from_module,
@@ -267,6 +270,10 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
     if "augmentation" not in data:
         raise KeyError("Missing required config key: data.augmentation")
 
+    # Validate balancing subsection (optional - backwards compatible)
+    if "balancing" in data:
+        _validate_balancing_config(data["balancing"])
+
     aug = data["augmentation"]
     if "rotation_degrees" in aug:
         if (
@@ -276,6 +283,149 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
             raise ValueError(
                 "data.augmentation.rotation_degrees must be a non-negative number"
             )
+
+
+def _validate_balancing_config(balancing: Dict[str, Any]) -> None:
+    """Validate data.balancing configuration section.
+
+    Args:
+        balancing: The balancing configuration dictionary
+
+    Raises:
+        ValueError: If configuration values are invalid
+    """
+    valid_methods = ["inverse_frequency", "effective_num", "manual"]
+
+    # Track how many data strategies are enabled
+    enabled_strategies = []
+
+    # --- Validate weighted_sampler ---
+    if "weighted_sampler" in balancing:
+        ws = balancing["weighted_sampler"]
+        if ws.get("enabled"):
+            enabled_strategies.append("weighted_sampler")
+
+        if "method" in ws and ws["method"] is not None:
+            if ws["method"] not in valid_methods:
+                raise ValueError(
+                    f"data.balancing.weighted_sampler.method must be one of "
+                    f"{valid_methods}, got '{ws['method']}'"
+                )
+
+        if ws.get("method") == "manual":
+            mw = ws.get("manual_weights")
+            if mw is None or not isinstance(mw, list) or len(mw) == 0:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must be a "
+                    "non-empty list when method='manual'"
+                )
+            if not all(isinstance(w, (int, float)) and w > 0 for w in mw):
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must contain "
+                    "only positive numbers"
+                )
+
+        if "beta" in ws and ws["beta"] is not None:
+            if (
+                not isinstance(ws["beta"], (int, float))
+                or ws["beta"] <= 0
+                or ws["beta"] >= 1
+            ):
+                raise ValueError(
+                    "data.balancing.weighted_sampler.beta must be between 0 and 1 "
+                    "(exclusive)"
+                )
+
+        if "replacement" in ws and not isinstance(ws["replacement"], bool):
+            raise ValueError(
+                "data.balancing.weighted_sampler.replacement must be a boolean"
+            )
+
+        if "num_samples" in ws and ws["num_samples"] is not None:
+            if not isinstance(ws["num_samples"], int) or ws["num_samples"] < 1:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.num_samples must be a "
+                    "positive integer or null"
+                )
+
+    # --- Validate downsampling ---
+    if "downsampling" in balancing:
+        ds = balancing["downsampling"]
+        if ds.get("enabled"):
+            enabled_strategies.append("downsampling")
+
+        if "target_ratio" in ds and ds["target_ratio"] is not None:
+            if (
+                not isinstance(ds["target_ratio"], (int, float))
+                or ds["target_ratio"] <= 0
+                or ds["target_ratio"] > 1.0
+            ):
+                raise ValueError(
+                    "data.balancing.downsampling.target_ratio must be a positive "
+                    "float between 0 (exclusive) and 1.0 (inclusive)"
+                )
+
+    # --- Validate upsampling ---
+    if "upsampling" in balancing:
+        us = balancing["upsampling"]
+        if us.get("enabled"):
+            enabled_strategies.append("upsampling")
+
+        if "target_ratio" in us and us["target_ratio"] is not None:
+            if (
+                not isinstance(us["target_ratio"], (int, float))
+                or us["target_ratio"] <= 0
+                or us["target_ratio"] > 1.0
+            ):
+                raise ValueError(
+                    "data.balancing.upsampling.target_ratio must be a positive "
+                    "float between 0 (exclusive) and 1.0 (inclusive)"
+                )
+
+    # --- Validate class_weights ---
+    if "class_weights" in balancing:
+        cw = balancing["class_weights"]
+
+        if "method" in cw and cw["method"] is not None:
+            if cw["method"] not in valid_methods:
+                raise ValueError(
+                    f"data.balancing.class_weights.method must be one of "
+                    f"{valid_methods}, got '{cw['method']}'"
+                )
+
+        if cw.get("method") == "manual":
+            mw = cw.get("manual_weights")
+            if mw is None or not isinstance(mw, list) or len(mw) == 0:
+                raise ValueError(
+                    "data.balancing.class_weights.manual_weights must be a "
+                    "non-empty list when method='manual'"
+                )
+            if not all(isinstance(w, (int, float)) and w > 0 for w in mw):
+                raise ValueError(
+                    "data.balancing.class_weights.manual_weights must contain "
+                    "only positive numbers"
+                )
+
+        if "beta" in cw and cw["beta"] is not None:
+            if (
+                not isinstance(cw["beta"], (int, float))
+                or cw["beta"] <= 0
+                or cw["beta"] >= 1
+            ):
+                raise ValueError(
+                    "data.balancing.class_weights.beta must be between 0 and 1 "
+                    "(exclusive)"
+                )
+
+        if "normalize" in cw and not isinstance(cw["normalize"], bool):
+            raise ValueError("data.balancing.class_weights.normalize must be a boolean")
+
+    # Warn if multiple data strategies are enabled
+    if len(enabled_strategies) > 1:
+        _logger.warning(
+            f"Multiple data balancing strategies enabled: {enabled_strategies}. "
+            f"Only one will be used. Priority: weighted_sampler > downsampling > upsampling"
+        )
 
 
 def _validate_output_config(config: Dict[str, Any]) -> None:

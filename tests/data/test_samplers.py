@@ -10,6 +10,8 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.data.samplers import (
     compute_class_weights,
+    compute_effective_num_weights,
+    compute_weights_from_config,
     create_balanced_sampler,
     create_weighted_sampler,
     get_sampler_from_dataset,
@@ -484,3 +486,144 @@ class TestSamplerWithRealDataset:
         for batch_data, _ in loader:
             assert batch_data.shape[0] <= 4
             break  # Just test one batch
+
+
+# =============================================================================
+# Unit Tests: compute_effective_num_weights
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestComputeEffectiveNumWeights:
+    """Test compute_effective_num_weights function."""
+
+    def test_basic_computation(self):
+        """Test basic effective number weight computation."""
+        targets = [0, 0, 0, 1]
+        weights = compute_effective_num_weights(targets, beta=0.99)
+
+        # Class 0 has more samples, so it should have lower weight
+        assert weights[0] < weights[1]
+        assert len(weights) == 2
+
+    def test_higher_beta_less_smoothing(self):
+        """Test that higher beta gives more significant weight differences."""
+        targets = [0, 0, 0, 0, 0, 1]
+        weights_low = compute_effective_num_weights(targets, beta=0.9)
+        weights_high = compute_effective_num_weights(targets, beta=0.9999)
+
+        # Higher beta should produce larger ratio between weights
+        ratio_low = weights_low[1] / weights_low[0]
+        ratio_high = weights_high[1] / weights_high[0]
+        assert ratio_high > ratio_low
+
+    def test_equal_classes(self):
+        """Test that equal class counts produce equal weights."""
+        targets = [0, 0, 1, 1]
+        weights = compute_effective_num_weights(targets, beta=0.99)
+
+        assert weights[0] == pytest.approx(weights[1])
+
+    def test_empty_targets_raises(self):
+        """Test that empty targets raises ValueError."""
+        with pytest.raises(ValueError, match="targets list cannot be empty"):
+            compute_effective_num_weights([], beta=0.99)
+
+    def test_invalid_beta_raises(self):
+        """Test that invalid beta raises ValueError."""
+        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
+            compute_effective_num_weights([0, 1], beta=0.0)
+        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
+            compute_effective_num_weights([0, 1], beta=1.0)
+
+    def test_single_class(self):
+        """Test effective number weights with a single class."""
+        targets = [0, 0, 0]
+        weights = compute_effective_num_weights(targets, beta=0.99)
+        assert 0 in weights
+        assert weights[0] > 0
+
+
+# =============================================================================
+# Unit Tests: compute_weights_from_config
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestComputeWeightsFromConfig:
+    """Test compute_weights_from_config dispatcher function."""
+
+    def test_inverse_frequency_method(self):
+        """Test inverse_frequency method dispatching."""
+        targets = [0, 0, 0, 1]
+        weights = compute_weights_from_config(
+            targets=targets, method="inverse_frequency"
+        )
+
+        assert len(weights) == 2
+        assert weights[1] > weights[0]  # Minority class gets higher weight
+
+    def test_effective_num_method(self):
+        """Test effective_num method dispatching."""
+        targets = [0, 0, 0, 1]
+        weights = compute_weights_from_config(
+            targets=targets, method="effective_num", beta=0.99
+        )
+
+        assert len(weights) == 2
+        assert weights[1] > weights[0]
+
+    def test_manual_method(self):
+        """Test manual method with provided weights."""
+        targets = [0, 0, 0, 1]
+        manual = [1.0, 5.0]
+        weights = compute_weights_from_config(
+            targets=targets, method="manual", manual_weights=manual
+        )
+
+        assert weights[0] == 1.0
+        assert weights[1] == 5.0
+
+    def test_manual_method_without_weights_raises(self):
+        """Test that manual method without weights raises ValueError."""
+        with pytest.raises(ValueError, match="manual_weights must be a non-empty"):
+            compute_weights_from_config(
+                targets=[0, 1], method="manual", manual_weights=None
+            )
+
+    def test_unknown_method_raises(self):
+        """Test that unknown method raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown weight method"):
+            compute_weights_from_config(targets=[0, 1], method="unknown")
+
+    def test_normalize_true(self):
+        """Test that normalize=True normalizes weights to sum to num_classes."""
+        targets = [0, 0, 0, 1]
+        weights = compute_weights_from_config(
+            targets=targets,
+            method="inverse_frequency",
+            normalize=True,
+            num_classes=2,
+        )
+
+        total = sum(weights.values())
+        assert total == pytest.approx(2.0)
+
+    def test_normalize_with_manual_weights(self):
+        """Test normalization with manual weights."""
+        targets = [0, 1]
+        weights = compute_weights_from_config(
+            targets=targets,
+            method="manual",
+            manual_weights=[2.0, 8.0],
+            normalize=True,
+            num_classes=2,
+        )
+
+        total = sum(weights.values())
+        assert total == pytest.approx(2.0)
+
+    def test_empty_targets_raises(self):
+        """Test that empty targets raises ValueError."""
+        with pytest.raises(ValueError, match="targets list cannot be empty"):
+            compute_weights_from_config(targets=[], method="inverse_frequency")
