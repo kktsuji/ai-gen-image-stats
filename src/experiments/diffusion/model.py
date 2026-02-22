@@ -93,9 +93,11 @@ class EMA:
         """Load state dict from checkpoint."""
         self.decay = state_dict["decay"]
         # Move shadow parameters to the correct device
+        # Strip torch.compile prefix if present
+        shadow = state_dict["shadow"]
         self.shadow = {
-            name: tensor.to(self.device)
-            for name, tensor in state_dict["shadow"].items()
+            name.removeprefix("_orig_mod."): tensor.to(self.device)
+            for name, tensor in shadow.items()
         }
 
 

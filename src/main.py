@@ -537,7 +537,13 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Validate checkpoint contains model weights
         if "model_state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["model_state_dict"])
+            state_dict = checkpoint["model_state_dict"]
+            # Strip torch.compile prefix if present
+            if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
+                state_dict = {
+                    k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
+                }
+            model.load_state_dict(state_dict)
         elif isinstance(checkpoint, dict) and any(
             k.startswith("module.") for k in checkpoint.keys()
         ):
@@ -621,7 +627,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 class_labels=batch_labels,
                 guidance_scale=sampling_config["guidance_scale"],
                 use_ema=sampling_config["use_ema"],
-                show_progress=True,
             )
             all_samples.append(batch_samples)
 
