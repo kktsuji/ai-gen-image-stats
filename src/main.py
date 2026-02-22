@@ -615,8 +615,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)
         all_samples = []
+        num_batches = (num_samples + batch_size - 1) // batch_size
 
-        for start_idx in range(0, num_samples, batch_size):
+        for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
             end_idx = min(start_idx + batch_size, num_samples)
             batch_labels = (
                 class_labels[start_idx:end_idx] if class_labels is not None else None
@@ -627,6 +628,12 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 class_labels=batch_labels,
                 guidance_scale=sampling_config["guidance_scale"],
                 use_ema=sampling_config["use_ema"],
+                show_progress=True,
+                progress_desc=(
+                    f"Batch {batch_idx}/{num_batches}"
+                    if num_batches > 1
+                    else "Denoising"
+                ),
             )
             all_samples.append(batch_samples)
 

@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from src.base.model import BaseModel
 
@@ -1037,6 +1038,8 @@ class DDPMModel(BaseModel):
         return_intermediates: bool = False,
         use_dynamic_threshold: bool = True,
         dynamic_threshold_percentile: float = 0.995,
+        show_progress: bool = False,
+        progress_desc: str = "Denoising",
     ) -> torch.Tensor:
         """Generate samples from the model.
 
@@ -1047,6 +1050,8 @@ class DDPMModel(BaseModel):
             return_intermediates: Return all intermediate timesteps
             use_dynamic_threshold: Apply dynamic thresholding
             dynamic_threshold_percentile: Percentile for thresholding
+            show_progress: Show tqdm progress bar for denoising steps
+            progress_desc: Description label for the progress bar
 
         Returns:
             Generated samples, shape (batch_size, in_channels, image_size, image_size)
@@ -1061,7 +1066,16 @@ class DDPMModel(BaseModel):
         intermediates = [x] if return_intermediates else None
 
         # Iteratively denoise
-        for i in reversed(range(self.num_timesteps)):
+        timesteps = reversed(range(self.num_timesteps))
+        if show_progress:
+            timesteps = tqdm(
+                timesteps,
+                total=self.num_timesteps,
+                desc=progress_desc,
+                leave=False,
+            )
+
+        for i in timesteps:
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
                 x,

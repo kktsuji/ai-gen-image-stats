@@ -99,6 +99,8 @@ class DiffusionSampler:
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
         use_ema: bool = True,
+        show_progress: bool = False,
+        progress_desc: str = "Denoising",
     ) -> torch.Tensor:
         """Generate samples from the diffusion model.
 
@@ -116,6 +118,8 @@ class DiffusionSampler:
                 Typical values: 1.0-5.0
             use_ema: Whether to use EMA weights for generation
                 Recommended: True for better sample quality
+            show_progress: Whether to show tqdm progress bar for denoising steps
+            progress_desc: Description label for the progress bar
 
         Returns:
             Generated samples tensor
@@ -150,7 +154,7 @@ class DiffusionSampler:
                     f"num_samples ({num_samples})"
                 )
 
-        logger.info(f"Starting sample generation: {num_samples} samples")
+        logger.debug(f"Starting sample generation: {num_samples} samples")
         if class_labels is not None:
             unique_classes = torch.unique(class_labels).tolist()
             logger.debug(f"Conditional generation for classes: {unique_classes}")
@@ -176,15 +180,15 @@ class DiffusionSampler:
                     class_labels = class_labels.to(self.device)
 
                 # Generate samples
-                # Note: Progress bar for sampling steps is handled by model's sample()
-                # This show_progress flag is for potential batch-wise sampling
                 samples = self.model.sample(
                     batch_size=num_samples,
                     class_labels=class_labels,
                     guidance_scale=guidance_scale,
+                    show_progress=show_progress,
+                    progress_desc=progress_desc,
                 )
 
-            logger.info(f"Sample generation completed: {samples.shape}")
+            logger.debug(f"Sample generation completed: {samples.shape}")
             return samples
 
         finally:
