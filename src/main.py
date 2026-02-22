@@ -346,6 +346,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     validate_frequency = training_config["validation"].get("frequency", 1)
     best_metric = training_config["validation"].get("metric", "accuracy")
 
+    logger.info("")
     logger.info(f"Starting training for {num_epochs} epochs...")
 
     try:
@@ -371,6 +372,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     # Close metrics logger
     metrics_logger.close()
+    logger.info("")
     logger.info("Training completed successfully!")
 
 
@@ -882,6 +884,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Train the model
         num_epochs = training_config["epochs"]
+        logger.info("")
         logger.info(f"Starting training for {num_epochs} epochs...")
 
         try:
@@ -907,6 +910,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Close metrics logger
         metrics_logger.close()
+        logger.info("")
         logger.info("Training completed successfully!")
 
 
