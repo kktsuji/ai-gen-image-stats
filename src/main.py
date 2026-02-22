@@ -35,10 +35,12 @@ Note:
 
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
+from dotenv import load_dotenv
 
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
@@ -46,6 +48,7 @@ from src.utils.config import save_config
 from src.utils.device import get_device
 from src.utils.git import get_git_info
 from src.utils.logging import get_log_file_path, setup_logging
+from src.utils.notification import notify_error, notify_success
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -899,6 +902,9 @@ def main(args: Optional[list] = None) -> None:
         ValueError: If configuration is invalid
         NotImplementedError: If experiment type is not implemented
     """
+    # Load environment variables from .env file
+    load_dotenv()
+
     # Parse arguments and load configuration
     config = parse_args(args)
 
@@ -907,6 +913,9 @@ def main(args: Optional[list] = None) -> None:
 
     # Get experiment type
     experiment = config["experiment"]
+
+    # Record start time for duration tracking
+    start_time = time.time()
 
     # Dispatch to experiment
     try:
@@ -923,11 +932,18 @@ def main(args: Optional[list] = None) -> None:
                 f"Unknown experiment type: {experiment}. "
                 f"Supported experiments: classifier, diffusion, gan, data_preparation"
             )
+
+        # Notify on success
+        duration = time.time() - start_time
+        notify_success(config, duration)
+
     except NotImplementedError as e:
         logger.error(f"Experiment '{experiment}' is not yet implemented: {e}")
+        notify_error(config, e)
         sys.exit(1)
     except Exception as e:
         logger.exception(f"Experiment '{experiment}' failed with error: {e}")
+        notify_error(config, e)
         sys.exit(1)
 
 

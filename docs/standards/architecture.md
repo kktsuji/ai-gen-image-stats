@@ -89,6 +89,7 @@ ai-gen-image-stats/
 │   │   ├── device.py                    # Device management (CPU/GPU)
 │   │   ├── logging.py                   # Logging configuration and setup
 │   │   ├── metrics.py                   # Common metrics (FID, IS, PR-AUC, ROC-AUC)
+│   │   ├── notification.py              # Slack webhook notifications
 │   │   └── tensorboard.py               # TensorBoard utility functions (optional)
 │   │
 │   ├── deprecated/                      # Old code being phased out

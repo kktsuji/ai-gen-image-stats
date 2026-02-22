@@ -85,6 +85,14 @@ pip install -r requirements-dev.txt
 docker build -t kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 .
 ```
 
+### Slack Notifications (Optional)
+
+To receive Slack notifications when experiments complete or fail:
+
+1. Create a Slack incoming webhook: https://api.slack.com/messaging/webhooks
+2. Copy `.env.example` to `.env` and set `SLACK_WEBHOOK_URL`
+3. Notifications are sent automatically — no config changes needed
+
 ## Quick Start
 
 ### Preparing a Dataset Split

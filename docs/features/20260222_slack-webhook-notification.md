@@ -33,21 +33,21 @@ Add a feature to notify a Slack channel via an incoming webhook when an experime
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Create notification utility module
-  - [ ] Task 1.1: Create `src/utils/notification.py` with `_post_slack()`, `notify_success()`, `notify_error()`
-  - [ ] Task 1.2: Create `.env.example` with `SLACK_WEBHOOK_URL=`
-- [ ] Phase 2: Integrate notifications into `main()`
-  - [ ] Task 2.1: Add `load_dotenv()` call at the top of `main()`
-  - [ ] Task 2.2: Record `start_time` before experiment dispatch
-  - [ ] Task 2.3: Call `notify_success()` on successful completion
-  - [ ] Task 2.4: Call `notify_error()` on exception, before `sys.exit(1)`
-- [ ] Phase 3: Tests
-  - [ ] Task 3.1: Unit tests for `src/utils/notification.py` (`tests/utils/test_notification.py`)
-  - [ ] Task 3.2: Integration tests for notification calls in `main()` (`tests/test_main.py`)
-  - [ ] Task 3.3: Run full test suite and confirm no regressions
-- [ ] Phase 4: Documentation
-  - [ ] Task 4.1: Update `docs/standards/architecture.md` — add `notification.py` to the utils listing
-  - [ ] Task 4.2: Update `README.md` — mention `.env` setup for Slack notifications
+- [x] Phase 1: Create notification utility module
+  - [x] Task 1.1: Create `src/utils/notification.py` with `_post_slack()`, `notify_success()`, `notify_error()`
+  - [x] Task 1.2: Create `.env.example` with `SLACK_WEBHOOK_URL=`
+- [x] Phase 2: Integrate notifications into `main()`
+  - [x] Task 2.1: Add `load_dotenv()` call at the top of `main()`
+  - [x] Task 2.2: Record `start_time` before experiment dispatch
+  - [x] Task 2.3: Call `notify_success()` on successful completion
+  - [x] Task 2.4: Call `notify_error()` on exception, before `sys.exit(1)`
+- [x] Phase 3: Tests
+  - [x] Task 3.1: Unit tests for `src/utils/notification.py` (`tests/utils/test_notification.py`)
+  - [x] Task 3.2: Integration tests for notification calls in `main()` (`tests/test_main.py`)
+  - [x] Task 3.3: Run full test suite and confirm no regressions
+- [x] Phase 4: Documentation
+  - [x] Task 4.1: Update `docs/standards/architecture.md` — add `notification.py` to the utils listing
+  - [x] Task 4.2: Update `README.md` — mention `.env` setup for Slack notifications
 
 ## Phase Details
 

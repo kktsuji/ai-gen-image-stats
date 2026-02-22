@@ -245,6 +245,88 @@ class TestMainEntryPoint:
             main([str(config_file), "--epochs", "5"])
 
 
+class TestMainNotifications:
+    """Tests for Slack notification integration in main()."""
+
+    @pytest.mark.integration
+    def test_main_loads_dotenv(self, tmp_path):
+        """Test that main() calls load_dotenv() at startup."""
+        config_file = tmp_path / "config.yaml"
+        config_data = {
+            "experiment": "classifier",
+            "mode": "train",
+            "output": {"base_dir": str(tmp_path / "outputs")},
+        }
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with (
+            patch("src.main.load_dotenv") as mock_dotenv,
+            patch("src.main.setup_experiment_classifier"),
+            patch("src.main.notify_success"),
+        ):
+            main([str(config_file)])
+            mock_dotenv.assert_called_once()
+
+    @pytest.mark.integration
+    def test_main_calls_notify_success_on_completion(self, tmp_path):
+        """Test that notify_success is called after successful experiment."""
+        config_file = tmp_path / "config.yaml"
+        config_data = {
+            "experiment": "classifier",
+            "mode": "train",
+            "output": {"base_dir": str(tmp_path / "outputs")},
+        }
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with (
+            patch("src.main.load_dotenv"),
+            patch("src.main.setup_experiment_classifier"),
+            patch("src.main.notify_success") as mock_notify,
+        ):
+            main([str(config_file)])
+
+            mock_notify.assert_called_once()
+            call_args = mock_notify.call_args
+            config_arg = call_args[0][0]
+            duration_arg = call_args[0][1]
+            assert config_arg["experiment"] == "classifier"
+            assert duration_arg >= 0
+
+    @pytest.mark.integration
+    def test_main_calls_notify_error_on_exception(self, tmp_path):
+        """Test that notify_error is called when experiment raises."""
+        config_file = tmp_path / "config.yaml"
+        config_data = {
+            "experiment": "classifier",
+            "mode": "train",
+            "output": {"base_dir": str(tmp_path / "outputs")},
+        }
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with (
+            patch("src.main.load_dotenv"),
+            patch(
+                "src.main.setup_experiment_classifier",
+                side_effect=RuntimeError("test error"),
+            ),
+            patch("src.main.notify_error") as mock_notify,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main([str(config_file)])
+            assert exc_info.value.code == 1
+
+            mock_notify.assert_called_once()
+            call_args = mock_notify.call_args
+            config_arg = call_args[0][0]
+            error_arg = call_args[0][1]
+            assert config_arg["experiment"] == "classifier"
+            assert isinstance(error_arg, RuntimeError)
+            assert "test error" in str(error_arg)
+
+
 class TestClassifierExperimentSetup:
     """Test suite for classifier experiment setup."""
 
