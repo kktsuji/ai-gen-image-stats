@@ -24,7 +24,7 @@ Take the user input and create a plan to implement it.
 1. **Understand the User Input**: Analyze the user input to grasp the requirements and objectives of the implementation.
 2. **Read Documentation**: If necessary, read relevant documentation or resources to gather information that will aid in creating the plan.
 
-- `docs/standard/architecture.md`: This document provides an overview of the system architecture.
+- `docs/standards/architecture.md`: This document provides an overview of the system architecture.
 - `README.md`: This document contains general information about the project.
 
 3. **Investigate the Codebase**: Investigate the codebase to understand the existing structure and identify where changes or additions may be needed to implement the desired functionality. This may involve reviewing relevant files, modules, or components that are related to the implementation.

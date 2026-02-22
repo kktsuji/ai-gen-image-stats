@@ -24,7 +24,7 @@ Take the user input and implement following the plan in it.
 1. **Understand the User Input**: Analyze the user input to grasp the requirements and objectives of the implementation. User input has a TODO list of implementation phases and tasks. Each phase may have multiple tasks that need to be completed to achieve the overall implementation goals.
 2. **Read Documentation**: If necessary, read relevant documentation or resources to gather information that will aid in creating the plan.
 
-- `docs/standard/architecture.md`: This document provides an overview of the system architecture.
+- `docs/standards/architecture.md`: This document provides an overview of the system architecture.
 - `README.md`: This document contains general information about the project.
 - `.github/prompts/kktsuji.venv.prompt.md`: This document provides guidance for using the Python virtual environment.
 
