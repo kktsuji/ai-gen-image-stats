@@ -407,7 +407,6 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
         # Validate each interval key: must be positive int or null (None)
         for interval_key in [
             "log_images_interval",
-            "log_sample_comparison_interval",
             "log_denoising_interval",
         ]:
             if interval_key in vis and vis[interval_key] is not None:

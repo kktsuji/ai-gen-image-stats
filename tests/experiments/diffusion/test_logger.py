@@ -62,7 +62,6 @@ class TestDiffusionLoggerInstantiation:
         assert (log_dir / "metrics").exists()
         assert (log_dir / "samples").exists()
         assert (log_dir / "denoising").exists()
-        assert (log_dir / "quality").exists()
 
     def test_log_dir_is_path_object(self, logger):
         """Logger converts log_dir to Path object."""
@@ -403,47 +402,6 @@ class TestLogDenoisingProcess:
 
 
 @pytest.mark.unit
-class TestLogSampleComparison:
-    """Test the log_sample_comparison() method."""
-
-    def test_log_sample_comparison_with_4d_tensor(self, logger, temp_log_dir):
-        """log_sample_comparison() handles 4D image tensor."""
-        images = torch.randn(4, 3, 32, 32)
-        logger.log_sample_comparison(images, tag="quality", step=1000)
-
-        image_file = Path(temp_log_dir) / "quality" / "quality_step1000.png"
-        assert image_file.exists()
-
-    def test_log_sample_comparison_with_3d_tensor(self, logger, temp_log_dir):
-        """log_sample_comparison() handles 3D image tensor."""
-        image = torch.randn(3, 32, 32)
-        logger.log_sample_comparison(image, tag="quality", step=1000)
-
-        image_file = Path(temp_log_dir) / "quality" / "quality_step1000.png"
-        assert image_file.exists()
-
-    def test_log_sample_comparison_with_epoch(self, logger, temp_log_dir):
-        """log_sample_comparison() includes epoch in filename."""
-        images = torch.randn(2, 3, 32, 32)
-        logger.log_sample_comparison(images, tag="quality", step=1000, epoch=10)
-
-        image_file = Path(temp_log_dir) / "quality" / "quality_epoch10_step1000.png"
-        assert image_file.exists()
-
-    def test_log_sample_comparison_saves_to_quality_dir(self, logger, temp_log_dir):
-        """log_sample_comparison() saves to quality directory."""
-        images = torch.randn(4, 3, 32, 32)
-        logger.log_sample_comparison(images, tag="comparison", step=1000)
-
-        # Should be in quality/ not samples/
-        quality_file = Path(temp_log_dir) / "quality" / "comparison_step1000.png"
-        samples_file = Path(temp_log_dir) / "samples" / "comparison_step1000.png"
-
-        assert quality_file.exists()
-        assert not samples_file.exists()
-
-
-@pytest.mark.unit
 class TestLogHyperparams:
     """Test the log_hyperparams() method."""
 
@@ -511,7 +469,7 @@ class TestDiffusionLoggerWorkflow:
 
         # Log quality comparison
         quality_samples = torch.randn(4, 3, 32, 32)
-        logger.log_sample_comparison(
+        logger.log_images(
             quality_samples, tag="quality", step=1000, epoch=10
         )
 
@@ -527,7 +485,7 @@ class TestDiffusionLoggerWorkflow:
         assert (log_dir / "metrics" / "metrics.csv").exists()
         assert (log_dir / "samples" / "samples_epoch10_step1000.png").exists()
         assert (log_dir / "denoising" / "denoising_epoch10_step1000.png").exists()
-        assert (log_dir / "quality" / "quality_epoch10_step1000.png").exists()
+        assert (log_dir / "samples" / "quality_epoch10_step1000.png").exists()
 
     def test_multiple_metrics_over_time(self, logger, temp_log_dir):
         """Can log multiple metrics entries over time."""

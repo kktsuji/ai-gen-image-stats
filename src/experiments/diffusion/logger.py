@@ -42,8 +42,6 @@ class DiffusionLogger(BaseLogger):
     - metrics.csv: Training/validation metrics over time
     - samples/: Generated sample images during training
     - denoising/: Denoising process visualizations
-    - quality/: Sample quality comparisons over time
-
     Example:
         >>> logger = DiffusionLogger(log_dir="outputs/logs/diffusion_001")
         >>> logger.log_metrics({'loss': 0.05, 'avg_timestep': 500}, step=1000, epoch=10)
@@ -78,12 +76,9 @@ class DiffusionLogger(BaseLogger):
         self.metrics_dir = self.log_dir / "metrics"
         self.samples_dir = self.log_dir / "samples"
         self.denoising_dir = self.log_dir / "denoising"
-        self.quality_dir = self.log_dir / "quality"
-
         self.metrics_dir.mkdir(exist_ok=True)
         self.samples_dir.mkdir(exist_ok=True)
         self.denoising_dir.mkdir(exist_ok=True)
-        self.quality_dir.mkdir(exist_ok=True)
 
         # Initialize metrics CSV file
         self.metrics_file = self.metrics_dir / "metrics.csv"
@@ -357,36 +352,6 @@ class DiffusionLogger(BaseLogger):
             safe_log_figure(self.tb_writer, "denoising/figure", fig, step, close=False)
 
         plt.close(fig)
-
-    def log_sample_comparison(
-        self,
-        images: torch.Tensor,
-        tag: str,
-        step: int,
-        epoch: Optional[int] = None,
-    ) -> None:
-        """Log sample images for quality comparison over time.
-
-        Useful for tracking how sample quality improves during training.
-
-        Args:
-            images: Image tensor to log, shape (B, C, H, W)
-            tag: Identifier for the comparison set
-            step: Current training step
-            epoch: Current training epoch (optional)
-        """
-        if images.ndim == 3:
-            images = images.unsqueeze(0)
-
-        # Create filename
-        filename_parts = [tag, f"step{step}"]
-        if epoch is not None:
-            filename_parts.insert(1, f"epoch{epoch}")
-        filename = "_".join(filename_parts) + ".png"
-
-        # Save to quality directory
-        image_path = self.quality_dir / filename
-        save_image(images, image_path, normalize=True, nrow=min(images.size(0), 8))
 
     def log_hyperparams(self, hyperparams: Dict[str, Any]) -> None:
         """Log hyperparameters to TensorBoard.

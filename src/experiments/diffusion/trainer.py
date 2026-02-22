@@ -65,7 +65,6 @@ class DiffusionTrainer(BaseTrainer):
         gradient_clip_norm: Maximum gradient norm for clipping (None to disable)
         scheduler: Optional learning rate scheduler
         log_images_interval: Save sample grid every N epochs (None to disable)
-        log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
         log_denoising_interval: Save denoising process every N epochs (None to disable)
         num_samples: Total number of samples to generate during visualization
         guidance_scale: Classifier-free guidance scale for conditional generation
@@ -89,7 +88,6 @@ class DiffusionTrainer(BaseTrainer):
         ...     use_ema=True,
         ...     use_amp=True,
         ...     log_images_interval=10,
-        ...     log_sample_comparison_interval=10,
         ...     log_denoising_interval=10,
         ... )
         >>>
@@ -115,7 +113,6 @@ class DiffusionTrainer(BaseTrainer):
             ]
         ] = None,
         log_images_interval: Optional[int] = 10,
-        log_sample_comparison_interval: Optional[int] = 10,
         log_denoising_interval: Optional[int] = 10,
         num_samples: int = 8,
         guidance_scale: float = 3.0,
@@ -137,7 +134,6 @@ class DiffusionTrainer(BaseTrainer):
             gradient_clip_norm: Maximum gradient norm for clipping
             scheduler: Optional learning rate scheduler
             log_images_interval: Save sample grid every N epochs (None to disable)
-            log_sample_comparison_interval: Save quality comparison every N epochs (None to disable)
             log_denoising_interval: Save denoising process every N epochs (None to disable)
             num_samples: Total number of samples for visualization
             guidance_scale: Classifier-free guidance scale
@@ -159,7 +155,6 @@ class DiffusionTrainer(BaseTrainer):
 
         # Sample generation settings
         self.log_images_interval = log_images_interval
-        self.log_sample_comparison_interval = log_sample_comparison_interval
         self.log_denoising_interval = log_denoising_interval
         self.num_samples = num_samples
         self.guidance_scale = guidance_scale
@@ -168,7 +163,6 @@ class DiffusionTrainer(BaseTrainer):
         self.viz_enabled = any(
             [
                 self.log_images_interval,
-                self.log_sample_comparison_interval,
                 self.log_denoising_interval,
             ]
         )
@@ -1016,7 +1010,6 @@ class DiffusionTrainer(BaseTrainer):
         """
         for interval in [
             self.log_images_interval,
-            self.log_sample_comparison_interval,
             self.log_denoising_interval,
         ]:
             if interval is not None and interval > 0 and epoch % interval == 0:
@@ -1074,12 +1067,8 @@ class DiffusionTrainer(BaseTrainer):
                 **kwargs,
             )
 
-        # 3. log_sample_comparison
-        if (
-            self.log_sample_comparison_interval
-            and epoch % self.log_sample_comparison_interval == 0
-        ):
-            logger.log_sample_comparison(
+            # Also log quality comparison via log_images
+            logger.log_images(
                 samples,
                 tag="quality_comparison",
                 step=step,

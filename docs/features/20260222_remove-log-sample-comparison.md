@@ -33,31 +33,31 @@
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Remove `log_sample_comparison` from logger
-  - [ ] Task 1.1: Remove `quality_dir` creation and `log_sample_comparison()` method from `DiffusionLogger`
-  - [ ] Task 1.2: Update `DiffusionLogger` class docstring (remove `quality/` directory reference)
-- [ ] Phase 2: Remove `log_sample_comparison_interval` from trainer
-  - [ ] Task 2.1: Remove `log_sample_comparison_interval` param from `DiffusionTrainer.__init__` (param, docstring, assignment, `viz_enabled`)
-  - [ ] Task 2.2: Remove `log_sample_comparison_interval` from `_should_generate_samples()`
-  - [ ] Task 2.3: Replace `log_sample_comparison` call in `_generate_samples()` with `log_images` call using tag `"quality_comparison"`
-- [ ] Phase 3: Remove from config layer
-  - [ ] Task 3.1: Remove `log_sample_comparison_interval` from `config.py` validation
-  - [ ] Task 3.2: Remove `log_sample_comparison_interval` from `default.yaml`
-  - [ ] Task 3.3: Remove `log_sample_comparison_interval` kwarg from `src/main.py`
-- [ ] Phase 4: Update tests
-  - [ ] Task 4.1: Remove `TestLogSampleComparison` class from `test_logger.py`
-  - [ ] Task 4.2: Update integration test in `test_logger.py` (replace `log_sample_comparison` with `log_images`, update assertions)
-  - [ ] Task 4.3: Remove `quality/` directory assertion from `test_logger.py` init tests
-  - [ ] Task 4.4: Remove `log_sample_comparison` from mock logger in `test_trainer.py`
-  - [ ] Task 4.5: Remove `log_sample_comparison_interval` from all trainer instantiations in `test_trainer.py`
-  - [ ] Task 4.6: Update/remove `test_log_sample_comparison_called_at_interval` in `test_trainer.py`
-  - [ ] Task 4.7: Remove `log_sample_comparison_interval` from `test_trainer_sampler_integration.py`
-  - [ ] Task 4.8: Remove `log_sample_comparison_interval` from `test_diffusion_pipeline.py`
-  - [ ] Task 4.9: Remove `log_sample_comparison_interval` from `test_config.py`
-  - [ ] Task 4.10: Remove `log_sample_comparison_interval` from `tests/conftest.py`
-- [ ] Phase 5: Validate
-  - [ ] Task 5.1: Run all diffusion-related tests and confirm they pass
-  - [ ] Task 5.2: Run full test suite to check for regressions
+- [x] Phase 1: Remove `log_sample_comparison` from logger
+  - [x] Task 1.1: Remove `quality_dir` creation and `log_sample_comparison()` method from `DiffusionLogger`
+  - [x] Task 1.2: Update `DiffusionLogger` class docstring (remove `quality/` directory reference)
+- [x] Phase 2: Remove `log_sample_comparison_interval` from trainer
+  - [x] Task 2.1: Remove `log_sample_comparison_interval` param from `DiffusionTrainer.__init__` (param, docstring, assignment, `viz_enabled`)
+  - [x] Task 2.2: Remove `log_sample_comparison_interval` from `_should_generate_samples()`
+  - [x] Task 2.3: Replace `log_sample_comparison` call in `_generate_samples()` with `log_images` call using tag `"quality_comparison"`
+- [x] Phase 3: Remove from config layer
+  - [x] Task 3.1: Remove `log_sample_comparison_interval` from `config.py` validation
+  - [x] Task 3.2: Remove `log_sample_comparison_interval` from `default.yaml`
+  - [x] Task 3.3: Remove `log_sample_comparison_interval` kwarg from `src/main.py`
+- [x] Phase 4: Update tests
+  - [x] Task 4.1: Remove `TestLogSampleComparison` class from `test_logger.py`
+  - [x] Task 4.2: Update integration test in `test_logger.py` (replace `log_sample_comparison` with `log_images`, update assertions)
+  - [x] Task 4.3: Remove `quality/` directory assertion from `test_logger.py` init tests
+  - [x] Task 4.4: Remove `log_sample_comparison` from mock logger in `test_trainer.py`
+  - [x] Task 4.5: Remove `log_sample_comparison_interval` from all trainer instantiations in `test_trainer.py`
+  - [x] Task 4.6: Update/remove `test_log_sample_comparison_called_at_interval` in `test_trainer.py`
+  - [x] Task 4.7: Remove `log_sample_comparison_interval` from `test_trainer_sampler_integration.py`
+  - [x] Task 4.8: Remove `log_sample_comparison_interval` from `test_diffusion_pipeline.py`
+  - [x] Task 4.9: Remove `log_sample_comparison_interval` from `test_config.py`
+  - [x] Task 4.10: Remove `log_sample_comparison_interval` from `tests/conftest.py`
+- [x] Phase 5: Validate
+  - [x] Task 5.1: Run all diffusion-related tests and confirm they pass
+  - [x] Task 5.2: Run full test suite to check for regressions
 
 ## Phase Details
 

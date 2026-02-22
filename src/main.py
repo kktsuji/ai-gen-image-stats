@@ -809,11 +809,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 if visualization_config["enabled"]
                 else None
             ),
-            log_sample_comparison_interval=(
-                visualization_config.get("log_sample_comparison_interval")
-                if visualization_config["enabled"]
-                else None
-            ),
             log_denoising_interval=(
                 visualization_config.get("log_denoising_interval")
                 if visualization_config["enabled"]

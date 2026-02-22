@@ -156,7 +156,6 @@ class SimpleDiffusionLogger(BaseLogger):
     def __init__(self):
         self.logged_metrics = []
         self.logged_images = []
-        self.logged_sample_comparisons = []
         self.logged_denoising_sequences = []
 
     def log_metrics(
@@ -177,17 +176,6 @@ class SimpleDiffusionLogger(BaseLogger):
     ) -> None:
         self.logged_images.append(
             {"images": images, "tag": tag, "step": step, "epoch": epoch, **kwargs}
-        )
-
-    def log_sample_comparison(
-        self,
-        images: torch.Tensor,
-        tag: str,
-        step: int,
-        epoch: Optional[int] = None,
-    ) -> None:
-        self.logged_sample_comparisons.append(
-            {"images": images, "tag": tag, "step": step, "epoch": epoch}
         )
 
     def log_denoising_process(
@@ -277,7 +265,6 @@ def diffusion_trainer(
         use_ema=False,  # Disable EMA for simplicity in tests
         use_amp=False,  # Disable AMP for CPU tests
         log_images_interval=None,  # Disable sampling during training for speed
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -476,7 +463,6 @@ def test_diffusion_trainer_full_workflow():
         show_progress=False,
         use_ema=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -516,7 +502,6 @@ def test_diffusion_trainer_latest_checkpoint_written_when_enabled():
         show_progress=False,
         use_ema=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -550,7 +535,6 @@ def test_diffusion_trainer_latest_checkpoint_not_written_when_disabled():
         show_progress=False,
         use_ema=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -831,7 +815,6 @@ def test_diffusion_trainer_sample_generation_during_training():
         show_progress=False,
         use_ema=False,
         log_images_interval=1,  # Generate every epoch
-        log_sample_comparison_interval=1,
         log_denoising_interval=1,
         num_samples=4,
     )
@@ -850,7 +833,6 @@ def test_diffusion_trainer_sample_generation_during_training():
         assert log_entry["images"].shape[1] == 3  # RGB
 
     # Check that sample comparisons and denoising were also logged
-    assert len(logger.logged_sample_comparisons) > 0
     assert len(logger.logged_denoising_sequences) > 0
 
 
@@ -878,7 +860,6 @@ def test_diffusion_trainer_unconditional_sample_generation():
         show_progress=False,
         use_ema=False,
         log_images_interval=1,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
         num_samples=8,
     )
@@ -935,7 +916,6 @@ def test_diffusion_trainer_logs_sample_generation(
         device="cpu",
         show_progress=False,
         log_images_interval=1,
-        log_sample_comparison_interval=1,
         log_denoising_interval=1,
     )
 
@@ -1028,7 +1008,6 @@ def test_log_images_called_at_interval():
         show_progress=False,
         use_ema=False,
         log_images_interval=2,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1036,15 +1015,15 @@ def test_log_images_called_at_interval():
         trainer.train(num_epochs=4, checkpoint_dir=tmpdir, validate_frequency=0)
 
     # log_images called at epoch 2 and 4 (every 2 epochs)
-    assert len(logger.logged_images) == 2
-    # sample_comparison and denoising should NOT be called
-    assert len(logger.logged_sample_comparisons) == 0
+    # Each trigger logs both samples and quality_comparison = 4 total
+    assert len(logger.logged_images) == 4
+    # denoising should NOT be called
     assert len(logger.logged_denoising_sequences) == 0
 
 
 @pytest.mark.integration
-def test_log_sample_comparison_called_at_interval():
-    """Verify log_sample_comparison is called at the correct interval."""
+def test_quality_comparison_logged_via_log_images():
+    """Verify quality comparison images are logged via log_images."""
     model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
     dataloader = SimpleDiffusionDataLoader(
         num_train_samples=16, num_val_samples=0, batch_size=4
@@ -1060,17 +1039,16 @@ def test_log_sample_comparison_called_at_interval():
         device="cpu",
         show_progress=False,
         use_ema=False,
-        log_images_interval=None,
-        log_sample_comparison_interval=3,
+        log_images_interval=3,
         log_denoising_interval=None,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         trainer.train(num_epochs=6, checkpoint_dir=tmpdir, validate_frequency=0)
 
-    # Only log_sample_comparison at epochs 3, 6
-    assert len(logger.logged_sample_comparisons) == 2
-    assert len(logger.logged_images) == 0
+    # log_images at epochs 3, 6: each triggers samples + quality_comparison = 4 total
+    quality_entries = [e for e in logger.logged_images if e["tag"] == "quality_comparison"]
+    assert len(quality_entries) == 2
     assert len(logger.logged_denoising_sequences) == 0
 
 
@@ -1093,7 +1071,6 @@ def test_log_denoising_called_at_interval():
         show_progress=False,
         use_ema=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=2,
     )
 
@@ -1103,7 +1080,6 @@ def test_log_denoising_called_at_interval():
     # log_denoising_process at epochs 2, 4
     assert len(logger.logged_denoising_sequences) == 2
     assert len(logger.logged_images) == 0
-    assert len(logger.logged_sample_comparisons) == 0
 
 
 @pytest.mark.integration
@@ -1127,7 +1103,6 @@ def test_samples_generated_once_when_all_intervals_trigger():
         show_progress=False,
         use_ema=False,
         log_images_interval=1,
-        log_sample_comparison_interval=1,
         log_denoising_interval=1,
     )
 
@@ -1142,9 +1117,9 @@ def test_samples_generated_once_when_all_intervals_trigger():
             # Sampler called exactly once per epoch - one epoch means one call
             assert mock_sample.call_count == 1
 
-    # All three logger methods should have been called
-    assert len(logger.logged_images) == 1
-    assert len(logger.logged_sample_comparisons) == 1
+    # Both logger methods should have been called
+    # log_images is called twice per epoch (samples + quality_comparison)
+    assert len(logger.logged_images) == 2
     assert len(logger.logged_denoising_sequences) == 1
 
 
@@ -1169,7 +1144,6 @@ def test_visualization_disabled_when_all_intervals_null():
         show_progress=False,
         use_ema=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1181,7 +1155,6 @@ def test_visualization_disabled_when_all_intervals_null():
             assert mock_sample.call_count == 0
 
     assert len(logger.logged_images) == 0
-    assert len(logger.logged_sample_comparisons) == 0
     assert len(logger.logged_denoising_sequences) == 0
 
 
@@ -1249,7 +1222,6 @@ def test_train_epoch_unexpected_batch_length():
         use_ema=False,
         use_amp=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1289,7 +1261,6 @@ def test_diffusion_trainer_with_plateau_scheduler():
         use_amp=False,
         scheduler=scheduler,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1327,7 +1298,6 @@ def test_diffusion_trainer_plateau_scheduler_receives_metric():
         use_amp=False,
         scheduler=scheduler,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1363,7 +1333,6 @@ def test_best_model_saved_with_validation_data():
         use_ema=False,
         use_amp=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1400,7 +1369,6 @@ def test_best_model_saved_with_matching_val_metric_key():
         use_ema=False,
         use_amp=False,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1439,7 +1407,6 @@ def test_resume_training_scheduler_advances():
         use_amp=False,
         scheduler=scheduler,
         log_images_interval=None,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 
@@ -1489,7 +1456,6 @@ def test_resume_training_generates_samples():
         use_ema=False,
         use_amp=False,
         log_images_interval=1,
-        log_sample_comparison_interval=None,
         log_denoising_interval=None,
     )
 

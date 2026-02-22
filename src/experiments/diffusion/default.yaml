@@ -160,7 +160,6 @@ training:
     num_samples: 8 # Number of samples to generate (shared by all below)
     guidance_scale: 3.0 # Classifier-free guidance scale (shared by all below)
     log_images_interval: 50 # Save sample grid every N epochs (null to disable)
-    log_sample_comparison_interval: 50 # Save quality comparison every N epochs (null to disable)
     log_denoising_interval: 50 # Save denoising process every N epochs (null to disable)
 
   # Performance: Performance optimization settings

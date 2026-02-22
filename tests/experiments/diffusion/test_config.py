@@ -170,7 +170,6 @@ class TestGetDefaultConfig:
         visualization = config["training"]["visualization"]
         assert "enabled" in visualization
         assert "log_images_interval" in visualization
-        assert "log_sample_comparison_interval" in visualization
         assert "log_denoising_interval" in visualization
         assert "num_samples" in visualization
         assert "guidance_scale" in visualization
@@ -352,6 +351,7 @@ class TestValidateConfig:
     def test_valid_num_classes_none(self):
         """Test validation succeeds with num_classes=None (V2)."""
         config = get_default_config()
+        config["model"]["conditioning"]["type"] = None
         config["model"]["conditioning"]["num_classes"] = None
 
         # Should not raise

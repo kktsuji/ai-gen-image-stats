@@ -395,7 +395,6 @@ def mock_config_diffusion() -> Dict[str, Any]:
             "visualization": {
                 "enabled": True,
                 "log_images_interval": 10,
-                "log_sample_comparison_interval": 10,
                 "log_denoising_interval": 10,
                 "num_samples": 8,
                 "guidance_scale": 3.0,

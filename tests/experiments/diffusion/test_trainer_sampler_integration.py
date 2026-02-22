@@ -116,7 +116,6 @@ def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, de
         ema_decay=0.999,
         show_progress=False,  # Disable for tests
         log_images_interval=1,
-        log_sample_comparison_interval=1,
         log_denoising_interval=1,
     )
 
