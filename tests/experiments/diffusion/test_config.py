@@ -871,6 +871,81 @@ class TestModeAwareValidation:
         assert "batch_size" in config["generation"]["sampling"]
         assert config["generation"]["sampling"]["batch_size"] == 50
 
+    def test_generation_class_selection_default(self):
+        """Test that default config has class_selection as null."""
+        config = get_default_config()
+        assert config["generation"]["sampling"]["class_selection"] is None
+
+    def test_generation_class_selection_null_passes(self):
+        """Test that class_selection=null is accepted."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = None
+        validate_config(config)
+
+    def test_generation_class_selection_valid_single(self):
+        """Test that class_selection=[0] is accepted."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = [0]
+        validate_config(config)
+
+    def test_generation_class_selection_valid_subset(self):
+        """Test that class_selection=[0, 1] is accepted."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = [0, 1]
+        validate_config(config)
+
+    def test_generation_class_selection_empty_list_raises(self):
+        """Test that class_selection=[] raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = []
+        with pytest.raises(ValueError, match="must be a non-empty list or null"):
+            validate_config(config)
+
+    def test_generation_class_selection_non_integer_raises(self):
+        """Test that class_selection=[0, 'a'] raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = [0, "a"]
+        with pytest.raises(ValueError, match="must contain non-negative integers"):
+            validate_config(config)
+
+    def test_generation_class_selection_negative_raises(self):
+        """Test that class_selection=[-1] raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = [-1]
+        with pytest.raises(ValueError, match="must contain non-negative integers"):
+            validate_config(config)
+
+    def test_generation_class_selection_duplicates_raises(self):
+        """Test that class_selection=[0, 0] raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["sampling"]["class_selection"] = [0, 0]
+        with pytest.raises(ValueError, match="must not contain duplicate class indices"):
+            validate_config(config)
+
+    def test_generation_class_selection_out_of_range_raises(self):
+        """Test that class_selection=[99] with num_classes=2 raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["model"]["conditioning"]["num_classes"] = 2
+        config["generation"]["sampling"]["class_selection"] = [99]
+        with pytest.raises(ValueError, match="contains indices"):
+            validate_config(config)
+
 
 @pytest.mark.unit
 class TestGetResolutionConfig:

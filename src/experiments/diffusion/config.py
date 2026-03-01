@@ -649,6 +649,31 @@ def _validate_generation_config(config: Dict[str, Any]) -> None:
                     "generation.sampling.batch_size must be a positive integer"
                 )
 
+        class_selection = sampling.get("class_selection")
+        if class_selection is not None:
+            if not isinstance(class_selection, list) or len(class_selection) == 0:
+                raise ValueError(
+                    "generation.sampling.class_selection must be a non-empty list or null"
+                )
+            if not all(isinstance(c, int) and c >= 0 for c in class_selection):
+                raise ValueError(
+                    "generation.sampling.class_selection must contain non-negative integers"
+                )
+            if len(class_selection) != len(set(class_selection)):
+                raise ValueError(
+                    "generation.sampling.class_selection must not contain duplicate class indices"
+                )
+            num_classes = (
+                config.get("model", {}).get("conditioning", {}).get("num_classes")
+            )
+            if num_classes is not None:
+                invalid = [c for c in class_selection if c >= num_classes]
+                if invalid:
+                    raise ValueError(
+                        f"generation.sampling.class_selection contains indices {invalid} "
+                        f">= num_classes ({num_classes})"
+                    )
+
     # Validate output subsection
     if "output" in generation:
         out = generation["output"]

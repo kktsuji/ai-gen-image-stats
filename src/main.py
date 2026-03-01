@@ -605,14 +605,18 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Prepare class labels if conditional generation
         class_labels = None
         if num_classes is not None:
-            # Generate balanced samples across all classes
-            samples_per_class = num_samples // num_classes
-            remainder = num_samples % num_classes
+            class_selection = sampling_config.get("class_selection")
+            target_classes = class_selection if class_selection is not None else list(range(num_classes))
+            n = len(target_classes)
+            samples_per_class = num_samples // n
+            remainder = num_samples % n
             class_labels = []
-            for i in range(num_classes):
-                count = samples_per_class + (1 if i < remainder else 0)
-                class_labels.extend([i] * count)
+            for idx, cls in enumerate(target_classes):
+                count = samples_per_class + (1 if idx < remainder else 0)
+                class_labels.extend([cls] * count)
             class_labels = torch.tensor(class_labels, device=device)
+            if class_selection is not None:
+                logger.info(f"Class selection: {class_selection}")
 
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)

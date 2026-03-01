@@ -1334,6 +1334,162 @@ class TestDiffusionGenerationMode:
                 # Single batch since batch_size > num_samples
                 mock_sampler_instance.sample.assert_called_once()
 
+    @pytest.mark.unit
+    def test_generation_mode_class_labels_all_classes(self, tmp_path):
+        """Test that with class_selection=null, labels are balanced across all classes."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2
+        )
+        config["generation"]["sampling"]["class_selection"] = None
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+
+                def sample_side_effect(**kwargs):
+                    n = kwargs.get("num_samples", 1)
+                    return torch.randn(n, 3, 32, 32)
+
+                mock_sampler_instance.sample.side_effect = sample_side_effect
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+                all_labels = torch.cat(
+                    [
+                        call.kwargs["class_labels"]
+                        for call in mock_sampler_instance.sample.call_args_list
+                    ]
+                )
+                assert (all_labels == 0).sum().item() == 2
+                assert (all_labels == 1).sum().item() == 2
+
+    @pytest.mark.unit
+    def test_generation_mode_class_selection_single_class(self, tmp_path):
+        """Test that class_selection=[1] generates only labels=1."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2,
+            class_selection=[1],
+        )
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+
+                def sample_side_effect(**kwargs):
+                    n = kwargs.get("num_samples", 1)
+                    return torch.randn(n, 3, 32, 32)
+
+                mock_sampler_instance.sample.side_effect = sample_side_effect
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+                all_labels = torch.cat(
+                    [
+                        call.kwargs["class_labels"]
+                        for call in mock_sampler_instance.sample.call_args_list
+                    ]
+                )
+                assert all_labels.tolist() == [1] * 4
+
+    @pytest.mark.unit
+    def test_generation_mode_class_selection_subset_balanced(self, tmp_path):
+        """Test class_selection=[0,1] with num_classes=4: only classes 0 and 1 are generated."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path, num_classes=4)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=10, num_classes=4,
+            class_selection=[0, 1],
+        )
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+
+                def sample_side_effect(**kwargs):
+                    n = kwargs.get("num_samples", 1)
+                    return torch.randn(n, 3, 32, 32)
+
+                mock_sampler_instance.sample.side_effect = sample_side_effect
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+                all_labels = torch.cat(
+                    [
+                        call.kwargs["class_labels"]
+                        for call in mock_sampler_instance.sample.call_args_list
+                    ]
+                )
+                assert (all_labels == 0).sum().item() == 5
+                assert (all_labels == 1).sum().item() == 5
+                assert (all_labels == 2).sum().item() == 0
+                assert (all_labels == 3).sum().item() == 0
+
+    @pytest.mark.unit
+    def test_generation_mode_class_selection_logs_info(self, tmp_path, capsys):
+        """Test that class_selection is logged when set."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2,
+            class_selection=[0],
+        )
+
+        with patch(
+            "src.experiments.diffusion.sampler.DiffusionSampler"
+        ) as mock_sampler:
+            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                mock_sampler_instance = MagicMock()
+                mock_sampler.return_value = mock_sampler_instance
+
+                def sample_side_effect(**kwargs):
+                    n = kwargs.get("num_samples", 1)
+                    return torch.randn(n, 3, 32, 32)
+
+                mock_sampler_instance.sample.side_effect = sample_side_effect
+
+                try:
+                    setup_experiment_diffusion(config)
+                except SystemExit:
+                    pass
+
+        captured = capsys.readouterr()
+        assert "Class selection" in captured.out
+        assert "[0]" in captured.out
+
     # Helper methods
     def _create_generation_config(
         self,
@@ -1342,6 +1498,7 @@ class TestDiffusionGenerationMode:
         num_samples=10,
         num_classes=2,
         use_ema=False,
+        class_selection=None,
     ):
         """Create a minimal generation mode config."""
         return {
@@ -1393,6 +1550,7 @@ class TestDiffusionGenerationMode:
                     "guidance_scale": 3.0,
                     "use_ema": use_ema,
                     "ema_decay": 0.9999,
+                    "class_selection": class_selection,
                 },
                 "output": {
                     "save_grid": True,
@@ -1415,7 +1573,7 @@ class TestDiffusionGenerationMode:
             },
         }
 
-    def _create_mock_checkpoint(self, tmp_path, include_ema=False):
+    def _create_mock_checkpoint(self, tmp_path, include_ema=False, num_classes=2):
         """Create a mock checkpoint file for testing."""
         import torch
 
@@ -1427,7 +1585,7 @@ class TestDiffusionGenerationMode:
             in_channels=3,
             model_channels=64,
             channel_multipliers=(1, 2, 4),
-            num_classes=2,
+            num_classes=num_classes,
             num_timesteps=1000,
             beta_schedule="linear",
             beta_start=0.0001,

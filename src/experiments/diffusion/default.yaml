@@ -219,6 +219,7 @@ generation:
     guidance_scale: 3.0 # Classifier-free guidance scale (>= 0.0)
     use_ema: true # Use EMA weights if available
     ema_decay: 0.9999 # EMA decay rate for generation (should match training.ema.decay)
+    class_selection: null # null = all classes; [0, 2] = only classes 0 and 2
 
   # Output: Generation output settings
   output:
