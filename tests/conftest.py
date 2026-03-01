@@ -59,7 +59,7 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(autouse=True)
 def disable_slack_webhook(monkeypatch):
     """Ensure Slack webhook notifications are never sent during tests."""
-    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "")
 
 
 @pytest.fixture(scope="function", autouse=True)
