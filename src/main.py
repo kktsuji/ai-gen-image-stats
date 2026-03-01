@@ -1001,6 +1001,9 @@ def main(args: Optional[list] = None) -> None:
 
         # Notify on success
         duration = time.time() - start_time
+        hours, remainder = divmod(duration, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        logger.info(f"Total duration: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
         notify_success(config, duration)
 
     except NotImplementedError as e:
