@@ -606,7 +606,11 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         class_labels = None
         if num_classes is not None:
             class_selection = sampling_config.get("class_selection")
-            target_classes = class_selection if class_selection is not None else list(range(num_classes))
+            target_classes = (
+                class_selection
+                if class_selection is not None
+                else list(range(num_classes))
+            )
             n = len(target_classes)
             samples_per_class = num_samples // n
             remainder = num_samples % n
@@ -634,12 +638,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 class_labels=batch_labels,
                 guidance_scale=sampling_config["guidance_scale"],
                 use_ema=sampling_config["use_ema"],
-                show_progress=True,
-                progress_desc=(
-                    f"Batch {batch_idx}/{num_batches}"
-                    if num_batches > 1
-                    else "Denoising"
-                ),
             )
             all_samples.append(batch_samples)
 

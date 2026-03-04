@@ -328,7 +328,7 @@ class TestSimpleImageDatasetLoading:
         assert dataset.get_class_counts() == {}
 
 
-@pytest.mark.unit
+@pytest.mark.component
 class TestDatasetFactory:
     """Unit tests for get_dataset factory function."""
 

@@ -99,8 +99,6 @@ class DiffusionSampler:
         class_labels: Optional[torch.Tensor] = None,
         guidance_scale: float = 0.0,
         use_ema: bool = True,
-        show_progress: bool = False,
-        progress_desc: str = "Denoising",
     ) -> torch.Tensor:
         """Generate samples from the diffusion model.
 
@@ -118,8 +116,6 @@ class DiffusionSampler:
                 Typical values: 1.0-5.0
             use_ema: Whether to use EMA weights for generation
                 Recommended: True for better sample quality
-            show_progress: Whether to show tqdm progress bar for denoising steps
-            progress_desc: Description label for the progress bar
 
         Returns:
             Generated samples tensor
@@ -184,8 +180,6 @@ class DiffusionSampler:
                     batch_size=num_samples,
                     class_labels=class_labels,
                     guidance_scale=guidance_scale,
-                    show_progress=show_progress,
-                    progress_desc=progress_desc,
                 )
 
             logger.debug(f"Sample generation completed: {samples.shape}")
