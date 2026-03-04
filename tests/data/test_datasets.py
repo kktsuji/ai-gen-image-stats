@@ -330,7 +330,7 @@ class TestSimpleImageDatasetLoading:
 
 @pytest.mark.component
 class TestDatasetFactory:
-    """Unit tests for get_dataset factory function."""
+    """Component tests for get_dataset factory function."""
 
     def test_factory_creates_imagefolder(self):
         """Should create ImageFolderDataset."""
