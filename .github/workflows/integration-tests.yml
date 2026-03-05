@@ -1,18 +1,15 @@
-name: CI
+name: Integration Tests
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 jobs:
-  unit-and-component-tests:
+  integration-tests:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -36,5 +33,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Run unit and component tests
-        run: pytest -m "unit or component"
+      - name: Run integration tests
+        run: pytest -m integration
