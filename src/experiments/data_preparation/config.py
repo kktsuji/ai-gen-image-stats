@@ -5,7 +5,6 @@ Validates class directories, split parameters, and output settings.
 """
 
 import logging
-from pathlib import Path
 from typing import Any, Dict
 
 from src.utils.config import get_default_config_from_module

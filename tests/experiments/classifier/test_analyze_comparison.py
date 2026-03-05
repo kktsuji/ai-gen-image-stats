@@ -2,7 +2,6 @@
 Tests for classifier analysis and comparison tools.
 """
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -207,7 +206,7 @@ class TestExperimentComparator:
     def test_zero_baseline_mean_handling(self, baseline_results, comparison_results):
         """Test handling of zero baseline mean (division by zero)."""
         # Create a comparator with a metric that could be zero
-        comparator = ExperimentComparator(baseline_results, comparison_results)
+        ExperimentComparator(baseline_results, comparison_results)
 
         # Manually test the calculation logic
         baseline_mean = 0.0

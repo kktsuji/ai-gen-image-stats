@@ -846,9 +846,10 @@ class DDPM(nn.Module):
 
         # Iteratively denoise
         import time
+
         start_time = time.time()
         steps_completed = 0
-        
+
         for i in reversed(range(self.num_timesteps)):
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
@@ -862,7 +863,7 @@ class DDPM(nn.Module):
 
             if return_intermediates:
                 intermediates.append(x)
-            
+
             steps_completed += 1
             if (i + 1) % 10 == 0:
                 elapsed = time.time() - start_time
@@ -873,7 +874,7 @@ class DDPM(nn.Module):
                     remaining_minutes = int(estimated_remaining // 60)
                     remaining_seconds = int(estimated_remaining % 60)
                     print(
-                        f"  - Sampling timestep {i+1:04d}/{self.num_timesteps:04d}, "
+                        f"  - Sampling timestep {i + 1:04d}/{self.num_timesteps:04d}, "
                         f"Remaining Time: {remaining_minutes:02d}:{remaining_seconds:02d}",
                         end="\r",
                     )
@@ -927,9 +928,10 @@ class DDPM(nn.Module):
 
         # Denoise from t_0 down to 0
         import time
+
         start_time = time.time()
         steps_completed = 0
-        
+
         x = x_t
         for i in reversed(range(t_0)):
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
@@ -944,7 +946,7 @@ class DDPM(nn.Module):
 
             if return_intermediates:
                 intermediates.append(x)
-            
+
             steps_completed += 1
             if (i + 1) % 10 == 0:
                 elapsed = time.time() - start_time
@@ -955,7 +957,7 @@ class DDPM(nn.Module):
                     remaining_minutes = int(estimated_remaining // 60)
                     remaining_seconds = int(estimated_remaining % 60)
                     print(
-                        f"  - Sampling timestep {i+1:04d}/{t_0:04d}, "
+                        f"  - Sampling timestep {i + 1:04d}/{t_0:04d}, "
                         f"Remaining Time: {remaining_minutes:02d}:{remaining_seconds:02d}",
                         end="\r",
                     )

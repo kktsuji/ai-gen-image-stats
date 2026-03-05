@@ -5,7 +5,6 @@ Tests are organized by tiers: unit tests, component tests, and integration tests
 """
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest

@@ -451,8 +451,6 @@ class TestValidateConfig:
 
     def test_missing_data_sections(self):
         """Test validation fails with missing data sections."""
-        config = get_v2_default_config()
-
         for section in ["split_file", "loading", "preprocessing", "augmentation"]:
             config_copy = get_v2_default_config()
             del config_copy["data"][section]
@@ -474,8 +472,6 @@ class TestValidateConfig:
 
     def test_missing_required_subdirs(self):
         """Test validation fails with missing required subdirs."""
-        config = get_v2_default_config()
-
         for subdir in ["logs", "checkpoints"]:
             config_copy = get_v2_default_config()
             del config_copy["output"]["subdirs"][subdir]

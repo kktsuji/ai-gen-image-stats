@@ -11,7 +11,6 @@ from glob import glob
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 

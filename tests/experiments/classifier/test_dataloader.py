@@ -568,7 +568,6 @@ def test_full_dataloader_workflow(mock_classifier_dataset):
 @pytest.mark.slow
 def test_dataloader_with_fixtures_config():
     """Test dataloader using fixtures/mock_data directory structure."""
-    from pathlib import Path
 
     # Get the project root
     project_root = Path(__file__).parent.parent.parent.parent

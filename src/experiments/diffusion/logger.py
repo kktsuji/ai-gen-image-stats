@@ -13,7 +13,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torchvision.utils import make_grid, save_image
+from torchvision.utils import save_image
 
 from src.base.logger import BaseLogger
 from src.utils.tensorboard import (

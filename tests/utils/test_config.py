@@ -191,7 +191,7 @@ class TestMergeConfigs:
         base = {"a": 1, "b": {"c": 2}}
         override = {"b": {"d": 3}}
 
-        result = merge_configs(base, override)
+        merge_configs(base, override)
 
         # Original base should be unchanged
         assert base == {"a": 1, "b": {"c": 2}}

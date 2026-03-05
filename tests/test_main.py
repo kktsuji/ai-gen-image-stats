@@ -5,10 +5,7 @@ ensuring proper configuration handling, experiment routing, and
 end-to-end execution flow with config-only mode.
 """
 
-import sys
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -1383,7 +1380,10 @@ class TestDiffusionGenerationMode:
 
         checkpoint_path = self._create_mock_checkpoint(tmp_path)
         config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2,
+            tmp_path,
+            checkpoint=str(checkpoint_path),
+            num_samples=4,
+            num_classes=2,
             class_selection=[1],
         )
 
@@ -1422,7 +1422,10 @@ class TestDiffusionGenerationMode:
 
         checkpoint_path = self._create_mock_checkpoint(tmp_path, num_classes=4)
         config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path), num_samples=10, num_classes=4,
+            tmp_path,
+            checkpoint=str(checkpoint_path),
+            num_samples=10,
+            num_classes=4,
             class_selection=[0, 1],
         )
 
@@ -1464,7 +1467,10 @@ class TestDiffusionGenerationMode:
 
         checkpoint_path = self._create_mock_checkpoint(tmp_path)
         config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2,
+            tmp_path,
+            checkpoint=str(checkpoint_path),
+            num_samples=4,
+            num_classes=2,
             class_selection=[0],
         )
 

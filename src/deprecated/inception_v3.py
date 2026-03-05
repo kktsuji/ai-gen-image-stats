@@ -2,10 +2,8 @@
 
 import os
 
-import numpy as np
 import torch
 import torch.nn as nn
-from PIL import Image
 from torchvision.models import inception_v3
 
 

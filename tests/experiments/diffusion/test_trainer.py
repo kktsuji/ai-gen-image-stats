@@ -894,7 +894,6 @@ def test_diffusion_trainer_logs_epoch_summary(
     trainer.train_epoch()
 
     # Check that training activity was logged
-    log_text = capture_logs.text.lower()
     # Should have some logging activity
     assert len(capture_logs.records) >= 0
 
@@ -981,7 +980,6 @@ def test_diffusion_trainer_logs_checkpoint_operations(
         )
 
         # Check that checkpoint-related logging occurred
-        log_text = capture_logs.text.lower()
         # Should have some logging activity
         assert len(capture_logs.records) >= 0
 
@@ -1199,8 +1197,7 @@ def test_train_epoch_unexpected_batch_length():
 
     Bug 2: premature raise made the _logger.critical() call unreachable.
     """
-    import logging
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     # Create a dataset that yields 3-element tuples
     images = torch.randn(4, 3, 8, 8)

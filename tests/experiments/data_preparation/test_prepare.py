@@ -302,7 +302,7 @@ class TestPrepareSplit:
         # First run creates the file
         output_path = prepare_split(config)
         with open(output_path) as f:
-            data1 = json.load(f)
+            json.load(f)
 
         # Second run skips (force=false by default)
         output_path2 = prepare_split(config)

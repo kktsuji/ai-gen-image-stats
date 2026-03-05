@@ -208,8 +208,9 @@ class TestImageFolderDatasetGetItem:
 
     def test_getitem_with_target_transform(self):
         """Should apply target transform to labels."""
-        # Transform that adds 10 to the label
-        target_transform = lambda x: x + 10
+
+        def target_transform(x):
+            return x + 10
 
         dataset = ImageFolderDataset(str(TRAIN_DIR), target_transform=target_transform)
 

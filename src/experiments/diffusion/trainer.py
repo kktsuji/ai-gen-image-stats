@@ -995,7 +995,7 @@ class DiffusionTrainer(BaseTrainer):
         try:
             model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
         except Exception as e:
-            _logger.error(f"Failed to load model state dict")
+            _logger.error("Failed to load model state dict")
             _logger.exception(f"Error details: {e}")
             if strict:
                 raise
@@ -1011,7 +1011,7 @@ class DiffusionTrainer(BaseTrainer):
             try:
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             except Exception as e:
-                _logger.error(f"Failed to load optimizer state dict")
+                _logger.error("Failed to load optimizer state dict")
                 _logger.exception(f"Error details: {e}")
                 _logger.warning("Continuing without optimizer state")
 
@@ -1050,7 +1050,7 @@ class DiffusionTrainer(BaseTrainer):
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
 
-        _logger.info(f"✓ Checkpoint loaded successfully")
+        _logger.info("✓ Checkpoint loaded successfully")
         _logger.info(
             f"  Epoch: {self._current_epoch}, Global step: {self._global_step}"
         )

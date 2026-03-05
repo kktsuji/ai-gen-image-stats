@@ -6,9 +6,7 @@ These tests run on CPU only and do not require GPU hardware.
 
 import logging
 import time
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -240,7 +238,6 @@ class TestLogFilePath:
 
     def test_get_log_file_path_unique_timestamps(self):
         """get_log_file_path generates unique paths for sequential calls."""
-        import time
 
         output_dir = "outputs/test"
 

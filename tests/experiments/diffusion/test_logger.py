@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-import yaml
 
 from src.experiments.diffusion.logger import DiffusionLogger
 
@@ -53,7 +52,7 @@ class TestDiffusionLoggerInstantiation:
     def test_creates_log_directory(self, temp_log_dir):
         """Logger creates log directory on instantiation."""
         log_dir = Path(temp_log_dir) / "diffusion_001"
-        logger = DiffusionLogger(log_dir=log_dir)
+        DiffusionLogger(log_dir=log_dir)
         assert log_dir.exists()
 
     def test_creates_subdirectories(self, logger, temp_log_dir):
@@ -228,7 +227,7 @@ class TestLogImages:
 
     def test_log_images_tensorboard_normalization(self, tmp_path):
         """TensorBoard images from log_images() are normalized to [0, 1]."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         tb_dir = tmp_path / "tb"
         logger = DiffusionLogger(
@@ -469,9 +468,7 @@ class TestDiffusionLoggerWorkflow:
 
         # Log quality comparison
         quality_samples = torch.randn(4, 3, 32, 32)
-        logger.log_images(
-            quality_samples, tag="quality", step=1000, epoch=10
-        )
+        logger.log_images(quality_samples, tag="quality", step=1000, epoch=10)
 
         # Log hyperparameters
         hyperparams = {"lr": 0.0001, "batch_size": 64}

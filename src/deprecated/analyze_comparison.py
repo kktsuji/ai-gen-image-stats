@@ -2,7 +2,6 @@ import os
 from glob import glob
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 
@@ -28,7 +27,6 @@ EXPERIMENT_SYNTH = "train-synth-ddpm-0011"
 
 _base_path = "./out/split-ratio0.2_seed0_all/train/train-*"
 for base_path in sorted(glob(_base_path)):
-
     train_normal = load_results(base_path, EXPERIMENT_BASELINE)
     train_synth = load_results(base_path, EXPERIMENT_SYNTH)
 
@@ -125,7 +123,7 @@ for base_path in sorted(glob(_base_path)):
         "val_1.Abnormal_accuracy"
     ].values
 
-    print(f"\nValidation Accuracy on Abnormal Class:")
+    print("\nValidation Accuracy on Abnormal Class:")
     print(f"  Normal: {abnormal_normal.mean():.2f}% ± {abnormal_normal.std():.2f}%")
     print(f"  Synth:  {abnormal_synth.mean():.2f}% ± {abnormal_synth.std():.2f}%")
     print(
@@ -266,7 +264,7 @@ for base_path in sorted(glob(_base_path)):
     else:
         print("  ✗ NO - Synthetic data does not show clear improvement")
 
-    print(f"\nKey Metrics Change:")
+    print("\nKey Metrics Change:")
     print(f"  - Validation Accuracy: {val_acc_improvement:+.2f}%")
     print(f"  - Validation PR-AUC: {val_pr_auc_improvement:+.2f}%")
     print(f"  - Validation ROC-AUC: {val_roc_auc_improvement:+.2f}%")
