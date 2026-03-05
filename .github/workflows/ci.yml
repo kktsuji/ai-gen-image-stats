@@ -41,3 +41,36 @@ jobs:
 
       - name: Run unit and component tests
         run: pytest -m "unit or component"
+
+  integration-tests:
+    needs: unit-and-component-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install CPU-only PyTorch
+        run: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Generate mock fixture data
+        run: python tests/fixtures/mock_data/create_mock_images.py
+
+      - name: Run integration tests
+        run: pytest -m integration
