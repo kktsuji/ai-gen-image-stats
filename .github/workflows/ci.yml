@@ -36,5 +36,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Generate mock fixture data
+        run: python tests/fixtures/mock_data/create_mock_images.py
+
       - name: Run unit and component tests
         run: pytest -m "unit or component"
