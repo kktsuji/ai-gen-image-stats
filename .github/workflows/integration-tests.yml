@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Generate test fixtures
+      - name: Generate mock fixture data
         run: python tests/fixtures/mock_data/create_mock_images.py
 
       - name: Run integration tests
