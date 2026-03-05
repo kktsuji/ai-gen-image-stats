@@ -1,21 +1,24 @@
-name: CI
+name: Integration Tests
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 jobs:
-  unit-and-component-tests:
+  integration-tests:
+    permissions:
+      contents: read
+      actions: read
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.workflow_run.head_repository.full_name }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,8 +39,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Generate mock fixture data
-        run: python tests/fixtures/mock_data/create_mock_images.py
-
-      - name: Run unit and component tests
-        run: pytest -m "unit or component"
+      - name: Run integration tests
+        run: pytest -m integration
