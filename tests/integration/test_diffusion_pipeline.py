@@ -32,7 +32,7 @@ from src.experiments.diffusion.model import create_ddpm
 from src.experiments.diffusion.trainer import DiffusionTrainer
 
 # Dynamic device detection for testing
-TEST_DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
+TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def _create_split_json(data_dir, split_json_path, include_val=True):
