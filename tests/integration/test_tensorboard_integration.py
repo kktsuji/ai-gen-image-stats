@@ -419,7 +419,12 @@ class TestCustomLogDir:
 
         # Default sibling dir should not have been created with events
         # The custom dir should be used, not the default
-        assert len(event_files) > 0
+        default_tb_dir = tmp_path / "tensorboard"
+        if default_tb_dir.exists():
+            default_event_files = list(
+                default_tb_dir.glob("events.out.tfevents.*")
+            )
+            assert len(default_event_files) == 0
 
     def test_diffusion_uses_custom_log_dir(self, tmp_path):
         """DiffusionLogger respects custom TensorBoard tb_log_dir."""
