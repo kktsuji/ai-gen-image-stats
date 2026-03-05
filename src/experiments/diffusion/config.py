@@ -14,8 +14,6 @@ Key features:
 import logging
 from typing import Any, Dict
 
-_logger = logging.getLogger(__name__)
-
 from src.utils.config import (
     get_default_config_from_module,
     validate_compute_section,
@@ -24,6 +22,8 @@ from src.utils.config import (
     validate_output_section,
     validate_scheduler_section,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def get_default_config() -> Dict[str, Any]:

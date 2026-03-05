@@ -7,7 +7,7 @@ the required abstract methods.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn

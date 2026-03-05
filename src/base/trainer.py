@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import torch
-from torch.utils.data import DataLoader
 
 from src.base.dataloader import BaseDataLoader
 from src.base.logger import BaseLogger
@@ -490,7 +489,7 @@ class BaseTrainer(ABC):
         try:
             model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
         except Exception as e:
-            logger.error(f"Failed to load model state dict")
+            logger.error("Failed to load model state dict")
             logger.exception(f"Error details: {e}")
             if strict:
                 raise
@@ -503,7 +502,7 @@ class BaseTrainer(ABC):
             try:
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             except Exception as e:
-                logger.error(f"Failed to load optimizer state dict")
+                logger.error("Failed to load optimizer state dict")
                 logger.exception(f"Error details: {e}")
                 logger.warning("Continuing without optimizer state")
 
@@ -513,7 +512,7 @@ class BaseTrainer(ABC):
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
 
-        logger.info(f"✓ Checkpoint loaded successfully")
+        logger.info("✓ Checkpoint loaded successfully")
         logger.info(f"  Epoch: {self._current_epoch}, Global step: {self._global_step}")
 
         if "metrics" in checkpoint:

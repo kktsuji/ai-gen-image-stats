@@ -4,10 +4,9 @@ from glob import glob
 
 import numpy as np
 import torch
+from inception_v3 import InceptionV3FeatureExtractor
 from PIL import Image
 from torchvision import transforms
-
-from inception_v3 import InceptionV3FeatureExtractor
 
 
 def _extract_features(model, path_list, transform, device):
@@ -103,7 +102,7 @@ if __name__ == "__main__":
         )
         print("Loaded synthesized features and path list from disk.")
 
-    print(f"\nExtracted features:")
+    print("\nExtracted features:")
     print(f"  - Target features shape: {target_features.shape}")
     print(f"  - Synthesized features shape: {synthesized_features.shape}")
 
@@ -135,7 +134,7 @@ if __name__ == "__main__":
     print(f"{PERCENTILE}th percentile threshold: {threshold:.4f}")
 
     # Compute kNN distances for each synthesized sample
-    print(f"\nComputing kNN distances for synthesized samples...")
+    print("\nComputing kNN distances for synthesized samples...")
     accepted_indices = []
     synthesized_knn_distances = []
 
@@ -155,7 +154,7 @@ if __name__ == "__main__":
             accepted_indices.append(i)
     print("\n  - Completed.")
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  - Total synthesized samples: {len(synthesized_knn_distances)}")
     print(
         f"  - Accepted samples: {len(accepted_indices)} ({100 * len(accepted_indices) / len(synthesized_knn_distances):.2f}%)"

@@ -8,6 +8,7 @@ from typing import Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from inception_v3 import InceptionV3FeatureTrainer
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -16,8 +17,6 @@ from sklearn.metrics import (
 )
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-
-from inception_v3 import InceptionV3FeatureTrainer
 from util import save_args
 from wrn28_cifar10 import WRN28Cifar10Trainer
 
@@ -113,7 +112,7 @@ def _make_dataloader(
     if use_weighted_sampling:
         from torch.utils.data import WeightedRandomSampler
 
-        print(f"  - Weighted sampling: ENABLED")
+        print("  - Weighted sampling: ENABLED")
         # Calculate class distribution
         class_counts = {}
         for _, class_idx in dataset.samples:
@@ -145,7 +144,7 @@ def _make_dataloader(
             prefetch_factor=2 if num_workers > 0 else None,
         )
     else:
-        print(f"  - Weighted sampling: DISABLED (using random sampling)")
+        print("  - Weighted sampling: DISABLED (using random sampling)")
         return DataLoader(
             dataset,
             batch_size=batch_size,

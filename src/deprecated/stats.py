@@ -5,8 +5,9 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torchvision.models as models
 import umap.umap_ as umap
+from inception_v3 import InceptionV3FeatureExtractor
+from resnet import ResNetFeatureExtractor
 from scipy.linalg import sqrtm
 from scipy.stats import wasserstein_distance
 from sklearn.linear_model import LogisticRegression
@@ -16,9 +17,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-
-from inception_v3 import InceptionV3FeatureExtractor
-from resnet import ResNetFeatureExtractor
 from wrn28_cifar10 import WRN28Cifar10FeatureExtractor
 
 
@@ -299,7 +297,7 @@ def filter_samples_by_domain_gap(
     mode = "keep_ratio" if keep_ratio is not None else "threshold"
     print(
         f"[Filter] Synthetic samples: {n_total_synth} -> {n_kept_synth} "
-        f"({n_kept_synth/n_total_synth*100:.1f}% kept, mode={mode}, effective_threshold={effective_threshold:.3f})"
+        f"({n_kept_synth / n_total_synth * 100:.1f}% kept, mode={mode}, effective_threshold={effective_threshold:.3f})"
     )
 
     return filtered_features, list(filtered_classes), kept_synth_original_indices
@@ -331,10 +329,6 @@ def save_filtered_images(
     os.makedirs(output_dir, exist_ok=True)
 
     classes = np.array(classes)
-
-    # Get all synthetic sample indices
-    synth_mask = classes == synth_class
-    synth_indices = np.where(synth_mask)[0]
 
     print(
         f"\n[Save] Copying {len(kept_synth_indices)} filtered images to {output_dir}..."
@@ -441,7 +435,7 @@ def compute_domain_classifier_auc(
     with open(out_path, "w") as f:
         f.write("Domain classifier (Abnormal: real vs synthetic)\n")
         f.write(
-            f"Samples (original): total={len(y)}, real={int((y==0).sum())}, synth={int((y==1).sum())}\n"
+            f"Samples (original): total={len(y)}, real={int((y == 0).sum())}, synth={int((y == 1).sum())}\n"
         )
         f.write(f"Balance mode: {balance_mode}, repeats={repeats}\n")
         f.write(f"ROC AUC: {roc_mean:.4f} ± {roc_std:.4f}\n")
@@ -606,7 +600,7 @@ if __name__ == "__main__":
         class_feature_dict = split_features_by_class(features, classes, unique_classes)
         num_real_class = class_feature_dict[REAL_CLASS].shape[0]
         real_class = class_feature_dict[REAL_CLASS]
-        print(f"\nNumber of each class:")
+        print("\nNumber of each class:")
         for class_name in unique_classes:
             num_samples = class_feature_dict[class_name].shape[0]
             print(f"  - {class_name}: {num_samples} samples")
@@ -618,7 +612,7 @@ if __name__ == "__main__":
 
         print(f"\nCalculating statistics over {NUM_OF_AVERAGE} runs...")
         for i in range(NUM_OF_AVERAGE):
-            print(f"  - Run {i+1}/{NUM_OF_AVERAGE}", end="\r")
+            print(f"  - Run {i + 1}/{NUM_OF_AVERAGE}", end="\r")
             fake_class = under_sample_features(
                 class_feature_dict[FAKE_CLASS], num_real_class
             )

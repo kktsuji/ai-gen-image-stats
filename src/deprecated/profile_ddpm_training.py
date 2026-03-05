@@ -184,21 +184,21 @@ def profile_training():
     avg_total = np.mean(total_batch_times) * 1000
 
     print(
-        f"\n1. Data Loading (I/O):           {avg_data_load:7.2f} ms  ({avg_data_load/avg_total*100:5.1f}%)"
+        f"\n1. Data Loading (I/O):           {avg_data_load:7.2f} ms  ({avg_data_load / avg_total * 100:5.1f}%)"
     )
     print(
-        f"2. CPU->GPU Transfer:            {avg_h2d:7.2f} ms  ({avg_h2d/avg_total*100:5.1f}%)"
+        f"2. CPU->GPU Transfer:            {avg_h2d:7.2f} ms  ({avg_h2d / avg_total * 100:5.1f}%)"
     )
     print(
-        f"3. Forward Pass (GPU Compute):   {avg_forward:7.2f} ms  ({avg_forward/avg_total*100:5.1f}%)"
+        f"3. Forward Pass (GPU Compute):   {avg_forward:7.2f} ms  ({avg_forward / avg_total * 100:5.1f}%)"
     )
     print(
-        f"4. Backward Pass (GPU Compute):  {avg_backward:7.2f} ms  ({avg_backward/avg_total*100:5.1f}%)"
+        f"4. Backward Pass (GPU Compute):  {avg_backward:7.2f} ms  ({avg_backward / avg_total * 100:5.1f}%)"
     )
     print(
-        f"5. Optimizer Step:               {avg_optimizer:7.2f} ms  ({avg_optimizer/avg_total*100:5.1f}%)"
+        f"5. Optimizer Step:               {avg_optimizer:7.2f} ms  ({avg_optimizer / avg_total * 100:5.1f}%)"
     )
-    print(f"{'-'*70}")
+    print(f"{'-' * 70}")
     print(f"Total per batch:                 {avg_total:7.2f} ms")
 
     # Calculate epoch time
@@ -222,7 +222,7 @@ def profile_training():
 
     print("\nComponent ranking (slowest to fastest):")
     for i, (name, time_ms) in enumerate(sorted_components, 1):
-        print(f"{i}. {name:30s} {time_ms:7.2f} ms  ({time_ms/avg_total*100:5.1f}%)")
+        print(f"{i}. {name:30s} {time_ms:7.2f} ms  ({time_ms / avg_total * 100:5.1f}%)")
 
     print("\n" + "=" * 70)
     print("RECOMMENDATIONS")

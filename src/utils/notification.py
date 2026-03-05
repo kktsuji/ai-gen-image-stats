@@ -8,7 +8,6 @@ If the variable is unset or empty, notifications are silently skipped.
 import json
 import logging
 import os
-import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -67,7 +66,7 @@ def notify_success(config: Dict[str, Any], duration_seconds: float) -> None:
     base_dir = config.get("output", {}).get("base_dir", "N/A")
     duration_str = _format_duration(duration_seconds)
 
-    parts = [f":white_check_mark: *Experiment completed successfully*"]
+    parts = [":white_check_mark: *Experiment completed successfully*"]
     parts.append(f"• Experiment: `{experiment}`")
     if mode:
         parts.append(f"• Mode: `{mode}`")
@@ -99,7 +98,7 @@ def notify_error(config: Dict[str, Any], error: Exception) -> None:
     base_dir = config.get("output", {}).get("base_dir", "N/A")
     error_msg = str(error)[:200]  # Truncate long errors
 
-    parts = [f":x: *Experiment failed*"]
+    parts = [":x: *Experiment failed*"]
     parts.append(f"• Experiment: `{experiment}`")
     if mode:
         parts.append(f"• Mode: `{mode}`")

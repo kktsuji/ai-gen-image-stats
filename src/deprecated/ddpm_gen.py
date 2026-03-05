@@ -11,9 +11,8 @@ from typing import Optional
 
 import numpy as np
 import torch
-from torchvision.utils import save_image
-
 from ddpm import create_ddpm
+from torchvision.utils import save_image
 from util import save_args
 
 

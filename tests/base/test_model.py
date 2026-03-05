@@ -4,7 +4,6 @@ This module contains tests for the BaseModel abstract class and its interface.
 Tests are organized into unit tests to ensure fast execution on CPU.
 """
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -258,7 +257,7 @@ class TestCheckpointSaveLoad:
 
         # Load into new model
         model2 = MinimalValidModel()
-        metadata = model2.load_checkpoint(checkpoint_path)
+        model2.load_checkpoint(checkpoint_path)
 
         # Verify weights are the same
         for p1, p2 in zip(model1.parameters(), model2.parameters()):

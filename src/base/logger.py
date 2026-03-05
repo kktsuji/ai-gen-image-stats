@@ -6,7 +6,6 @@ the required abstract methods.
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import torch

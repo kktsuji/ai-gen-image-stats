@@ -25,7 +25,6 @@ import torch
 import yaml
 from torchvision.utils import save_image
 
-from src.experiments.diffusion.config import get_default_config
 from src.experiments.diffusion.dataloader import DiffusionDataLoader
 from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import create_ddpm

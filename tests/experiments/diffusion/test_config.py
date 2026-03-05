@@ -933,7 +933,9 @@ class TestModeAwareValidation:
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [0, 0]
-        with pytest.raises(ValueError, match="must not contain duplicate class indices"):
+        with pytest.raises(
+            ValueError, match="must not contain duplicate class indices"
+        ):
             validate_config(config)
 
     def test_generation_class_selection_out_of_range_raises(self):

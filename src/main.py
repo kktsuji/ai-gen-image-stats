@@ -511,7 +511,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         device=device,
     )
 
-    logger.info(f"Model: DDPM")
+    logger.info("Model: DDPM")
     logger.info(f"Image size: {arch_config['image_size']}")
     logger.info(f"Num classes: {cond_config['num_classes']}")
     logger.info(f"Num timesteps: {diff_config['num_timesteps']}")
@@ -625,8 +625,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)
         all_samples = []
-        num_batches = (num_samples + batch_size - 1) // batch_size
-
         for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
             end_idx = min(start_idx + batch_size, num_samples)
             batch_labels = (

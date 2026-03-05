@@ -4,8 +4,6 @@ This module contains tests for the BaseTrainer abstract class and its interface.
 Tests are organized into unit tests (fast, CPU only) and component tests (training loops).
 """
 
-import tempfile
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pytest
@@ -847,7 +845,6 @@ class TestTrainerLogging:
         trainer.train(num_epochs=2, checkpoint_dir=str(tmp_output_dir / "checkpoints"))
 
         # Check that progress is logged
-        log_text = capture_logs.text.lower()
         # Should have some indication of progress
         assert len(capture_logs.records) > 0
 
@@ -868,7 +865,6 @@ class TestTrainerLogging:
         )
 
         # Check that validation is mentioned in logs
-        log_text = capture_logs.text.lower()
         # Should have some logging activity
         assert len(capture_logs.records) > 0
 

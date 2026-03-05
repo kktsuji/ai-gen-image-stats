@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-import yaml
 
 from src.experiments.classifier.logger import ClassifierLogger
 
@@ -52,7 +51,7 @@ class TestClassifierLoggerInstantiation:
     def test_creates_log_directory(self, temp_log_dir):
         """Logger creates log directory on instantiation."""
         log_dir = Path(temp_log_dir) / "experiment_001"
-        logger = ClassifierLogger(log_dir=log_dir)
+        ClassifierLogger(log_dir=log_dir)
         assert log_dir.exists()
 
     def test_creates_subdirectories(self, logger, temp_log_dir):
@@ -619,7 +618,6 @@ class TestTensorBoardIntegration:
 
     def test_log_metrics_does_not_call_add_scalar_when_tb_disabled(self, temp_log_dir):
         """log_metrics() does not call add_scalar when TensorBoard is disabled."""
-        from unittest.mock import MagicMock
 
         logger = ClassifierLogger(log_dir=temp_log_dir)
         assert logger.tb_writer is None

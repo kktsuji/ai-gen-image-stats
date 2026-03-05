@@ -560,7 +560,6 @@ def test_classifier_trainer_logs_validation_results(
     trainer.validate_epoch()
 
     # Check that validation metrics are logged (application logging)
-    log_text = capture_logs.text.lower()
     # Should have some logging activity during validation
     assert len(capture_logs.records) > 0  # Should have logged something
 
@@ -586,7 +585,6 @@ def test_classifier_trainer_logs_epoch_summary(
     trainer.train_epoch()
 
     # Check that training activity was logged
-    log_text = capture_logs.text.lower()
     # Should have some logging activity
     assert len(capture_logs.records) >= 0
 

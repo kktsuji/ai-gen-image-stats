@@ -11,10 +11,7 @@ Tests verify:
 """
 
 import logging
-import tempfile
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 import torch
@@ -46,16 +43,14 @@ class TestLoggingDualOutput:
 
         # Console should have INFO but might not capture due to handler setup
         # Just verify no crashes
-        captured = capsys.readouterr()
+        capsys.readouterr()
 
     def test_file_created_with_correct_content(self, tmp_path):
         """Log file is created with correct content."""
         log_file = tmp_path / "integration_test.log"
 
         # Setup logging
-        logger = setup_logging(
-            log_file=log_file, console_level="WARNING", file_level="DEBUG"
-        )
+        setup_logging(log_file=log_file, console_level="WARNING", file_level="DEBUG")
 
         # Create a test logger
         test_logger = get_logger("test.integration")
@@ -237,7 +232,7 @@ class TestLogFilePath:
 
         # Generate two log paths
         log_path1 = get_log_file_path(output_dir)
-        log_path2 = get_log_file_path(output_dir)
+        get_log_file_path(output_dir)
 
         # Should have timestamp format
         assert "log_" in log_path1.name
@@ -254,7 +249,6 @@ class TestEndToEndLogging:
 
     def test_logging_with_training_workflow(self, tmp_path, clean_logging_handlers):
         """Logging works in a complete training workflow."""
-        from typing import Dict, Optional
 
         import torch.nn as nn
         import torch.nn.functional as F
@@ -385,7 +379,7 @@ class TestLoggingTimezoneIntegration:
         log_file = tmp_path / "integration_utc.log"
 
         # Setup logging with UTC
-        logger = setup_logging(
+        setup_logging(
             log_file=log_file,
             console_level="INFO",
             file_level="DEBUG",
@@ -407,7 +401,7 @@ class TestLoggingTimezoneIntegration:
         log_file = tmp_path / "integration_tokyo.log"
 
         # Setup logging with Tokyo timezone
-        logger = setup_logging(
+        setup_logging(
             log_file=log_file,
             console_level="INFO",
             file_level="DEBUG",
@@ -447,17 +441,13 @@ class TestLoggingTimezoneIntegration:
         log_file = tmp_path / "timezone_test.log"
 
         # Setup logging with UTC
-        logger = setup_logging(
+        setup_logging(
             log_file=log_file,
             console_level="ERROR",  # Suppress console
             file_level="INFO",
             timezone="UTC",
             date_format="%Y-%m-%d %H:%M:%S",
         )
-
-        # Get current UTC time for comparison
-        utc_now = datetime.now(ZoneInfo("UTC"))
-        current_hour = utc_now.strftime("%H")
 
         # Log a message
         test_logger = get_logger("test.timezone")

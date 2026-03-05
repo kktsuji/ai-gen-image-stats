@@ -5,9 +5,6 @@ This file shows how to use pytest markers, fixtures, and organize tests
 according to the four-tier testing strategy.
 """
 
-from pathlib import Path
-
-import numpy as np
 import pytest
 import torch
 

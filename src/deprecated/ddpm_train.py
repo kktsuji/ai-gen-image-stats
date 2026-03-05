@@ -14,11 +14,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+from ddpm import EMA, create_ddpm
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, transforms
-
-from ddpm import DDPM, EMA, create_ddpm
 from util import save_args
 
 
@@ -50,8 +49,10 @@ def check_gradient_explosion(
     if grad_norm <= threshold:
         return False
 
-    print(f"\n\n⚠️  WARNING: Gradient explosion detected!")
-    print(f"   Epoch [{epoch+1}/{total_epochs}], Batch [{batch_idx+1}/{total_batches}]")
+    print("\n\n⚠️  WARNING: Gradient explosion detected!")
+    print(
+        f"   Epoch [{epoch + 1}/{total_epochs}], Batch [{batch_idx + 1}/{total_batches}]"
+    )
     print(f"   Gradient norm: {grad_norm:.2f} (threshold: {threshold})")
     print(f"   Explosion count: {explosion_count}/{max_explosions}")
 
@@ -137,10 +138,10 @@ def print_gradient_explosion_stop_message(
     print(
         f"\n❌ TRAINING STOPPED: Gradient explosion occurred {explosion_count} times."
     )
-    print(f"   This indicates training instability. Consider:")
+    print("   This indicates training instability. Consider:")
     print(f"   - Reducing learning rate (current: {learning_rate})")
     print(f"   - Reducing batch size (current: {batch_size})")
-    print(f"   - Checking data preprocessing")
+    print("   - Checking data preprocessing")
     print(f"   - Using a different beta schedule (current: {beta_schedule})")
     print(f"   Emergency checkpoint saved to: {checkpoint_path}")
 
@@ -428,15 +429,15 @@ def train(
         class_counts[label] += 1
 
     print(f"Training set: {len(train_dataset)} images")
-    print(f"  - Class distribution:")
+    print("  - Class distribution:")
     for idx, (class_name, count) in enumerate(zip(train_dataset.classes, class_counts)):
         print(
-            f"    - {class_name}: {count} images ({count/len(train_dataset)*100:.2f}%)"
+            f"    - {class_name}: {count} images ({count / len(train_dataset) * 100:.2f}%)"
         )
 
     # Setup weighted sampling if enabled
     if use_weighted_sampling:
-        print(f"\n  - Weighted sampling: ENABLED")
+        print("\n  - Weighted sampling: ENABLED")
         # Calculate weights for each class (inverse frequency)
         num_samples = sum(class_counts)
         class_weights = [num_samples / count for count in class_counts]
@@ -461,7 +462,7 @@ def train(
             prefetch_factor=2 if num_workers > 0 else None,
         )
     else:
-        print(f"\n  - Weighted sampling: DISABLED (using random sampling)")
+        print("\n  - Weighted sampling: DISABLED (using random sampling)")
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -525,7 +526,7 @@ def train(
     # Setup EMA for improved sampling quality
     print("\n=== Setting up EMA ===")
     ema = EMA(model, decay=0.9999, device=device)
-    print(f"EMA decay rate: 0.9999")
+    print("EMA decay rate: 0.9999")
 
     # Setup optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -581,7 +582,7 @@ def train(
     learning_rates = []
 
     if resume_from is not None:
-        print(f"\n=== Resuming from Checkpoint ===")
+        print("\n=== Resuming from Checkpoint ===")
         print(f"Loading checkpoint: {resume_from}")
 
         if not os.path.exists(resume_from):
@@ -783,18 +784,18 @@ def train(
 
             checkpoint["ema_state_dict"] = ema.state_dict()
 
-            checkpoint_path = f"{out_dir}/checkpoint_epoch{epoch+1}.pth"
+            checkpoint_path = f"{out_dir}/checkpoint_epoch{epoch + 1}.pth"
             torch.save(checkpoint, checkpoint_path)
             print(f"\nCheckpoint saved: {checkpoint_path}")
 
             # Also save EMA model weights separately for easy inference
             ema.apply_shadow()
-            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch+1}_ema.pth")
+            torch.save(model.state_dict(), f"{out_dir}/ddpm_epoch{epoch + 1}_ema.pth")
             ema.restore()
 
         # Generate sample images to monitor quality
         if sample_images and (epoch + 1) % sample_interval == 0:
-            print(f"\n\n=== Generating Sample Images (Epoch {epoch+1}) ===")
+            print(f"\n\n=== Generating Sample Images (Epoch {epoch + 1}) ===")
             model.eval()
             ema.apply_shadow()  # Use EMA weights for better quality
 
@@ -868,14 +869,14 @@ def train(
                         )
 
             plt.suptitle(
-                f"Generated Samples - Epoch {epoch+1} (Guidance Scale: {guidance_scale})",
+                f"Generated Samples - Epoch {epoch + 1} (Guidance Scale: {guidance_scale})",
                 fontsize=14,
                 y=0.98,
             )
             plt.tight_layout()
 
             # Save the visualization
-            sample_path = f"{samples_dir}/epoch_{epoch+1:04d}.png"
+            sample_path = f"{samples_dir}/epoch_{epoch + 1:04d}.png"
             plt.savefig(sample_path, dpi=150, bbox_inches="tight")
             print(f"Sample images saved to: {sample_path}")
             plt.close()
@@ -896,7 +897,7 @@ def train(
 
         lr_info = f"LR: {current_lr:.2e}, " if scheduler is not None else ""
         print(
-            f"Epoch [{epoch+1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
+            f"Epoch [{epoch + 1}/{epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
             f"{lr_info}"
             f"Time: {epoch_minutes:02d}:{epoch_seconds:02d}, "
             f"Remaining Time: {remaining_hours:02d}:{remaining_minutes:02d}:{remaining_seconds:02d}",

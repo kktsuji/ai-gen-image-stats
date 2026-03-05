@@ -10,8 +10,6 @@ Tests cover:
 """
 
 import logging
-from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest

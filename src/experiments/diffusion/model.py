@@ -13,7 +13,7 @@ The implementation is based on the DDPM paper with enhancements for
 better sample quality and training stability.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch

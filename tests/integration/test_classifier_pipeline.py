@@ -22,7 +22,6 @@ import pytest
 import torch
 import yaml
 
-from src.experiments.classifier.config import get_default_config
 from src.experiments.classifier.dataloader import ClassifierDataLoader
 from src.experiments.classifier.logger import ClassifierLogger
 from src.experiments.classifier.models.inceptionv3 import InceptionV3Classifier
@@ -530,7 +529,7 @@ class TestClassifierPipelineWithScheduler:
         )
 
         # Add step scheduler - decay every 2 epochs
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
+        torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
 
         # Initialize trainer
         trainer = ClassifierTrainer(

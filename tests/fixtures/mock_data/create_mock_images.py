@@ -3,7 +3,6 @@ Script to create mock images for testing.
 Creates a simple ImageFolder-style dataset structure.
 """
 
-import os
 from pathlib import Path
 
 import numpy as np

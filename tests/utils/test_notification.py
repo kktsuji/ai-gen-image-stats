@@ -9,9 +9,7 @@ Tests cover:
 """
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from src.utils.notification import (
     _format_duration,

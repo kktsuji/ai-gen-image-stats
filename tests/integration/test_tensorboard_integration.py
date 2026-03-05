@@ -418,12 +418,6 @@ class TestCustomLogDir:
         assert len(event_files) > 0
 
         # Default sibling dir should not have been created with events
-        default_tb_dir = log_dir.parent / "tensorboard"
-        default_events = (
-            list(default_tb_dir.glob("events.out.tfevents.*"))
-            if default_tb_dir.exists()
-            else []
-        )
         # The custom dir should be used, not the default
         assert len(event_files) > 0
 

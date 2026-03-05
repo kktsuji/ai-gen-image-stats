@@ -7,8 +7,6 @@ Tests cover:
 - Error handling for missing/invalid configs
 """
 
-from pathlib import Path
-
 import pytest
 import yaml
 

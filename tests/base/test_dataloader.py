@@ -352,7 +352,7 @@ class TestDataLoaderConsistency:
         train_loader1 = dataloader.get_train_loader()
         train_loader2 = dataloader.get_train_loader()
 
-        assert type(train_loader1) == type(train_loader2)
+        assert type(train_loader1) is type(train_loader2)
         assert isinstance(train_loader1, DataLoader)
         assert isinstance(train_loader2, DataLoader)
 
