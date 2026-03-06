@@ -176,7 +176,7 @@ class DiffusionSampler:
                     class_labels = class_labels.to(self.device)
 
                 # Generate samples
-                samples = self.model.sample(
+                samples = self.model.sample(  # type: ignore[operator]
                     batch_size=num_samples,
                     class_labels=class_labels,
                     guidance_scale=guidance_scale,
@@ -235,7 +235,7 @@ class DiffusionSampler:
                     class_labels = class_labels.to(self.device)
 
                 # Generate samples with full intermediate trajectory
-                all_steps = self.model.sample(
+                all_steps = self.model.sample(  # type: ignore[operator]
                     batch_size=num_samples,
                     class_labels=class_labels,
                     guidance_scale=guidance_scale,

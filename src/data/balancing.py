@@ -70,7 +70,7 @@ def downsample_dataset(
             f"Dataset {type(dataset).__name__} does not have 'targets' attribute"
         )
 
-    targets = dataset.targets
+    targets: List[int] = getattr(dataset, "targets")
     if not targets:
         raise ValueError("Dataset has no samples")
 
@@ -78,8 +78,8 @@ def downsample_dataset(
     class_counts: Dict[int, int] = Counter(targets)
 
     # Identify minority and majority classes
-    minority_class = min(class_counts, key=class_counts.get)
-    majority_class = max(class_counts, key=class_counts.get)
+    minority_class = min(class_counts, key=lambda k: class_counts[k])
+    majority_class = max(class_counts, key=lambda k: class_counts[k])
     minority_count = class_counts[minority_class]
     majority_count = class_counts[majority_class]
 
@@ -151,7 +151,7 @@ def upsample_dataset(
             f"Dataset {type(dataset).__name__} does not have 'targets' attribute"
         )
 
-    targets = dataset.targets
+    targets: List[int] = getattr(dataset, "targets")
     if not targets:
         raise ValueError("Dataset has no samples")
 
@@ -159,8 +159,8 @@ def upsample_dataset(
     class_counts: Dict[int, int] = Counter(targets)
 
     # Identify minority and majority classes
-    minority_class = min(class_counts, key=class_counts.get)
-    majority_class = max(class_counts, key=class_counts.get)
+    minority_class = min(class_counts, key=lambda k: class_counts[k])
+    majority_class = max(class_counts, key=lambda k: class_counts[k])
     minority_count = class_counts[minority_class]
     majority_count = class_counts[majority_class]
 

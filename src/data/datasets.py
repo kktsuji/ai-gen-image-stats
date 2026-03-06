@@ -301,7 +301,7 @@ class SimpleImageDataset(BaseDataset):
         """Return the total number of samples."""
         return len(self.image_paths)
 
-    def __getitem__(self, index: int) -> torch.Tensor:
+    def __getitem__(self, index: int) -> Any:
         """
         Get a sample from the dataset.
 
@@ -309,7 +309,7 @@ class SimpleImageDataset(BaseDataset):
             index: Index of the sample
 
         Returns:
-            Transformed image tensor
+            Transformed image tensor (or PIL Image if no transform is set)
         """
         img_path = self.image_paths[index]
         image = Image.open(img_path).convert("RGB")

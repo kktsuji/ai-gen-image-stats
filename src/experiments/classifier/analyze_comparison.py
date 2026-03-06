@@ -127,13 +127,13 @@ class ExperimentComparator:
 
         results = []
         for metric in self.metrics_to_compare:
-            baseline_values = baseline_final[metric].values
-            comparison_values = comparison_final[metric].values
+            baseline_values = baseline_final[metric].values  # type: ignore[attr-defined]
+            comparison_values = comparison_final[metric].values  # type: ignore[attr-defined]
 
-            baseline_mean = baseline_values.mean()
-            baseline_std = baseline_values.std()
-            comparison_mean = comparison_values.mean()
-            comparison_std = comparison_values.std()
+            baseline_mean = baseline_values.mean()  # type: ignore[attr-defined]
+            baseline_std = baseline_values.std()  # type: ignore[attr-defined]
+            comparison_mean = comparison_values.mean()  # type: ignore[attr-defined]
+            comparison_std = comparison_values.std()  # type: ignore[attr-defined]
 
             # Calculate improvement percentage
             if baseline_mean != 0:
@@ -296,8 +296,8 @@ class ComparisonVisualizer:
             )
             # Normalize accuracy metrics to 0-1 range if they're in percentage
             if "accuracy" in metric and baseline_grouped["mean"].max() > 1.5:
-                baseline_grouped["mean"] /= 100.0
-                baseline_grouped["std"] /= 100.0
+                baseline_grouped["mean"] /= 100.0  # type: ignore[index]
+                baseline_grouped["std"] /= 100.0  # type: ignore[index]
 
             ax.plot(
                 baseline_grouped.index,
@@ -319,8 +319,8 @@ class ComparisonVisualizer:
                 ["mean", "std"]
             )
             if "accuracy" in metric and comparison_grouped["mean"].max() > 1.5:
-                comparison_grouped["mean"] /= 100.0
-                comparison_grouped["std"] /= 100.0
+                comparison_grouped["mean"] /= 100.0  # type: ignore[index]
+                comparison_grouped["std"] /= 100.0  # type: ignore[index]
 
             ax.plot(
                 comparison_grouped.index,

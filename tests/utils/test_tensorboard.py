@@ -132,7 +132,7 @@ def test_create_tensorboard_writer_exception_returns_none(tmp_tb_dir):
     """Should return None and log error when SummaryWriter raises."""
     with (
         patch("src.utils.tensorboard.TENSORBOARD_AVAILABLE", True),
-        patch("src.utils.tensorboard.SummaryWriter", side_effect=RuntimeError("boom")),
+        patch("src.utils.tensorboard._SummaryWriterImpl", side_effect=RuntimeError("boom")),
     ):
         writer = create_tensorboard_writer(log_dir=tmp_tb_dir, enabled=True)
     assert writer is None

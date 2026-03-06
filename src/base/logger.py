@@ -6,7 +6,7 @@ the required abstract methods.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import torch
 
@@ -45,7 +45,7 @@ class BaseLogger(ABC):
     @abstractmethod
     def log_metrics(
         self,
-        metrics: Dict[str, Union[float, int, torch.Tensor]],
+        metrics: Mapping[str, Union[float, int, torch.Tensor]],
         step: int,
         epoch: Optional[int] = None,
     ) -> None:

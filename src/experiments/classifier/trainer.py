@@ -7,7 +7,7 @@ training and validation logic.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import torch
 from torch.utils.data import DataLoader
@@ -64,7 +64,12 @@ class ClassifierTrainer(BaseTrainer):
         logger: BaseLogger,
         device: str = "cpu",
         show_progress: bool = True,
-        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+        scheduler: Optional[
+            Union[
+                torch.optim.lr_scheduler.LRScheduler,
+                torch.optim.lr_scheduler.ReduceLROnPlateau,
+            ]
+        ] = None,
         log_interval: int = 100,
         config: Optional[Dict[str, Any]] = None,
     ):
@@ -110,11 +115,8 @@ class ClassifierTrainer(BaseTrainer):
         tb_config = (
             self.config.get("logging", {}).get("metrics", {}).get("tensorboard", {})
         )
-        if (
-            hasattr(self.logger, "tb_writer")
-            and self.logger.tb_writer is not None
-            and tb_config.get("log_graph", False)
-        ):
+        _tb_writer = getattr(self.logger, "tb_writer", None)
+        if _tb_writer is not None and tb_config.get("log_graph", False):
             try:
                 crop_size = (
                     self.config.get("data", {})
@@ -122,7 +124,7 @@ class ClassifierTrainer(BaseTrainer):
                     .get("crop_size", 224)
                 )
                 dummy_input = torch.randn(1, 3, crop_size, crop_size).to(self.device)
-                self.logger.tb_writer.add_graph(self.model, dummy_input)
+                _tb_writer.add_graph(self.model, dummy_input)
                 _logger.info("Logged model graph to TensorBoard")
             except Exception as e:
                 _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
@@ -153,7 +155,7 @@ class ClassifierTrainer(BaseTrainer):
         # Debug: Log dataset info
         _logger.debug(f"Training on {len(train_loader)} batches")
         if hasattr(train_loader, "dataset"):
-            _logger.debug(f"Dataset size: {len(train_loader.dataset)}")
+            _logger.debug(f"Dataset size: {len(train_loader.dataset)}")  # type: ignore[arg-type]
 
         # Create progress bar if enabled
         iterator = (
@@ -182,7 +184,7 @@ class ClassifierTrainer(BaseTrainer):
             predictions = self.model(data)
 
             # Compute loss
-            loss = self.model.compute_loss(predictions, target)
+            loss = cast(torch.Tensor, self.model.compute_loss(predictions, target))
 
             # Backward pass
             loss.backward()
@@ -210,7 +212,7 @@ class ClassifierTrainer(BaseTrainer):
 
             # Update progress bar
             if self.show_progress:
-                iterator.set_postfix(
+                iterator.set_postfix(  # type: ignore[attr-defined]
                     {
                         "loss": total_loss / num_batches,
                         "acc": 100.0 * correct / total,
@@ -288,7 +290,7 @@ class ClassifierTrainer(BaseTrainer):
             # Step the scheduler if provided
             if self.scheduler is not None:
                 old_lr = self.optimizer.param_groups[0]["lr"]
-                self.scheduler.step()
+                self.scheduler.step()  # type: ignore[call-arg]
                 new_lr = self.optimizer.param_groups[0]["lr"]
 
                 # Warning for very low learning rate
@@ -430,7 +432,7 @@ class ClassifierTrainer(BaseTrainer):
                 predictions = self.model(data)
 
                 # Compute loss
-                loss = self.model.compute_loss(predictions, target)
+                loss = cast(torch.Tensor, self.model.compute_loss(predictions, target))
 
                 # Track metrics
                 total_loss += loss.item()
@@ -443,7 +445,7 @@ class ClassifierTrainer(BaseTrainer):
 
                 # Update progress bar
                 if self.show_progress:
-                    iterator.set_postfix(
+                    iterator.set_postfix(  # type: ignore[attr-defined]
                         {
                             "loss": total_loss / num_batches,
                             "acc": 100.0 * correct / total,
@@ -538,7 +540,7 @@ class ClassifierTrainer(BaseTrainer):
                 predictions = self.model(data)
 
                 # Compute loss
-                loss = self.model.compute_loss(predictions, target)
+                loss = cast(torch.Tensor, self.model.compute_loss(predictions, target))
 
                 # Track metrics
                 total_loss += loss.item()

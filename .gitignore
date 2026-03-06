@@ -142,11 +142,6 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
 # Pyre type checker
 .pyre/
 
@@ -170,8 +165,6 @@ poetry.toml
 # ruff
 .ruff_cache/
 
-# LSP config files
-pyrightconfig.json
 
 ### VisualStudioCode ###
 .vscode/*

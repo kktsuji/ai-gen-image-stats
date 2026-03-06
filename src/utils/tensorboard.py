@@ -6,17 +6,20 @@ optional writer creation, safe logging with error handling, and path resolution.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import torch
 
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
+
 # Optional import - don't fail if tensorboard not installed
 try:
-    from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard import SummaryWriter as _SummaryWriterImpl
 
     TENSORBOARD_AVAILABLE = True
 except ImportError:
-    SummaryWriter = None
+    _SummaryWriterImpl = None  # type: ignore[assignment]
     TENSORBOARD_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -60,7 +63,7 @@ def create_tensorboard_writer(
     try:
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        writer = SummaryWriter(log_dir=str(log_dir), flush_secs=flush_secs)
+        writer = _SummaryWriterImpl(log_dir=str(log_dir), flush_secs=flush_secs)  # type: ignore[misc]
         logger.info(f"TensorBoard logging enabled: {log_dir}")
         return writer
     except Exception as e:

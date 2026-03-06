@@ -54,11 +54,11 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
     diff = mu1 - mu2
 
     # Calculate matrix square root of product of covariances
-    covmean = sqrtm(sigma1.dot(sigma2))
+    covmean: np.ndarray = sqrtm(sigma1.dot(sigma2))  # type: ignore[assignment]
 
     # Handle numerical errors (complex values)
     if np.iscomplexobj(covmean):
-        covmean = covmean.real
+        covmean = covmean.real  # type: ignore[attr-defined]
 
     # Calculate FID
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)

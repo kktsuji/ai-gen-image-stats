@@ -9,7 +9,7 @@ pytest-xdist>=3.3.0  # Parallel test execution
 
 # Code Quality
 ruff>=0.4.0
-mypy>=1.5.0
+pyright>=1.1.0
 
 # Development Tools
 ipython>=8.14.0
