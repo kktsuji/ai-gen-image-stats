@@ -182,10 +182,10 @@ class ExperimentComparator:
             comparison_std = comparison_final[metric].std()
 
             stability[metric] = {
-                "baseline_std": float(baseline_std),
-                "comparison_std": float(comparison_std),
+                "baseline_std": float(baseline_std),  # type: ignore[arg-type]
+                "comparison_std": float(comparison_std),  # type: ignore[arg-type]
                 "is_more_stable": bool(comparison_std < baseline_std),
-                "stability_improvement": float(baseline_std - comparison_std),
+                "stability_improvement": float(baseline_std - comparison_std),  # type: ignore[arg-type]
             }
 
         return stability
