@@ -115,7 +115,8 @@ def test_create_tensorboard_writer_creates_log_directory(tmp_tb_dir):
     nested_dir = tmp_tb_dir / "nested" / "subdir"
     writer = create_tensorboard_writer(log_dir=nested_dir, enabled=True)
     assert nested_dir.exists()
-    writer.close()  # type: ignore[union-attr]
+    assert writer is not None
+    writer.close()
 
 
 @pytest.mark.unit
