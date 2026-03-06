@@ -89,7 +89,13 @@ class DiffusionLogger(BaseLogger):
         if self.csv_initialized:
             with open(self.metrics_file, "r") as f:
                 reader = csv.DictReader(f)
-                self.csv_fieldnames = list(reader.fieldnames) if reader.fieldnames is not None else None
+                if reader.fieldnames:
+                    self.csv_fieldnames = list(reader.fieldnames)
+                else:
+                    # Treat a CSV without header (or empty file) as uninitialized
+                    # so that later logging can write a fresh header safely.
+                    self.csv_initialized = False
+                    self.csv_fieldnames = None
 
         # Initialize TensorBoard logging
         self.tensorboard_config = tensorboard_config or {}
