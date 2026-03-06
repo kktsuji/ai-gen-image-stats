@@ -1,0 +1,25 @@
+name: Tests (skip)
+
+# Runs when the test-triggering paths are NOT changed (e.g. workflow-only PRs).
+# Reports success for the required checks so branch protection is not blocked.
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "src/**"
+      - "tests/**"
+      - "configs/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+
+jobs:
+  unit-and-component-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No source changes — skipping tests"
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No source changes — skipping tests"
