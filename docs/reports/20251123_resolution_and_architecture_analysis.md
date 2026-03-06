@@ -11,12 +11,14 @@
 ### Current Architecture Limitations
 
 **Resolution:** 40×40 pixels (1,600 total pixels)
+
 - **Bottleneck:** 10×10 = 100 pixels (too small for detail preservation)
 - **Architecture:** 3 downsampling stages with `channel_multipliers=(1, 2, 4)`
 - **Parameters:** ~15-20M
 - **Issue:** Jaggy boundaries in generated images
 
 **Resolution Flow:**
+
 ```
 40×40 → 20×20 → 10×10 (bottleneck) → 20×20 → 40×40
   64     128      256                  128      64
@@ -52,6 +54,7 @@
 **Answer: NO, not recommended for this case**
 
 **Reasons:**
+
 1. Resolution too low (40×40) to benefit from latent compression
 2. Dataset too small (522 images) to train a good VAE
 3. Added complexity doesn't justify marginal benefits
@@ -59,6 +62,7 @@
 5. Would likely introduce additional VAE artifacts
 
 **When LDM Would Help:**
+
 - Images at 256×256 or higher resolution
 - Significantly more training data (10k+ images)
 - Computational cost of pixel-space diffusion is prohibitive
@@ -72,6 +76,7 @@
 **Recommendation: Use 128×128 or 256×256**
 
 **Benefits:**
+
 - 128×128 = 10x more pixels than 40×40
 - 256×256 = 40x more pixels than 40×40
 - Enables smooth gradient transitions
@@ -82,11 +87,13 @@
 ### Priority 2: Fix Upsampling Method ⭐ QUICK WIN ✅ COMPLETED
 
 **Previous (problematic):**
+
 ```python
 nn.ConvTranspose2d(channels, channels, kernel_size=4, stride=2, padding=1)
 ```
 
 **Current (fixed):**
+
 ```python
 nn.Sequential(
     nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
@@ -95,6 +102,7 @@ nn.Sequential(
 ```
 
 **Benefits:**
+
 - ✅ Eliminates checkerboard artifacts
 - ✅ Smoother upsampling
 - ✅ Better gradient flow during training
@@ -103,6 +111,7 @@ nn.Sequential(
 ### Priority 3: Data Augmentation
 
 **Recommendations:**
+
 ```python
 transforms.Compose([
     transforms.Resize((140, 140)),
@@ -120,6 +129,7 @@ transforms.Compose([
 ### Priority 4: Architecture Improvements
 
 **For 40×40 (Original Configuration):**
+
 ```python
 channel_multipliers = (1, 2, 4)  # 3 stages
 base_channels = 64
@@ -128,6 +138,7 @@ use_attention = (False, False, True)  # Only at 10×10 bottleneck
 ```
 
 **Why this is optimal for 40×40:**
+
 - ✅ Attention at 10×10 (100 pixels) - manageable cost
 - ❌ Attention at 20×20 would be 16x more expensive (400 pixels)
 - ❌ Attention at 40×40 would be 256x more expensive (1,600 pixels)
@@ -135,6 +146,7 @@ use_attention = (False, False, True)  # Only at 10×10 bottleneck
 - Current configuration balances effectiveness with efficiency
 
 **For 96×96 (Middle-Ground Strategy - Recommended):** ⭐
+
 ```python
 channel_multipliers = (1, 2, 2, 4)  # 4 stages
 base_channels = 64
@@ -143,6 +155,7 @@ use_attention = (False, False, True, True)  # At 24×24 and 12×12
 ```
 
 **Why this is the sweet spot:**
+
 - ✅ 5.76× more pixels than 40×40 (9,216 vs 1,600 pixels)
 - ✅ Balanced computational cost vs quality improvement
 - ✅ 12×12 bottleneck (144 pixels) - optimal for information preservation
@@ -153,6 +166,7 @@ use_attention = (False, False, True, True)  # At 24×24 and 12×12
 - ✅ Faster experimentation than full 128×128
 
 **Architecture flow for 96×96:**
+
 ```
 Input: 96×96 (9,216 pixels)
 ├─ Down1: 96×96 → 96×96 (64 channels, no downsample)
@@ -169,6 +183,7 @@ Training time: ~2-2.5x baseline
 ```
 
 **For 128×128:**
+
 ```python
 channel_multipliers = (1, 2, 2, 4, 8)  # 5 stages
 base_channels = 64
@@ -177,11 +192,13 @@ use_attention = (False, False, False, True, True)  # At 16×16 and 8×8
 ```
 
 **Why this works for 128×128:**
+
 - Attention at 8×8 (64 pixels) and 16×16 (256 pixels)
 - Skip low-res stages (128×128, 64×64, 32×32) where attention is too expensive
 - Focus attention on bottleneck layers where it's most effective
 
 **For 256×256:**
+
 ```python
 channel_multipliers = (1, 2, 2, 4, 4, 8)  # 6 stages
 base_channels = 64
@@ -190,6 +207,7 @@ use_attention = (False, False, False, False, True, True)  # At 16×16 and 8×8
 ```
 
 **Attention Layer Guidelines:**
+
 - **Good:** 8×8 to 16×16 (64-256 pixels)
 - **Expensive:** 32×32+ (1,024+ pixels)
 - **Rule of thumb:** Only apply attention when spatial size ≤ 16×16
@@ -209,6 +227,7 @@ Your `ddpm.py` already supports arbitrary `channel_multipliers` lengths. Just pa
 ### Architecture Comparison
 
 #### Current (40×40, 3 stages)
+
 ```
 Input: 40×40
 ├─ Down1: 40×40 → 40×40 (64 channels, no downsample)
@@ -225,6 +244,7 @@ Bottleneck: 10×10 = 100 pixels ❌
 ```
 
 #### Recommended for 128×128 (5 stages)
+
 ```
 Input: 128×128
 ├─ Down1: 128×128 → 128×128 (64 channels)
@@ -242,6 +262,7 @@ Attention: At 16×16 and 8×8 ✓
 ```
 
 #### Optional for 256×256 (6 stages)
+
 ```
 Input: 256×256
 ├─ 6 downsampling stages
@@ -283,11 +304,13 @@ Bottleneck: 8×8 = 64 pixels ✓
 #### Example of Learning Difference:
 
 **Shallow network (3 stages):**
+
 - "This pixel should be abnormal"
 - "This pixel should be normal"
 - Result: Sharp, jaggy transitions ❌
 
 **Deep network (5-6 stages):**
+
 - "This region is transitioning from normal to abnormal"
 - "The boundary should gradually blend based on surrounding context"
 - "Maintain texture consistency while changing intensity"
@@ -321,12 +344,14 @@ Bottleneck: 8×8 = 64 pixels ✓
 ### Approach 1: Transform Resize (Recommended for Experimentation)
 
 **Pros:**
+
 - ✅ Flexibility to test different resolutions quickly
 - ✅ Saves disk space (only store originals)
 - ✅ Easy to implement (one parameter change)
 - ✅ Can add data augmentation easily
 
 **Cons:**
+
 - ❌ Slower training (~10-20% overhead per epoch)
 - ❌ CPU bottleneck during data loading
 
@@ -335,12 +360,14 @@ Bottleneck: 8×8 = 64 pixels ✓
 ### Approach 2: Preprocess Dataset (For Production)
 
 **Pros:**
+
 - ✅ Faster training (no resize overhead)
 - ✅ Better GPU utilization
 - ✅ Reproducibility
 - ✅ Best for final training runs
 
 **Cons:**
+
 - ❌ More disk space (~10x for 128×128)
 - ❌ Less flexible (need to reprocess for different resolutions)
 
@@ -349,12 +376,14 @@ Bottleneck: 8×8 = 64 pixels ✓
 ### Recommended Testing Strategy
 
 **Phase 1: Quick Experimentation (Use Transform Resize)**
+
 1. Test 128×128 with transform resize
 2. Train for 100-200 epochs
 3. Check boundary quality
 4. Experiment with 96×96, 128×128, 160×160 if needed
 
 **Phase 2: Production (Use Preprocessed Dataset)**
+
 1. Finalize best resolution
 2. Preprocess dataset at chosen resolution
 3. Train full 1000 epochs with optimized pipeline
@@ -466,6 +495,7 @@ This eliminates checkerboard artifacts from ConvTranspose2d and provides smoothe
 ### When to Consider Bicubic
 
 **Only try bicubic if:**
+
 - ✅ Already tested 128×128 with bilinear
 - ✅ Boundaries are better but still not perfect
 - ✅ Have GPU memory to spare
@@ -473,6 +503,7 @@ This eliminates checkerboard artifacts from ConvTranspose2d and provides smoothe
 - ✅ Doing final production training (not experimentation)
 
 **Testing approach:**
+
 ```python
 # Start with bilinear (recommended)
 nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
@@ -484,6 +515,7 @@ nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
 ### Expected Impact on Boundary Quality
 
 **Priority ranking:**
+
 1. ⭐⭐⭐ 128×128 resolution (70-80% improvement)
 2. ⭐⭐⭐ Deeper architecture (10-15% improvement)
 3. ⭐⭐ Bilinear upsampling (10-15% improvement) ✅ Done
@@ -496,15 +528,16 @@ nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
 
 ## Memory and Training Considerations
 
-| Resolution | Stages | Params  | Batch Size | GPU Memory | Training Time | Notes                    |
-| ---------- | ------ | ------- | ---------- | ---------- | ------------- | ------------------------ |
-| 40×40      | 3      | ~15-20M | 8          | ~2GB       | 1x (baseline) | Original config          |
+| Resolution | Stages | Params  | Batch Size | GPU Memory | Training Time | Notes                     |
+| ---------- | ------ | ------- | ---------- | ---------- | ------------- | ------------------------- |
+| 40×40      | 3      | ~15-20M | 8          | ~2GB       | 1x (baseline) | Original config           |
 | 96×96      | 4      | ~30-35M | 6-8        | ~4-5GB     | ~2-2.5x       | ⭐ Recommended sweet spot |
-| 128×128    | 5      | ~40-50M | 4-6        | ~6-8GB     | ~3-4x         | High quality             |
-| 256×256    | 6      | ~50-60M | 2-4        | ~10-14GB   | ~8-10x        | Maximum quality          |
+| 128×128    | 5      | ~40-50M | 4-6        | ~6-8GB     | ~3-4x         | High quality              |
+| 256×256    | 6      | ~50-60M | 2-4        | ~10-14GB   | ~8-10x        | Maximum quality           |
 
 **GPU Requirements:**
-- 8GB VRAM: 
+
+- 8GB VRAM:
   - ✅ 96×96 with batch_size=6-8 (comfortable)
   - ✅ 128×128 with batch_size=4 (tight but works)
 - 16GB+ VRAM: Can do 256×256 with batch_size=2-4
@@ -512,24 +545,28 @@ nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
 ### Why 96×96 with 4 Layers is the Sweet Spot
 
 **Advantages over 40×40:**
+
 - 5.76× more pixels for smoother boundaries
 - Deeper architecture (4 vs 3 layers) for better feature learning
 - Larger receptive field for context understanding
 - 12×12 bottleneck vs 10×10 (44% more information preserved)
 
 **Advantages over 128×128:**
+
 - 2× faster training iterations
 - Lower GPU memory requirements (can use larger batch sizes)
 - Easier to experiment and iterate
 - Still provides significant quality improvement
 
 **Best for:**
+
 - Experimentation and rapid prototyping
 - 8GB GPU users who want good quality without memory pressure
 - Projects where training time matters
 - Datasets with 500-2000 images
 
 **When to use 128×128 instead:**
+
 - Need maximum quality
 - Have 16GB+ GPU
 - Willing to wait longer for training
@@ -541,16 +578,17 @@ nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
 
 ### Combined Impact of Improvements
 
-| Change                                   | Status | Expected Improvement        |
-| ---------------------------------------- | ------ | --------------------------- |
+| Change                                   | Status  | Expected Improvement        |
+| ---------------------------------------- | ------- | --------------------------- |
 | Fix ConvTranspose2d upsampling           | ✅ Done | +10-15% smoothness          |
 | 128×128 resolution + deeper architecture | ⏳ TODO | +70-80% boundary smoothness |
 | Data augmentation                        | ⏳ TODO | +10-15% quality             |
-| **Total Potential**                      |        | **~90-95% improvement**     |
+| **Total Potential**                      |         | **~90-95% improvement**     |
 
 ### Training Convergence
 
 Your current training shows excellent convergence:
+
 - Epoch 1: loss=0.34 → Epoch 352: loss=0.012
 - Validation loss: 1.17 → 0.053
 - This indicates the model is learning well
@@ -608,11 +646,13 @@ Your current training shows excellent convergence:
 ## Conclusion
 
 Your jaggy boundary issue is primarily due to:
+
 1. **Low resolution (40×40)** - not enough pixels for smooth transitions
 2. **Shallow architecture** - insufficient multi-scale feature learning
 3. **ConvTranspose2d artifacts** - known to cause checkerboard patterns
 
 **Recommended solution:** Start with 96×96 and 4-layer architecture as a sweet spot between quality and efficiency. This provides:
+
 - 5.76× more pixels for smoother boundaries
 - Deeper network (4 stages) for better feature learning
 - Manageable GPU memory and training time
@@ -623,6 +663,7 @@ Your jaggy boundary issue is primarily due to:
 The deeper network with more parameters will **help, not hurt** - your current model is likely underfitting, and the additional capacity will enable better feature learning and smoother boundaries.
 
 **Quick Start:**
+
 ```bash
 # For 96×96 (recommended starting point)
 python src/ddpm_train.py --img-size 96 --channel-multipliers 1,2,2,4 --use-attention 0,0,1,1 --batch-size 6

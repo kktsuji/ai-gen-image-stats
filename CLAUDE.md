@@ -55,6 +55,7 @@ The project uses a **Vertical Slice + Base Class** pattern. Each experiment type
 ### Experiment Slices
 
 Each experiment under `src/experiments/<type>/` contains:
+
 - `config.py` — loads `default.yaml` (colocated) and validates the merged config (strict mode, no code defaults)
 - `trainer.py` — extends `BaseTrainer`
 - `dataloader.py` — extends `BaseDataLoader`

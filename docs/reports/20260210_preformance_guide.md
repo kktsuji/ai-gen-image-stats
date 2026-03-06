@@ -18,11 +18,13 @@ This guide documents the performance improvements made to address CPU bottleneck
 ### 1. DataLoader Multi-Processing (`num_workers`)
 
 **Before:**
+
 ```python
 DataLoader(dataset, batch_size=batch_size, shuffle=True)
 ```
 
 **After:**
+
 ```python
 DataLoader(
     dataset,
@@ -35,25 +37,29 @@ DataLoader(
 )
 ```
 
-**Impact:** 
+**Impact:**
+
 - **2-4× faster** data loading on i7-8700K (12 threads)
 - Eliminates CPU bottleneck during training
 
 ### 2. cuDNN Benchmark Mode
 
 **Before:**
+
 ```python
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 ```
 
 **After:**
+
 ```python
 torch.backends.cudnn.benchmark = True
 # torch.backends.cudnn.deterministic = True  # Only enable for strict reproducibility
 ```
 
 **Impact:**
+
 - **10-20% faster** training with fixed input sizes (40×40, 299×299)
 - Auto-tunes convolution algorithms for your GPU
 
@@ -66,6 +72,7 @@ Both `train.py` and `ddpm_train.py` now accept:
 ```
 
 **Recommended values for i7-8700K (12 threads):**
+
 - Start with: `--num-workers 4`
 - Try increasing: `--num-workers 6` or `--num-workers 8`
 - Monitor with: `htop` to check CPU utilization
@@ -75,6 +82,7 @@ Both `train.py` and `ddpm_train.py` now accept:
 ## 🔧 System Configuration
 
 ### Your Hardware
+
 - **CPU:** Intel i7-8700K (12 threads)
 - **GPU:** NVIDIA RTX 5070 (12GB VRAM)
 - **RAM:** 16GB
@@ -83,6 +91,7 @@ Both `train.py` and `ddpm_train.py` now accept:
 ### Optimal Settings
 
 #### For Training (`train.py`):
+
 ```bash
 python train.py \
   --batch-size 16 \
@@ -91,6 +100,7 @@ python train.py \
 ```
 
 #### For DDPM Training (`ddpm_train.py`):
+
 ```bash
 python ddpm_train.py \
   --batch-size 8 \
@@ -101,11 +111,13 @@ python ddpm_train.py \
 ### Docker Optimization
 
 **Previous Docker command had unnecessary overhead:**
+
 ```bash
 --user $(id -u):$(id -g) -e NUMBA_DISABLE_CACHE=1
 ```
 
 **Recommended Docker command:**
+
 ```bash
 docker run --rm --gpus all \
   --shm-size=4g \           # Critical: Shared memory for DataLoader workers
@@ -116,6 +128,7 @@ docker run --rm --gpus all \
 ```
 
 **Why `--shm-size=4g`?**
+
 - DataLoader workers use shared memory (`/dev/shm`)
 - Default is 64MB - too small for multi-worker loading
 - 4GB provides ample space for 4-8 workers
@@ -125,6 +138,7 @@ docker run --rm --gpus all \
 ## 📊 Expected Performance Improvements
 
 ### Before Optimization
+
 ```
 Epoch time: ~120 seconds
 └─ Data loading: 80s (67%) ← CPU bottleneck
@@ -132,6 +146,7 @@ Epoch time: ~120 seconds
 ```
 
 ### After Optimization
+
 ```
 Epoch time: ~50 seconds
 └─ Data loading: 10s (20%) ← Fixed with num_workers
@@ -145,22 +160,26 @@ Epoch time: ~50 seconds
 ## 🔍 Monitoring Performance
 
 ### Check CPU Usage During Training
+
 ```bash
 # In another terminal
 htop
 ```
 
 **What to look for:**
+
 - All CPU cores should be active (not just 1-2)
 - Look for multiple `python` worker processes
 - CPU usage should be 40-60% during data loading
 
 ### Check GPU Utilization
+
 ```bash
 watch -n 1 nvidia-smi
 ```
 
 **What to look for:**
+
 - GPU utilization should be 80-100% during training
 - Memory usage should be stable
 - Power draw near TDP (200W for RTX 5070)
@@ -180,12 +199,12 @@ scaler = GradScaler()
 
 for images, labels in train_loader:
     optimizer.zero_grad()
-    
+
     # Use automatic mixed precision
     with autocast():
         outputs = model(images)
         loss = criterion(outputs, labels)
-    
+
     # Scale loss and backward
     scaler.scale(loss).backward()
     scaler.step(optimizer)
@@ -193,6 +212,7 @@ for images, labels in train_loader:
 ```
 
 **Benefits:**
+
 - Faster matrix operations using FP16
 - Reduced memory usage (can increase batch size)
 - Modern GPUs have dedicated FP16 hardware
@@ -202,14 +222,17 @@ for images, labels in train_loader:
 With 12GB VRAM on RTX 5070, you can likely increase batch sizes:
 
 **Current:**
+
 - `train.py`: batch_size=16
 - `ddpm_train.py`: batch_size=8
 
 **Try:**
+
 - `train.py`: batch_size=32 or 64
 - `ddpm_train.py`: batch_size=16 or 32
 
 **Monitor GPU memory with:**
+
 ```bash
 nvidia-smi
 ```
@@ -236,6 +259,7 @@ unset NUMBA_DISABLE_CACHE  # Remove this if set
 ### Issue: "RuntimeError: DataLoader worker ... exited unexpectedly"
 
 **Solution:** Increase Docker shared memory
+
 ```bash
 --shm-size=8g  # Increase from 4g to 8g
 ```
@@ -243,11 +267,13 @@ unset NUMBA_DISABLE_CACHE  # Remove this if set
 ### Issue: Training slower with num_workers
 
 **Possible causes:**
+
 1. Too many workers (try reducing to 2-4)
 2. Small dataset (overhead not worth it)
 3. Insufficient shared memory in Docker
 
 **Test optimal workers:**
+
 ```bash
 for nw in 0 2 4 6 8; do
   echo "Testing num_workers=$nw"
@@ -258,6 +284,7 @@ done
 ### Issue: CPU still at 100% on single core
 
 **Check:**
+
 1. Verify `num_workers > 0` in code
 2. Check if running in Docker without `--shm-size`
 3. Confirm PyTorch DataLoader is being used
