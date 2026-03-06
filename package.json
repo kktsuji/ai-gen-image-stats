@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/kktsuji/ai-gen-image-stats#readme",
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "prettier": "^3.8.1"
   }
 }

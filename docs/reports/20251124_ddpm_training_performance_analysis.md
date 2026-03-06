@@ -48,6 +48,7 @@ Your DDPM training runs at **~3 seconds per epoch** (actual measurement: **5.31 
 ## Current Configuration
 
 ### Hardware
+
 - **GPU**: NVIDIA GeForce RTX 5070
   - VRAM: 12,227 MB total
   - Usage: ~940 MB (7.7%)
@@ -55,21 +56,23 @@ Your DDPM training runs at **~3 seconds per epoch** (actual measurement: **5.31 
 - **CPU**: Intel Core i7-8700K (12 threads, 6 physical cores)
 
 ### Training Configuration
+
 - **Batch Size**: 8 (default in code, though .env specifies 16)
 - **Model Size**: 12,817,859 parameters (~12.8M)
 - **Image Size**: 40×40 pixels
 - **Dataset**: 652 images (546 Normal, 106 Abnormal)
 - **Batches per Epoch**: 81
-- **Model Architecture**: 
+- **Model Architecture**:
   - Base channels: 64
   - Channel multipliers: (1, 2, 4)
   - Attention layers: (False, False, True)
   - Timesteps: 1000
 
 ### Software Configuration
+
 - **DataLoader Workers**: 4
 - **Mixed Precision (AMP)**: Enabled (default)
-- **Data Augmentation**: 
+- **Data Augmentation**:
   - RandomHorizontalFlip (p=0.5)
   - RandomRotation (15°)
   - ColorJitter (brightness=0.1, contrast=0.1)
@@ -82,7 +85,8 @@ Your DDPM training runs at **~3 seconds per epoch** (actual measurement: **5.31 
 
 **Current**: 8 → **Recommended**: 32-64
 
-**Rationale**: 
+**Rationale**:
+
 - GPU memory usage is only **7.7%** (940MB / 12,227MB)
 - Massive headroom available for larger batches
 - Larger batches amortize kernel launch overhead
@@ -91,6 +95,7 @@ Your DDPM training runs at **~3 seconds per epoch** (actual measurement: **5.31 
 **Expected Improvement**: **2-3x faster training**
 
 **Implementation**:
+
 ```bash
 # Update .env file
 DDPM_TRAIN_BATCH_SIZE=32  # or 48, 64
@@ -100,6 +105,7 @@ python3 src/ddpm_train.py --batch-size 32
 ```
 
 **Testing Strategy**:
+
 ```bash
 # Test batch_size=16
 docker run --rm -it --gpus all --shm-size=4g --network=host \
@@ -121,11 +127,13 @@ docker run --rm -it --gpus all --shm-size=4g --network=host \
 ```
 
 **Expected Results**:
+
 - Batch size 16: ~2.5 seconds/epoch (1.2x speedup)
 - Batch size 32: ~1.5-2 seconds/epoch (2x speedup)
 - Batch size 64: ~1-1.5 seconds/epoch (2.5-3x speedup)
 
 **Monitoring**:
+
 ```bash
 # Run this in another terminal while training
 watch -n 1 nvidia-smi
@@ -140,10 +148,12 @@ watch -n 1 nvidia-smi
 **Expected Improvement**: 20-40% faster + 50% less memory usage
 
 **Verification**:
+
 - Check that `--use-amp` flag is active (default in your script)
 - AMP provides speedup on Ampere/Ada GPUs (RTX 5070 benefits significantly)
 
 **If not enabled**:
+
 ```bash
 python3 src/ddpm_train.py --use-amp --batch-size 32
 ```
@@ -156,11 +166,13 @@ python3 src/ddpm_train.py --use-amp --batch-size 32
 **Recommended**: 6-8 workers
 
 **Rationale**:
+
 - Your CPU has 12 threads (6 physical cores)
 - Current I/O overhead is only 6%, but with larger batch sizes it may increase
 - More workers can prefetch data while GPU computes
 
 **Implementation**:
+
 ```bash
 python3 src/ddpm_train.py --num-workers 6 --batch-size 32
 ```
@@ -174,6 +186,7 @@ python3 src/ddpm_train.py --num-workers 6 --batch-size 32
 **Status**: Already minimal
 
 Current augmentations are lightweight:
+
 - RandomHorizontalFlip: negligible overhead
 - RandomRotation: minimal overhead
 - ColorJitter: minimal overhead
@@ -190,6 +203,7 @@ Current augmentations are lightweight:
 4. **Efficient Hardware**: RTX 5070 has excellent small-batch performance with modern Tensor Cores
 
 **Comparison**:
+
 - Poor training: 50-70% GPU utilization, 30-50% I/O overhead
 - Good training: 80-90% GPU utilization, 10-20% I/O overhead
 - **Your training**: 87.7% GPU utilization, 6.5% I/O overhead ✅
@@ -199,6 +213,7 @@ Current augmentations are lightweight:
 ## Immediate Action Plan
 
 ### Phase 1: Baseline Testing (Current Configuration)
+
 ```bash
 # Document current performance
 docker run --rm -it --gpus all --shm-size=4g --network=host \
@@ -212,34 +227,42 @@ Expected: ~3 seconds/epoch
 ### Phase 2: Incremental Batch Size Increases
 
 **Test 1: Batch Size 16**
+
 ```bash
 docker run --rm -it --gpus all --shm-size=4g --network=host \
   -v $PWD:/work -w /work --user $(id -u):$(id -g) \
   kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 \
   python3 src/ddpm_train.py --batch-size 16 --epochs 5
 ```
+
 Expected: ~2.5 seconds/epoch (~1.2x speedup)
 
 **Test 2: Batch Size 32**
+
 ```bash
 docker run --rm -it --gpus all --shm-size=4g --network=host \
   -v $PWD:/work -w /work --user $(id -u):$(id -g) \
   kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 \
   python3 src/ddpm_train.py --batch-size 32 --epochs 5
 ```
+
 Expected: ~1.5-2 seconds/epoch (~2x speedup)
 
 **Test 3: Batch Size 64**
+
 ```bash
 docker run --rm -it --gpus all --shm-size=4g --network=host \
   -v $PWD:/work -w /work --user $(id -u):$(id -g) \
   kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 \
   python3 src/ddpm_train.py --batch-size 64 --epochs 5
 ```
+
 Expected: ~1-1.5 seconds/epoch (~2.5-3x speedup)
 
 ### Phase 3: Fine-Tuning (Optional)
+
 Once optimal batch size is found:
+
 - Increase `num_workers` to 6-8 if I/O overhead increases
 - Monitor GPU memory and adjust batch size accordingly
 - Consider gradient accumulation if memory becomes a constraint
@@ -248,8 +271,8 @@ Once optimal batch size is found:
 
 ## Performance Targets
 
-| Metric             | Current | Target   | Status          |
-| ------------------ | ------- | -------- | --------------- |
+| Metric             | Current | Target   | Status           |
+| ------------------ | ------- | -------- | ---------------- |
 | GPU Utilization    | 87.7%   | >80%     | ✅ Excellent     |
 | I/O Overhead       | 6.5%    | <15%     | ✅ Excellent     |
 | Epoch Time (bs=8)  | 3 sec   | -        | ✅ Good          |
@@ -265,12 +288,14 @@ Once optimal batch size is found:
 **The only significant speedup** available is increasing batch size to better utilize your abundant GPU memory (you're only using 8% of 12GB VRAM). This could give you **2-3x speedup** with minimal code changes.
 
 ### Recommended Next Steps:
+
 1. ✅ Test with batch_size=32 (most likely optimal)
 2. ✅ Monitor GPU memory usage during training
 3. ✅ Update `.env` with optimal batch size
 4. ⏭️ Optional: Fine-tune num_workers if needed
 
 ### No Action Needed For:
+
 - ❌ Data loading optimization (already excellent at 6% overhead)
 - ❌ CPU→GPU transfer (negligible at 0.5%)
 - ❌ Code optimization (already efficient)
@@ -289,6 +314,7 @@ The performance analysis was conducted using a custom profiling script that meas
 5. **Optimizer Step**: Time for weight updates
 
 Each component was profiled over 20 batches with GPU synchronization to ensure accurate measurements. The script accounts for:
+
 - PyTorch asynchronous execution
 - CUDA kernel launch overhead
 - Mixed precision training (AMP) impact
@@ -297,4 +323,3 @@ Each component was profiled over 20 batches with GPU synchronization to ensure a
 **Profiling Hardware**: NVIDIA GeForce RTX 5070 (12GB), Intel i7-8700K  
 **Profiling Date**: November 24, 2025  
 **PyTorch Version**: 2.9.0 with CUDA 12.8
-

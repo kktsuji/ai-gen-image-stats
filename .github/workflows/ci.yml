@@ -43,6 +43,19 @@ jobs:
       - name: Pyright
         run: pyright
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prettier markdown check
+        run: npx prettier --check "**/*.md"
+
   unit-and-component-tests:
     runs-on: ubuntu-latest
 
