@@ -83,6 +83,9 @@ pip install -r requirements.txt
 # Install development dependencies (for testing)
 pip install -r requirements-dev.txt
 
+# Install npm dependencies (sets up git pre-commit hooks via husky)
+npm install
+
 # Build the docker image
 docker build -t kktsuji/pytorch-2.9.0-cuda12.8-cudnn9 .
 ```
@@ -594,6 +597,34 @@ tensorboard --logdir outputs/experiment/tensorboard --port 6007
 **Classifier**: `metrics/train_loss`, `metrics/train_accuracy`, `metrics/val_loss`, `metrics/val_accuracy`, `metrics/learning_rate`, `images/predictions`, `confusion_matrix/matrix`
 
 **Diffusion**: `metrics/train_loss`, `metrics/val_loss`, `metrics/ema_decay`, `images/samples`, `denoising/process`, `denoising/figure`
+
+## Linting
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting, and [Pyright](https://github.com/microsoft/pyright) for static type checking.
+
+### Running Linters
+
+```bash
+# Run all linters (same checks as the pre-commit hook)
+npm run lint
+
+# Or run each tool individually
+ruff check .           # lint
+ruff format --check .  # format check
+pyright                # type check
+```
+
+### Pre-commit Hooks
+
+Git pre-commit hooks are managed with [Husky](https://typicode.github.io/husky/). After running `npm install`, the hooks are installed automatically and the three checks above run on every `git commit`.
+
+To trigger the hooks manually without committing:
+
+```bash
+npm run lint
+# or directly
+bash .husky/pre-commit
+```
 
 ## Testing
 
