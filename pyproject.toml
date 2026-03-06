@@ -17,3 +17,9 @@ ignore = [
 # black-compatible defaults (double quotes, trailing commas, etc.)
 quote-style = "double"
 indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.11"
+include = ["src", "tests"]
+exclude = ["src/deprecated"]
+typeCheckingMode = "basic"

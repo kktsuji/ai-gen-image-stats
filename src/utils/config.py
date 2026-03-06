@@ -5,12 +5,12 @@ Priority order: CLI arguments > Config file > Code defaults
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: Union[str, Path]) -> Dict[str, Any]:
     """Load configuration from a YAML file.
 
     Args:
@@ -118,7 +118,7 @@ def load_and_merge_configs(
     return result
 
 
-def save_config(config: Dict[str, Any], output_path: str, indent: int = 2) -> None:
+def save_config(config: Dict[str, Any], output_path: Union[str, Path], indent: int = 2) -> None:
     """Save configuration to a YAML file.
 
     Args:

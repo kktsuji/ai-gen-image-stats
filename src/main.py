@@ -37,11 +37,12 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import torch
 from dotenv import load_dotenv
 
+from src.base.model import BaseModel
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
 from src.utils.config import save_config
@@ -137,6 +138,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         device = get_device()
     else:
         device = device_config
+    device = str(device)
 
     logger.info(f"Using device: {device}")
 
@@ -192,7 +194,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Get class names from dataset
     train_loader = dataloader.get_train_loader()
     if hasattr(train_loader.dataset, "classes"):
-        class_names = train_loader.dataset.classes
+        class_names = getattr(train_loader.dataset, "classes")
     else:
         num_classes = config["model"]["architecture"]["num_classes"]
         class_names = [f"Class {i}" for i in range(num_classes)]
@@ -474,6 +476,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         device = get_device()
     else:
         device = device_config
+    device = str(device)
 
     logger.info(f"Using device: {device}")
 
@@ -855,7 +858,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Initialize trainer (use training.visualization for sampling)
         trainer = DiffusionTrainer(
-            model=model,
+            model=cast(BaseModel, model),
             dataloader=dataloader,
             optimizer=optimizer,
             logger=metrics_logger,

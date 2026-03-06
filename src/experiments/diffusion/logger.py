@@ -7,7 +7,7 @@ and denoising process visualizations.
 
 import csv
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -83,13 +83,19 @@ class DiffusionLogger(BaseLogger):
         # Initialize metrics CSV file
         self.metrics_file = self.metrics_dir / "metrics.csv"
         self.csv_initialized = self.metrics_file.exists()
-        self.csv_fieldnames = None
+        self.csv_fieldnames: Optional[List[str]] = None
 
         # If CSV exists, load existing fieldnames
         if self.csv_initialized:
             with open(self.metrics_file, "r") as f:
                 reader = csv.DictReader(f)
-                self.csv_fieldnames = reader.fieldnames
+                if reader.fieldnames:
+                    self.csv_fieldnames = list(reader.fieldnames)
+                else:
+                    # Treat a CSV without header (or empty file) as uninitialized
+                    # so that later logging can write a fresh header safely.
+                    self.csv_initialized = False
+                    self.csv_fieldnames = None
 
         # Initialize TensorBoard logging
         self.tensorboard_config = tensorboard_config or {}
@@ -114,7 +120,7 @@ class DiffusionLogger(BaseLogger):
 
     def log_metrics(
         self,
-        metrics: Dict[str, Union[float, int, torch.Tensor]],
+        metrics: Mapping[str, Union[float, int, torch.Tensor]],
         step: int,
         epoch: Optional[int] = None,
     ) -> None:
@@ -164,6 +170,7 @@ class DiffusionLogger(BaseLogger):
                 writer.writeheader()
             self.csv_initialized = True
         else:
+            assert self.csv_fieldnames is not None
             # Update fieldnames if new metrics are added
             new_fields = set(log_entry.keys()) - set(self.csv_fieldnames)
             if new_fields:
@@ -172,6 +179,7 @@ class DiffusionLogger(BaseLogger):
                 self._rewrite_csv_with_new_fields()
 
         # Append metrics
+        assert self.csv_fieldnames is not None
         with open(self.metrics_file, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
             # Fill missing fields with None
@@ -180,6 +188,7 @@ class DiffusionLogger(BaseLogger):
 
     def _rewrite_csv_with_new_fields(self) -> None:
         """Re-write CSV file with updated field names."""
+        assert self.csv_fieldnames is not None
         # Read existing data
         existing_data = []
         if self.metrics_file.exists():

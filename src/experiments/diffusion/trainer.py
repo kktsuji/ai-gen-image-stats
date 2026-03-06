@@ -7,7 +7,7 @@ training and generation logic.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import torch
 import torch.nn as nn
@@ -36,6 +36,9 @@ class ClassWeightedMSELoss(nn.Module):
         class_weights: Tensor of shape (num_classes,) with per-class weights
     """
 
+    # Buffer type annotation (set via register_buffer in __init__)
+    class_weights: torch.Tensor
+
     def __init__(self, class_weights: torch.Tensor):
         super().__init__()
         self.register_buffer("class_weights", class_weights)
@@ -61,7 +64,7 @@ class ClassWeightedMSELoss(nn.Module):
         per_sample_mse = per_sample_mse.mean(dim=tuple(range(1, per_sample_mse.ndim)))
 
         # Look up weights for each sample's class
-        weights = self.class_weights[class_labels]  # (B,)
+        weights = self.class_weights[class_labels]  # type: ignore[index]
 
         # Weighted average
         loss = (per_sample_mse * weights).mean()
@@ -152,7 +155,7 @@ class DiffusionTrainer(BaseTrainer):
         gradient_clip_norm: Optional[float] = None,
         scheduler: Optional[
             Union[
-                torch.optim.lr_scheduler._LRScheduler,
+                torch.optim.lr_scheduler.LRScheduler,
                 torch.optim.lr_scheduler.ReduceLROnPlateau,
             ]
         ] = None,
@@ -237,7 +240,7 @@ class DiffusionTrainer(BaseTrainer):
         self.use_amp = use_amp and device == "cuda"
         self.scaler = None
         if self.use_amp:
-            self.scaler = torch.amp.GradScaler(device)
+            self.scaler = torch.amp.GradScaler(device)  # type: ignore[attr-defined]
             _logger.info("Automatic mixed precision (AMP) enabled")
 
         # Loss criterion
@@ -265,11 +268,8 @@ class DiffusionTrainer(BaseTrainer):
         tb_config = (
             self.config.get("logging", {}).get("metrics", {}).get("tensorboard", {})
         )
-        if (
-            hasattr(self.logger, "tb_writer")
-            and self.logger.tb_writer is not None
-            and tb_config.get("log_graph", False)
-        ):
+        _tb_writer = getattr(self.logger, "tb_writer", None)
+        if _tb_writer is not None and tb_config.get("log_graph", False):
             try:
                 image_size = (
                     self.config.get("model", {})
@@ -284,7 +284,7 @@ class DiffusionTrainer(BaseTrainer):
                 dummy_input = torch.randn(1, in_channels, image_size, image_size).to(
                     self.device
                 )
-                self.logger.tb_writer.add_graph(self.model, dummy_input)
+                _tb_writer.add_graph(self.model, dummy_input)
                 _logger.info("Logged model graph to TensorBoard")
             except Exception as e:
                 _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
@@ -313,7 +313,7 @@ class DiffusionTrainer(BaseTrainer):
         # Debug: Log dataset info
         _logger.debug(f"Training on {len(train_loader)} batches")
         if hasattr(train_loader, "dataset"):
-            _logger.debug(f"Dataset size: {len(train_loader.dataset)}")
+            _logger.debug(f"Dataset size: {len(train_loader.dataset)}")  # type: ignore[arg-type]
 
         # Create progress bar if enabled
         iterator = (
@@ -359,14 +359,18 @@ class DiffusionTrainer(BaseTrainer):
 
             # Forward pass with automatic mixed precision
             if self.use_amp:
-                with torch.amp.autocast(self.device):
+                assert self.scaler is not None
+                with torch.amp.autocast(self.device):  # type: ignore[attr-defined]
                     if self.weighted_criterion is not None and labels is not None:
                         # Use class-weighted loss
                         predicted_noise, noise = self.model(images, class_labels=labels)
                         loss = self.weighted_criterion(predicted_noise, noise, labels)
                     else:
-                        loss = self.model.compute_loss(
-                            images, class_labels=labels, criterion=self.criterion
+                        loss = cast(
+                            torch.Tensor,
+                            self.model.compute_loss(
+                                images, class_labels=labels, criterion=self.criterion
+                            ),
                         )
 
                 # Backward pass with gradient scaling
@@ -394,8 +398,11 @@ class DiffusionTrainer(BaseTrainer):
                     predicted_noise, noise = self.model(images, class_labels=labels)
                     loss = self.weighted_criterion(predicted_noise, noise, labels)
                 else:
-                    loss = self.model.compute_loss(
-                        images, class_labels=labels, criterion=self.criterion
+                    loss = cast(
+                        torch.Tensor,
+                        self.model.compute_loss(
+                            images, class_labels=labels, criterion=self.criterion
+                        ),
                     )
 
                 # Backward pass
@@ -434,7 +441,7 @@ class DiffusionTrainer(BaseTrainer):
 
             # Update progress bar
             if self.show_progress:
-                iterator.set_postfix({"loss": total_loss / num_batches})
+                iterator.set_postfix({"loss": total_loss / num_batches})  # type: ignore[attr-defined]
 
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
@@ -506,8 +513,11 @@ class DiffusionTrainer(BaseTrainer):
                     labels = None
 
                 # Forward pass
-                loss = self.model.compute_loss(
-                    images, class_labels=labels, criterion=self.criterion
+                loss = cast(
+                    torch.Tensor,
+                    self.model.compute_loss(
+                        images, class_labels=labels, criterion=self.criterion
+                    ),
                 )
 
                 # Track metrics
@@ -516,7 +526,7 @@ class DiffusionTrainer(BaseTrainer):
 
                 # Update progress bar
                 if self.show_progress:
-                    iterator.set_postfix({"val_loss": total_loss / num_batches})
+                    iterator.set_postfix({"val_loss": total_loss / num_batches})  # type: ignore[attr-defined]
 
         # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
@@ -1144,11 +1154,12 @@ class DiffusionTrainer(BaseTrainer):
 
         # 4. log_denoising_process
         if self.log_denoising_interval and epoch % self.log_denoising_interval == 0:
-            logger.log_denoising_process(
-                denoising_seq,
-                step=step,
-                epoch=epoch,
-            )
+            if hasattr(logger, "log_denoising_process"):
+                logger.log_denoising_process(  # type: ignore[attr-defined]
+                    denoising_seq,
+                    step=step,
+                    epoch=epoch,
+                )
 
     def get_model(self) -> BaseModel:
         """Return the model being trained.

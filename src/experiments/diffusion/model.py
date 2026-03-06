@@ -680,6 +680,21 @@ class DDPMModel(BaseModel):
         # EMA for improved sampling quality
         self.ema = None  # Will be initialized externally if needed
 
+        # Type annotations for noise schedule buffers (set via register_buffer)
+        self.betas: torch.Tensor
+        self.alphas: torch.Tensor
+        self.alphas_cumprod: torch.Tensor
+        self.alphas_cumprod_prev: torch.Tensor
+        self.sqrt_alphas_cumprod: torch.Tensor
+        self.sqrt_one_minus_alphas_cumprod: torch.Tensor
+        self.log_one_minus_alphas_cumprod: torch.Tensor
+        self.sqrt_recip_alphas_cumprod: torch.Tensor
+        self.sqrt_recipm1_alphas_cumprod: torch.Tensor
+        self.posterior_variance: torch.Tensor
+        self.posterior_log_variance_clipped: torch.Tensor
+        self.posterior_mean_coef1: torch.Tensor
+        self.posterior_mean_coef2: torch.Tensor
+
         # Precompute noise schedule
         self.register_buffer(
             "betas",
@@ -1086,11 +1101,11 @@ class DDPMModel(BaseModel):
                 dynamic_threshold_percentile,
             )
 
-            if return_intermediates:
+            if return_intermediates and intermediates is not None:
                 intermediates.append(x)
 
-        if return_intermediates:
-            return torch.stack(intermediates)
+        if return_intermediates and intermediates is not None:
+            return torch.stack(intermediates)  # type: ignore[arg-type]
 
         return x
 
@@ -1142,11 +1157,11 @@ class DDPMModel(BaseModel):
                 dynamic_threshold_percentile,
             )
 
-            if return_intermediates:
+            if return_intermediates and intermediates is not None:
                 intermediates.append(x)
 
-        if return_intermediates:
-            return torch.stack(intermediates)
+        if return_intermediates and intermediates is not None:
+            return torch.stack(intermediates)  # type: ignore[arg-type]
 
         return x
 
