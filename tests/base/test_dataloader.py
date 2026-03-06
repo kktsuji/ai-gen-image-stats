@@ -141,12 +141,12 @@ class TestBaseDataLoaderInterface:
     def test_cannot_instantiate_base_dataloader_directly(self):
         """BaseDataLoader is abstract and cannot be instantiated directly."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            BaseDataLoader()
+            BaseDataLoader()  # type: ignore[abstract]
 
     def test_cannot_instantiate_incomplete_implementation(self):
         """DataLoaders that don't implement all abstract methods cannot be instantiated."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            IncompleteDataLoader()
+            IncompleteDataLoader()  # type: ignore[abstract]
 
     def test_can_instantiate_complete_implementation(self):
         """DataLoaders that implement all abstract methods can be instantiated."""
@@ -175,7 +175,7 @@ class TestDataLoaderCreation:
 
         assert isinstance(train_loader, DataLoader)
         assert train_loader.batch_size == 16
-        assert len(train_loader.dataset) == 100
+        assert len(train_loader.dataset) == 100  # type: ignore[arg-type]
 
     def test_create_val_loader(self):
         """Test creating a validation dataloader."""
@@ -184,7 +184,7 @@ class TestDataLoaderCreation:
 
         assert isinstance(val_loader, DataLoader)
         assert val_loader.batch_size == 16
-        assert len(val_loader.dataset) == 20
+        assert len(val_loader.dataset) == 20  # type: ignore[arg-type]
 
     def test_val_loader_can_be_none(self):
         """Test that validation loader can be None for experiments without validation."""

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 import yaml
 
 
-def load_config(config_path: Union[str, Path]) -> Dict[str, Any]:
+def load_config(config_path: Optional[Union[str, Path]]) -> Dict[str, Any]:
     """Load configuration from a YAML file.
 
     Args:
@@ -39,7 +39,7 @@ def load_config(config_path: Union[str, Path]) -> Dict[str, Any]:
 
 
 def merge_configs(
-    base_config: Dict[str, Any], override_config: Dict[str, Any]
+    base_config: Optional[Dict[str, Any]], override_config: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Merge two configuration dictionaries recursively.
 
@@ -118,7 +118,11 @@ def load_and_merge_configs(
     return result
 
 
-def save_config(config: Dict[str, Any], output_path: Union[str, Path], indent: int = 2) -> None:
+def save_config(
+    config: Optional[Dict[str, Any]],
+    output_path: Optional[Union[str, Path]],
+    indent: int = 2,
+) -> None:
     """Save configuration to a YAML file.
 
     Args:

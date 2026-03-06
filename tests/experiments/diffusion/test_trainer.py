@@ -412,7 +412,7 @@ def test_diffusion_trainer_unconditional(
 
     # Test validation epoch
     val_metrics = trainer.validate_epoch()
-    assert "val_loss" in val_metrics
+    assert "val_loss" in val_metrics  # type: ignore[operator]
 
 
 @pytest.mark.component
@@ -697,8 +697,8 @@ def test_load_checkpoint_without_ema_reinitializes_shadow():
         loaded_model = trainer2.get_model()
         for name, param in loaded_model.named_parameters():
             if param.requires_grad:
-                assert name in trainer2.ema.shadow
-                assert torch.allclose(trainer2.ema.shadow[name], param.data), (
+                assert name in trainer2.ema.shadow  # type: ignore[union-attr]
+                assert torch.allclose(trainer2.ema.shadow[name], param.data), (  # type: ignore[union-attr]
                     f"EMA shadow for {name} does not match model weights"
                 )
 
@@ -728,7 +728,7 @@ def test_load_checkpoint_with_ema_restores_saved_state():
     trainer.train_epoch()
 
     # Capture EMA shadow state before saving
-    saved_shadow = {name: tensor.clone() for name, tensor in trainer.ema.shadow.items()}
+    saved_shadow = {name: tensor.clone() for name, tensor in trainer.ema.shadow.items()}  # type: ignore[union-attr]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         checkpoint_path = Path(tmpdir) / "test_ema_full.pth"
@@ -752,8 +752,8 @@ def test_load_checkpoint_with_ema_restores_saved_state():
 
         # EMA shadow should match the saved EMA state
         for name, tensor in saved_shadow.items():
-            assert name in trainer2.ema.shadow
-            assert torch.allclose(trainer2.ema.shadow[name], tensor), (
+            assert name in trainer2.ema.shadow  # type: ignore[union-attr]
+            assert torch.allclose(trainer2.ema.shadow[name], tensor), (  # type: ignore[union-attr]
                 f"EMA shadow for {name} does not match saved state"
             )
 

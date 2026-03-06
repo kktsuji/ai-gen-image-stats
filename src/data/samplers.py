@@ -351,7 +351,7 @@ def compute_weights_from_config(
 
 def get_sampler_from_dataset(
     dataset: Any,
-    sampler_type: str = "weighted",
+    sampler_type: Optional[str] = "weighted",
     **kwargs: Any,
 ) -> Optional[Sampler]:
     """

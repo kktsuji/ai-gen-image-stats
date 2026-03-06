@@ -146,7 +146,7 @@ class TestDownsampleDataset:
             pass
 
         with pytest.raises(AttributeError, match="targets"):
-            downsample_dataset(NoTargets(), target_ratio=1.0, seed=42)
+            downsample_dataset(NoTargets(), target_ratio=1.0, seed=42)  # type: ignore[arg-type]
 
     def test_already_balanced_dataset(self):
         """Test that already balanced dataset is unchanged in count."""

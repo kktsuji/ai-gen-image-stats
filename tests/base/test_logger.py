@@ -6,7 +6,7 @@ Tests are organized into unit tests to ensure fast execution on CPU.
 
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import pytest
 import torch
@@ -29,7 +29,7 @@ class MinimalValidLogger(BaseLogger):
 
     def log_metrics(
         self,
-        metrics: Dict[str, Union[float, int, torch.Tensor]],
+        metrics: Mapping[str, Union[float, int, torch.Tensor]],
         step: int,
         epoch: Optional[int] = None,
     ) -> None:
@@ -67,7 +67,7 @@ class FileLogger(BaseLogger):
 
     def log_metrics(
         self,
-        metrics: Dict[str, Union[float, int, torch.Tensor]],
+        metrics: Mapping[str, Union[float, int, torch.Tensor]],
         step: int,
         epoch: Optional[int] = None,
     ) -> None:
@@ -172,12 +172,12 @@ class TestBaseLoggerInterface:
     def test_cannot_instantiate_base_logger_directly(self):
         """BaseLogger is abstract and cannot be instantiated directly."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            BaseLogger()
+            BaseLogger()  # type: ignore[abstract]
 
     def test_cannot_instantiate_incomplete_implementation(self):
         """Loggers that don't implement all abstract methods cannot be instantiated."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            IncompleteLogger()
+            IncompleteLogger()  # type: ignore[abstract]
 
     def test_can_instantiate_complete_implementation(self):
         """Loggers that implement all abstract methods can be instantiated."""

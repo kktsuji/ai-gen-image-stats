@@ -60,7 +60,7 @@ class TestDeviceManager:
         model = torch.nn.Linear(10, 5)
         moved_model = manager.to_device(model)
         # Check that parameters are on correct device
-        for param in moved_model.parameters():
+        for param in moved_model.parameters():  # type: ignore[union-attr]
             assert param.device.type == "cpu"
 
     def test_get_device_name_cpu(self):
@@ -283,7 +283,7 @@ class TestDeviceManagerEdgeCases:
         moved_model = manager.to_device(model)
 
         # Check all parameters are on correct device
-        for param in moved_model.parameters():
+        for param in moved_model.parameters():  # type: ignore[union-attr]
             assert param.device.type == "cpu"
 
 

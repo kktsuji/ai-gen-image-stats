@@ -96,7 +96,9 @@ class ClassifierLogger(BaseLogger):
         if self.csv_initialized:
             with open(self.metrics_file, "r") as f:
                 reader = csv.DictReader(f)
-                self.csv_fieldnames = list(reader.fieldnames) if reader.fieldnames is not None else None
+                self.csv_fieldnames = (
+                    list(reader.fieldnames) if reader.fieldnames is not None else None
+                )
 
         # Initialize TensorBoard logging
         self.tensorboard_config = tensorboard_config or {}

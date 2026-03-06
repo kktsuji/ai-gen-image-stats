@@ -44,7 +44,7 @@ class TestBaseDataset:
     def test_base_dataset_is_abstract(self):
         """BaseDataset cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            BaseDataset()
+            BaseDataset()  # type: ignore[abstract]
 
     def test_base_dataset_has_required_methods(self):
         """BaseDataset defines required abstract methods."""
@@ -354,7 +354,7 @@ class TestDatasetFactory:
         """Should pass additional kwargs to dataset constructor."""
         dataset = get_dataset("imagefolder", str(TRAIN_DIR), transform=sample_transform)
 
-        assert dataset.transform is not None
+        assert dataset.transform is not None  # type: ignore[attr-defined]
         image, _ = dataset[0]
         assert isinstance(image, torch.Tensor)
 

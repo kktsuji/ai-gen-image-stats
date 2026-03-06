@@ -407,7 +407,7 @@ class TestInputValidation:
 
         # This should work - pytest will catch if it raises TypeError
         with pytest.raises(TypeError):
-            sampler.sample(num_samples="invalid", use_ema=False)
+            sampler.sample(num_samples="invalid", use_ema=False)  # type: ignore[arg-type]
 
     def test_negative_guidance_scale(self, conditional_model, device):
         """Test that negative guidance scale is handled (may be valid)."""
@@ -541,7 +541,7 @@ class TestSampleRejectsShowProgress:
         sampler = DiffusionSampler(model=unconditional_model, device=device)
 
         with pytest.raises(TypeError):
-            sampler.sample(num_samples=1, use_ema=False, show_progress=True)
+            sampler.sample(num_samples=1, use_ema=False, show_progress=True)  # type: ignore[call-arg]
 
     def test_sample_with_intermediates_rejects_show_progress_kwarg(
         self, unconditional_model, device
@@ -551,5 +551,7 @@ class TestSampleRejectsShowProgress:
 
         with pytest.raises(TypeError):
             sampler.sample_with_intermediates(
-                num_samples=1, use_ema=False, show_progress=True
+                num_samples=1,
+                use_ema=False,
+                show_progress=True,  # type: ignore[call-arg]
             )
