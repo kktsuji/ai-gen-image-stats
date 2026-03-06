@@ -151,6 +151,12 @@ docker run --rm -it --gpus all --network=host --shm-size=4g \
   -v $PWD:/work -w /work --user $(id -u):$(id -g) \
   kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
   python3 -m src.main configs/classifier.yaml
+
+# For smoke testing on GPU
+docker run --rm -it --gpus all --network=host --shm-size=4g \
+  -v $PWD:/work -w /work --user $(id -u):$(id -g) \
+  kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
+  pytest -m smoke
 ```
 
 #### Using Python API (Inference-Only)
