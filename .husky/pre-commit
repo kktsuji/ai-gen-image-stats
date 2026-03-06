@@ -5,4 +5,4 @@ set -e
 ruff check .
 ruff format --check .
 pyright
-npx prettier --check "**/*.md"
+npx --no-install prettier --check "**/*.md"
