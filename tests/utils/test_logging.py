@@ -72,9 +72,7 @@ class TestLoggingSetup:
         formatter = handler.formatter
 
         assert formatter is not None
-        assert custom_format in formatter._fmt
-
-    def test_setup_logging_module_levels(self, tmp_path):
+        assert custom_format in formatter._fmt  # type: ignore[operator]
         """setup_logging configures module-specific log levels."""
         log_file = tmp_path / "test.log"
         module_levels = {"test.module": "ERROR", "another.module": "INFO"}
@@ -131,10 +129,10 @@ class TestLoggingSetup:
 
         assert formatter is not None
         # Default format should contain these components
-        assert "%(asctime)s" in formatter._fmt
-        assert "%(name)s" in formatter._fmt
-        assert "%(levelname)s" in formatter._fmt
-        assert "%(message)s" in formatter._fmt
+        assert "%(asctime)s" in formatter._fmt  # type: ignore[operator]
+        assert "%(name)s" in formatter._fmt  # type: ignore[operator]
+        assert "%(levelname)s" in formatter._fmt  # type: ignore[operator]
+        assert "%(message)s" in formatter._fmt  # type: ignore[operator]
 
     def test_setup_logging_clears_existing_handlers(self, tmp_path):
         """setup_logging clears existing handlers to avoid duplicates."""

@@ -198,11 +198,11 @@ def test_assert_tensor_shape_helper():
     tensor = torch.zeros(2, 3, 32, 32)
 
     # Should pass
-    pytest.assert_tensor_shape(tensor, (2, 3, 32, 32))
+    pytest.assert_tensor_shape(tensor, (2, 3, 32, 32))  # type: ignore[attr-defined]
 
     # Should fail
     with pytest.raises(AssertionError):
-        pytest.assert_tensor_shape(tensor, (2, 3, 64, 64))
+        pytest.assert_tensor_shape(tensor, (2, 3, 64, 64))  # type: ignore[attr-defined]
 
 
 @pytest.mark.unit
@@ -211,8 +211,8 @@ def test_assert_tensor_range_helper():
     tensor = torch.rand(10, 10) * 2.0 - 1.0  # Range: -1 to 1
 
     # Should pass
-    pytest.assert_tensor_range(tensor, -1.0, 1.0)
+    pytest.assert_tensor_range(tensor, -1.0, 1.0)  # type: ignore[attr-defined]
 
     # Should fail on min
     with pytest.raises(AssertionError):
-        pytest.assert_tensor_range(tensor, 0.0, 1.0)
+        pytest.assert_tensor_range(tensor, 0.0, 1.0)  # type: ignore[attr-defined]

@@ -480,7 +480,9 @@ class TestRobustness:
         # Create comparison with fewer epochs
         comparison_data = baseline.data[baseline.data["epoch"] <= 5].copy()
         comparison = ExperimentResults(
-            name="comparison", data=comparison_data, metrics=baseline.metrics
+            name="comparison",
+            data=comparison_data,  # type: ignore[arg-type]
+            metrics=baseline.metrics,
         )
 
         comparator = ExperimentComparator(baseline, comparison)

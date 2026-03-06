@@ -118,9 +118,9 @@ class MinimalValidTrainer(BaseTrainer):
             self.optimizer.zero_grad()
             predictions = self.model(data)
             loss = self.model.compute_loss(predictions, target)
-            loss.backward()
+            loss.backward()  # type: ignore[union-attr]
             self.optimizer.step()
-            total_loss += loss.item()
+            total_loss += loss.item()  # type: ignore[union-attr]
             num_batches += 1
             self._global_step += 1
 
@@ -139,7 +139,7 @@ class MinimalValidTrainer(BaseTrainer):
             for data, target in val_loader:
                 predictions = self.model(data)
                 loss = self.model.compute_loss(predictions, target)
-                total_loss += loss.item()
+                total_loss += loss.item()  # type: ignore[union-attr]
                 num_batches += 1
 
         return {"val_loss": total_loss / num_batches if num_batches > 0 else 0.0}
@@ -192,12 +192,12 @@ class TestBaseTrainerInterface:
     def test_cannot_instantiate_base_trainer_directly(self):
         """BaseTrainer is abstract and cannot be instantiated directly."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            BaseTrainer()
+            BaseTrainer()  # type: ignore[abstract]
 
     def test_cannot_instantiate_incomplete_implementation(self):
         """Trainers that don't implement all abstract methods cannot be instantiated."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            IncompleteTrainer()
+            IncompleteTrainer()  # type: ignore[abstract]
 
     def test_can_instantiate_complete_implementation(self):
         """Trainers that implement all abstract methods can be instantiated."""

@@ -281,7 +281,7 @@ class TestGetSamplerFromDataset:
             dataset, sampler_type="weighted", num_samples=100
         )
 
-        assert sampler.num_samples == 100
+        assert sampler.num_samples == 100  # type: ignore[union-attr]
 
 
 # =============================================================================

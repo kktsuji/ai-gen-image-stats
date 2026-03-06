@@ -59,7 +59,7 @@ class TestDeviceManager:
         manager = DeviceManager(force_cpu=True)
         model = torch.nn.Linear(10, 5)
         moved_model = manager.to_device(model)
-        # Check that parameters are on correct device
+        assert isinstance(moved_model, torch.nn.Module)
         for param in moved_model.parameters():
             assert param.device.type == "cpu"
 
@@ -264,7 +264,7 @@ class TestDeviceManagerEdgeCases:
 
         model = EmptyModel()
         moved_model = manager.to_device(model)
-        assert moved_model is not None
+        assert isinstance(moved_model, torch.nn.Module)
 
     def test_nested_model_to_device(self):
         """Test moving nested model to device."""
@@ -281,6 +281,7 @@ class TestDeviceManagerEdgeCases:
 
         model = NestedModel()
         moved_model = manager.to_device(model)
+        assert isinstance(moved_model, torch.nn.Module)
 
         # Check all parameters are on correct device
         for param in moved_model.parameters():

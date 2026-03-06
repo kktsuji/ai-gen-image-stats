@@ -479,5 +479,5 @@ def assert_tensor_range(tensor: torch.Tensor, min_val: float, max_val: float):
 
 
 # Make helpers available as pytest namespace
-pytest.assert_tensor_shape = assert_tensor_shape
-pytest.assert_tensor_range = assert_tensor_range
+pytest.assert_tensor_shape = assert_tensor_shape  # type: ignore[attr-defined]
+pytest.assert_tensor_range = assert_tensor_range  # type: ignore[attr-defined]

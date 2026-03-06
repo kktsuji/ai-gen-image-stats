@@ -1,0 +1,29 @@
+{
+  "name": "ai-gen-image-stats",
+  "version": "1.0.0",
+  "description": "A modular framework for training and evaluating generative AI models (GANs, Diffusion Models) and classifiers for research purposes. This project enables rapid experimentation with synthetic data augmentation and model comparisons.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "lint": "bash .husky/pre-commit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kktsuji/ai-gen-image-stats.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/kktsuji/ai-gen-image-stats/issues"
+  },
+  "homepage": "https://github.com/kktsuji/ai-gen-image-stats#readme",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

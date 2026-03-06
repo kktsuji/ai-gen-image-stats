@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -e
+
+. "$(dirname -- "$0")/../venv/bin/activate"
+ruff check .
+ruff format --check .
+pyright

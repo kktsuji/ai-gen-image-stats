@@ -82,12 +82,12 @@ class TestBaseModelInterface:
     def test_cannot_instantiate_base_model_directly(self):
         """BaseModel is abstract and cannot be instantiated directly."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            BaseModel()
+            BaseModel()  # type: ignore[abstract]
 
     def test_cannot_instantiate_incomplete_implementation(self):
         """Models that don't implement all abstract methods cannot be instantiated."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            IncompleteModel()
+            IncompleteModel()  # type: ignore[abstract]
 
     def test_can_instantiate_complete_implementation(self):
         """Models that implement all abstract methods can be instantiated."""

@@ -6,7 +6,7 @@ optional writer creation, safe logging with error handling, and path resolution.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
 
 import torch
 
@@ -99,7 +99,7 @@ def safe_log_scalar(
 def safe_log_scalars(
     writer: Optional["SummaryWriter"],
     main_tag: str,
-    tag_scalar_dict: Dict[str, Union[float, int, torch.Tensor]],
+    tag_scalar_dict: Mapping[str, Union[float, int, torch.Tensor]],
     step: int,
 ) -> None:
     """Safely log multiple scalar values to TensorBoard.

@@ -95,8 +95,8 @@ class TestInceptionV3FreezeStrategy:
         )
 
         # Check that backbone layers are frozen (access nested conv weights)
-        assert not model.Conv2d_1a_3x3.conv.weight.requires_grad
-        assert not model.Mixed_7c.branch_pool.conv.weight.requires_grad
+        assert not model.Conv2d_1a_3x3.conv.weight.requires_grad  # type: ignore[union-attr]
+        assert not model.Mixed_7c.branch_pool.conv.weight.requires_grad  # type: ignore[union-attr]
 
         # Check that classification head is trainable
         assert model.fc.weight.requires_grad
@@ -109,8 +109,8 @@ class TestInceptionV3FreezeStrategy:
         )
 
         # Check that backbone layers are trainable (access nested conv weights)
-        assert model.Conv2d_1a_3x3.conv.weight.requires_grad
-        assert model.Mixed_7c.branch_pool.conv.weight.requires_grad
+        assert model.Conv2d_1a_3x3.conv.weight.requires_grad  # type: ignore[union-attr]
+        assert model.Mixed_7c.branch_pool.conv.weight.requires_grad  # type: ignore[union-attr]
 
         # Check that classification head is trainable
         assert model.fc.weight.requires_grad
@@ -650,7 +650,7 @@ class TestInceptionV3SelectiveLayerGradientFlow:
         assert len(trainable_params) > 0
         test_param = trainable_params[0]
 
-        grad_after_first = test_param.grad.clone()
+        grad_after_first = test_param.grad.clone()  # type: ignore[union-attr]
 
         # Second forward-backward (gradients should accumulate)
         output = model(x)
@@ -660,7 +660,7 @@ class TestInceptionV3SelectiveLayerGradientFlow:
         grad_after_second = test_param.grad
 
         # Gradients should have accumulated (not be equal to first pass)
-        assert not torch.allclose(grad_after_first, grad_after_second)
+        assert not torch.allclose(grad_after_first, grad_after_second)  # type: ignore[arg-type]
 
 
 @pytest.mark.component
