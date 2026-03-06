@@ -1,6 +1,8 @@
 name: Copilot Coding Agent
 
-# Triggers when @copilot is mentioned in issues or PR comments.
+# Triggers when @copilot-ask is mentioned in issues or PR comments.
+# Using @copilot-ask (instead of @copilot) avoids conflicts with GitHub's
+# native @copilot mention handling and prevents accidental triggering.
 # Assigns the issue/PR to the Copilot coding agent via the GitHub REST API,
 # which starts a Copilot session on that item.
 #
@@ -21,10 +23,10 @@ on:
 jobs:
   copilot:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@copilot')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@copilot')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@copilot')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@copilot') || contains(github.event.issue.title, '@copilot')))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@copilot-ask')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@copilot-ask')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@copilot-ask')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@copilot-ask') || contains(github.event.issue.title, '@copilot-ask')))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
