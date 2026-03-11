@@ -938,8 +938,9 @@ def test_diffusion_trainer_logs_epoch_summary(
     # Train for one epoch
     trainer.train_epoch()
 
-    # Check that training activity was logged
+    # Check that training activity was logged with epoch summary
     assert len(capture_logs.records) > 0
+    assert any("Train" in r.message for r in capture_logs.records)
 
 
 @pytest.mark.integration
@@ -966,8 +967,9 @@ def test_diffusion_trainer_logs_sample_generation(
         # Train for 1 epoch - should trigger sample generation
         trainer.train(num_epochs=1, checkpoint_dir=tmpdir)
 
-        # Check that logging occurred
+        # Check that training and sample generation were logged
         assert len(capture_logs.records) > 0
+        assert any("Train" in r.message for r in capture_logs.records)
 
 
 @pytest.mark.integration
@@ -993,8 +995,9 @@ def test_diffusion_trainer_logs_ema_updates(
     # Train for one epoch
     trainer.train_epoch()
 
-    # Check that logging occurred during training
+    # Check that EMA training was logged
     assert len(capture_logs.records) > 0
+    assert any("Train" in r.message for r in capture_logs.records)
 
 
 @pytest.mark.unit
@@ -1066,7 +1069,7 @@ class TestDiffusionTrainerSchedulerCheckpoint:
             checkpoint_path = Path(tmpdir) / "scheduler_checkpoint.pth"
             trainer.save_checkpoint(checkpoint_path, epoch=1)
 
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, weights_only=True)
             assert "scheduler_state_dict" in checkpoint
 
     def test_load_checkpoint_restores_scheduler(self):
@@ -1075,7 +1078,8 @@ class TestDiffusionTrainerSchedulerCheckpoint:
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
         trainer.scheduler = scheduler
 
-        # Step scheduler to change its state
+        # Step optimizer then scheduler to change its state
+        optimizer.step()
         scheduler.step()
         lr_after_step = scheduler.get_last_lr()[0]
 
@@ -1228,6 +1232,10 @@ def test_diffusion_trainer_logs_checkpoint_operations(
 
         # Check that checkpoint-related logging occurred
         assert len(capture_logs.records) > 0
+        assert any(
+            "checkpoint" in r.message.lower() or "Train" in r.message
+            for r in capture_logs.records
+        )
 
 
 # ---- New tests for per-interval visualization ----
@@ -2061,90 +2069,28 @@ class TestDiffusionTrainerLoadCheckpointErrors:
 
     def test_load_checkpoint_model_mismatch_strict(self):
         """load_checkpoint with mismatched model in strict mode raises."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer, *_ = _make_diffusion_trainer()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ckpt_path = Path(tmpdir) / "checkpoint.pth"
             trainer.save_checkpoint(ckpt_path, epoch=1)
 
             # Create trainer with different model architecture
-            model2 = SimpleDiffusionModel(in_channels=1, image_size=8, num_classes=2)
-            optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.001)
-            trainer2 = DiffusionTrainer(
-                model=model2,
-                dataloader=dataloader,
-                optimizer=optimizer2,
-                logger=logger,
-                device="cpu",
-                show_progress=False,
-                use_ema=False,
-                log_images_interval=None,
-                log_denoising_interval=None,
-            )
+            trainer2, *_ = _make_diffusion_trainer(in_channels=1)
 
             with pytest.raises(RuntimeError):
                 trainer2.load_checkpoint(ckpt_path, strict=True)
 
     def test_load_checkpoint_model_mismatch_non_strict(self):
         """load_checkpoint with mismatched model in non-strict mode warns."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer, *_ = _make_diffusion_trainer()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ckpt_path = Path(tmpdir) / "checkpoint.pth"
             trainer.save_checkpoint(ckpt_path, epoch=1)
 
-            # Create trainer with different model
-            model2 = SimpleDiffusionModel(in_channels=1, image_size=8, num_classes=2)
-            optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.001)
-            trainer2 = DiffusionTrainer(
-                model=model2,
-                dataloader=dataloader,
-                optimizer=optimizer2,
-                logger=logger,
-                device="cpu",
-                show_progress=False,
-                use_ema=False,
-                log_images_interval=None,
-                log_denoising_interval=None,
-            )
+            # Create trainer with different model architecture
+            trainer2, *_ = _make_diffusion_trainer(in_channels=1)
 
             # Non-strict should not raise
             trainer2.load_checkpoint(ckpt_path, strict=False)
@@ -2153,26 +2099,7 @@ class TestDiffusionTrainerLoadCheckpointErrors:
         """load_checkpoint with optimizer load failure warns and continues."""
         from unittest.mock import patch as mock_patch
 
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer, _, _, optimizer, _ = _make_diffusion_trainer()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ckpt_path = Path(tmpdir) / "checkpoint.pth"

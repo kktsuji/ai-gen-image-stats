@@ -1004,6 +1004,258 @@ class TestExperimentDispatcher:
             mock_dp.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# Shared test helpers (used by multiple test classes below)
+# ---------------------------------------------------------------------------
+
+
+def _generation_config(
+    tmp_path,
+    checkpoint=None,
+    num_samples=10,
+    num_classes=2,
+    use_ema=False,
+    class_selection=None,
+):
+    """Create a minimal generation mode config."""
+    return {
+        "experiment": "diffusion",
+        "mode": "generate",
+        "model": {
+            "architecture": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 64,
+                "channel_multipliers": [1, 2, 4],
+                "use_attention": [False, True, False],
+            },
+            "diffusion": {
+                "num_timesteps": 1000,
+                "beta_schedule": "linear",
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+            },
+            "conditioning": {
+                "type": "class",
+                "num_classes": num_classes,
+                "class_dropout_prob": 0.1,
+            },
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 16,
+                "num_workers": 0,
+                "pin_memory": False,
+                "drop_last": False,
+                "shuffle_train": True,
+            },
+            "augmentation": {
+                "horizontal_flip": False,
+                "rotation_degrees": 0,
+                "color_jitter": {
+                    "enabled": False,
+                    "strength": 0.0,
+                },
+            },
+        },
+        "generation": {
+            "checkpoint": checkpoint,
+            "sampling": {
+                "num_samples": num_samples,
+                "batch_size": num_samples,
+                "guidance_scale": 3.0,
+                "use_ema": use_ema,
+                "ema_decay": 0.9999,
+                "class_selection": class_selection,
+            },
+            "output": {
+                "save_grid": True,
+                "save_individual": False,
+                "grid_nrow": 4,
+            },
+        },
+        "compute": {
+            "device": "cpu",
+            "seed": 42,
+        },
+        "output": {
+            "base_dir": str(tmp_path / "outputs"),
+            "subdirs": {
+                "logs": "logs",
+                "checkpoints": "checkpoints",
+                "samples": "samples",
+                "generated": "generated",
+            },
+        },
+    }
+
+
+def _mock_diffusion_checkpoint(tmp_path, include_ema=False, num_classes=2):
+    """Create a mock checkpoint file for testing."""
+    import torch
+
+    from src.experiments.diffusion.model import create_ddpm
+
+    model = create_ddpm(
+        image_size=32,
+        in_channels=3,
+        model_channels=64,
+        channel_multipliers=(1, 2, 4),
+        num_classes=num_classes,
+        num_timesteps=1000,
+        beta_schedule="linear",
+        beta_start=0.0001,
+        beta_end=0.02,
+        class_dropout_prob=0.1,
+        use_attention=(False, True, False),
+        device="cpu",
+    )
+
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "epoch": 10,
+    }
+
+    if include_ema:
+        checkpoint["ema_state_dict"] = model.state_dict()
+
+    checkpoint_path = tmp_path / "mock_checkpoint.pth"
+    torch.save(checkpoint, checkpoint_path)
+    return checkpoint_path
+
+
+def _base_classifier_config(tmp_path):
+    """Return a base classifier config dict for unit tests."""
+    return {
+        "experiment": "classifier",
+        "mode": "train",
+        "compute": {"device": "cpu", "seed": None},
+        "model": {
+            "architecture": {"name": "resnet50", "num_classes": 2},
+            "initialization": {"pretrained": False, "freeze_backbone": False},
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 2,
+                "num_workers": 0,
+                "pin_memory": False,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "preprocessing": {
+                "image_size": 256,
+                "crop_size": 224,
+                "normalize": "imagenet",
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 0,
+                "color_jitter": {"enabled": False},
+            },
+        },
+        "training": {
+            "epochs": 1,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.001,
+                "weight_decay": 0.0001,
+            },
+            "scheduler": {"type": None},
+            "checkpointing": {"save_frequency": 10, "save_best_only": True},
+            "validation": {"enabled": True, "frequency": 1},
+        },
+        "output": {
+            "base_dir": str(tmp_path),
+            "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
+        },
+    }
+
+
+def _base_diffusion_train_config(tmp_path):
+    """Return a base diffusion training config dict for unit tests."""
+    return {
+        "experiment": "diffusion",
+        "mode": "train",
+        "compute": {"device": "cpu", "seed": None},
+        "model": {
+            "architecture": {
+                "image_size": 8,
+                "in_channels": 3,
+                "model_channels": 16,
+                "channel_multipliers": [1, 2],
+                "use_attention": [False, False],
+            },
+            "diffusion": {
+                "num_timesteps": 10,
+                "beta_schedule": "linear",
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+            },
+            "conditioning": {
+                "type": "class",
+                "num_classes": 2,
+                "class_dropout_prob": 0.1,
+            },
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 2,
+                "num_workers": 0,
+                "pin_memory": False,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 0,
+                "color_jitter": {"enabled": False, "strength": 0.5},
+            },
+        },
+        "output": {
+            "base_dir": str(tmp_path),
+            "subdirs": {
+                "logs": "logs",
+                "checkpoints": "checkpoints",
+                "samples": "samples",
+                "generated": "generated",
+            },
+        },
+        "training": {
+            "epochs": 1,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.001,
+                "weight_decay": 0.0001,
+            },
+            "scheduler": {"type": None},
+            "ema": {"enabled": False, "decay": 0.9999},
+            "performance": {
+                "use_amp": False,
+                "use_tf32": False,
+                "cudnn_benchmark": False,
+                "compile_model": False,
+            },
+            "visualization": {
+                "enabled": False,
+                "num_samples": 4,
+                "guidance_scale": 0.0,
+                "log_images_interval": None,
+                "log_denoising_interval": None,
+            },
+            "checkpointing": {
+                "save_frequency": 10,
+                "save_best_only": True,
+                "save_latest": True,
+            },
+            "validation": {"frequency": 1, "metric": "val_loss"},
+        },
+        "logging": {},
+    }
+
+
 class TestDiffusionGenerationMode:
     """Test suite for diffusion generation mode refactoring.
 
@@ -1456,263 +1708,6 @@ class TestDiffusionGenerationMode:
         captured = capsys.readouterr()
         assert "Class selection" in captured.out
         assert "[0]" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Shared generation mode helpers
-# ---------------------------------------------------------------------------
-
-
-def _generation_config(
-    tmp_path,
-    checkpoint=None,
-    num_samples=10,
-    num_classes=2,
-    use_ema=False,
-    class_selection=None,
-):
-    """Create a minimal generation mode config."""
-    return {
-        "experiment": "diffusion",
-        "mode": "generate",
-        "model": {
-            "architecture": {
-                "image_size": 32,
-                "in_channels": 3,
-                "model_channels": 64,
-                "channel_multipliers": [1, 2, 4],
-                "use_attention": [False, True, False],
-            },
-            "diffusion": {
-                "num_timesteps": 1000,
-                "beta_schedule": "linear",
-                "beta_start": 0.0001,
-                "beta_end": 0.02,
-            },
-            "conditioning": {
-                "type": "class",
-                "num_classes": num_classes,
-                "class_dropout_prob": 0.1,
-            },
-        },
-        "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
-            "loading": {
-                "batch_size": 16,
-                "num_workers": 0,
-                "pin_memory": False,
-                "drop_last": False,
-                "shuffle_train": True,
-            },
-            "augmentation": {
-                "horizontal_flip": False,
-                "rotation_degrees": 0,
-                "color_jitter": {
-                    "enabled": False,
-                    "strength": 0.0,
-                },
-            },
-        },
-        "generation": {
-            "checkpoint": checkpoint,
-            "sampling": {
-                "num_samples": num_samples,
-                "batch_size": num_samples,
-                "guidance_scale": 3.0,
-                "use_ema": use_ema,
-                "ema_decay": 0.9999,
-                "class_selection": class_selection,
-            },
-            "output": {
-                "save_grid": True,
-                "save_individual": False,
-                "grid_nrow": 4,
-            },
-        },
-        "compute": {
-            "device": "cpu",
-            "seed": 42,
-        },
-        "output": {
-            "base_dir": str(tmp_path / "outputs"),
-            "subdirs": {
-                "logs": "logs",
-                "checkpoints": "checkpoints",
-                "samples": "samples",
-                "generated": "generated",
-            },
-        },
-    }
-
-
-def _mock_diffusion_checkpoint(tmp_path, include_ema=False, num_classes=2):
-    """Create a mock checkpoint file for testing."""
-    import torch
-
-    from src.experiments.diffusion.model import create_ddpm
-
-    model = create_ddpm(
-        image_size=32,
-        in_channels=3,
-        model_channels=64,
-        channel_multipliers=(1, 2, 4),
-        num_classes=num_classes,
-        num_timesteps=1000,
-        beta_schedule="linear",
-        beta_start=0.0001,
-        beta_end=0.02,
-        class_dropout_prob=0.1,
-        use_attention=(False, True, False),
-        device="cpu",
-    )
-
-    checkpoint = {
-        "model_state_dict": model.state_dict(),
-        "epoch": 10,
-    }
-
-    if include_ema:
-        checkpoint["ema_state_dict"] = model.state_dict()
-
-    checkpoint_path = tmp_path / "mock_checkpoint.pth"
-    torch.save(checkpoint, checkpoint_path)
-    return checkpoint_path
-
-
-# ---------------------------------------------------------------------------
-# New unit tests to improve coverage of src/main.py (>80%)
-# ---------------------------------------------------------------------------
-
-
-def _base_classifier_config(tmp_path):
-    """Return a base classifier config dict for unit tests."""
-    return {
-        "experiment": "classifier",
-        "mode": "train",
-        "compute": {"device": "cpu", "seed": None},
-        "model": {
-            "architecture": {"name": "resnet50", "num_classes": 2},
-            "initialization": {"pretrained": False, "freeze_backbone": False},
-        },
-        "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
-            "loading": {
-                "batch_size": 2,
-                "num_workers": 0,
-                "pin_memory": False,
-                "shuffle_train": True,
-                "drop_last": False,
-            },
-            "preprocessing": {
-                "image_size": 256,
-                "crop_size": 224,
-                "normalize": "imagenet",
-            },
-            "augmentation": {
-                "horizontal_flip": True,
-                "rotation_degrees": 0,
-                "color_jitter": {"enabled": False},
-            },
-        },
-        "training": {
-            "epochs": 1,
-            "optimizer": {
-                "type": "adam",
-                "learning_rate": 0.001,
-                "weight_decay": 0.0001,
-            },
-            "scheduler": {"type": None},
-            "checkpointing": {"save_frequency": 10, "save_best_only": True},
-            "validation": {"enabled": True, "frequency": 1},
-        },
-        "output": {
-            "base_dir": str(tmp_path),
-            "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-        },
-    }
-
-
-def _base_diffusion_train_config(tmp_path):
-    """Return a base diffusion training config dict for unit tests."""
-    return {
-        "experiment": "diffusion",
-        "mode": "train",
-        "compute": {"device": "cpu", "seed": None},
-        "model": {
-            "architecture": {
-                "image_size": 8,
-                "in_channels": 3,
-                "model_channels": 16,
-                "channel_multipliers": [1, 2],
-                "use_attention": [False, False],
-            },
-            "diffusion": {
-                "num_timesteps": 10,
-                "beta_schedule": "linear",
-                "beta_start": 0.0001,
-                "beta_end": 0.02,
-            },
-            "conditioning": {
-                "type": "class",
-                "num_classes": 2,
-                "class_dropout_prob": 0.1,
-            },
-        },
-        "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
-            "loading": {
-                "batch_size": 2,
-                "num_workers": 0,
-                "pin_memory": False,
-                "shuffle_train": True,
-                "drop_last": False,
-            },
-            "augmentation": {
-                "horizontal_flip": True,
-                "rotation_degrees": 0,
-                "color_jitter": {"enabled": False, "strength": 0.5},
-            },
-        },
-        "output": {
-            "base_dir": str(tmp_path),
-            "subdirs": {
-                "logs": "logs",
-                "checkpoints": "checkpoints",
-                "samples": "samples",
-                "generated": "generated",
-            },
-        },
-        "training": {
-            "epochs": 1,
-            "optimizer": {
-                "type": "adam",
-                "learning_rate": 0.001,
-                "weight_decay": 0.0001,
-            },
-            "scheduler": {"type": None},
-            "ema": {"enabled": False, "decay": 0.9999},
-            "performance": {
-                "use_amp": False,
-                "use_tf32": False,
-                "cudnn_benchmark": False,
-                "compile_model": False,
-            },
-            "visualization": {
-                "enabled": False,
-                "num_samples": 4,
-                "guidance_scale": 0.0,
-                "log_images_interval": None,
-                "log_denoising_interval": None,
-            },
-            "checkpointing": {
-                "save_frequency": 10,
-                "save_best_only": True,
-                "save_latest": True,
-            },
-            "validation": {"frequency": 1, "metric": "val_loss"},
-        },
-        "logging": {},
-    }
 
 
 class TestClassifierOptimizerVariants:

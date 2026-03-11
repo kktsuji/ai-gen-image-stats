@@ -907,7 +907,7 @@ class TestLoadCheckpointErrorPaths:
         corrupt_path = tmp_path / "corrupt.pth"
         corrupt_path.write_bytes(b"this is not a valid checkpoint file")
 
-        with pytest.raises(Exception):
+        with pytest.raises((RuntimeError, EOFError, IndexError)):
             trainer.load_checkpoint(corrupt_path)
 
     def test_load_checkpoint_model_mismatch_strict(self, tmp_path):
