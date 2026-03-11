@@ -1202,6 +1202,7 @@ class TestDiffusionTrainerTensorBoardGraph:
             config=config,
         )
         assert trainer is not None
+        mock_tb_writer.add_graph.assert_called_once()
 
 
 @pytest.mark.integration
@@ -1931,12 +1932,17 @@ class TestDiffusionTrainerTrainMethod:
 
     def test_train_with_config_logs_hyperparams(self):
         """train() logs hyperparams when config is set."""
+        from unittest.mock import patch
+
         trainer, *_ = _make_diffusion_trainer(
             num_val_samples=4,
             config={"training": {"epochs": 1}},
         )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(trainer.logger, "log_hyperparams") as mock_log_hyperparams,
+        ):
             trainer.train(
                 num_epochs=1,
                 checkpoint_dir=tmpdir,
@@ -1946,6 +1952,7 @@ class TestDiffusionTrainerTrainMethod:
             )
 
         assert trainer.current_epoch == 1
+        mock_log_hyperparams.assert_called_once_with(trainer.config)
 
     def test_train_with_plateau_scheduler(self):
         """train() with ReduceLROnPlateau scheduler."""

@@ -970,10 +970,11 @@ class TestLoadCheckpointErrorPaths:
 
         with patch.object(
             optimizer2, "load_state_dict", side_effect=RuntimeError("bad state")
-        ):
+        ) as mock_load_state_dict:
             # Should not raise, just warn and continue
             checkpoint_info = trainer2.load_checkpoint(checkpoint_path)
             assert checkpoint_info["epoch"] == 1
+            mock_load_state_dict.assert_called_once()
 
 
 @pytest.mark.component

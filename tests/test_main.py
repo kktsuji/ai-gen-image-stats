@@ -2177,9 +2177,14 @@ class TestDiffusionTrainingMode:
             "class_weights": {"enabled": False},
         }
 
-        setup_experiment_diffusion(config)
+        with patch("src.main.logger") as mock_logger:
+            mock_logger.info = MagicMock()
+            setup_experiment_diffusion(config)
+
         mock_diffusion_deps["trainer_cls"].assert_called_once()
         mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+        info_messages = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("weighted_sampler" in msg for msg in info_messages)
 
     @pytest.mark.unit
     def test_setup_diffusion_class_weights(self, tmp_path, mock_diffusion_deps):
