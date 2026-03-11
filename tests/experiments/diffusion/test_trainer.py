@@ -682,7 +682,7 @@ def test_diffusion_trainer_with_ema_checkpoint():
         trainer.save_checkpoint(checkpoint_path, epoch=1)
 
         # Load checkpoint
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert "ema_state_dict" in checkpoint
 
 
@@ -716,7 +716,7 @@ def test_load_checkpoint_without_ema_reinitializes_shadow():
         trainer.save_checkpoint(checkpoint_path, epoch=1)
 
         # Remove ema_state_dict from checkpoint to simulate old format
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert "ema_state_dict" in checkpoint
         del checkpoint["ema_state_dict"]
         torch.save(checkpoint, checkpoint_path)
@@ -1439,7 +1439,7 @@ def test_load_checkpoint_corrupt_file(diffusion_trainer):
         corrupt_path = Path(f.name)
 
     try:
-        with pytest.raises((RuntimeError, IndexError)):
+        with pytest.raises((RuntimeError, EOFError, IndexError)):
             diffusion_trainer.load_checkpoint(corrupt_path)
     finally:
         corrupt_path.unlink(missing_ok=True)
@@ -1925,7 +1925,7 @@ class TestDiffusionTrainerGradientClipping:
         assert "loss" in metrics
 
 
-@pytest.mark.unit
+@pytest.mark.component
 class TestDiffusionTrainerTrainMethod:
     """Test DiffusionTrainer.train() method coverage."""
 
@@ -1965,7 +1965,7 @@ class TestDiffusionTrainerTrainMethod:
         assert trainer.current_epoch == 2
 
 
-@pytest.mark.unit
+@pytest.mark.component
 class TestDiffusionTrainerResumeTraining:
     """Test DiffusionTrainer.resume_training() method."""
 

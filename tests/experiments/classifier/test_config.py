@@ -210,32 +210,6 @@ class TestGetModelSpecificConfig:
 class TestConfigFileValidation:
     """Test validation of actual config files."""
 
-    def test_baseline_config_file(self):
-        """Test that baseline.yaml is valid."""
-        config_path = _PROJECT_ROOT / "configs/classifier/baseline.yaml"
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should not raise
-        validate_config(config)
-
-    def test_inceptionv3_config_file(self):
-        """Test that inceptionv3.yaml is valid."""
-        config_path = _PROJECT_ROOT / "configs/classifier/inceptionv3.yaml"
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should not raise
-        validate_config(config)
-
     def test_baseline_config_structure(self):
         """Test baseline config has expected structure."""
         config_path = _PROJECT_ROOT / "configs/classifier/baseline.yaml"

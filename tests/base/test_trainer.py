@@ -419,7 +419,7 @@ class TestCheckpointSaveLoad:
         trainer.save_checkpoint(checkpoint_path, epoch=10, metrics=metrics)
 
         # Load and verify
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert checkpoint["epoch"] == 10
         assert checkpoint["metrics"] == metrics
 
@@ -1016,7 +1016,7 @@ class TestTrainEdgeCases:
         assert not (checkpoint_dir / "best_model.pth").exists()
 
 
-@pytest.mark.unit
+@pytest.mark.component
 class TestResumeTrainingCoverage:
     """Test resume_training paths for coverage."""
 

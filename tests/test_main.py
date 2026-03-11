@@ -5,6 +5,7 @@ ensuring proper configuration handling, experiment routing, and
 end-to-end execution flow with config-only mode.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,8 @@ import torch.nn as nn
 import yaml
 
 from src.main import main, setup_experiment_classifier
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestMainEntryPoint:
@@ -55,7 +58,9 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -135,7 +140,9 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": True, "freeze_backbone": False},
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 16,
                     "num_workers": 0,
@@ -199,7 +206,9 @@ class TestMainEntryPoint:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 32,
                     "num_workers": 0,
@@ -349,7 +358,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -423,7 +434,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -488,7 +501,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -553,7 +568,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -624,7 +641,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -684,7 +703,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -744,7 +765,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -784,7 +807,6 @@ class TestClassifierExperimentSetup:
             setup_experiment_classifier(config)
 
     @pytest.mark.integration
-    @pytest.mark.slow
     def test_setup_classifier_full_execution_mini(self, tmp_path):
         """Test full execution of classifier training with tiny dataset.
 
@@ -809,7 +831,9 @@ class TestClassifierExperimentSetup:
                 },
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -875,7 +899,9 @@ class TestExperimentDispatcher:
                 "initialization": {"pretrained": False, "freeze_backbone": False},
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "loading": {
                     "batch_size": 2,
                     "num_workers": 0,
@@ -938,7 +964,9 @@ class TestExperimentDispatcher:
                 "use_attention": [False, True, False],
             },
             "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
+                "split_file": str(
+                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
+                ),
                 "batch_size": 16,
                 "num_workers": 0,
                 "image_size": 32,
@@ -1042,7 +1070,7 @@ def _generation_config(
             },
         },
         "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
+            "split_file": str(_PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"),
             "loading": {
                 "batch_size": 16,
                 "num_workers": 0,
@@ -1136,7 +1164,7 @@ def _base_classifier_config(tmp_path):
             "initialization": {"pretrained": False, "freeze_backbone": False},
         },
         "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
+            "split_file": str(_PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"),
             "loading": {
                 "batch_size": 2,
                 "num_workers": 0,
@@ -1200,7 +1228,7 @@ def _base_diffusion_train_config(tmp_path):
             },
         },
         "data": {
-            "split_file": "tests/fixtures/splits/mock_split.json",
+            "split_file": str(_PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"),
             "loading": {
                 "batch_size": 2,
                 "num_workers": 0,
@@ -2150,6 +2178,7 @@ class TestDiffusionTrainingMode:
         }
 
         setup_experiment_diffusion(config)
+        mock_diffusion_deps["trainer_cls"].assert_called_once()
         mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
 
     @pytest.mark.unit
@@ -2177,9 +2206,10 @@ class TestDiffusionTrainingMode:
             patch(
                 "src.data.samplers.compute_weights_from_config",
                 return_value={0: 0.5, 1: 1.5},
-            ),
+            ) as mock_compute_weights,
         ):
             setup_experiment_diffusion(config)
+            mock_compute_weights.assert_called_once()
             mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
 
 

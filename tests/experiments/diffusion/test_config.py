@@ -17,6 +17,8 @@ from src.experiments.diffusion.config import (
     validate_config,
 )
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 # ============================================================================
 # Unit Tests - Fast, Pure Logic
 # ============================================================================
@@ -1049,7 +1051,7 @@ class TestConfigFileValidation:
 
     def test_default_config_file(self):
         """Test that default.yaml is valid."""
-        config_path = Path("src/experiments/diffusion/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
@@ -1062,7 +1064,7 @@ class TestConfigFileValidation:
 
     def test_default_config_structure(self):
         """Test default config has expected structure (V2)."""
-        config_path = Path("src/experiments/diffusion/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
