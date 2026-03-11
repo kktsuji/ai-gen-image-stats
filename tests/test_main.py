@@ -1613,3 +1613,786 @@ class TestDiffusionGenerationMode:
         checkpoint_path = tmp_path / "mock_checkpoint.pth"
         torch.save(checkpoint, checkpoint_path)
         return checkpoint_path
+
+
+# ---------------------------------------------------------------------------
+# New unit tests to improve coverage of src/main.py (>80%)
+# ---------------------------------------------------------------------------
+
+import torch.nn as nn  # noqa: E402
+
+
+def _base_classifier_config(tmp_path):
+    """Return a base classifier config dict for unit tests."""
+    return {
+        "experiment": "classifier",
+        "mode": "train",
+        "compute": {"device": "cpu", "seed": None},
+        "model": {
+            "architecture": {"name": "resnet50", "num_classes": 2},
+            "initialization": {"pretrained": False, "freeze_backbone": False},
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 2,
+                "num_workers": 0,
+                "pin_memory": False,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "preprocessing": {
+                "image_size": 256,
+                "crop_size": 224,
+                "normalize": "imagenet",
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 0,
+                "color_jitter": {"enabled": False},
+            },
+        },
+        "training": {
+            "epochs": 1,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.001,
+                "weight_decay": 0.0001,
+            },
+            "scheduler": {"type": None},
+            "checkpointing": {"save_frequency": 10, "save_best_only": True},
+            "validation": {"enabled": True, "frequency": 1},
+        },
+        "output": {
+            "base_dir": str(tmp_path),
+            "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
+        },
+    }
+
+
+def _base_diffusion_train_config(tmp_path):
+    """Return a base diffusion training config dict for unit tests."""
+    return {
+        "experiment": "diffusion",
+        "mode": "train",
+        "compute": {"device": "cpu", "seed": None},
+        "model": {
+            "architecture": {
+                "image_size": 8,
+                "in_channels": 3,
+                "model_channels": 16,
+                "channel_multipliers": [1, 2],
+                "use_attention": [False, False],
+            },
+            "diffusion": {
+                "num_timesteps": 10,
+                "beta_schedule": "linear",
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+            },
+            "conditioning": {
+                "type": "class",
+                "num_classes": 2,
+                "class_dropout_prob": 0.1,
+            },
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 2,
+                "num_workers": 0,
+                "pin_memory": False,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 0,
+                "color_jitter": {"enabled": False, "strength": 0.5},
+            },
+        },
+        "output": {
+            "base_dir": str(tmp_path),
+            "subdirs": {
+                "logs": "logs",
+                "checkpoints": "checkpoints",
+                "samples": "samples",
+                "generated": "generated",
+            },
+        },
+        "training": {
+            "epochs": 1,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.001,
+                "weight_decay": 0.0001,
+            },
+            "scheduler": {"type": None},
+            "ema": {"enabled": False, "decay": 0.9999},
+            "performance": {
+                "use_amp": False,
+                "use_tf32": False,
+                "cudnn_benchmark": False,
+                "compile_model": False,
+            },
+            "visualization": {
+                "enabled": False,
+                "num_samples": 4,
+                "guidance_scale": 0.0,
+                "log_images_interval": None,
+                "log_denoising_interval": None,
+            },
+            "checkpointing": {
+                "save_frequency": 10,
+                "save_best_only": True,
+                "save_latest": True,
+            },
+            "validation": {"frequency": 1, "metric": "val_loss"},
+        },
+        "logging": {},
+    }
+
+
+class TestClassifierOptimizerVariants:
+    """Unit tests for classifier optimizer variants (covers lines 260-274)."""
+
+    @pytest.mark.unit
+    def test_setup_classifier_adamw_optimizer(self, tmp_path):
+        """Test classifier setup with AdamW optimizer succeeds."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "adamw"
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_sgd_optimizer(self, tmp_path):
+        """Test classifier setup with SGD optimizer and explicit momentum."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "sgd"
+        config["training"]["optimizer"]["momentum"] = 0.9
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_sgd_default_momentum(self, tmp_path):
+        """Test classifier setup with SGD uses default momentum 0.9."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "sgd"
+        # No explicit momentum — runtime code should default to 0.9
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_unknown_optimizer_raises(self, tmp_path):
+        """Test that an optimizer unknown to runtime raises ValueError."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "rmsprop"
+
+        # Bypass the config validator so the runtime code path is reached
+        with patch("src.experiments.classifier.config.validate_config"):
+            with pytest.raises(ValueError, match="Unknown optimizer"):
+                setup_experiment_classifier(config)
+
+
+class TestClassifierSchedulerVariants:
+    """Unit tests for classifier scheduler variants (covers lines 289, 294-308)."""
+
+    @pytest.mark.unit
+    def test_setup_classifier_step_scheduler(self, tmp_path):
+        """Test classifier setup with StepLR scheduler."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "step",
+            "step_size": 5,
+            "gamma": 0.1,
+        }
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_plateau_scheduler(self, tmp_path):
+        """Test classifier setup with ReduceLROnPlateau scheduler."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "plateau",
+            "mode": "min",
+            "factor": 0.1,
+            "patience": 5,
+        }
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_cosine_auto_tmax(self, tmp_path):
+        """Test classifier setup with cosine scheduler and T_max=auto."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "cosine",
+            "T_max": "auto",
+            "eta_min": 1e-6,
+        }
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_classifier_unknown_scheduler_raises(self, tmp_path):
+        """Test that a scheduler unknown to runtime raises ValueError."""
+        config = _base_classifier_config(tmp_path)
+        config["training"]["scheduler"] = {"type": "exponential"}
+
+        # Bypass the config validator so the runtime code path is reached
+        with patch("src.experiments.classifier.config.validate_config"):
+            with pytest.raises(ValueError, match="Unknown scheduler"):
+                setup_experiment_classifier(config)
+
+
+class TestClassifierErrorHandling:
+    """Unit tests for classifier error handling (covers lines 364-373)."""
+
+    @pytest.mark.unit
+    def test_setup_classifier_keyboard_interrupt(self, tmp_path):
+        """Test that KeyboardInterrupt during training calls sys.exit(0)."""
+        config = _base_classifier_config(tmp_path)
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train",
+            side_effect=KeyboardInterrupt,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                setup_experiment_classifier(config)
+            assert exc_info.value.code == 0
+
+    @pytest.mark.unit
+    def test_setup_classifier_training_exception(self, tmp_path):
+        """Test that RuntimeError during training is re-raised."""
+        config = _base_classifier_config(tmp_path)
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train",
+            side_effect=RuntimeError("GPU OOM"),
+        ):
+            with pytest.raises(RuntimeError, match="GPU OOM"):
+                setup_experiment_classifier(config)
+
+
+class TestClassifierDeviceAndDataset:
+    """Unit tests for classifier device and dataset edge cases (covers lines 138, 199-200)."""
+
+    @pytest.mark.unit
+    def test_setup_classifier_explicit_device(self, tmp_path):
+        """Test that explicit device config skips get_device() auto-detection."""
+        config = _base_classifier_config(tmp_path)
+        config["compute"]["device"] = "cpu"
+
+        with (
+            patch("src.experiments.classifier.trainer.ClassifierTrainer.train"),
+            patch("src.main.get_device") as mock_get_device,
+        ):
+            setup_experiment_classifier(config)
+            # get_device should NOT be called when device is explicitly set
+            mock_get_device.assert_not_called()
+
+    @pytest.mark.unit
+    def test_setup_classifier_no_classes_attribute(self, tmp_path):
+        """Test fallback to Class 0, Class 1 when dataset has no classes attr."""
+        config = _base_classifier_config(tmp_path)
+
+        # Create a mock dataset without 'classes' attribute
+        mock_dataset = MagicMock(spec=[])  # spec=[] means no attributes
+        mock_train_loader = MagicMock()
+        mock_train_loader.dataset = mock_dataset
+
+        mock_dataloader_instance = MagicMock()
+        mock_dataloader_instance.get_train_loader.return_value = mock_train_loader
+
+        with (
+            patch("src.experiments.classifier.trainer.ClassifierTrainer.train"),
+            patch(
+                "src.experiments.classifier.dataloader.ClassifierDataLoader",
+                return_value=mock_dataloader_instance,
+            ),
+        ):
+            setup_experiment_classifier(config)
+            # If we get here without error, the fallback worked
+
+
+class TestDiffusionTrainingMode:
+    """Unit tests for diffusion training mode (covers lines 678-917)."""
+
+    @pytest.fixture
+    def mock_diffusion_deps(self):
+        """Mock all diffusion dependencies for testing setup_experiment_diffusion."""
+        mock_model = nn.Sequential(nn.Linear(1, 1))
+        with (
+            patch("src.experiments.diffusion.config.validate_config"),
+            patch(
+                "src.experiments.diffusion.model.create_ddpm",
+                return_value=mock_model,
+            ),
+            patch(
+                "src.experiments.diffusion.dataloader.DiffusionDataLoader"
+            ) as mock_dl_cls,
+            patch(
+                "src.experiments.diffusion.trainer.DiffusionTrainer"
+            ) as mock_trainer_cls,
+            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+        ):
+            mock_trainer_cls.return_value.train = MagicMock()
+            yield {
+                "trainer_cls": mock_trainer_cls,
+                "dataloader_cls": mock_dl_cls,
+                "model": mock_model,
+            }
+
+    @pytest.mark.unit
+    def test_setup_diffusion_training_mode_basic(self, tmp_path, mock_diffusion_deps):
+        """Test basic diffusion training mode wiring."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        setup_experiment_diffusion(config)
+
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_adamw_optimizer(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with AdamW optimizer."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "adamw"
+        setup_experiment_diffusion(config)
+
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_unknown_optimizer_raises(
+        self, tmp_path, mock_diffusion_deps
+    ):
+        """Test diffusion training with unknown optimizer raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "rmsprop"
+
+        with pytest.raises(ValueError, match="Unknown optimizer"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_setup_diffusion_step_scheduler(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with StepLR scheduler."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "step",
+            "step_size": 5,
+            "gamma": 0.1,
+        }
+        setup_experiment_diffusion(config)
+
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_plateau_scheduler(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with ReduceLROnPlateau scheduler."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "plateau",
+            "mode": "min",
+            "factor": 0.1,
+            "patience": 5,
+        }
+        setup_experiment_diffusion(config)
+
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_cosine_auto_tmax(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with cosine scheduler and T_max=auto."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["scheduler"] = {
+            "type": "cosine",
+            "T_max": "auto",
+            "eta_min": 1e-6,
+        }
+        setup_experiment_diffusion(config)
+
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_unknown_scheduler_raises(
+        self, tmp_path, mock_diffusion_deps
+    ):
+        """Test diffusion training with unknown scheduler raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["scheduler"] = {"type": "exponential"}
+
+        with pytest.raises(ValueError, match="Unknown scheduler"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_setup_diffusion_keyboard_interrupt(self, tmp_path):
+        """Test that KeyboardInterrupt during diffusion training calls sys.exit(0)."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        mock_model = nn.Sequential(nn.Linear(1, 1))
+
+        with (
+            patch("src.experiments.diffusion.config.validate_config"),
+            patch(
+                "src.experiments.diffusion.model.create_ddpm",
+                return_value=mock_model,
+            ),
+            patch("src.experiments.diffusion.dataloader.DiffusionDataLoader"),
+            patch(
+                "src.experiments.diffusion.trainer.DiffusionTrainer"
+            ) as mock_trainer_cls,
+            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+        ):
+            mock_trainer_cls.return_value.train.side_effect = KeyboardInterrupt
+            with pytest.raises(SystemExit) as exc_info:
+                setup_experiment_diffusion(config)
+            assert exc_info.value.code == 0
+
+    @pytest.mark.unit
+    def test_setup_diffusion_training_exception(self, tmp_path):
+        """Test that RuntimeError during diffusion training is re-raised."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        mock_model = nn.Sequential(nn.Linear(1, 1))
+
+        with (
+            patch("src.experiments.diffusion.config.validate_config"),
+            patch(
+                "src.experiments.diffusion.model.create_ddpm",
+                return_value=mock_model,
+            ),
+            patch("src.experiments.diffusion.dataloader.DiffusionDataLoader"),
+            patch(
+                "src.experiments.diffusion.trainer.DiffusionTrainer"
+            ) as mock_trainer_cls,
+            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+        ):
+            mock_trainer_cls.return_value.train.side_effect = RuntimeError("GPU OOM")
+            with pytest.raises(RuntimeError, match="GPU OOM"):
+                setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_setup_diffusion_explicit_device(self, tmp_path, mock_diffusion_deps):
+        """Test that explicit device config skips get_device() auto-detection."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["compute"]["device"] = "cpu"
+
+        with patch("src.main.get_device") as mock_get_device:
+            setup_experiment_diffusion(config)
+            mock_get_device.assert_not_called()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_compile_model(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with compile_model enabled."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["performance"]["compile_model"] = True
+
+        with patch("torch.compile", return_value=mock_diffusion_deps["model"]):
+            setup_experiment_diffusion(config)
+            mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_compile_model_failure(self, tmp_path, mock_diffusion_deps):
+        """Test that torch.compile failure is caught gracefully."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["performance"]["compile_model"] = True
+
+        with patch("torch.compile", side_effect=RuntimeError("compile error")):
+            # Should not raise — warning is logged and training continues
+            setup_experiment_diffusion(config)
+            mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_balancing_logging(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with balancing config logs active strategies."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["data"]["balancing"] = {
+            "weighted_sampler": {"enabled": True},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+            "class_weights": {"enabled": False},
+        }
+
+        setup_experiment_diffusion(config)
+        mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+    @pytest.mark.unit
+    def test_setup_diffusion_class_weights(self, tmp_path, mock_diffusion_deps):
+        """Test diffusion training with class_weights computes weight tensor."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["data"]["balancing"] = {
+            "class_weights": {
+                "enabled": True,
+                "method": "inverse_frequency",
+            },
+        }
+
+        # Mock SplitFileDataset and compute_weights_from_config
+        mock_dataset = MagicMock()
+        mock_dataset.targets = [0, 0, 0, 1]
+
+        with (
+            patch(
+                "src.data.datasets.SplitFileDataset",
+                return_value=mock_dataset,
+            ),
+            patch(
+                "src.data.samplers.compute_weights_from_config",
+                return_value={0: 0.5, 1: 1.5},
+            ),
+        ):
+            setup_experiment_diffusion(config)
+            mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+
+
+class TestGenerationModeEdgeCases:
+    """Unit tests for diffusion generation mode edge cases (covers lines 548, 556, 571, 668-670)."""
+
+    def _create_generation_config(self, tmp_path, checkpoint=None, num_samples=10):
+        """Create a minimal generation mode config."""
+        return {
+            "experiment": "diffusion",
+            "mode": "generate",
+            "model": {
+                "architecture": {
+                    "image_size": 32,
+                    "in_channels": 3,
+                    "model_channels": 64,
+                    "channel_multipliers": [1, 2, 4],
+                    "use_attention": [False, True, False],
+                },
+                "diffusion": {
+                    "num_timesteps": 1000,
+                    "beta_schedule": "linear",
+                    "beta_start": 0.0001,
+                    "beta_end": 0.02,
+                },
+                "conditioning": {
+                    "type": "class",
+                    "num_classes": 2,
+                    "class_dropout_prob": 0.1,
+                },
+            },
+            "data": {
+                "split_file": "tests/fixtures/splits/mock_split.json",
+                "loading": {
+                    "batch_size": 16,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "drop_last": False,
+                    "shuffle_train": True,
+                },
+                "augmentation": {
+                    "horizontal_flip": False,
+                    "rotation_degrees": 0,
+                    "color_jitter": {"enabled": False, "strength": 0.0},
+                },
+            },
+            "generation": {
+                "checkpoint": checkpoint,
+                "sampling": {
+                    "num_samples": num_samples,
+                    "batch_size": num_samples,
+                    "guidance_scale": 3.0,
+                    "use_ema": False,
+                    "ema_decay": 0.9999,
+                    "class_selection": None,
+                },
+                "output": {
+                    "save_grid": True,
+                    "save_individual": False,
+                    "grid_nrow": 4,
+                },
+            },
+            "compute": {"device": "cpu", "seed": 42},
+            "output": {
+                "base_dir": str(tmp_path / "outputs"),
+                "subdirs": {
+                    "logs": "logs",
+                    "checkpoints": "checkpoints",
+                    "samples": "samples",
+                    "generated": "generated",
+                },
+            },
+        }
+
+    def _create_mock_checkpoint(self, tmp_path, include_ema=False, num_classes=2):
+        """Create a mock checkpoint file for testing."""
+        import torch
+
+        from src.experiments.diffusion.model import create_ddpm
+
+        model = create_ddpm(
+            image_size=32,
+            in_channels=3,
+            model_channels=64,
+            channel_multipliers=(1, 2, 4),
+            num_classes=num_classes,
+            num_timesteps=1000,
+            beta_schedule="linear",
+            beta_start=0.0001,
+            beta_end=0.02,
+            class_dropout_prob=0.1,
+            use_attention=(False, True, False),
+            device="cpu",
+        )
+
+        checkpoint = {"model_state_dict": model.state_dict(), "epoch": 10}
+        if include_ema:
+            checkpoint["ema_state_dict"] = model.state_dict()
+
+        checkpoint_path = tmp_path / "mock_checkpoint.pth"
+        torch.save(checkpoint, checkpoint_path)
+        return checkpoint_path
+
+    @pytest.mark.unit
+    def test_generation_mode_saves_individual(self, tmp_path):
+        """Test generation mode with save_individual=True saves per-sample images."""
+        import torch
+
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=4
+        )
+        config["generation"]["output"]["save_individual"] = True
+
+        with (
+            patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
+            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+        ):
+            mock_sampler_instance = MagicMock()
+            mock_sampler.return_value = mock_sampler_instance
+
+            def sample_side_effect(**kwargs):
+                n = kwargs.get("num_samples", 1)
+                return torch.randn(n, 3, 32, 32)
+
+            mock_sampler_instance.sample.side_effect = sample_side_effect
+
+            setup_experiment_diffusion(config)
+
+            # Verify individual files were saved
+            output_dir = tmp_path / "outputs" / "generated"
+            individual_files = list(output_dir.glob("sample_*.png"))
+            assert len(individual_files) == 4
+
+    @pytest.mark.unit
+    def test_generation_mode_compiled_checkpoint(self, tmp_path):
+        """Test generation mode strips _orig_mod. prefix from compiled model keys."""
+        import torch
+
+        from src.experiments.diffusion.model import create_ddpm
+        from src.main import setup_experiment_diffusion
+
+        # Create model and checkpoint with _orig_mod. prefix
+        model = create_ddpm(
+            image_size=32,
+            in_channels=3,
+            model_channels=64,
+            channel_multipliers=(1, 2, 4),
+            num_classes=2,
+            num_timesteps=1000,
+            beta_schedule="linear",
+            beta_start=0.0001,
+            beta_end=0.02,
+            class_dropout_prob=0.1,
+            use_attention=(False, True, False),
+            device="cpu",
+        )
+        # Add _orig_mod. prefix to simulate torch.compile checkpoint
+        state_dict = {f"_orig_mod.{k}": v for k, v in model.state_dict().items()}
+        checkpoint_path = tmp_path / "compiled_checkpoint.pth"
+        torch.save({"model_state_dict": state_dict, "epoch": 10}, checkpoint_path)
+
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=2
+        )
+
+        with (
+            patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
+            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+        ):
+            mock_sampler_instance = MagicMock()
+            mock_sampler.return_value = mock_sampler_instance
+            mock_sampler_instance.sample.return_value = torch.randn(2, 3, 32, 32)
+
+            # Should succeed — _orig_mod. prefix is stripped
+            setup_experiment_diffusion(config)
+            mock_sampler_instance.sample.assert_called_once()
+
+    @pytest.mark.unit
+    def test_generation_mode_num_samples_zero_raises(self, tmp_path):
+        """Test that num_samples=0 raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=0
+        )
+
+        with pytest.raises(ValueError, match="num_samples must be"):
+            setup_experiment_diffusion(config)
+
+    @pytest.mark.unit
+    def test_generation_mode_negative_num_samples_raises(self, tmp_path):
+        """Test that negative num_samples raises ValueError."""
+        from src.main import setup_experiment_diffusion
+
+        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        config = self._create_generation_config(
+            tmp_path, checkpoint=str(checkpoint_path), num_samples=-5
+        )
+
+        with pytest.raises(ValueError, match="num_samples must be"):
+            setup_experiment_diffusion(config)
