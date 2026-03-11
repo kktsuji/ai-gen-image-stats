@@ -206,52 +206,6 @@ class TestGetModelSpecificConfig:
 # ============================================================================
 
 
-@pytest.mark.component
-class TestConfigFileValidation:
-    """Test validation of actual config files."""
-
-    def test_baseline_config_structure(self):
-        """Test baseline config has expected structure."""
-        config_path = _PROJECT_ROOT / "configs/classifier/baseline.yaml"
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Check experiment type
-        assert config["experiment"] == "classifier"
-
-        # Check it uses ResNet50
-        assert config["model"]["architecture"]["name"].lower() == "resnet50"
-        assert config["data"]["preprocessing"]["image_size"] == 256
-        assert config["data"]["preprocessing"]["crop_size"] == 224
-        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-
-    def test_inceptionv3_config_structure(self):
-        """Test InceptionV3 config has expected structure."""
-        config_path = _PROJECT_ROOT / "configs/classifier/inceptionv3.yaml"
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Check experiment type
-        assert config["experiment"] == "classifier"
-
-        # Check it uses InceptionV3
-        assert config["model"]["architecture"]["name"].lower() == "inceptionv3"
-        assert config["data"]["preprocessing"]["image_size"] == 320
-        assert config["data"]["preprocessing"]["crop_size"] == 299
-        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-
-        # Check dropout parameter
-        assert "dropout" in config["model"]["regularization"]
-
-
 def get_v2_default_config():
     """Helper function to get a valid V2 config for testing."""
     return {

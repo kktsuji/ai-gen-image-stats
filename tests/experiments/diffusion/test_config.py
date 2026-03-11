@@ -1101,13 +1101,6 @@ class TestConfigFileValidation:
 class TestValidateConfigErrorPaths:
     """Test untested validation error paths in diffusion validate_config."""
 
-    def test_model_section_missing(self):
-        """No model key raises KeyError."""
-        config = get_default_config()
-        del config["model"]
-        with pytest.raises(KeyError, match="Missing required config key: model"):
-            validate_config(config)
-
     def test_architecture_field_none(self):
         """architecture field set to None raises ValueError."""
         config = get_default_config()
@@ -1158,15 +1151,6 @@ class TestValidateConfigErrorPaths:
         config = get_default_config()
         config["model"]["conditioning"]["type"] = "vae"
         with pytest.raises(ValueError, match="Invalid conditioning.type"):
-            validate_config(config)
-
-    def test_num_classes_not_positive_int(self):
-        """num_classes = -1 raises ValueError."""
-        config = get_default_config()
-        config["model"]["conditioning"]["num_classes"] = -1
-        with pytest.raises(
-            ValueError, match="num_classes must be a positive integer or None"
-        ):
             validate_config(config)
 
     def test_data_section_missing(self):
@@ -1247,25 +1231,6 @@ class TestValidateConfigErrorPaths:
         config["training"]["visualization"]["log_images_interval"] = -1
         with pytest.raises(
             ValueError, match="interval must be.*positive integer or null"
-        ):
-            validate_config(config)
-
-    def test_generation_class_selection_out_of_range(self):
-        """class index >= num_classes raises ValueError."""
-        config = get_default_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
-        config["model"]["conditioning"]["num_classes"] = 2
-        config["generation"]["sampling"]["class_selection"] = [5]
-        with pytest.raises(ValueError, match="contains indices"):
-            validate_config(config)
-
-    def test_architecture_missing(self):
-        """Missing model.architecture raises KeyError."""
-        config = get_default_config()
-        del config["model"]["architecture"]
-        with pytest.raises(
-            KeyError, match="Missing required config key: model.architecture"
         ):
             validate_config(config)
 

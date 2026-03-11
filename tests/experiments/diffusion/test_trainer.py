@@ -7,6 +7,7 @@ Tests are organized into:
 - Integration tests: End-to-end training workflows with sample generation
 """
 
+import pickle
 import tempfile
 from pathlib import Path
 from typing import Dict, Optional
@@ -938,9 +939,11 @@ def test_diffusion_trainer_logs_epoch_summary(
     # Train for one epoch
     trainer.train_epoch()
 
-    # Check that training activity was logged with epoch summary
+    # Check that epoch summary was logged with loss
     assert len(capture_logs.records) > 0
-    assert any("Train" in r.message for r in capture_logs.records)
+    assert any(
+        "Train" in r.message and "Loss" in r.message for r in capture_logs.records
+    )
 
 
 @pytest.mark.integration
@@ -967,9 +970,12 @@ def test_diffusion_trainer_logs_sample_generation(
         # Train for 1 epoch - should trigger sample generation
         trainer.train(num_epochs=1, checkpoint_dir=tmpdir)
 
-        # Check that training and sample generation were logged
+        # Check that sample generation was logged
         assert len(capture_logs.records) > 0
-        assert any("Train" in r.message for r in capture_logs.records)
+        assert any(
+            "sample" in r.message.lower() or "Generating" in r.message
+            for r in capture_logs.records
+        )
 
 
 @pytest.mark.integration
@@ -995,9 +1001,9 @@ def test_diffusion_trainer_logs_ema_updates(
     # Train for one epoch
     trainer.train_epoch()
 
-    # Check that EMA training was logged
+    # Check that EMA-related activity was logged
     assert len(capture_logs.records) > 0
-    assert any("Train" in r.message for r in capture_logs.records)
+    assert any("EMA" in r.message or "ema" in r.message for r in capture_logs.records)
 
 
 @pytest.mark.unit
@@ -1433,14 +1439,14 @@ def test_load_checkpoint_corrupt_file(diffusion_trainer):
 
     Bug 1: logger was undefined in load_checkpoint error handling.
     """
-    import tempfile
-
     with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
         f.write(b"this is not a valid checkpoint file")
         corrupt_path = Path(f.name)
 
     try:
-        with pytest.raises((RuntimeError, EOFError, IndexError)):
+        with pytest.raises(
+            (RuntimeError, EOFError, IndexError, pickle.UnpicklingError)
+        ):
             diffusion_trainer.load_checkpoint(corrupt_path)
     finally:
         corrupt_path.unlink(missing_ok=True)
@@ -1480,11 +1486,6 @@ def test_train_epoch_unexpected_batch_length():
     )
 
     with patch.object(trainer.dataloader, "get_train_loader", return_value=loader):
-        with pytest.raises(ValueError, match="Unexpected batch data length"):
-            with patch("src.experiments.diffusion.trainer._logger") as mock_logger:
-                trainer.train_epoch()
-
-        # Re-run to verify the critical log is emitted
         with patch("src.experiments.diffusion.trainer._logger") as mock_logger:
             with pytest.raises(ValueError, match="Unexpected batch data length"):
                 trainer.train_epoch()
@@ -2090,6 +2091,8 @@ class TestDiffusionTrainerLoadCheckpointErrors:
 
     def test_load_checkpoint_model_mismatch_non_strict(self):
         """load_checkpoint with mismatched model in non-strict mode warns."""
+        from unittest.mock import patch as mock_patch
+
         trainer, *_ = _make_diffusion_trainer()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2099,8 +2102,13 @@ class TestDiffusionTrainerLoadCheckpointErrors:
             # Create trainer with different model architecture
             trainer2, *_ = _make_diffusion_trainer(in_channels=1)
 
-            # Non-strict should not raise
-            trainer2.load_checkpoint(ckpt_path, strict=False)
+            # Non-strict should not raise, but should warn
+            with mock_patch("src.experiments.diffusion.trainer._logger") as mock_logger:
+                trainer2.load_checkpoint(ckpt_path, strict=False)
+                assert any(
+                    "non-strict" in str(c).lower()
+                    for c in mock_logger.warning.call_args_list
+                )
 
     def test_load_checkpoint_optimizer_failure(self):
         """load_checkpoint with optimizer load failure warns and continues."""
@@ -2118,5 +2126,12 @@ class TestDiffusionTrainerLoadCheckpointErrors:
                 "load_state_dict",
                 side_effect=RuntimeError("incompatible optimizer"),
             ):
-                # Should not raise - warning is logged
-                trainer.load_checkpoint(ckpt_path)
+                with mock_patch(
+                    "src.experiments.diffusion.trainer._logger"
+                ) as mock_logger:
+                    # Should not raise - warning is logged
+                    trainer.load_checkpoint(ckpt_path)
+                    assert any(
+                        "optimizer" in str(c).lower()
+                        for c in mock_logger.warning.call_args_list
+                    )

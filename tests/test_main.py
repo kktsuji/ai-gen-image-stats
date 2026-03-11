@@ -340,61 +340,7 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_basic(self, tmp_path):
         """Test basic classifier setup with minimal config."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
 
         # Mock the trainer to avoid actual training
         with patch(
@@ -413,64 +359,9 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_inceptionv3(self, tmp_path):
         """Test classifier setup with InceptionV3 model."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "inceptionv3",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-                "regularization": {
-                    "dropout": 0.5,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        config["model"]["architecture"]["name"] = "inceptionv3"
+        config["model"]["regularization"] = {"dropout": 0.5}
 
         with patch(
             "src.experiments.classifier.trainer.ClassifierTrainer.train"
@@ -483,60 +374,12 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_with_scheduler(self, tmp_path):
         """Test classifier setup with learning rate scheduler."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 10,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": "cosine", "T_max": 10, "eta_min": 1e-6},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
+        config = _base_classifier_config(tmp_path)
+        config["training"]["epochs"] = 10
+        config["training"]["scheduler"] = {
+            "type": "cosine",
+            "T_max": 10,
+            "eta_min": 1e-6,
         }
 
         with patch(
@@ -550,61 +393,8 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_with_seed(self, tmp_path):
         """Test that random seed is properly set."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": 42,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        config["compute"]["seed"] = 42
 
         with (
             patch(
@@ -623,61 +413,8 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_invalid_model(self, tmp_path):
         """Test that invalid model name raises ValueError."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "invalid_model",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        config["model"]["architecture"]["name"] = "invalid_model"
 
         with pytest.raises(ValueError, match="Invalid model name"):
             setup_experiment_classifier(config)
@@ -685,61 +422,8 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_invalid_optimizer(self, tmp_path):
         """Test that invalid optimizer raises ValueError."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "invalid_optimizer",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        config["training"]["optimizer"]["type"] = "invalid_optimizer"
 
         with pytest.raises(ValueError, match="Invalid optimizer"):
             setup_experiment_classifier(config)
@@ -747,61 +431,8 @@ class TestClassifierExperimentSetup:
     @pytest.mark.integration
     def test_setup_classifier_invalid_scheduler(self, tmp_path):
         """Test that invalid scheduler raises ValueError."""
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 256,
-                    "crop_size": 224,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": "invalid_scheduler"},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        config["training"]["scheduler"] = {"type": "invalid_scheduler"}
 
         with pytest.raises(ValueError, match="Invalid scheduler"):
             setup_experiment_classifier(config)
@@ -813,61 +444,10 @@ class TestClassifierExperimentSetup:
         This test actually runs the training loop for 1 epoch on CPU
         with a minimal configuration to verify end-to-end functionality.
         """
-        config = {
-            "experiment": "classifier",
-            "mode": "train",
-            "compute": {
-                "device": "cpu",
-                "seed": None,
-            },
-            "model": {
-                "architecture": {
-                    "name": "resnet50",
-                    "num_classes": 2,
-                },
-                "initialization": {
-                    "pretrained": False,
-                    "freeze_backbone": False,
-                },
-            },
-            "data": {
-                "split_file": str(
-                    _PROJECT_ROOT / "tests/fixtures/splits/mock_split.json"
-                ),
-                "loading": {
-                    "batch_size": 2,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "shuffle_train": True,
-                    "drop_last": False,
-                },
-                "preprocessing": {
-                    "image_size": 64,
-                    "crop_size": 32,
-                    "normalize": "imagenet",
-                },
-                "augmentation": {
-                    "horizontal_flip": True,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False},
-                },
-            },
-            "training": {
-                "epochs": 1,
-                "optimizer": {
-                    "type": "adam",
-                    "learning_rate": 0.001,
-                    "weight_decay": 0.0001,
-                },
-                "scheduler": {"type": None},
-                "checkpointing": {"save_frequency": 10, "save_best_only": True},
-                "validation": {"enabled": True, "frequency": 1},
-            },
-            "output": {
-                "base_dir": str(tmp_path),
-                "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-            },
-        }
+        config = _base_classifier_config(tmp_path)
+        # Use smaller images for faster execution
+        config["data"]["preprocessing"]["image_size"] = 64
+        config["data"]["preprocessing"]["crop_size"] = 32
 
         # Actually run the training (no mocking)
         setup_experiment_classifier(config)
@@ -1053,9 +633,9 @@ def _generation_config(
             "architecture": {
                 "image_size": 32,
                 "in_channels": 3,
-                "model_channels": 64,
-                "channel_multipliers": [1, 2, 4],
-                "use_attention": [False, True, False],
+                "model_channels": 16,
+                "channel_multipliers": [1, 2],
+                "use_attention": [False, False],
             },
             "diffusion": {
                 "num_timesteps": 1000,
@@ -1128,15 +708,15 @@ def _mock_diffusion_checkpoint(tmp_path, include_ema=False, num_classes=2):
     model = create_ddpm(
         image_size=32,
         in_channels=3,
-        model_channels=64,
-        channel_multipliers=(1, 2, 4),
+        model_channels=16,
+        channel_multipliers=(1, 2),
         num_classes=num_classes,
         num_timesteps=1000,
         beta_schedule="linear",
         beta_start=0.0001,
         beta_end=0.02,
         class_dropout_prob=0.1,
-        use_attention=(False, True, False),
+        use_attention=(False, False),
         device="cpu",
     )
 
@@ -1373,9 +953,8 @@ class TestDiffusionGenerationMode:
 
                 setup_experiment_diffusion(config)
 
-                # setup_logging routes log output to stdout
-                captured = capsys.readouterr()
-                assert "num_samples" in captured.out
+        captured = capsys.readouterr()
+        assert "num_samples" in captured.out
 
     @pytest.mark.unit
     def test_generation_mode_uses_sampler_not_trainer(self, tmp_path):
@@ -1491,9 +1070,8 @@ class TestDiffusionGenerationMode:
                     call_kwargs = mock_ema.call_args
                     assert call_kwargs[1]["decay"] == 0.995
 
-                    # setup_logging routes log output to stdout
-                    captured = capsys.readouterr()
-                    assert "Loaded EMA weights" in captured.out
+        captured = capsys.readouterr()
+        assert "Loaded EMA weights" in captured.out
 
     @pytest.mark.unit
     def test_generation_mode_warns_when_ema_missing(self, tmp_path, capsys):
@@ -1518,10 +1096,9 @@ class TestDiffusionGenerationMode:
 
                 setup_experiment_diffusion(config)
 
-                # setup_logging routes log output to stdout
-                captured = capsys.readouterr()
-                assert "no EMA weights" in captured.out
-                assert "Falling back" in captured.out
+        captured = capsys.readouterr()
+        assert "no EMA weights" in captured.out
+        assert "Falling back" in captured.out
 
     @pytest.mark.unit
     def test_generation_mode_batched_generation(self, tmp_path):
@@ -1732,16 +1309,15 @@ class TestDiffusionGenerationMode:
 
                 setup_experiment_diffusion(config)
 
-        # setup_logging routes log output to stdout
         captured = capsys.readouterr()
         assert "Class selection" in captured.out
         assert "[0]" in captured.out
 
 
 class TestClassifierOptimizerVariants:
-    """Unit tests for classifier optimizer variants (covers lines 260-274)."""
+    """Component tests for classifier optimizer variants (covers lines 260-274)."""
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_adamw_optimizer(self, tmp_path):
         """Test classifier setup with AdamW optimizer succeeds."""
         config = _base_classifier_config(tmp_path)
@@ -1757,7 +1333,7 @@ class TestClassifierOptimizerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_sgd_optimizer(self, tmp_path):
         """Test classifier setup with SGD optimizer and explicit momentum."""
         config = _base_classifier_config(tmp_path)
@@ -1774,7 +1350,7 @@ class TestClassifierOptimizerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_sgd_default_momentum(self, tmp_path):
         """Test classifier setup with SGD uses default momentum 0.9."""
         config = _base_classifier_config(tmp_path)
@@ -1791,7 +1367,7 @@ class TestClassifierOptimizerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_unknown_optimizer_raises(self, tmp_path):
         """Test that an optimizer unknown to runtime raises ValueError."""
         config = _base_classifier_config(tmp_path)
@@ -1808,9 +1384,9 @@ class TestClassifierOptimizerVariants:
 
 
 class TestClassifierSchedulerVariants:
-    """Unit tests for classifier scheduler variants (covers lines 289, 294-308)."""
+    """Component tests for classifier scheduler variants (covers lines 289, 294-308)."""
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_step_scheduler(self, tmp_path):
         """Test classifier setup with StepLR scheduler."""
         config = _base_classifier_config(tmp_path)
@@ -1830,7 +1406,7 @@ class TestClassifierSchedulerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_plateau_scheduler(self, tmp_path):
         """Test classifier setup with ReduceLROnPlateau scheduler."""
         config = _base_classifier_config(tmp_path)
@@ -1851,7 +1427,7 @@ class TestClassifierSchedulerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_cosine_auto_tmax(self, tmp_path):
         """Test classifier setup with cosine scheduler and T_max=auto."""
         config = _base_classifier_config(tmp_path)
@@ -1871,7 +1447,7 @@ class TestClassifierSchedulerVariants:
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_unknown_scheduler_raises(self, tmp_path):
         """Test that a scheduler unknown to runtime raises ValueError."""
         config = _base_classifier_config(tmp_path)
@@ -1888,9 +1464,9 @@ class TestClassifierSchedulerVariants:
 
 
 class TestClassifierErrorHandling:
-    """Unit tests for classifier error handling (covers lines 364-373)."""
+    """Component tests for classifier error handling (covers lines 364-373)."""
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_keyboard_interrupt(self, tmp_path):
         """Test that KeyboardInterrupt during training calls sys.exit(0)."""
         config = _base_classifier_config(tmp_path)
@@ -1903,7 +1479,7 @@ class TestClassifierErrorHandling:
                 setup_experiment_classifier(config)
             assert exc_info.value.code == 0
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_training_exception(self, tmp_path):
         """Test that RuntimeError during training is re-raised."""
         config = _base_classifier_config(tmp_path)
@@ -1917,9 +1493,9 @@ class TestClassifierErrorHandling:
 
 
 class TestClassifierDeviceAndDataset:
-    """Unit tests for classifier device and dataset edge cases (covers lines 138, 199-200)."""
+    """Component tests for classifier device and dataset edge cases (covers lines 138, 199-200)."""
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_explicit_device(self, tmp_path):
         """Test that explicit device config skips get_device() auto-detection."""
         config = _base_classifier_config(tmp_path)
@@ -1933,7 +1509,7 @@ class TestClassifierDeviceAndDataset:
             # get_device should NOT be called when device is explicitly set
             mock_get_device.assert_not_called()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_setup_classifier_no_classes_attribute(self, tmp_path):
         """Test fallback to Class 0, Class 1 when dataset has no classes attr."""
         config = _base_classifier_config(tmp_path)
@@ -1952,9 +1528,14 @@ class TestClassifierDeviceAndDataset:
                 "src.experiments.classifier.dataloader.ClassifierDataLoader",
                 return_value=mock_dataloader_instance,
             ),
+            patch(
+                "src.experiments.classifier.logger.ClassifierLogger"
+            ) as mock_logger_cls,
         ):
             setup_experiment_classifier(config)
-            # If we get here without error, the fallback worked
+            # Verify fallback class names were passed to logger
+            call_kwargs = mock_logger_cls.call_args.kwargs
+            assert call_kwargs["class_names"] == ["Class 0", "Class 1"]
 
 
 class TestDiffusionTrainingMode:
@@ -2216,6 +1797,13 @@ class TestDiffusionTrainingMode:
             setup_experiment_diffusion(config)
             mock_compute_weights.assert_called_once()
             mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
+            # Verify computed weights were forwarded to trainer constructor
+            import torch
+
+            trainer_call_kwargs = mock_diffusion_deps["trainer_cls"].call_args.kwargs
+            assert "class_weights" in trainer_call_kwargs
+            expected = torch.tensor([0.5, 1.5])
+            assert torch.allclose(trainer_call_kwargs["class_weights"], expected)
 
 
 class TestGenerationModeEdgeCases:
@@ -2266,15 +1854,15 @@ class TestGenerationModeEdgeCases:
         model = create_ddpm(
             image_size=32,
             in_channels=3,
-            model_channels=64,
-            channel_multipliers=(1, 2, 4),
+            model_channels=16,
+            channel_multipliers=(1, 2),
             num_classes=2,
             num_timesteps=1000,
             beta_schedule="linear",
             beta_start=0.0001,
             beta_end=0.02,
             class_dropout_prob=0.1,
-            use_attention=(False, True, False),
+            use_attention=(False, False),
             device="cpu",
         )
         # Add _orig_mod. prefix to simulate torch.compile checkpoint
