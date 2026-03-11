@@ -17,6 +17,9 @@ from src.experiments.classifier.config import (
     validate_config,
 )
 
+# Resolve project root so config file tests work regardless of working directory
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 # ============================================================================
 # Unit Tests - Fast, Pure Logic
 # ============================================================================
@@ -209,7 +212,7 @@ class TestConfigFileValidation:
 
     def test_baseline_config_file(self):
         """Test that baseline.yaml is valid."""
-        config_path = Path("configs/classifier/baseline.yaml")
+        config_path = _PROJECT_ROOT / "configs/classifier/baseline.yaml"
 
         if not config_path.exists():
             pytest.skip("baseline.yaml not found")
@@ -222,7 +225,7 @@ class TestConfigFileValidation:
 
     def test_inceptionv3_config_file(self):
         """Test that inceptionv3.yaml is valid."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
+        config_path = _PROJECT_ROOT / "configs/classifier/inceptionv3.yaml"
 
         if not config_path.exists():
             pytest.skip("inceptionv3.yaml not found")
@@ -235,7 +238,7 @@ class TestConfigFileValidation:
 
     def test_baseline_config_structure(self):
         """Test baseline config has expected structure."""
-        config_path = Path("configs/classifier/baseline.yaml")
+        config_path = _PROJECT_ROOT / "configs/classifier/baseline.yaml"
 
         if not config_path.exists():
             pytest.skip("baseline.yaml not found")
@@ -254,7 +257,7 @@ class TestConfigFileValidation:
 
     def test_inceptionv3_config_structure(self):
         """Test InceptionV3 config has expected structure."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
+        config_path = _PROJECT_ROOT / "configs/classifier/inceptionv3.yaml"
 
         if not config_path.exists():
             pytest.skip("inceptionv3.yaml not found")
@@ -273,12 +276,6 @@ class TestConfigFileValidation:
 
         # Check dropout parameter
         assert "dropout" in config["model"]["regularization"]
-
-
-# ============================================================================
-# ============================================================================
-# Configuration Tests
-# ============================================================================
 
 
 def get_v2_default_config():
@@ -668,43 +665,16 @@ class TestValidateConfigErrorPaths:
             validate_config(config)
 
 
-@pytest.mark.unit
 @pytest.mark.component
 class TestConfigFiles:
-    """Test actual config files."""
+    """Test actual config files (default.yaml)."""
 
     def test_default_config_file(self):
         """Test that default.yaml is valid."""
-        config_path = Path("src/experiments/classifier/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/classifier/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should validate
-        validate_config(config)
-
-    def test_baseline_config_file(self):
-        """Test that baseline.yaml is valid."""
-        config_path = Path("configs/classifier/baseline.yaml")
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should validate
-        validate_config(config)
-
-    def test_inceptionv3_config_file(self):
-        """Test that inceptionv3.yaml is valid."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

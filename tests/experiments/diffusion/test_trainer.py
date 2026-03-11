@@ -392,14 +392,17 @@ def test_diffusion_trainer_validate_epoch_no_val_data(
 def test_diffusion_trainer_unconditional(
     simple_diffusion_model_unconditional,
     simple_diffusion_dataloader_unconditional,
-    simple_diffusion_optimizer,
     simple_diffusion_logger,
 ):
     """Test trainer with unconditional model (no labels)."""
+    # Create optimizer from the unconditional model's parameters
+    optimizer = torch.optim.Adam(
+        simple_diffusion_model_unconditional.parameters(), lr=0.001
+    )
     trainer = DiffusionTrainer(
         model=simple_diffusion_model_unconditional,
         dataloader=simple_diffusion_dataloader_unconditional,
-        optimizer=simple_diffusion_optimizer,
+        optimizer=optimizer,
         logger=simple_diffusion_logger,
         device="cpu",
         show_progress=False,
@@ -894,8 +897,7 @@ def test_diffusion_trainer_logs_epoch_summary(
     trainer.train_epoch()
 
     # Check that training activity was logged
-    # Should have some logging activity
-    assert len(capture_logs.records) >= 0
+    assert len(capture_logs.records) > 0
 
 
 @pytest.mark.integration
@@ -923,7 +925,7 @@ def test_diffusion_trainer_logs_sample_generation(
         trainer.train(num_epochs=1, checkpoint_dir=tmpdir)
 
         # Check that logging occurred
-        assert len(capture_logs.records) >= 0
+        assert len(capture_logs.records) > 0
 
 
 @pytest.mark.integration
@@ -950,7 +952,7 @@ def test_diffusion_trainer_logs_ema_updates(
     trainer.train_epoch()
 
     # Check that logging occurred during training
-    assert len(capture_logs.records) >= 0
+    assert len(capture_logs.records) > 0
 
 
 @pytest.mark.unit
@@ -1231,8 +1233,7 @@ def test_diffusion_trainer_logs_checkpoint_operations(
         )
 
         # Check that checkpoint-related logging occurred
-        # Should have some logging activity
-        assert len(capture_logs.records) >= 0
+        assert len(capture_logs.records) > 0
 
 
 # ---- New tests for per-interval visualization ----
@@ -1436,8 +1437,11 @@ def test_load_checkpoint_corrupt_file(diffusion_trainer):
         corrupt_path = Path(f.name)
 
     try:
-        with pytest.raises(Exception, match="(?!NameError)"):
+        with pytest.raises(Exception) as exc_info:
             diffusion_trainer.load_checkpoint(corrupt_path)
+        assert not isinstance(exc_info.value, NameError), (
+            "Expected original error, not NameError from undefined variable"
+        )
     finally:
         corrupt_path.unlink(missing_ok=True)
 

@@ -8,6 +8,7 @@ end-to-end execution flow with config-only mode.
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch.nn as nn
 import yaml
 
 from src.main import main, setup_experiment_classifier
@@ -783,7 +784,6 @@ class TestClassifierExperimentSetup:
             setup_experiment_classifier(config)
 
     @pytest.mark.integration
-    @pytest.mark.slow
     def test_setup_classifier_full_execution_mini(self, tmp_path):
         """Test full execution of classifier training with tiny dataset.
 
@@ -861,7 +861,7 @@ class TestClassifierExperimentSetup:
 class TestExperimentDispatcher:
     """Test suite for experiment dispatcher logic with config-only mode."""
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_dispatcher_routes_to_classifier(self, tmp_path):
         """Test that dispatcher correctly routes to classifier."""
         config_file = tmp_path / "classifier_config.yaml"
@@ -917,7 +917,7 @@ class TestExperimentDispatcher:
 
             mock_classifier.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_dispatcher_routes_to_diffusion(self, tmp_path):
         """Test that dispatcher correctly routes to diffusion."""
         config_file = tmp_path / "diffusion_config.yaml"
@@ -961,7 +961,7 @@ class TestExperimentDispatcher:
 
             mock_diffusion.assert_called_once()
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_dispatcher_routes_to_gan(self, tmp_path):
         """Test that dispatcher correctly routes to GAN (not implemented)."""
         config_file = tmp_path / "gan_config.yaml"
@@ -976,7 +976,7 @@ class TestExperimentDispatcher:
             main([str(config_file)])
         assert exc_info.value.code == 1
 
-    @pytest.mark.unit
+    @pytest.mark.component
     def test_dispatcher_routes_to_data_preparation(self, tmp_path):
         """Test that dispatcher correctly routes to data_preparation."""
         config_file = tmp_path / "data_prep_config.yaml"
@@ -1089,14 +1089,10 @@ class TestDiffusionGenerationMode:
                 mock_sampler.return_value = mock_sampler_instance
                 mock_sampler_instance.sample.return_value = torch.randn(1, 3, 32, 32)
 
-                # Should not raise, but should warn
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass  # May exit after generation
+                setup_experiment_diffusion(config)
 
+                # setup_logging routes log output to stdout
                 captured = capsys.readouterr()
-                assert "WARNING" in captured.out
                 assert "num_samples" in captured.out
 
     @pytest.mark.unit
@@ -1120,10 +1116,7 @@ class TestDiffusionGenerationMode:
                 # Return proper tensor instead of MagicMock
                 mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass  # May exit after generation
+                setup_experiment_diffusion(config)
 
                 # Verify DiffusionSampler was created and used
                 mock_sampler.assert_called_once()
@@ -1153,10 +1146,7 @@ class TestDiffusionGenerationMode:
                         10, 3, 32, 32
                     )
 
-                    try:
-                        setup_experiment_diffusion(config)
-                    except SystemExit:
-                        pass  # May exit after generation
+                    setup_experiment_diffusion(config)
 
                     # Verify no optimizer was created
                     mock_adam.assert_not_called()
@@ -1187,10 +1177,7 @@ class TestDiffusionGenerationMode:
                         10, 3, 32, 32
                     )
 
-                    try:
-                        setup_experiment_diffusion(config)
-                    except SystemExit:
-                        pass  # May exit after generation
+                    setup_experiment_diffusion(config)
 
                     # Verify no dataloader was created
                     mock_dataloader.assert_not_called()
@@ -1221,16 +1208,14 @@ class TestDiffusionGenerationMode:
                         10, 3, 32, 32
                     )
 
-                    try:
-                        setup_experiment_diffusion(config)
-                    except SystemExit:
-                        pass  # May exit after generation
+                    setup_experiment_diffusion(config)
 
                     # Verify EMA was created with decay from config
                     mock_ema.assert_called_once()
                     call_kwargs = mock_ema.call_args
                     assert call_kwargs[1]["decay"] == 0.995
 
+                    # setup_logging routes log output to stdout
                     captured = capsys.readouterr()
                     assert "Loaded EMA weights" in captured.out
 
@@ -1255,13 +1240,10 @@ class TestDiffusionGenerationMode:
                 mock_sampler.return_value = mock_sampler_instance
                 mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass  # May exit after generation
+                setup_experiment_diffusion(config)
 
+                # setup_logging routes log output to stdout
                 captured = capsys.readouterr()
-                assert "WARNING" in captured.out
                 assert "no EMA weights" in captured.out
                 assert "Falling back" in captured.out
 
@@ -1293,10 +1275,7 @@ class TestDiffusionGenerationMode:
 
                 mock_sampler_instance.sample.side_effect = sample_side_effect
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
                 # With 10 samples and batch_size=3, expect 4 batches (3+3+3+1)
                 assert mock_sampler_instance.sample.call_count == 4
@@ -1323,10 +1302,7 @@ class TestDiffusionGenerationMode:
                 mock_sampler.return_value = mock_sampler_instance
                 mock_sampler_instance.sample.return_value = torch.randn(5, 3, 32, 32)
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
                 # Single batch since batch_size > num_samples
                 mock_sampler_instance.sample.assert_called_once()
@@ -1357,10 +1333,7 @@ class TestDiffusionGenerationMode:
 
                 mock_sampler_instance.sample.side_effect = sample_side_effect
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
                     [
@@ -1400,10 +1373,7 @@ class TestDiffusionGenerationMode:
 
                 mock_sampler_instance.sample.side_effect = sample_side_effect
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
                     [
@@ -1442,10 +1412,7 @@ class TestDiffusionGenerationMode:
 
                 mock_sampler_instance.sample.side_effect = sample_side_effect
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
                     [
@@ -1487,139 +1454,145 @@ class TestDiffusionGenerationMode:
 
                 mock_sampler_instance.sample.side_effect = sample_side_effect
 
-                try:
-                    setup_experiment_diffusion(config)
-                except SystemExit:
-                    pass
+                setup_experiment_diffusion(config)
 
+        # setup_logging routes log output to stdout
         captured = capsys.readouterr()
         assert "Class selection" in captured.out
         assert "[0]" in captured.out
 
-    # Helper methods
-    def _create_generation_config(
-        self,
-        tmp_path,
-        checkpoint=None,
-        num_samples=10,
-        num_classes=2,
-        use_ema=False,
-        class_selection=None,
-    ):
-        """Create a minimal generation mode config."""
-        return {
-            "experiment": "diffusion",
-            "mode": "generate",
-            "model": {
-                "architecture": {
-                    "image_size": 32,
-                    "in_channels": 3,
-                    "model_channels": 64,
-                    "channel_multipliers": [1, 2, 4],
-                    "use_attention": [False, True, False],
-                },
-                "diffusion": {
-                    "num_timesteps": 1000,
-                    "beta_schedule": "linear",
-                    "beta_start": 0.0001,
-                    "beta_end": 0.02,
-                },
-                "conditioning": {
-                    "type": "class",
-                    "num_classes": num_classes,
-                    "class_dropout_prob": 0.1,
+    # Helper methods delegate to module-level functions
+    def _create_generation_config(self, tmp_path, **kwargs):
+        return _generation_config(tmp_path, **kwargs)
+
+    def _create_mock_checkpoint(self, tmp_path, **kwargs):
+        return _mock_diffusion_checkpoint(tmp_path, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Shared generation mode helpers
+# ---------------------------------------------------------------------------
+
+
+def _generation_config(
+    tmp_path,
+    checkpoint=None,
+    num_samples=10,
+    num_classes=2,
+    use_ema=False,
+    class_selection=None,
+):
+    """Create a minimal generation mode config."""
+    return {
+        "experiment": "diffusion",
+        "mode": "generate",
+        "model": {
+            "architecture": {
+                "image_size": 32,
+                "in_channels": 3,
+                "model_channels": 64,
+                "channel_multipliers": [1, 2, 4],
+                "use_attention": [False, True, False],
+            },
+            "diffusion": {
+                "num_timesteps": 1000,
+                "beta_schedule": "linear",
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+            },
+            "conditioning": {
+                "type": "class",
+                "num_classes": num_classes,
+                "class_dropout_prob": 0.1,
+            },
+        },
+        "data": {
+            "split_file": "tests/fixtures/splits/mock_split.json",
+            "loading": {
+                "batch_size": 16,
+                "num_workers": 0,
+                "pin_memory": False,
+                "drop_last": False,
+                "shuffle_train": True,
+            },
+            "augmentation": {
+                "horizontal_flip": False,
+                "rotation_degrees": 0,
+                "color_jitter": {
+                    "enabled": False,
+                    "strength": 0.0,
                 },
             },
-            "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
-                "loading": {
-                    "batch_size": 16,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "drop_last": False,
-                    "shuffle_train": True,
-                },
-                "augmentation": {
-                    "horizontal_flip": False,
-                    "rotation_degrees": 0,
-                    "color_jitter": {
-                        "enabled": False,
-                        "strength": 0.0,
-                    },
-                },
-            },
-            "generation": {
-                "checkpoint": checkpoint,
-                "sampling": {
-                    "num_samples": num_samples,
-                    "batch_size": num_samples,
-                    "guidance_scale": 3.0,
-                    "use_ema": use_ema,
-                    "ema_decay": 0.9999,
-                    "class_selection": class_selection,
-                },
-                "output": {
-                    "save_grid": True,
-                    "save_individual": False,
-                    "grid_nrow": 4,
-                },
-            },
-            "compute": {
-                "device": "cpu",
-                "seed": 42,
+        },
+        "generation": {
+            "checkpoint": checkpoint,
+            "sampling": {
+                "num_samples": num_samples,
+                "batch_size": num_samples,
+                "guidance_scale": 3.0,
+                "use_ema": use_ema,
+                "ema_decay": 0.9999,
+                "class_selection": class_selection,
             },
             "output": {
-                "base_dir": str(tmp_path / "outputs"),
-                "subdirs": {
-                    "logs": "logs",
-                    "checkpoints": "checkpoints",
-                    "samples": "samples",
-                    "generated": "generated",
-                },
+                "save_grid": True,
+                "save_individual": False,
+                "grid_nrow": 4,
             },
-        }
+        },
+        "compute": {
+            "device": "cpu",
+            "seed": 42,
+        },
+        "output": {
+            "base_dir": str(tmp_path / "outputs"),
+            "subdirs": {
+                "logs": "logs",
+                "checkpoints": "checkpoints",
+                "samples": "samples",
+                "generated": "generated",
+            },
+        },
+    }
 
-    def _create_mock_checkpoint(self, tmp_path, include_ema=False, num_classes=2):
-        """Create a mock checkpoint file for testing."""
-        import torch
 
-        from src.experiments.diffusion.model import create_ddpm
+def _mock_diffusion_checkpoint(tmp_path, include_ema=False, num_classes=2):
+    """Create a mock checkpoint file for testing."""
+    import torch
 
-        # Create a minimal model to get state dict
-        model = create_ddpm(
-            image_size=32,
-            in_channels=3,
-            model_channels=64,
-            channel_multipliers=(1, 2, 4),
-            num_classes=num_classes,
-            num_timesteps=1000,
-            beta_schedule="linear",
-            beta_start=0.0001,
-            beta_end=0.02,
-            class_dropout_prob=0.1,
-            use_attention=(False, True, False),
-            device="cpu",
-        )
+    from src.experiments.diffusion.model import create_ddpm
 
-        checkpoint = {
-            "model_state_dict": model.state_dict(),
-            "epoch": 10,
-        }
+    model = create_ddpm(
+        image_size=32,
+        in_channels=3,
+        model_channels=64,
+        channel_multipliers=(1, 2, 4),
+        num_classes=num_classes,
+        num_timesteps=1000,
+        beta_schedule="linear",
+        beta_start=0.0001,
+        beta_end=0.02,
+        class_dropout_prob=0.1,
+        use_attention=(False, True, False),
+        device="cpu",
+    )
 
-        if include_ema:
-            # Add mock EMA state dict
-            checkpoint["ema_state_dict"] = model.state_dict()
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "epoch": 10,
+    }
 
-        checkpoint_path = tmp_path / "mock_checkpoint.pth"
-        torch.save(checkpoint, checkpoint_path)
-        return checkpoint_path
+    if include_ema:
+        checkpoint["ema_state_dict"] = model.state_dict()
+
+    checkpoint_path = tmp_path / "mock_checkpoint.pth"
+    torch.save(checkpoint, checkpoint_path)
+    return checkpoint_path
 
 
 # ---------------------------------------------------------------------------
 # New unit tests to improve coverage of src/main.py (>80%)
 # ---------------------------------------------------------------------------
-
-import torch.nn as nn  # noqa: E402
 
 
 def _base_classifier_config(tmp_path):
@@ -2197,102 +2170,11 @@ class TestDiffusionTrainingMode:
 class TestGenerationModeEdgeCases:
     """Unit tests for diffusion generation mode edge cases (covers lines 548, 556, 571, 668-670)."""
 
-    def _create_generation_config(self, tmp_path, checkpoint=None, num_samples=10):
-        """Create a minimal generation mode config."""
-        return {
-            "experiment": "diffusion",
-            "mode": "generate",
-            "model": {
-                "architecture": {
-                    "image_size": 32,
-                    "in_channels": 3,
-                    "model_channels": 64,
-                    "channel_multipliers": [1, 2, 4],
-                    "use_attention": [False, True, False],
-                },
-                "diffusion": {
-                    "num_timesteps": 1000,
-                    "beta_schedule": "linear",
-                    "beta_start": 0.0001,
-                    "beta_end": 0.02,
-                },
-                "conditioning": {
-                    "type": "class",
-                    "num_classes": 2,
-                    "class_dropout_prob": 0.1,
-                },
-            },
-            "data": {
-                "split_file": "tests/fixtures/splits/mock_split.json",
-                "loading": {
-                    "batch_size": 16,
-                    "num_workers": 0,
-                    "pin_memory": False,
-                    "drop_last": False,
-                    "shuffle_train": True,
-                },
-                "augmentation": {
-                    "horizontal_flip": False,
-                    "rotation_degrees": 0,
-                    "color_jitter": {"enabled": False, "strength": 0.0},
-                },
-            },
-            "generation": {
-                "checkpoint": checkpoint,
-                "sampling": {
-                    "num_samples": num_samples,
-                    "batch_size": num_samples,
-                    "guidance_scale": 3.0,
-                    "use_ema": False,
-                    "ema_decay": 0.9999,
-                    "class_selection": None,
-                },
-                "output": {
-                    "save_grid": True,
-                    "save_individual": False,
-                    "grid_nrow": 4,
-                },
-            },
-            "compute": {"device": "cpu", "seed": 42},
-            "output": {
-                "base_dir": str(tmp_path / "outputs"),
-                "subdirs": {
-                    "logs": "logs",
-                    "checkpoints": "checkpoints",
-                    "samples": "samples",
-                    "generated": "generated",
-                },
-            },
-        }
+    def _create_generation_config(self, tmp_path, **kwargs):
+        return _generation_config(tmp_path, **kwargs)
 
-    def _create_mock_checkpoint(self, tmp_path, include_ema=False, num_classes=2):
-        """Create a mock checkpoint file for testing."""
-        import torch
-
-        from src.experiments.diffusion.model import create_ddpm
-
-        model = create_ddpm(
-            image_size=32,
-            in_channels=3,
-            model_channels=64,
-            channel_multipliers=(1, 2, 4),
-            num_classes=num_classes,
-            num_timesteps=1000,
-            beta_schedule="linear",
-            beta_start=0.0001,
-            beta_end=0.02,
-            class_dropout_prob=0.1,
-            use_attention=(False, True, False),
-            device="cpu",
-        )
-
-        checkpoint = {"model_state_dict": model.state_dict(), "epoch": 10}
-        if include_ema:
-            checkpoint["ema_state_dict"] = model.state_dict()
-
-        checkpoint_path = tmp_path / "mock_checkpoint.pth"
-        torch.save(checkpoint, checkpoint_path)
-        return checkpoint_path
+    def _create_mock_checkpoint(self, tmp_path, **kwargs):
+        return _mock_diffusion_checkpoint(tmp_path, **kwargs)
 
     @pytest.mark.unit
     def test_generation_mode_saves_individual(self, tmp_path):

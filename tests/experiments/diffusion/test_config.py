@@ -519,12 +519,6 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
-    def test_image_size_mismatch(self):
-        """Test NOT APPLICABLE for V2 - image_size derived from model."""
-        # In V2, image_size is only in model.architecture and derived for data
-        # This test is no longer relevant
-        pass
-
     def test_conditional_requires_labels(self):
         """Test validation for conditional generation (V2)."""
         config = get_default_config()
@@ -1320,9 +1314,6 @@ class TestValidateConfigErrorPaths:
             ValueError, match="generation.output.save_grid must be a boolean"
         ):
             validate_config(config)
-        assert "checkpoint" in config["generation"]
-        assert "sampling" in config["generation"]
-        assert "use_ema" in config["generation"]["sampling"]
 
 
 # ============================================================================
