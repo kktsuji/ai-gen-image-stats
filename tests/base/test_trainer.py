@@ -976,7 +976,7 @@ class TestLoadCheckpointErrorPaths:
             assert checkpoint_info["epoch"] == 1
 
 
-@pytest.mark.unit
+@pytest.mark.component
 class TestTrainEdgeCases:
     """Test edge cases in the train method."""
 

@@ -784,6 +784,7 @@ class TestClassifierExperimentSetup:
             setup_experiment_classifier(config)
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_setup_classifier_full_execution_mini(self, tmp_path):
         """Test full execution of classifier training with tiny dataset.
 
@@ -1004,14 +1005,19 @@ class TestExperimentDispatcher:
 
 
 class TestDiffusionGenerationMode:
-    """Test suite for diffusion generation mode refactoring."""
+    """Test suite for diffusion generation mode refactoring.
+
+    Note: These tests assume setup_experiment_diffusion does not call sys.exit()
+    after generation completes. If that behavior changes, these tests will need
+    to wrap calls in try/except SystemExit.
+    """
 
     @pytest.mark.unit
     def test_generation_mode_missing_checkpoint_raises_error(self, tmp_path):
         """Test that generation mode without checkpoint raises ValueError."""
         from src.main import setup_experiment_diffusion
 
-        config = self._create_generation_config(tmp_path, checkpoint=None)
+        config = _generation_config(tmp_path, checkpoint=None)
 
         with pytest.raises(ValueError, match="generation.checkpoint is required"):
             setup_experiment_diffusion(config)
@@ -1021,9 +1027,7 @@ class TestDiffusionGenerationMode:
         """Test that non-existent checkpoint raises FileNotFoundError."""
         from src.main import setup_experiment_diffusion
 
-        config = self._create_generation_config(
-            tmp_path, checkpoint="nonexistent_checkpoint.pth"
-        )
+        config = _generation_config(tmp_path, checkpoint="nonexistent_checkpoint.pth")
 
         with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
             setup_experiment_diffusion(config)
@@ -1039,9 +1043,7 @@ class TestDiffusionGenerationMode:
 
         torch.save({}, checkpoint_path)
 
-        config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path)
-        )
+        config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with pytest.raises(ValueError, match="does not contain 'model_state_dict'"):
             setup_experiment_diffusion(config)
@@ -1052,9 +1054,9 @@ class TestDiffusionGenerationMode:
         from src.main import setup_experiment_diffusion
 
         # Create valid checkpoint
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
 
-        config = self._create_generation_config(
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=0
         )
 
@@ -1071,9 +1073,9 @@ class TestDiffusionGenerationMode:
         from src.main import setup_experiment_diffusion
 
         # Create valid checkpoint
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
 
-        config = self._create_generation_config(
+        config = _generation_config(
             tmp_path,
             checkpoint=str(checkpoint_path),
             num_samples=1,  # Less than num_classes=2
@@ -1102,10 +1104,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path)
-        )
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
@@ -1129,10 +1129,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path)
-        )
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with patch("torch.optim.Adam") as mock_adam:
             with patch(
@@ -1158,10 +1156,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
-            tmp_path, checkpoint=str(checkpoint_path)
-        )
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with patch(
             "src.experiments.diffusion.dataloader.DiffusionDataLoader"
@@ -1189,8 +1185,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path, include_ema=True)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path, include_ema=True)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
         # Set a custom ema_decay to verify it's read from config
@@ -1226,8 +1222,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path, include_ema=False)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path, include_ema=False)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
 
@@ -1254,8 +1250,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=10
         )
         # Set batch_size smaller than num_samples to force multiple batches
@@ -1287,8 +1283,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=5
         )
         # batch_size larger than num_samples
@@ -1314,8 +1310,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=4, num_classes=2
         )
         config["generation"]["sampling"]["class_selection"] = None
@@ -1351,8 +1347,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path,
             checkpoint=str(checkpoint_path),
             num_samples=4,
@@ -1390,8 +1386,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path, num_classes=4)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path, num_classes=4)
+        config = _generation_config(
             tmp_path,
             checkpoint=str(checkpoint_path),
             num_samples=10,
@@ -1432,8 +1428,8 @@ class TestDiffusionGenerationMode:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path,
             checkpoint=str(checkpoint_path),
             num_samples=4,
@@ -1460,13 +1456,6 @@ class TestDiffusionGenerationMode:
         captured = capsys.readouterr()
         assert "Class selection" in captured.out
         assert "[0]" in captured.out
-
-    # Helper methods delegate to module-level functions
-    def _create_generation_config(self, tmp_path, **kwargs):
-        return _generation_config(tmp_path, **kwargs)
-
-    def _create_mock_checkpoint(self, tmp_path, **kwargs):
-        return _mock_diffusion_checkpoint(tmp_path, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -1735,9 +1724,13 @@ class TestClassifierOptimizerVariants:
         config = _base_classifier_config(tmp_path)
         config["training"]["optimizer"]["type"] = "adamw"
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1748,9 +1741,13 @@ class TestClassifierOptimizerVariants:
         config["training"]["optimizer"]["type"] = "sgd"
         config["training"]["optimizer"]["momentum"] = 0.9
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1761,9 +1758,13 @@ class TestClassifierOptimizerVariants:
         config["training"]["optimizer"]["type"] = "sgd"
         # No explicit momentum — runtime code should default to 0.9
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1774,7 +1775,11 @@ class TestClassifierOptimizerVariants:
         config["training"]["optimizer"]["type"] = "rmsprop"
 
         # Bypass the config validator so the runtime code path is reached
-        with patch("src.experiments.classifier.config.validate_config"):
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch("src.experiments.classifier.config.validate_config"),
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             with pytest.raises(ValueError, match="Unknown optimizer"):
                 setup_experiment_classifier(config)
 
@@ -1792,9 +1797,13 @@ class TestClassifierSchedulerVariants:
             "gamma": 0.1,
         }
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1809,9 +1818,13 @@ class TestClassifierSchedulerVariants:
             "patience": 5,
         }
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1825,9 +1838,13 @@ class TestClassifierSchedulerVariants:
             "eta_min": 1e-6,
         }
 
-        with patch(
-            "src.experiments.classifier.trainer.ClassifierTrainer.train"
-        ) as mock_train:
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.train"
+            ) as mock_train,
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             setup_experiment_classifier(config)
             mock_train.assert_called_once()
 
@@ -1838,7 +1855,11 @@ class TestClassifierSchedulerVariants:
         config["training"]["scheduler"] = {"type": "exponential"}
 
         # Bypass the config validator so the runtime code path is reached
-        with patch("src.experiments.classifier.config.validate_config"):
+        with (
+            patch("src.experiments.classifier.models.ResNetClassifier") as mock_cls,
+            patch("src.experiments.classifier.config.validate_config"),
+        ):
+            mock_cls.return_value = nn.Linear(10, 2)
             with pytest.raises(ValueError, match="Unknown scheduler"):
                 setup_experiment_classifier(config)
 
@@ -2170,12 +2191,6 @@ class TestDiffusionTrainingMode:
 class TestGenerationModeEdgeCases:
     """Unit tests for diffusion generation mode edge cases (covers lines 548, 556, 571, 668-670)."""
 
-    def _create_generation_config(self, tmp_path, **kwargs):
-        return _generation_config(tmp_path, **kwargs)
-
-    def _create_mock_checkpoint(self, tmp_path, **kwargs):
-        return _mock_diffusion_checkpoint(tmp_path, **kwargs)
-
     @pytest.mark.unit
     def test_generation_mode_saves_individual(self, tmp_path):
         """Test generation mode with save_individual=True saves per-sample images."""
@@ -2183,8 +2198,8 @@ class TestGenerationModeEdgeCases:
 
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=4
         )
         config["generation"]["output"]["save_individual"] = True
@@ -2237,7 +2252,7 @@ class TestGenerationModeEdgeCases:
         checkpoint_path = tmp_path / "compiled_checkpoint.pth"
         torch.save({"model_state_dict": state_dict, "epoch": 10}, checkpoint_path)
 
-        config = self._create_generation_config(
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=2
         )
 
@@ -2255,26 +2270,32 @@ class TestGenerationModeEdgeCases:
 
     @pytest.mark.unit
     def test_generation_mode_num_samples_zero_raises(self, tmp_path):
-        """Test that num_samples=0 raises ValueError."""
+        """Test that num_samples=0 raises ValueError at config validation."""
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=0
         )
 
-        with pytest.raises(ValueError, match="num_samples must be"):
+        with pytest.raises(
+            ValueError,
+            match="generation.sampling.num_samples must be a positive integer",
+        ):
             setup_experiment_diffusion(config)
 
     @pytest.mark.unit
     def test_generation_mode_negative_num_samples_raises(self, tmp_path):
-        """Test that negative num_samples raises ValueError."""
+        """Test that negative num_samples raises ValueError at config validation."""
         from src.main import setup_experiment_diffusion
 
-        checkpoint_path = self._create_mock_checkpoint(tmp_path)
-        config = self._create_generation_config(
+        checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
+        config = _generation_config(
             tmp_path, checkpoint=str(checkpoint_path), num_samples=-5
         )
 
-        with pytest.raises(ValueError, match="num_samples must be"):
+        with pytest.raises(
+            ValueError,
+            match="generation.sampling.num_samples must be a positive integer",
+        ):
             setup_experiment_diffusion(config)

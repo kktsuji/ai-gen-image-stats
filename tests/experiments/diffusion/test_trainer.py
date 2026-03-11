@@ -269,6 +269,48 @@ def diffusion_trainer(
     )
 
 
+def _make_diffusion_trainer(
+    num_train_samples: int = 8,
+    num_val_samples: int = 0,
+    batch_size: int = 4,
+    return_labels: bool = True,
+    num_classes: Optional[int] = 2,
+    in_channels: int = 3,
+    image_size: int = 8,
+    gradient_clip_norm: Optional[float] = None,
+    config: Optional[Dict] = None,
+) -> tuple:
+    """Factory for creating a DiffusionTrainer with sensible defaults for tests."""
+    model = SimpleDiffusionModel(
+        in_channels=in_channels, image_size=image_size, num_classes=num_classes
+    )
+    dataloader = SimpleDiffusionDataLoader(
+        num_train_samples=num_train_samples,
+        num_val_samples=num_val_samples,
+        batch_size=batch_size,
+        return_labels=return_labels,
+        num_classes=num_classes if num_classes is not None else 2,
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+
+    trainer = DiffusionTrainer(
+        model=model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        use_amp=False,
+        log_images_interval=None,
+        log_denoising_interval=None,
+        gradient_clip_norm=gradient_clip_norm,
+        config=config,
+    )
+    return trainer, model, dataloader, optimizer, logger
+
+
 # Unit Tests
 
 
@@ -1016,28 +1058,9 @@ class TestDiffusionTrainerSchedulerCheckpoint:
 
     def test_save_checkpoint_with_scheduler(self):
         """Trainer with scheduler, verify scheduler_state_dict in checkpoint."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        trainer, model, _, optimizer, _ = _make_diffusion_trainer()
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            scheduler=scheduler,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer.scheduler = scheduler
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "scheduler_checkpoint.pth"
@@ -1048,28 +1071,9 @@ class TestDiffusionTrainerSchedulerCheckpoint:
 
     def test_load_checkpoint_restores_scheduler(self):
         """Load checkpoint with scheduler state restores scheduler."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        trainer, _, _, optimizer, _ = _make_diffusion_trainer()
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            scheduler=scheduler,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer.scheduler = scheduler
 
         # Step scheduler to change its state
         scheduler.step()
@@ -1080,23 +1084,11 @@ class TestDiffusionTrainerSchedulerCheckpoint:
             trainer.save_checkpoint(checkpoint_path, epoch=1)
 
             # Create new trainer with fresh scheduler
-            model2 = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-            optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.01)
+            trainer2, _, _, optimizer2, _ = _make_diffusion_trainer()
             scheduler2 = torch.optim.lr_scheduler.StepLR(
                 optimizer2, step_size=1, gamma=0.5
             )
-            trainer2 = DiffusionTrainer(
-                model=model2,
-                dataloader=dataloader,
-                optimizer=optimizer2,
-                logger=logger,
-                device="cpu",
-                show_progress=False,
-                use_ema=False,
-                scheduler=scheduler2,
-                log_images_interval=None,
-                log_denoising_interval=None,
-            )
+            trainer2.scheduler = scheduler2
 
             trainer2.load_checkpoint(checkpoint_path)
             # Scheduler state should be restored
@@ -1108,19 +1100,21 @@ class TestDiffusionTrainerTensorBoardGraph:
     """Test TensorBoard model graph logging."""
 
     def test_tensorboard_graph_logging(self):
-        """Mock tb_writer with log_graph=True."""
+        """Mock tb_writer with log_graph=True.
+
+        Note: This test manually constructs the trainer because tb_writer must
+        be set on the logger *before* DiffusionTrainer.__init__ runs (which is
+        where graph logging happens).
+        """
         from unittest.mock import MagicMock
 
         model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
         dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
+            num_train_samples=8, num_val_samples=0, batch_size=4
         )
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         logger = SimpleDiffusionLogger()
 
-        # Mock tb_writer on the logger
         mock_tb_writer = MagicMock()
         logger.tb_writer = mock_tb_writer  # type: ignore[attr-defined]
 
@@ -1437,11 +1431,8 @@ def test_load_checkpoint_corrupt_file(diffusion_trainer):
         corrupt_path = Path(f.name)
 
     try:
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises((RuntimeError, IndexError)):
             diffusion_trainer.load_checkpoint(corrupt_path)
-        assert not isinstance(exc_info.value, NameError), (
-            "Expected original error, not NameError from undefined variable"
-        )
     finally:
         corrupt_path.unlink(missing_ok=True)
 
@@ -1918,29 +1909,8 @@ class TestDiffusionTrainerGradientClipping:
 
     def test_gradient_clipping_non_amp(self):
         """Gradient clipping works in non-AMP training path."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=0,
-            batch_size=4,
-            return_labels=True,
-            num_classes=2,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            use_amp=False,
+        trainer, *_ = _make_diffusion_trainer(
             gradient_clip_norm=0.001,  # Very small to trigger clipping warning
-            log_images_interval=None,
-            log_denoising_interval=None,
         )
 
         metrics = trainer.train_epoch()
@@ -1953,27 +1923,8 @@ class TestDiffusionTrainerTrainMethod:
 
     def test_train_with_config_logs_hyperparams(self):
         """train() logs hyperparams when config is set."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
+        trainer, *_ = _make_diffusion_trainer(
             num_val_samples=4,
-            batch_size=4,
-            return_labels=True,
-            num_classes=2,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            log_images_interval=None,
-            log_denoising_interval=None,
             config={"training": {"epochs": 1}},
         )
 
@@ -1990,32 +1941,11 @@ class TestDiffusionTrainerTrainMethod:
 
     def test_train_with_plateau_scheduler(self):
         """train() with ReduceLROnPlateau scheduler."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
-            num_val_samples=4,
-            batch_size=4,
-            return_labels=True,
-            num_classes=2,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        trainer, _, _, optimizer, _ = _make_diffusion_trainer(num_val_samples=4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.1, patience=0
         )
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            scheduler=scheduler,
-            log_images_interval=None,
-            log_denoising_interval=None,
-        )
+        trainer.scheduler = scheduler
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer.train(
@@ -2033,27 +1963,8 @@ class TestDiffusionTrainerResumeTraining:
 
     def test_resume_training_basic(self):
         """resume_training loads checkpoint and continues."""
-        model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-        dataloader = SimpleDiffusionDataLoader(
-            num_train_samples=8,
+        trainer, *_ = _make_diffusion_trainer(
             num_val_samples=4,
-            batch_size=4,
-            return_labels=True,
-            num_classes=2,
-        )
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        logger = SimpleDiffusionLogger()
-
-        trainer = DiffusionTrainer(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            logger=logger,
-            device="cpu",
-            show_progress=False,
-            use_ema=False,
-            log_images_interval=None,
-            log_denoising_interval=None,
             config={"training": {"epochs": 2}},
         )
 
@@ -2064,18 +1975,8 @@ class TestDiffusionTrainerResumeTraining:
             assert ckpt_path.exists()
 
             # Create new trainer and resume
-            model2 = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
-            optimizer2 = torch.optim.Adam(model2.parameters(), lr=0.001)
-            trainer2 = DiffusionTrainer(
-                model=model2,
-                dataloader=dataloader,
-                optimizer=optimizer2,
-                logger=logger,
-                device="cpu",
-                show_progress=False,
-                use_ema=False,
-                log_images_interval=None,
-                log_denoising_interval=None,
+            trainer2, *_ = _make_diffusion_trainer(
+                num_val_samples=4,
                 config={"training": {"epochs": 2}},
             )
 

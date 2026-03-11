@@ -1090,6 +1090,9 @@ class TestConfigFileValidation:
 
         # Check generation configuration (V2)
         assert "generation" in config
+        assert "checkpoint" in config["generation"]
+        assert "sampling" in config["generation"]
+        assert "use_ema" in config["generation"]["sampling"]
 
 
 @pytest.mark.unit
