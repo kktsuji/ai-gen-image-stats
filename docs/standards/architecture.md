@@ -92,17 +92,6 @@ ai-gen-image-stats/
 │   │   ├── notification.py              # Slack webhook notifications
 │   │   └── tensorboard.py               # TensorBoard utility functions (optional)
 │   │
-│   ├── deprecated/                      # Old code being phased out
-│   │   ├── ddpm_train.py
-│   │   ├── ddpm.py
-│   │   ├── inception_v3.py
-│   │   ├── resnet.py
-│   │   ├── train.py
-│   │   ├── analyze_comparison.py
-│   │   ├── stats.py
-│   │   ├── util.py
-│   │   └── ...                          # Other deprecated files
-│   │
 │   └── data/
 │       ├── __init__.py
 │       ├── balancing.py                 # Dataset balancing (downsample/upsample)
@@ -1030,7 +1019,7 @@ output:
 
 ### Migration Status
 
-Old code from `src/deprecated/` has been successfully refactored:
+All legacy code has been fully migrated and the old `src/deprecated/` directory has been removed:
 
 - ✓ `ddpm_train.py` → `src/experiments/diffusion/trainer.py`
 - ✓ `ddpm.py` → `src/experiments/diffusion/model.py`
@@ -1039,8 +1028,6 @@ Old code from `src/deprecated/` has been successfully refactored:
 - ✓ `analyze_comparison.py` → `src/experiments/classifier/analyze_comparison.py`
 - ✓ `stats.py` → `src/utils/metrics.py`
 - ✓ `util.py` → `src/utils/` (split by concern)
-
-The `src/deprecated/` directory is maintained for reference but is no longer used in the active codebase.
 
 ### Pre-trained Model Weights
 
