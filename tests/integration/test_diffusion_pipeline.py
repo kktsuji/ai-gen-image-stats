@@ -65,6 +65,7 @@ def _create_split_json(data_dir, split_json_path, include_val=True):
 class TestDiffusionPipelineBasic:
     """Test basic diffusion pipeline with minimal configuration."""
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_full_pipeline_unconditional(self, tmp_path, mock_dataset_medium):
@@ -636,6 +637,7 @@ class TestDiffusionPipelineCheckpoints:
 class TestDiffusionPipelineGeneration:
     """Test generation mode functionality."""
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_generation_mode_unconditional(self, tmp_path, mock_dataset_medium):
@@ -957,6 +959,149 @@ class TestDiffusionPipelineGeneration:
         )
 
         logger_gen.close()
+
+    @pytest.mark.smoke
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_standalone_generation_from_saved_checkpoint(
+        self, tmp_path, mock_dataset_medium
+    ):
+        """Test standalone generation from a saved checkpoint with EMA.
+
+        Tests:
+        - Train unconditional model with EMA for 1 epoch
+        - Save checkpoint with EMA state
+        - In separate scope: create fresh model, load checkpoint
+        - Create DiffusionSampler directly (no trainer needed)
+        - Generate samples with use_ema=True
+        - Generate samples with use_ema=False
+        - Verify output shapes for both
+        """
+        from src.experiments.diffusion.model import EMA
+        from src.experiments.diffusion.sampler import DiffusionSampler
+
+        split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        log_dir = tmp_path / "logs"
+
+        # Model config
+        model_config = {
+            "image_size": 32,
+            "in_channels": 3,
+            "model_channels": 32,
+            "channel_multipliers": [1, 2],
+            "num_classes": None,
+            "num_timesteps": 100,
+            "beta_schedule": "cosine",
+            "use_attention": [False, True],
+        }
+
+        # --- Phase 1: Train and save checkpoint with EMA ---
+        model = create_ddpm(
+            image_size=model_config["image_size"],
+            in_channels=model_config["in_channels"],
+            model_channels=model_config["model_channels"],
+            channel_multipliers=tuple(model_config["channel_multipliers"]),
+            num_classes=model_config["num_classes"],
+            num_timesteps=model_config["num_timesteps"],
+            beta_schedule=model_config["beta_schedule"],
+            use_attention=tuple(model_config["use_attention"]),
+            device=TEST_DEVICE,
+        )
+
+        dataloader = DiffusionDataLoader(
+            split_file=str(split_file),
+            batch_size=4,
+            num_workers=0,
+            image_size=32,
+            return_labels=False,
+        )
+
+        logger = DiffusionLogger(log_dir=str(log_dir))
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+
+        trainer = DiffusionTrainer(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            logger=logger,
+            device=TEST_DEVICE,
+            use_ema=True,
+            ema_decay=0.9999,
+        )
+
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_frequency=1,
+        )
+        logger.close()
+
+        # Find checkpoint
+        checkpoint_files = list(checkpoint_dir.glob("*.pth"))
+        assert len(checkpoint_files) > 0, "No checkpoint saved"
+        checkpoint_path = checkpoint_files[0]
+
+        # Verify checkpoint contains EMA state
+        checkpoint = torch.load(checkpoint_path, map_location=TEST_DEVICE)
+        assert "model_state_dict" in checkpoint, "Missing model_state_dict"
+        assert "ema_state_dict" in checkpoint, "Missing ema_state_dict in checkpoint"
+
+        # --- Phase 2: Standalone generation from checkpoint ---
+        # Create fresh model (simulating production inference)
+        model_gen = create_ddpm(
+            image_size=model_config["image_size"],
+            in_channels=model_config["in_channels"],
+            model_channels=model_config["model_channels"],
+            channel_multipliers=tuple(model_config["channel_multipliers"]),
+            num_classes=model_config["num_classes"],
+            num_timesteps=model_config["num_timesteps"],
+            beta_schedule=model_config["beta_schedule"],
+            use_attention=tuple(model_config["use_attention"]),
+            device=TEST_DEVICE,
+        )
+
+        # Load model weights
+        model_gen.load_state_dict(checkpoint["model_state_dict"])
+
+        # Restore EMA
+        ema = EMA(model_gen, decay=0.9999, device=TEST_DEVICE)
+        ema.load_state_dict(checkpoint["ema_state_dict"])
+
+        # Create standalone sampler
+        sampler = DiffusionSampler(model=model_gen, device=TEST_DEVICE, ema=ema)
+
+        expected_shape = (
+            model_config["in_channels"],
+            model_config["image_size"],
+            model_config["image_size"],
+        )
+
+        # Generate with EMA weights
+        num_samples = 4
+        samples_ema = sampler.sample(
+            num_samples=num_samples,
+            class_labels=None,
+            guidance_scale=0.0,
+            use_ema=True,
+        )
+        assert samples_ema.shape[0] == num_samples
+        assert samples_ema.shape[1:] == expected_shape, (
+            f"EMA sample shape mismatch: {samples_ema.shape[1:]} != {expected_shape}"
+        )
+
+        # Generate without EMA weights
+        samples_no_ema = sampler.sample(
+            num_samples=num_samples,
+            class_labels=None,
+            guidance_scale=0.0,
+            use_ema=False,
+        )
+        assert samples_no_ema.shape[0] == num_samples
+        assert samples_no_ema.shape[1:] == expected_shape, (
+            f"Non-EMA sample shape mismatch: {samples_no_ema.shape[1:]} != {expected_shape}"
+        )
 
 
 class TestDiffusionPipelineAdvanced:

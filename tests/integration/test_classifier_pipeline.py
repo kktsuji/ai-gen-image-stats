@@ -162,6 +162,7 @@ class TestClassifierPipelineBasic:
             # Should have header + at least 2 epoch entries
             assert len(lines) >= 3
 
+    @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.slow
     def test_full_pipeline_inceptionv3(self, tmp_path, mock_dataset_medium):
