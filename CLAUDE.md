@@ -117,14 +117,8 @@ Optional Slack notifications on experiment completion/failure via `SLACK_WEBHOOK
 After modifying any project files, always run the following checks in order and fix any errors before finishing:
 
 1. **Update tests** — If you modify files under `src/`, update or add corresponding tests under `tests/` for the code you changed.
-2. **Pre-commit hooks** — Verify all Husky pre-commit hooks pass:
+2. **Pre-commit hooks** — Verify all Husky pre-commit hooks pass by running the same script Git uses:
    ```bash
-   ruff check .
-   ruff format --check .
-   pyright
-   npx --no-install prettier --check "**/*.md"
-   ```
-3. **Run tests** — Ensure all non-smoke tests pass:
-   ```bash
-   pytest -m "not smoke"
-   ```
+   bash .husky/pre-commit
+   # or, if available:
+   npm run lint
