@@ -21,5 +21,4 @@ indent-style = "space"
 [tool.pyright]
 pythonVersion = "3.11"
 include = ["src", "tests"]
-exclude = ["src/deprecated"]
 typeCheckingMode = "basic"
