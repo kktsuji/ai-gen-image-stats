@@ -114,7 +114,7 @@ Optional Slack notifications on experiment completion/failure via `SLACK_WEBHOOK
 
 ## Post-Modification Checklist
 
-When modifying source code (`src/`), always update or add related tests (`src/tests/`) to cover the changes.
+When modifying source code (`src/`), always update or add related tests (`tests/`) to cover the changes.
 
 After modifying any project files, always run the following checks in order and fix any errors before finishing:
 
