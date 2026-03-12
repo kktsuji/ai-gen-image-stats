@@ -419,7 +419,7 @@ class TestCheckpointSaveLoad:
         trainer.save_checkpoint(checkpoint_path, epoch=10, metrics=metrics)
 
         # Load and verify
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert checkpoint["epoch"] == 10
         assert checkpoint["metrics"] == metrics
 
@@ -890,3 +890,167 @@ class TestTrainerLogging:
 
         # Reset to default
         root_logger.setLevel(original_level)
+
+
+@pytest.mark.unit
+class TestLoadCheckpointErrorPaths:
+    """Test error handling paths in load_checkpoint."""
+
+    def test_load_checkpoint_corrupt_file(self, tmp_path):
+        """Save garbage bytes to a .pth file, try to load -> RuntimeError."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader()
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        corrupt_path = tmp_path / "corrupt.pth"
+        corrupt_path.write_bytes(b"this is not a valid checkpoint file")
+
+        with pytest.raises((RuntimeError, EOFError, IndexError)):
+            trainer.load_checkpoint(corrupt_path)
+
+    def test_load_checkpoint_model_mismatch_strict(self, tmp_path):
+        """Save checkpoint from model with different architecture, load with strict=True -> error."""
+        # Save checkpoint from a model with different dimensions
+        model1 = SimpleTestModel(input_dim=10, output_dim=2)
+        dataloader = SimpleTestDataLoader()
+        optimizer1 = torch.optim.Adam(model1.parameters())
+        logger = SimpleTestLogger()
+
+        trainer1 = MinimalValidTrainer(model1, dataloader, optimizer1, logger)
+        checkpoint_path = tmp_path / "mismatch.pth"
+        trainer1.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Create trainer with different model architecture
+        model2 = SimpleTestModel(input_dim=20, output_dim=5)
+        optimizer2 = torch.optim.Adam(model2.parameters())
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer2, logger)
+
+        with pytest.raises(RuntimeError):
+            trainer2.load_checkpoint(checkpoint_path, strict=True)
+
+    def test_load_checkpoint_model_mismatch_non_strict(self, tmp_path):
+        """Save checkpoint from model with different architecture, load with strict=False -> warning."""
+        model1 = SimpleTestModel(input_dim=10, output_dim=2)
+        dataloader = SimpleTestDataLoader()
+        optimizer1 = torch.optim.Adam(model1.parameters())
+        logger = SimpleTestLogger()
+
+        trainer1 = MinimalValidTrainer(model1, dataloader, optimizer1, logger)
+        checkpoint_path = tmp_path / "mismatch.pth"
+        trainer1.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Create trainer with different model architecture
+        model2 = SimpleTestModel(input_dim=20, output_dim=5)
+        optimizer2 = torch.optim.Adam(model2.parameters())
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer2, logger)
+
+        # Should not raise with strict=False, just warn and continue
+        checkpoint_info = trainer2.load_checkpoint(checkpoint_path, strict=False)
+        assert checkpoint_info["epoch"] == 1
+
+    def test_load_checkpoint_optimizer_load_failure(self, tmp_path):
+        """Save valid checkpoint, mock optimizer.load_state_dict to raise -> warning, continues."""
+        from unittest.mock import patch
+
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader()
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_path = tmp_path / "checkpoint.pth"
+        trainer.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Create new trainer and mock optimizer.load_state_dict to fail
+        model2 = SimpleTestModel()
+        optimizer2 = torch.optim.Adam(model2.parameters())
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer2, logger)
+
+        with patch.object(
+            optimizer2, "load_state_dict", side_effect=RuntimeError("bad state")
+        ) as mock_load_state_dict:
+            # Should not raise, just warn and continue
+            checkpoint_info = trainer2.load_checkpoint(checkpoint_path)
+            assert checkpoint_info["epoch"] == 1
+            mock_load_state_dict.assert_called_once()
+
+
+@pytest.mark.component
+class TestTrainEdgeCases:
+    """Test edge cases in the train method."""
+
+    def test_train_no_checkpoint_dir(self):
+        """train with checkpoint_dir=None, no file operations."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        # Should not raise
+        trainer.train(num_epochs=1, checkpoint_dir=None, validate_frequency=0)
+        assert trainer.current_epoch == 1
+
+    def test_train_best_metric_not_in_results(self, tmp_path):
+        """best_metric='nonexistent_key', save_best=True -> no crash, no best model saved."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_dir = tmp_path / "checkpoints"
+
+        trainer.train(
+            num_epochs=2,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_best=True,
+            best_metric="nonexistent_key",
+            best_metric_mode="min",
+        )
+
+        # Should complete without error but no best model saved
+        assert trainer.current_epoch == 2
+        assert not (checkpoint_dir / "best_model.pth").exists()
+
+
+@pytest.mark.component
+class TestResumeTrainingCoverage:
+    """Test resume_training paths for coverage."""
+
+    def test_resume_training_saves_best_model(self, tmp_path):
+        """resume_training with save_best=True, verify best_model.pth is saved."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, num_val_samples=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_path = tmp_path / "initial.pth"
+        checkpoint_dir = tmp_path / "resumed"
+
+        # Save checkpoint without training (so _best_metric stays None)
+        trainer.save_checkpoint(checkpoint_path, epoch=0)
+
+        # Resume training with save_best
+        model2 = SimpleTestModel()
+        optimizer2 = torch.optim.Adam(model2.parameters())
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer2, logger)
+
+        trainer2.resume_training(
+            checkpoint_path=checkpoint_path,
+            num_epochs=2,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_frequency=1,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="val_loss",
+            best_metric_mode="min",
+        )
+
+        # best_model.pth should be saved (first epoch is always "best" when _best_metric is None)
+        assert (checkpoint_dir / "best_model.pth").exists()
+        assert trainer2.current_epoch == 2  # 0 (from checkpoint) + 2 (resumed)

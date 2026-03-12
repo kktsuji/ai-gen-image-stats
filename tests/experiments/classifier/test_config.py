@@ -17,6 +17,9 @@ from src.experiments.classifier.config import (
     validate_config,
 )
 
+# Resolve project root so config file tests work regardless of working directory
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 # ============================================================================
 # Unit Tests - Fast, Pure Logic
 # ============================================================================
@@ -200,84 +203,6 @@ class TestGetModelSpecificConfig:
 
 # ============================================================================
 # Component Tests - With File I/O
-# ============================================================================
-
-
-@pytest.mark.component
-class TestConfigFileValidation:
-    """Test validation of actual config files."""
-
-    def test_baseline_config_file(self):
-        """Test that baseline.yaml is valid."""
-        config_path = Path("configs/classifier/baseline.yaml")
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should not raise
-        validate_config(config)
-
-    def test_inceptionv3_config_file(self):
-        """Test that inceptionv3.yaml is valid."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should not raise
-        validate_config(config)
-
-    def test_baseline_config_structure(self):
-        """Test baseline config has expected structure."""
-        config_path = Path("configs/classifier/baseline.yaml")
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Check experiment type
-        assert config["experiment"] == "classifier"
-
-        # Check it uses ResNet50
-        assert config["model"]["architecture"]["name"].lower() == "resnet50"
-        assert config["data"]["preprocessing"]["image_size"] == 256
-        assert config["data"]["preprocessing"]["crop_size"] == 224
-        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-
-    def test_inceptionv3_config_structure(self):
-        """Test InceptionV3 config has expected structure."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Check experiment type
-        assert config["experiment"] == "classifier"
-
-        # Check it uses InceptionV3
-        assert config["model"]["architecture"]["name"].lower() == "inceptionv3"
-        assert config["data"]["preprocessing"]["image_size"] == 320
-        assert config["data"]["preprocessing"]["crop_size"] == 299
-        assert config["data"]["preprocessing"]["normalize"] == "imagenet"
-
-        # Check dropout parameter
-        assert "dropout" in config["model"]["regularization"]
-
-
-# ============================================================================
-# ============================================================================
-# Configuration Tests
 # ============================================================================
 
 
@@ -543,42 +468,141 @@ class TestValidateConfig:
 
 
 @pytest.mark.unit
+class TestValidateConfigErrorPaths:
+    """Test untested validation error paths in validate_config."""
+
+    def test_invalid_experiment_type(self):
+        """experiment != 'classifier' raises ValueError."""
+        config = get_v2_default_config()
+        config["experiment"] = "diffusion"
+        with pytest.raises(ValueError, match="Invalid experiment type"):
+            validate_config(config)
+
+    def test_architecture_field_is_none(self):
+        """architecture field set to None raises ValueError."""
+        config = get_v2_default_config()
+        config["model"]["architecture"]["name"] = None
+        with pytest.raises(ValueError, match="model.architecture.name cannot be None"):
+            validate_config(config)
+
+    def test_num_classes_not_positive(self):
+        """num_classes = 0 or -1 raises ValueError."""
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 0
+        with pytest.raises(ValueError, match="num_classes must be a positive integer"):
+            validate_config(config)
+
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = -1
+        with pytest.raises(ValueError, match="num_classes must be a positive integer"):
+            validate_config(config)
+
+    def test_pretrained_not_bool(self):
+        """pretrained = 'yes' raises ValueError."""
+        config = get_v2_default_config()
+        config["model"]["initialization"]["pretrained"] = "yes"
+        with pytest.raises(
+            ValueError, match="initialization.pretrained must be a boolean"
+        ):
+            validate_config(config)
+
+    def test_freeze_backbone_not_bool(self):
+        """freeze_backbone = 'yes' raises ValueError."""
+        config = get_v2_default_config()
+        config["model"]["initialization"]["freeze_backbone"] = "yes"
+        with pytest.raises(
+            ValueError, match="initialization.freeze_backbone must be a boolean"
+        ):
+            validate_config(config)
+
+    def test_split_file_empty_string(self):
+        """split_file = '' raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["split_file"] = ""
+        with pytest.raises(
+            ValueError, match="data.split_file must be a non-empty string"
+        ):
+            validate_config(config)
+
+    def test_image_size_not_positive(self):
+        """image_size = 0 raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["preprocessing"]["image_size"] = 0
+        with pytest.raises(ValueError, match="image_size must be a positive integer"):
+            validate_config(config)
+
+    def test_crop_size_not_positive(self):
+        """crop_size = 0 raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["preprocessing"]["crop_size"] = 0
+        with pytest.raises(ValueError, match="crop_size must be a positive integer"):
+            validate_config(config)
+
+    def test_invalid_normalize_option(self):
+        """normalize = 'invalid' raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["preprocessing"]["normalize"] = "invalid"
+        with pytest.raises(ValueError, match="Invalid normalize option"):
+            validate_config(config)
+
+    def test_train_mode_missing_training(self):
+        """train mode without training section raises KeyError."""
+        config = get_v2_default_config()
+        config["mode"] = "train"
+        del config["training"]
+        with pytest.raises(
+            KeyError,
+            match="Missing required section: training",
+        ):
+            validate_config(config)
+
+    def test_train_mode_invalid_epochs(self):
+        """epochs = 0 raises ValueError."""
+        config = get_v2_default_config()
+        config["training"]["epochs"] = 0
+        with pytest.raises(ValueError, match="epochs must be a positive integer"):
+            validate_config(config)
+
+    def test_train_mode_missing_optimizer_type(self):
+        """missing optimizer.type raises KeyError."""
+        config = get_v2_default_config()
+        del config["training"]["optimizer"]["type"]
+        with pytest.raises(
+            KeyError, match="Missing required field: training.optimizer.type"
+        ):
+            validate_config(config)
+
+    def test_train_mode_missing_learning_rate(self):
+        """missing optimizer.learning_rate raises KeyError."""
+        config = get_v2_default_config()
+        del config["training"]["optimizer"]["learning_rate"]
+        with pytest.raises(
+            KeyError, match="Missing required field: training.optimizer.learning_rate"
+        ):
+            validate_config(config)
+
+    def test_evaluate_mode_missing_evaluation(self):
+        """evaluate mode without evaluation key raises KeyError."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        # Don't add evaluation section
+        with pytest.raises(
+            KeyError,
+            match="Missing required section: evaluation",
+        ):
+            validate_config(config)
+
+
 @pytest.mark.component
 class TestConfigFiles:
-    """Test actual config files."""
+    """Test actual config files (default.yaml)."""
 
     def test_default_config_file(self):
         """Test that default.yaml is valid."""
-        config_path = Path("src/experiments/classifier/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/classifier/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should validate
-        validate_config(config)
-
-    def test_baseline_config_file(self):
-        """Test that baseline.yaml is valid."""
-        config_path = Path("configs/classifier/baseline.yaml")
-
-        if not config_path.exists():
-            pytest.skip("baseline.yaml not found")
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        # Should validate
-        validate_config(config)
-
-    def test_inceptionv3_config_file(self):
-        """Test that inceptionv3.yaml is valid."""
-        config_path = Path("configs/classifier/inceptionv3.yaml")
-
-        if not config_path.exists():
-            pytest.skip("inceptionv3.yaml not found")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

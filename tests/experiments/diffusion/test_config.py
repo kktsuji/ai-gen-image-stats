@@ -17,6 +17,8 @@ from src.experiments.diffusion.config import (
     validate_config,
 )
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 # ============================================================================
 # Unit Tests - Fast, Pure Logic
 # ============================================================================
@@ -518,12 +520,6 @@ class TestValidateConfig:
             ValueError, match="rotation_degrees must be a non-negative number"
         ):
             validate_config(config)
-
-    def test_image_size_mismatch(self):
-        """Test NOT APPLICABLE for V2 - image_size derived from model."""
-        # In V2, image_size is only in model.architecture and derived for data
-        # This test is no longer relevant
-        pass
 
     def test_conditional_requires_labels(self):
         """Test validation for conditional generation (V2)."""
@@ -1055,7 +1051,7 @@ class TestConfigFileValidation:
 
     def test_default_config_file(self):
         """Test that default.yaml is valid."""
-        config_path = Path("src/experiments/diffusion/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
@@ -1068,7 +1064,7 @@ class TestConfigFileValidation:
 
     def test_default_config_structure(self):
         """Test default config has expected structure (V2)."""
-        config_path = Path("src/experiments/diffusion/default.yaml")
+        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
 
         if not config_path.exists():
             pytest.skip("default.yaml not found")
@@ -1099,6 +1095,195 @@ class TestConfigFileValidation:
         assert "checkpoint" in config["generation"]
         assert "sampling" in config["generation"]
         assert "use_ema" in config["generation"]["sampling"]
+
+
+@pytest.mark.unit
+class TestValidateConfigErrorPaths:
+    """Test untested validation error paths in diffusion validate_config."""
+
+    def test_architecture_field_none(self):
+        """architecture field set to None raises ValueError."""
+        config = get_default_config()
+        config["model"]["architecture"]["image_size"] = None
+        with pytest.raises(
+            ValueError, match="model.architecture.image_size cannot be None"
+        ):
+            validate_config(config)
+
+    def test_diffusion_section_missing(self):
+        """No model.diffusion raises KeyError."""
+        config = get_default_config()
+        del config["model"]["diffusion"]
+        with pytest.raises(
+            KeyError, match="Missing required config key: model.diffusion"
+        ):
+            validate_config(config)
+
+    def test_diffusion_field_none(self):
+        """diffusion field set to None raises ValueError."""
+        config = get_default_config()
+        config["model"]["diffusion"]["num_timesteps"] = None
+        with pytest.raises(
+            ValueError, match="model.diffusion.num_timesteps cannot be None"
+        ):
+            validate_config(config)
+
+    def test_conditioning_section_missing(self):
+        """No model.conditioning raises KeyError."""
+        config = get_default_config()
+        del config["model"]["conditioning"]
+        with pytest.raises(
+            KeyError, match="Missing required config key: model.conditioning"
+        ):
+            validate_config(config)
+
+    def test_conditioning_field_missing(self):
+        """Missing required conditioning field raises KeyError."""
+        config = get_default_config()
+        del config["model"]["conditioning"]["type"]
+        with pytest.raises(
+            KeyError, match="Missing required field: model.conditioning.type"
+        ):
+            validate_config(config)
+
+    def test_invalid_conditioning_type(self):
+        """conditioning.type = 'vae' raises ValueError."""
+        config = get_default_config()
+        config["model"]["conditioning"]["type"] = "vae"
+        with pytest.raises(ValueError, match="Invalid conditioning.type"):
+            validate_config(config)
+
+    def test_data_section_missing(self):
+        """No data key raises KeyError."""
+        config = get_default_config()
+        del config["data"]
+        with pytest.raises(KeyError, match="Missing required config key: data"):
+            validate_config(config)
+
+    def test_split_file_empty(self):
+        """split_file = '' raises ValueError."""
+        config = get_default_config()
+        config["data"]["split_file"] = ""
+        with pytest.raises(
+            ValueError, match="data.split_file must be a non-empty string"
+        ):
+            validate_config(config)
+
+    def test_augmentation_missing(self):
+        """No data.augmentation raises KeyError."""
+        config = get_default_config()
+        del config["data"]["augmentation"]
+        with pytest.raises(
+            KeyError, match="Missing required config key: data.augmentation"
+        ):
+            validate_config(config)
+
+    def test_ema_enabled_missing_decay(self):
+        """ema.enabled: true without decay raises ValueError."""
+        config = get_default_config()
+        config["training"]["ema"]["enabled"] = True
+        del config["training"]["ema"]["decay"]
+        with pytest.raises(
+            ValueError, match="training.ema.decay is required when EMA is enabled"
+        ):
+            validate_config(config)
+
+    def test_ema_decay_out_of_range_zero(self):
+        """ema.decay: 0 raises ValueError."""
+        config = get_default_config()
+        config["training"]["ema"]["enabled"] = True
+        config["training"]["ema"]["decay"] = 0
+        with pytest.raises(
+            ValueError, match="training.ema.decay must be a number between 0 and 1"
+        ):
+            validate_config(config)
+
+    def test_ema_decay_out_of_range_one(self):
+        """ema.decay: 1.0 raises ValueError."""
+        config = get_default_config()
+        config["training"]["ema"]["enabled"] = True
+        config["training"]["ema"]["decay"] = 1.0
+        with pytest.raises(
+            ValueError, match="training.ema.decay must be a number between 0 and 1"
+        ):
+            validate_config(config)
+
+    def test_resume_enabled_without_checkpoint(self):
+        """resume.enabled: true, checkpoint: null raises ValueError."""
+        config = get_default_config()
+        config["training"]["resume"] = {"enabled": True, "checkpoint": None}
+        with pytest.raises(
+            ValueError,
+            match="training.resume.checkpoint is required when resume is enabled",
+        ):
+            validate_config(config)
+
+    def test_performance_field_not_bool(self):
+        """use_amp: 'yes' raises ValueError."""
+        config = get_default_config()
+        config["training"]["performance"]["use_amp"] = "yes"
+        with pytest.raises(ValueError, match="use_amp must be a boolean"):
+            validate_config(config)
+
+    def test_visualization_invalid_interval(self):
+        """log_images_interval: -1 raises ValueError."""
+        config = get_default_config()
+        config["training"]["visualization"]["log_images_interval"] = -1
+        with pytest.raises(
+            ValueError, match="interval must be.*positive integer or null"
+        ):
+            validate_config(config)
+
+    def test_diffusion_field_missing(self):
+        """Missing required diffusion field raises KeyError."""
+        config = get_default_config()
+        del config["model"]["diffusion"]["num_timesteps"]
+        with pytest.raises(
+            KeyError, match="Missing required field: model.diffusion.num_timesteps"
+        ):
+            validate_config(config)
+
+    def test_architecture_field_missing(self):
+        """Missing required architecture field raises KeyError."""
+        config = get_default_config()
+        del config["model"]["architecture"]["image_size"]
+        with pytest.raises(
+            KeyError, match="Missing required field: model.architecture.image_size"
+        ):
+            validate_config(config)
+
+    def test_generation_output_grid_nrow_invalid(self):
+        """generation.output.grid_nrow = 0 raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["output"]["grid_nrow"] = 0
+        with pytest.raises(
+            ValueError, match="generation.output.grid_nrow must be a positive integer"
+        ):
+            validate_config(config)
+
+    def test_generation_output_save_individual_not_bool(self):
+        """generation.output.save_individual = 'yes' raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["output"]["save_individual"] = "yes"
+        with pytest.raises(
+            ValueError, match="generation.output.save_individual must be a boolean"
+        ):
+            validate_config(config)
+
+    def test_generation_output_save_grid_not_bool(self):
+        """generation.output.save_grid = 'yes' raises ValueError."""
+        config = get_default_config()
+        config["mode"] = "generate"
+        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config["generation"]["output"]["save_grid"] = "yes"
+        with pytest.raises(
+            ValueError, match="generation.output.save_grid must be a boolean"
+        ):
+            validate_config(config)
 
 
 # ============================================================================
