@@ -120,5 +120,9 @@ After modifying any project files, always run the following checks in order and 
 2. **Pre-commit hooks** — Verify all Husky pre-commit hooks pass by running the same script Git uses:
    ```bash
    bash .husky/pre-commit
-   # or, if available:
-   npm run lint
+   ```
+3. **Generate test fixtures & run tests** — Ensure all non-smoke tests pass:
+   ```bash
+   python tests/fixtures/mock_data/create_mock_images.py
+   pytest -m "not smoke"
+   ```
