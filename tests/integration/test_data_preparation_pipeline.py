@@ -96,7 +96,8 @@ class TestDataPreparationPipeline:
         # mock_dataset_medium has 10 images per class = 20 total
         assert total == 20, f"Expected 20 total samples, got {total}"
 
-        # Each class has 10 images, split at 0.8 → 8 train + 2 val per class
+        # Each class has 10 images, split at 0.8 → ~8 train + ~2 val per class
+        # prepare_split() uses floor-based splitting, so math.floor matches
         expected_train_per_class = math.floor(10 * train_ratio)
         expected_val_per_class = 10 - expected_train_per_class
         expected_train = expected_train_per_class * 2
@@ -153,4 +154,4 @@ class TestDataPreparationPipeline:
         images, labels = batch
         assert images.shape == (4, 3, 32, 32), f"Unexpected batch shape: {images.shape}"
         assert labels.shape == (4,), f"Unexpected labels shape: {labels.shape}"
-        assert labels.dtype == torch.long or labels.dtype == torch.int64
+        assert labels.dtype == torch.long

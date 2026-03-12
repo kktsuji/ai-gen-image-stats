@@ -17,7 +17,6 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -27,39 +26,13 @@ from torchvision.utils import save_image
 
 from src.experiments.diffusion.dataloader import DiffusionDataLoader
 from src.experiments.diffusion.logger import DiffusionLogger
-from src.experiments.diffusion.model import create_ddpm
+from src.experiments.diffusion.model import EMA, create_ddpm
+from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
+from tests.conftest import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
 TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-
-def _create_split_json(data_dir, split_json_path, include_val=True):
-    """Create a split JSON file from a directory structure."""
-    from pathlib import Path
-
-    entries = []
-    data_path = Path(data_dir)
-    for class_dir in sorted(data_path.iterdir()):
-        if class_dir.is_dir():
-            # Support directory names like '0.Normal' or plain '0'
-            label = int(class_dir.name.split(".")[0])
-            for img_file in sorted(class_dir.iterdir()):
-                if img_file.suffix in (".png", ".jpg", ".jpeg"):
-                    entries.append({"path": str(img_file), "label": label})
-
-    class_names = sorted(set(str(e["label"]) for e in entries))
-    classes = {name: int(name) for name in class_names}
-
-    split_data = {
-        "metadata": {"classes": classes},
-        "train": entries,
-        "val": entries if include_val else [],
-    }
-
-    split_json_path = Path(split_json_path)
-    split_json_path.write_text(json.dumps(split_data))
-    return str(split_json_path)
 
 
 class TestDiffusionPipelineBasic:
@@ -463,7 +436,7 @@ class TestDiffusionPipelineCheckpoints:
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0, "No checkpoint saved"
 
-        checkpoint_path = checkpoint_files[0]
+        checkpoint_path = sorted(checkpoint_files)[0]
 
         # Create new model and load checkpoint
         model_loaded = create_ddpm(
@@ -587,7 +560,7 @@ class TestDiffusionPipelineCheckpoints:
         # Find checkpoint
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0, "No checkpoint saved"
-        checkpoint_path = checkpoint_files[0]
+        checkpoint_path = sorted(checkpoint_files)[0]
 
         # Resume training
         model_resumed = create_ddpm(
@@ -734,7 +707,7 @@ class TestDiffusionPipelineGeneration:
         # Find checkpoint
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0, "No checkpoint saved"
-        checkpoint_path = checkpoint_files[0]
+        checkpoint_path = sorted(checkpoint_files)[0]
 
         # Load checkpoint for generation
         model_gen = create_ddpm(
@@ -893,7 +866,7 @@ class TestDiffusionPipelineGeneration:
         # Find checkpoint
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0, "No checkpoint saved"
-        checkpoint_path = checkpoint_files[0]
+        checkpoint_path = sorted(checkpoint_files)[0]
 
         # Load checkpoint for generation
         model_gen = create_ddpm(
@@ -977,9 +950,6 @@ class TestDiffusionPipelineGeneration:
         - Generate samples with use_ema=False
         - Verify output shapes for both
         """
-        from src.experiments.diffusion.model import EMA
-        from src.experiments.diffusion.sampler import DiffusionSampler
-
         split_file = _create_split_json(mock_dataset_medium, tmp_path / "split.json")
 
         checkpoint_dir = tmp_path / "checkpoints"
@@ -1041,7 +1011,7 @@ class TestDiffusionPipelineGeneration:
         # Find checkpoint
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0, "No checkpoint saved"
-        checkpoint_path = checkpoint_files[0]
+        checkpoint_path = sorted(checkpoint_files)[0]
 
         # Verify checkpoint contains EMA state
         checkpoint = torch.load(checkpoint_path, map_location=TEST_DEVICE)

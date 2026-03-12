@@ -15,7 +15,6 @@ Test Coverage:
 - Optimizer and scheduler setup
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -27,37 +26,10 @@ from src.experiments.classifier.logger import ClassifierLogger
 from src.experiments.classifier.models.inceptionv3 import InceptionV3Classifier
 from src.experiments.classifier.models.resnet import ResNetClassifier
 from src.experiments.classifier.trainer import ClassifierTrainer
+from tests.conftest import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
 TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-
-def _create_split_json(data_dir, split_json_path, include_val=True):
-    """Create a split JSON file from a directory structure."""
-    from pathlib import Path
-
-    entries = []
-    data_path = Path(data_dir)
-    for class_dir in sorted(data_path.iterdir()):
-        if class_dir.is_dir():
-            # Support directory names like '0.Normal' or plain '0'
-            label = int(class_dir.name.split(".")[0])
-            for img_file in sorted(class_dir.iterdir()):
-                if img_file.suffix in (".png", ".jpg", ".jpeg"):
-                    entries.append({"path": str(img_file), "label": label})
-
-    class_names = sorted(set(str(e["label"]) for e in entries))
-    classes = {name: int(name) for name in class_names}
-
-    split_data = {
-        "metadata": {"classes": classes},
-        "train": entries,
-        "val": entries if include_val else [],
-    }
-
-    split_json_path = Path(split_json_path)
-    split_json_path.write_text(json.dumps(split_data))
-    return str(split_json_path)
 
 
 class TestClassifierPipelineBasic:
@@ -295,7 +267,7 @@ class TestClassifierPipelineCheckpoints:
         # Load checkpoint into new model
         model2 = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
         model2.to(TEST_DEVICE)  # Move to device before loading
-        checkpoint = torch.load(checkpoint_files[0], map_location=TEST_DEVICE)
+        checkpoint = torch.load(sorted(checkpoint_files)[0], map_location=TEST_DEVICE)
 
         # Load state dict
         model2.load_state_dict(checkpoint["model_state_dict"])
@@ -353,7 +325,7 @@ class TestClassifierPipelineCheckpoints:
         # Get the checkpoint file
         checkpoint_files = list(checkpoint_dir.glob("*.pth"))
         assert len(checkpoint_files) > 0
-        checkpoint_file = checkpoint_files[0]
+        checkpoint_file = sorted(checkpoint_files)[0]
 
         # Load checkpoint
         checkpoint = torch.load(checkpoint_file, map_location=TEST_DEVICE)
