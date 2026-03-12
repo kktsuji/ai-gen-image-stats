@@ -114,15 +114,11 @@ Optional Slack notifications on experiment completion/failure via `SLACK_WEBHOOK
 
 ## Post-Modification Checklist
 
+When modifying source code (`src/`), always update or add related tests (`src/tests/`) to cover the changes.
+
 After modifying any project files, always run the following checks in order and fix any errors before finishing:
 
-1. **Update tests** — If you modify files under `src/`, update or add corresponding tests under `tests/` for the code you changed.
-2. **Pre-commit hooks** — Verify all Husky pre-commit hooks pass by running the same script Git uses:
-   ```bash
-   bash .husky/pre-commit
-   ```
-3. **Generate test fixtures & run tests** — Ensure all non-smoke tests pass:
-   ```bash
-   python tests/fixtures/mock_data/create_mock_images.py
-   pytest -m "not smoke"
-   ```
+1. `bash .husky/pre-commit` — **Pre-commit hooks**: Verify all Husky pre-commit hooks pass by running the same script Git uses.
+2. `python tests/fixtures/mock_data/create_mock_images.py` — **Generate test fixtures**: Run the script to create mock images needed for tests.
+3. `pytest --cov=src -m unit` — **Run unit tests & check coverage**: Run unit tests and confirm that overall test coverage remains above 80%.
+4. `pytest -m "component or integration"` — **Run component & integration tests**: Run remaining non-smoke tests.
