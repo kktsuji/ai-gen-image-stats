@@ -2,7 +2,7 @@
 set -e
 
 . "$(dirname -- "$0")/../venv/bin/activate"
-ruff check .
-ruff format --check .
-pyright
-npx --no-install prettier --check "**/*.md"
+ruff check .                                    # lint
+ruff format --check .                           # format check
+pyright                                         # type check
+npx --no-install prettier --check "**/*.md"     # markdown format check
