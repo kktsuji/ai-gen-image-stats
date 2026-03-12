@@ -5,4 +5,4 @@ set -e
 ruff check .                                    # lint
 ruff format --check .                           # format check
 pyright                                         # type check
-npx --no-install prettier --check "**/*.md"     # markdown format check
+npx --no-install prettier --check "**/*.md"     # Markdown format check
