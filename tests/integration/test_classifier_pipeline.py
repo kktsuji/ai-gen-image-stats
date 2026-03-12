@@ -827,11 +827,3 @@ class TestClassifierPipelineConfigDriven:
             assert (
                 len(lines) >= config["training"]["epochs"] + 1
             )  # header + at least one line per epoch
-
-        # Verify config file was saved to output directory
-        # (This would be done by main.py in production)
-        saved_config = log_dir / "config.yaml"
-        with open(saved_config, "w") as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-        assert saved_config.exists()
