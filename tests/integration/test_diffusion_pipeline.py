@@ -29,7 +29,7 @@ from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import EMA, create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
-from tests.conftest import create_split_json as _create_split_json
+from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
 TEST_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -1014,7 +1014,9 @@ class TestDiffusionPipelineGeneration:
         checkpoint_path = sorted(checkpoint_files)[0]
 
         # Verify checkpoint contains EMA state
-        checkpoint = torch.load(checkpoint_path, map_location=TEST_DEVICE)
+        checkpoint = torch.load(
+            checkpoint_path, map_location=TEST_DEVICE, weights_only=False
+        )
         assert "model_state_dict" in checkpoint, "Missing model_state_dict"
         assert "ema_state_dict" in checkpoint, "Missing ema_state_dict in checkpoint"
 

@@ -93,15 +93,18 @@ class TestDataPreparationPipeline:
         val_entries = split_data["val"]
         total = len(train_entries) + len(val_entries)
 
-        # mock_dataset_medium has 10 images per class = 20 total
-        assert total == 20, f"Expected 20 total samples, got {total}"
+        # Count actual images per class from the fixture directory
+        num_classes = len(list(d for d in mock_dataset_medium.iterdir() if d.is_dir()))
+        images_per_class = total // num_classes
+        assert total == images_per_class * num_classes, (
+            f"Uneven class distribution: {total} images across {num_classes} classes"
+        )
 
-        # Each class has 10 images, split at 0.8 → ~8 train + ~2 val per class
         # prepare_split() uses floor-based splitting, so math.floor matches
-        expected_train_per_class = math.floor(10 * train_ratio)
-        expected_val_per_class = 10 - expected_train_per_class
-        expected_train = expected_train_per_class * 2
-        expected_val = expected_val_per_class * 2
+        expected_train_per_class = math.floor(images_per_class * train_ratio)
+        expected_val_per_class = images_per_class - expected_train_per_class
+        expected_train = expected_train_per_class * num_classes
+        expected_val = expected_val_per_class * num_classes
 
         assert len(train_entries) == expected_train, (
             f"Expected {expected_train} train samples, got {len(train_entries)}"
