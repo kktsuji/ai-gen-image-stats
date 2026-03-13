@@ -181,9 +181,9 @@ class BaseModel(nn.Module, ABC):
 
         # Load checkpoint
         if device is not None:
-            checkpoint = torch.load(path, map_location=device)
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
         else:
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path, weights_only=True)
 
         # Load model state
         self.load_state_dict(checkpoint["model_state_dict"], strict=strict)

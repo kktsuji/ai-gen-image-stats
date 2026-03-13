@@ -1570,7 +1570,7 @@ def test_diffusion_trainer_plateau_scheduler_receives_metric():
 
 @pytest.mark.component
 def test_best_model_saved_with_validation_data():
-    """Test best_model.pth is saved when best_metric='loss' with validation data (Bug 2)."""
+    """Test best_model.pth is saved when best_metric='val_loss' with validation data (Bug 2)."""
     model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
     dataloader = SimpleDiffusionDataLoader(
         num_train_samples=16, num_val_samples=8, batch_size=4
@@ -1597,10 +1597,10 @@ def test_best_model_saved_with_validation_data():
             checkpoint_dir=tmpdir,
             validate_frequency=1,
             save_best=True,
-            best_metric="loss",
+            best_metric="val_loss",
         )
         assert (Path(tmpdir) / "best_model.pth").exists(), (
-            "best_model.pth should be created with best_metric='loss' and validation data"
+            "best_model.pth should be created with best_metric='val_loss' and validation data"
         )
 
 

@@ -6,6 +6,7 @@ including base classes and specific implementations like ImageFolder.
 """
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -14,6 +15,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import datasets
+
+_logger = logging.getLogger(__name__)
 
 
 class BaseDataset(Dataset, ABC):
@@ -410,12 +413,26 @@ class SplitFileDataset(BaseDataset):
         if allowed_root is not None:
             root = Path(allowed_root).resolve()
             for i, (path, _) in enumerate(self._samples):
-                resolved = Path(path).resolve()
+                # Reject absolute paths when allowed_root is set
+                if Path(path).is_absolute():
+                    raise ValueError(
+                        f"Absolute path not allowed: entry {i} path '{path}' "
+                        f"in '{split}' split. Use relative paths when "
+                        f"allowed_root is set."
+                    )
+                # Resolve relative paths against the allowed_root
+                resolved = (root / path).resolve()
                 if not resolved.is_relative_to(root):
                     raise ValueError(
                         f"Path traversal detected: entry {i} path '{path}' "
                         f"is outside allowed root '{root}'"
                     )
+        else:
+            _logger.warning(
+                "SplitFileDataset: allowed_root is not set. "
+                "Paths in the split file are not validated against a root directory. "
+                "Set allowed_root for production use."
+            )
 
         if len(self._samples) == 0:
             raise ValueError(f"No samples found in '{split}' split of {split_file}")

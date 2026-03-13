@@ -281,16 +281,43 @@ class ClassifierTrainer(BaseTrainer):
         if self.config:
             logger.log_hyperparams(self.config)
 
+        val_metrics = None
+
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
 
             # Training epoch
             train_metrics = self.train_epoch()
 
-            # Step the scheduler if provided
+            # Log training metrics
+            logger.log_metrics(
+                train_metrics, step=self._global_step, epoch=self._current_epoch
+            )
+
+            # Validation
+            val_metrics = None
+            if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
+                val_metrics = self.validate_epoch()
+                if val_metrics is not None:
+                    logger.log_metrics(
+                        val_metrics, step=self._global_step, epoch=self._current_epoch
+                    )
+
+            # Step the scheduler if provided (after validation for ReduceLROnPlateau)
             if self.scheduler is not None:
                 old_lr = self.optimizer.param_groups[0]["lr"]
-                self.scheduler.step()  # type: ignore[call-arg]
+                if isinstance(
+                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                ):
+                    # ReduceLROnPlateau needs a metric value
+                    metric_for_plateau = train_metrics.get("loss", 0.0)
+                    if val_metrics is not None:
+                        metric_for_plateau = val_metrics.get(
+                            "val_loss", metric_for_plateau
+                        )
+                    self.scheduler.step(metric_for_plateau)
+                else:
+                    self.scheduler.step()  # type: ignore[call-arg]
                 new_lr = self.optimizer.param_groups[0]["lr"]
 
                 # Warning for very low learning rate
@@ -307,26 +334,9 @@ class ClassifierTrainer(BaseTrainer):
                 else:
                     _logger.debug(f"Learning rate: {new_lr:.6e}")
 
-            # Log training metrics
-            logger.log_metrics(
-                train_metrics, step=self._global_step, epoch=self._current_epoch
-            )
-
-            # Validation
-            val_metrics = None
-            if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
-                val_metrics = self.validate_epoch()
-                if val_metrics is not None:
-                    logger.log_metrics(
-                        val_metrics, step=self._global_step, epoch=self._current_epoch
-                    )
-
-            # Determine current metric value for best model tracking
-            current_metric_value = None
-            if save_best:
-                # Try validation metrics first, then training metrics
-                metrics_to_check = val_metrics if val_metrics else train_metrics
-                current_metric_value = metrics_to_check.get(best_metric)
+            # Best model tracking: only update on epochs where validation ran (H2)
+            if save_best and val_metrics is not None:
+                current_metric_value = val_metrics.get(best_metric)
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(

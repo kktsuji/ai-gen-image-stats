@@ -1054,3 +1054,112 @@ class TestResumeTrainingCoverage:
         # best_model.pth should be saved (first epoch is always "best" when _best_metric is None)
         assert (checkpoint_dir / "best_model.pth").exists()
         assert trainer2.current_epoch == 2  # 0 (from checkpoint) + 2 (resumed)
+
+
+@pytest.mark.unit
+class TestNaNLossDetection:
+    """Test NaN/Inf loss detection during training (M1)."""
+
+    def test_nan_loss_raises_runtime_error(self, tmp_path):
+        """Training should stop with RuntimeError when loss is NaN."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        class NaNTrainer(MinimalValidTrainer):
+            def train_epoch(self):
+                self._global_step += 1
+                return {"loss": float("nan")}
+
+        trainer = NaNTrainer(model, dataloader, optimizer, logger)
+
+        with pytest.raises(RuntimeError, match="Training diverged"):
+            trainer.train(num_epochs=1, checkpoint_dir=None, validate_frequency=0)
+
+    def test_inf_loss_raises_runtime_error(self, tmp_path):
+        """Training should stop with RuntimeError when loss is Inf."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        class InfTrainer(MinimalValidTrainer):
+            def train_epoch(self):
+                self._global_step += 1
+                return {"loss": float("inf")}
+
+        trainer = InfTrainer(model, dataloader, optimizer, logger)
+
+        with pytest.raises(RuntimeError, match="Training diverged"):
+            trainer.train(num_epochs=1, checkpoint_dir=None, validate_frequency=0)
+
+
+@pytest.mark.unit
+class TestBestMetricModeValidation:
+    """Test early validation of best_metric_mode (M3)."""
+
+    def test_invalid_best_metric_mode_raises_early(self):
+        """Invalid best_metric_mode should raise ValueError at start of training."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+
+        with pytest.raises(ValueError, match="Invalid best_metric_mode"):
+            trainer.train(
+                num_epochs=1,
+                checkpoint_dir=None,
+                save_best=True,
+                best_metric_mode="invalid",
+            )
+
+    def test_valid_best_metric_modes_accepted(self):
+        """Valid best_metric_modes ('min', 'max') should be accepted."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, batch_size=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        for mode in ("min", "max"):
+            trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+            # Should not raise
+            trainer.train(
+                num_epochs=1,
+                checkpoint_dir=None,
+                validate_frequency=1,
+                save_best=True,
+                best_metric="val_loss",
+                best_metric_mode=mode,
+            )
+
+
+@pytest.mark.unit
+class TestBestMetricOnlyOnValidation:
+    """Test that best model is only updated when validation runs (H2)."""
+
+    def test_best_model_not_saved_without_validation(self, tmp_path):
+        """Best model should not be saved on non-validation epochs."""
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader(num_train_samples=8, num_val_samples=4)
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = TrainerWithMetrics(model, dataloader, optimizer, logger)
+        checkpoint_dir = tmp_path / "checkpoints"
+
+        # Train for 3 epochs, validate only every 3 epochs
+        trainer.train(
+            num_epochs=3,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_frequency=1,
+            validate_frequency=3,
+            save_best=True,
+            best_metric="val_loss",
+            best_metric_mode="min",
+        )
+
+        # best_model.pth should exist (validation runs at epoch 3)
+        assert (checkpoint_dir / "best_model.pth").exists()

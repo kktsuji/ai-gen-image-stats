@@ -639,16 +639,9 @@ class DiffusionTrainer(BaseTrainer):
                 _logger.info(f"Generating sample images at epoch {self._current_epoch}")
                 self._generate_samples(logger, self._global_step, epoch=epoch + 1)
 
-            # Determine current metric value for best model tracking
-            current_metric_value = None
-            if save_best:
-                # Try validation metrics first, then training metrics
-                metrics_to_check = val_metrics if val_metrics else train_metrics
-                current_metric_value = metrics_to_check.get(best_metric)
-
-                # Fallback: if key not found in validation metrics, try training metrics
-                if current_metric_value is None and val_metrics is not None:
-                    current_metric_value = train_metrics.get(best_metric)
+            # Best model tracking: only update on epochs where validation ran (H2)
+            if save_best and val_metrics is not None:
+                current_metric_value = val_metrics.get(best_metric)
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -811,13 +804,9 @@ class DiffusionTrainer(BaseTrainer):
                     logger, self._global_step, epoch=self._current_epoch
                 )
 
-            # Best model tracking (with fallback from Bug 2 fix)
-            current_metric_value = None
-            if save_best:
-                metrics_to_check = val_metrics if val_metrics else train_metrics
-                current_metric_value = metrics_to_check.get(best_metric)
-                if current_metric_value is None and val_metrics is not None:
-                    current_metric_value = train_metrics.get(best_metric)
+            # Best model tracking: only update on epochs where validation ran (H2)
+            if save_best and val_metrics is not None:
+                current_metric_value = val_metrics.get(best_metric)
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -991,7 +980,7 @@ class DiffusionTrainer(BaseTrainer):
         _logger.info(f"Loading checkpoint from {path}")
 
         try:
-            checkpoint = torch.load(path, map_location="cpu")
+            checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         except Exception as e:
             _logger.critical(f"Failed to load checkpoint from {path}")
             _logger.exception(f"Error details: {e}")

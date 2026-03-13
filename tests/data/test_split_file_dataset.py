@@ -142,11 +142,11 @@ class TestSplitFileDatasetInit:
             SplitFileDataset(split_file=str(split_file), split="train")
 
     def test_path_traversal_outside_root_raises(self, tmp_path):
-        """Test that paths outside allowed_root raise ValueError."""
+        """Test that relative paths outside allowed_root raise ValueError."""
         split_file = tmp_path / "split.json"
         split_data = {
             "metadata": {"classes": {"a": 0}},
-            "train": [{"path": "/etc/passwd", "label": 0}],
+            "train": [{"path": "../../etc/passwd", "label": 0}],
             "val": [{"path": "y.png", "label": 0}],
         }
         with open(split_file, "w") as f:
@@ -159,8 +159,8 @@ class TestSplitFileDatasetInit:
                 allowed_root=str(tmp_path),
             )
 
-    def test_allowed_root_none_skips_validation(self, tmp_path):
-        """Test that allowed_root=None skips path validation."""
+    def test_allowed_root_none_logs_warning(self, tmp_path):
+        """Test that allowed_root=None logs a warning but still works."""
         split_file = tmp_path / "split.json"
         split_data = {
             "metadata": {"classes": {"a": 0}},
@@ -174,8 +174,26 @@ class TestSplitFileDatasetInit:
         dataset = SplitFileDataset(split_file=str(split_file), split="train")
         assert len(dataset) == 1
 
+    def test_absolute_path_rejected_with_allowed_root(self, tmp_path):
+        """Test that absolute paths are rejected when allowed_root is set."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "/etc/passwd", "label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Absolute path not allowed"):
+            SplitFileDataset(
+                split_file=str(split_file),
+                split="train",
+                allowed_root=str(tmp_path),
+            )
+
     def test_path_within_allowed_root_succeeds(self, tmp_path):
-        """Test that paths within allowed_root are accepted."""
+        """Test that relative paths within allowed_root are accepted."""
         image_dir = tmp_path / "images"
         image_dir.mkdir()
         img_path = image_dir / "test.png"
@@ -183,11 +201,14 @@ class TestSplitFileDatasetInit:
 
         Image.new("RGB", (8, 8), color="red").save(img_path)
 
+        # Use relative path in JSON (required when allowed_root is set)
+        relative_path = str(img_path.relative_to(tmp_path))
+
         split_file = tmp_path / "split.json"
         split_data = {
             "metadata": {"classes": {"a": 0}},
-            "train": [{"path": str(img_path), "label": 0}],
-            "val": [{"path": str(img_path), "label": 0}],
+            "train": [{"path": relative_path, "label": 0}],
+            "val": [{"path": relative_path, "label": 0}],
         }
         with open(split_file, "w") as f:
             json.dump(split_data, f)

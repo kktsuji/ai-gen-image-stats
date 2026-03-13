@@ -617,3 +617,41 @@ def test_classifier_trainer_logs_best_model_updates(
 
         # Check that logging occurred during training
         assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.component
+def test_classifier_trainer_with_reduce_lr_on_plateau(
+    simple_model,
+    simple_dataloader,
+    simple_logger,
+):
+    """Test that ReduceLROnPlateau scheduler works correctly (H3 fix)."""
+    optimizer = torch.optim.Adam(simple_model.parameters(), lr=0.01)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=0
+    )
+
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        dataloader=simple_dataloader,
+        optimizer=optimizer,
+        logger=simple_logger,
+        device="cpu",
+        show_progress=False,
+    )
+    trainer.scheduler = scheduler
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Should not crash with ReduceLROnPlateau
+        trainer.train(
+            num_epochs=3,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="val_loss",
+            best_metric_mode="min",
+        )
+
+        assert trainer.current_epoch == 3

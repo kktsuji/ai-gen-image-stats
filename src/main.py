@@ -243,8 +243,13 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     optimizer_name = optimizer_config["type"].lower()
     learning_rate = optimizer_config["learning_rate"]
     weight_decay = optimizer_config.get("weight_decay", 0.0)
-    # TODO: Implement gradient clipping in trainer
-    # gradient_clip_norm = optimizer_config.get("gradient_clip_norm")
+    gradient_clip_norm = optimizer_config.get("gradient_clip_norm")
+    if gradient_clip_norm is not None:
+        raise ValueError(
+            "gradient_clip_norm is not supported for the classifier experiment. "
+            "Remove this key from the config or use the diffusion experiment "
+            "which supports gradient clipping."
+        )
 
     # Build optimizer kwargs
     optimizer_kwargs = {"weight_decay": weight_decay}
@@ -538,7 +543,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         logger.info(f"Loading checkpoint: {checkpoint_path}")
 
         # Load checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
         # Validate checkpoint contains model weights
         if "model_state_dict" in checkpoint:

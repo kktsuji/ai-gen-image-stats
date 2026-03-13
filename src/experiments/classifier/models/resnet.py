@@ -118,23 +118,31 @@ class ResNetClassifier(BaseModel):
         1. Local cache (model_dir/{variant}.pth)
         2. TorchVision's pretrained models (downloads if needed)
         """
-        model_path = self.model_dir / f"{self.variant}.pth"
+        model_path = self.model_dir / f"{self.variant}_state_dict.pth"
+
+        # Build model architecture first
+        if self.variant == "resnet50":
+            resnet = resnet50(pretrained=False)
+        elif self.variant == "resnet101":
+            resnet = resnet101(pretrained=False)
+        else:  # resnet152
+            resnet = resnet152(pretrained=False)
 
         if model_path.exists():
-            # Load from local cache
-            resnet = torch.load(model_path, weights_only=False)
-        else:
-            # Download pretrained weights if requested
+            # Load from local cache (state_dict only)
+            state_dict = torch.load(model_path, weights_only=True)
+            resnet.load_state_dict(state_dict)
+        elif self.pretrained:
+            # Download pretrained weights
             if self.variant == "resnet50":
-                resnet = resnet50(pretrained=self.pretrained)
+                resnet = resnet50(pretrained=True)
             elif self.variant == "resnet101":
-                resnet = resnet101(pretrained=self.pretrained)
+                resnet = resnet101(pretrained=True)
             else:  # resnet152
-                resnet = resnet152(pretrained=self.pretrained)
+                resnet = resnet152(pretrained=True)
 
-            # Cache the pretrained model
-            if self.pretrained:
-                torch.save(resnet, model_path)
+            # Cache the pretrained state_dict
+            torch.save(resnet.state_dict(), model_path)
 
         # Extract feature extraction layers (excluding fc)
         # ResNet architecture: conv1 -> bn1 -> relu -> maxpool -> layer1-4 -> avgpool -> fc

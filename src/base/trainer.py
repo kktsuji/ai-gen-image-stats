@@ -245,128 +245,18 @@ class BaseTrainer(ABC):
             ...     best_metric_mode='min'
             ... )
         """
-        if checkpoint_dir is not None:
-            checkpoint_dir = Path(checkpoint_dir)
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        self._best_metric_name = best_metric
-        metrics_logger = self.get_logger()
-
         logger.info(f"Starting training for {num_epochs} epochs")
-        logger.debug(f"Checkpoint directory: {checkpoint_dir}")
-        logger.debug(f"Validate frequency: {validate_frequency}")
-        logger.debug(f"Checkpoint frequency: {checkpoint_frequency}")
-
-        for epoch in range(num_epochs):
-            self._current_epoch = epoch + 1
-            epoch_start_time = time.time()
-            logger.info(f"Epoch {self._current_epoch}/{num_epochs} started")
-
-            # Training epoch
-            train_metrics = self.train_epoch()
-            epoch_time = time.time() - epoch_start_time
-
-            logger.info(
-                f"Epoch {self._current_epoch} completed in {epoch_time:.1f}s - "
-                f"Training metrics: {train_metrics}"
-            )
-            logger.debug(f"Epoch time: {epoch_time:.2f}s")
-
-            # Log training metrics
-            metrics_logger.log_metrics(
-                train_metrics, step=self._global_step, epoch=self._current_epoch
-            )
-
-            # Validation
-            val_metrics = None
-            if validate_frequency > 0 and (epoch + 1) % validate_frequency == 0:
-                logger.info(f"Running validation for epoch {self._current_epoch}")
-                val_metrics = self.validate_epoch()
-                if val_metrics is not None:
-                    logger.info(f"Validation metrics: {val_metrics}")
-                    metrics_logger.log_metrics(
-                        val_metrics, step=self._global_step, epoch=self._current_epoch
-                    )
-
-            # Determine current metric value for best model tracking
-            current_metric_value = None
-            if save_best:
-                # Try validation metrics first, then training metrics
-                metrics_to_check = val_metrics if val_metrics else train_metrics
-                current_metric_value = metrics_to_check.get(best_metric)
-
-                if current_metric_value is not None:
-                    is_best = self._is_best_metric(
-                        current_metric_value, best_metric_mode
-                    )
-
-                    if is_best:
-                        prev_best = self._best_metric
-                        self._best_metric = current_metric_value
-                        prev_best_str = (
-                            f"{prev_best:.6f}" if prev_best is not None else "N/A"
-                        )
-                        logger.info(
-                            f"New best {best_metric}: {current_metric_value:.6f} "
-                            f"(previous: {prev_best_str})"
-                        )
-                        if checkpoint_dir is not None:
-                            best_path = checkpoint_dir / "best_model.pth"
-                            self.save_checkpoint(
-                                best_path,
-                                epoch=self._current_epoch,
-                                is_best=True,
-                                metrics={
-                                    **train_metrics,
-                                    **(val_metrics if val_metrics else {}),
-                                },
-                            )
-                            logger.info(f"Best model checkpoint saved: {best_path}")
-
-            # Regular checkpoint saving
-            if checkpoint_dir is not None:
-                if (epoch + 1) % checkpoint_frequency == 0:
-                    checkpoint_path = (
-                        checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
-                    )
-                    self.save_checkpoint(
-                        checkpoint_path,
-                        epoch=self._current_epoch,
-                        is_best=False,
-                        metrics={
-                            **train_metrics,
-                            **(val_metrics if val_metrics else {}),
-                        },
-                    )
-                    logger.info(f"Checkpoint saved: {checkpoint_path}")
-
-                # Always save latest checkpoint
-                if save_latest_checkpoint:
-                    latest_path = checkpoint_dir / "latest_checkpoint.pth"
-                    self.save_checkpoint(
-                        latest_path,
-                        epoch=self._current_epoch,
-                        is_best=False,
-                        metrics={
-                            **train_metrics,
-                            **(val_metrics if val_metrics else {}),
-                        },
-                    )
-                    logger.debug(f"Latest checkpoint updated: {latest_path}")
-
-        # Save final checkpoint after all epochs complete
-        if checkpoint_dir is not None:
-            final_path = checkpoint_dir / "final_model.pth"
-            self.save_checkpoint(
-                final_path,
-                epoch=self._current_epoch,
-                is_best=False,
-                metrics={
-                    **train_metrics,
-                    **(val_metrics if val_metrics else {}),
-                },
-            )
-            logger.info(f"Final model checkpoint saved: {final_path}")
+        self._run_training_loop(
+            start_epoch=0,
+            num_epochs=num_epochs,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_frequency=checkpoint_frequency,
+            validate_frequency=validate_frequency,
+            save_best=save_best,
+            best_metric=best_metric,
+            best_metric_mode=best_metric_mode,
+            save_latest_checkpoint=save_latest_checkpoint,
+        )
 
     def save_checkpoint(
         self,
@@ -475,7 +365,7 @@ class BaseTrainer(ABC):
         logger.info(f"Loading checkpoint from {path}")
 
         try:
-            checkpoint = torch.load(path, map_location="cpu")
+            checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         except Exception as e:
             logger.critical(f"Failed to load checkpoint from {path}")
             logger.exception(f"Error details: {e}")
@@ -567,22 +457,90 @@ class BaseTrainer(ABC):
         logger.info(f"Resuming training from epoch {start_epoch}")
         logger.info(f"Will train for {num_epochs} additional epochs")
 
-        # Adjust for resume: we'll train for num_epochs total epochs starting from checkpoint
+        self._run_training_loop(
+            start_epoch=start_epoch,
+            num_epochs=num_epochs,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_frequency=checkpoint_frequency,
+            validate_frequency=validate_frequency,
+            save_best=save_best,
+            best_metric=best_metric,
+            best_metric_mode=best_metric_mode,
+            save_latest_checkpoint=save_latest_checkpoint,
+        )
+
+    def _run_training_loop(
+        self,
+        start_epoch: int,
+        num_epochs: int,
+        checkpoint_dir: Optional[Union[str, Path]] = None,
+        checkpoint_frequency: int = 1,
+        validate_frequency: int = 1,
+        save_best: bool = True,
+        best_metric: str = "loss",
+        best_metric_mode: str = "min",
+        save_latest_checkpoint: bool = True,
+    ) -> None:
+        """Shared training loop used by both train() and resume_training().
+
+        Args:
+            start_epoch: Epoch offset (0 for fresh training, N for resumed)
+            num_epochs: Number of epochs to train
+            checkpoint_dir: Directory to save checkpoints (None to disable)
+            checkpoint_frequency: Save checkpoint every N epochs
+            validate_frequency: Validate every N epochs (0 to disable)
+            save_best: Whether to save the best model separately
+            best_metric: Metric name to use for best model selection
+            best_metric_mode: 'min' or 'max' for best metric comparison
+            save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
+        """
         if checkpoint_dir is not None:
             checkpoint_dir = Path(checkpoint_dir)
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        # Validate best_metric_mode early (M3)
+        if save_best and best_metric_mode not in ("min", "max"):
+            raise ValueError(
+                f"Invalid best_metric_mode: {best_metric_mode}. Must be 'min' or 'max'"
+            )
+
         self._best_metric_name = best_metric
         metrics_logger = self.get_logger()
+
+        logger.debug(f"Checkpoint directory: {checkpoint_dir}")
+        logger.debug(f"Validate frequency: {validate_frequency}")
+        logger.debug(f"Checkpoint frequency: {checkpoint_frequency}")
+
+        train_metrics: Dict[str, float] = {}
+        val_metrics: Optional[Dict[str, float]] = None
 
         for epoch in range(num_epochs):
             self._current_epoch = start_epoch + epoch + 1
             epoch_start_time = time.time()
-            logger.info(f"Epoch {self._current_epoch} started (resumed)")
+            logger.info(
+                f"Epoch {self._current_epoch}/{start_epoch + num_epochs} started"
+            )
 
             # Training epoch
             train_metrics = self.train_epoch()
             epoch_time = time.time() - epoch_start_time
+
+            # NaN/Inf loss detection (M1)
+            loss_value = train_metrics.get("loss")
+            if loss_value is not None and (
+                not isinstance(loss_value, (int, float))
+                or loss_value != loss_value  # NaN check
+                or loss_value == float("inf")
+                or loss_value == float("-inf")
+            ):
+                logger.critical(
+                    f"Training loss is NaN or Inf ({loss_value}) at epoch "
+                    f"{self._current_epoch}. Stopping training."
+                )
+                raise RuntimeError(
+                    f"Training diverged: loss is {loss_value} at epoch "
+                    f"{self._current_epoch}"
+                )
 
             logger.info(
                 f"Epoch {self._current_epoch} completed in {epoch_time:.1f}s - "
@@ -606,12 +564,9 @@ class BaseTrainer(ABC):
                         val_metrics, step=self._global_step, epoch=self._current_epoch
                     )
 
-            # Determine current metric value for best model tracking
-            current_metric_value = None
-            if save_best:
-                # Try validation metrics first, then training metrics
-                metrics_to_check = val_metrics if val_metrics else train_metrics
-                current_metric_value = metrics_to_check.get(best_metric)
+            # Best model tracking: only update on epochs where validation ran (H2)
+            if save_best and val_metrics is not None:
+                current_metric_value = val_metrics.get(best_metric)
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -644,11 +599,11 @@ class BaseTrainer(ABC):
             # Regular checkpoint saving
             if checkpoint_dir is not None:
                 if (epoch + 1) % checkpoint_frequency == 0:
-                    checkpoint_path_new = (
+                    checkpoint_path = (
                         checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
                     )
                     self.save_checkpoint(
-                        checkpoint_path_new,
+                        checkpoint_path,
                         epoch=self._current_epoch,
                         is_best=False,
                         metrics={
@@ -656,7 +611,7 @@ class BaseTrainer(ABC):
                             **(val_metrics if val_metrics else {}),
                         },
                     )
-                    logger.info(f"Checkpoint saved: {checkpoint_path_new}")
+                    logger.info(f"Checkpoint saved: {checkpoint_path}")
 
                 # Always save latest checkpoint
                 if save_latest_checkpoint:
@@ -673,7 +628,7 @@ class BaseTrainer(ABC):
                     logger.debug(f"Latest checkpoint updated: {latest_path}")
 
         # Save final checkpoint after all epochs complete
-        if checkpoint_dir is not None:
+        if checkpoint_dir is not None and train_metrics:
             final_path = checkpoint_dir / "final_model.pth"
             self.save_checkpoint(
                 final_path,
