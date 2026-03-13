@@ -58,6 +58,7 @@ class ClassifierLogger(BaseLogger):
         class_names: Optional[List[str]] = None,
         tensorboard_config: Optional[Dict[str, Any]] = None,
         tb_log_dir: Optional[Union[str, Path]] = None,
+        enable_history: bool = False,
     ):
         """Initialize the classifier logger.
 
@@ -72,6 +73,7 @@ class ClassifierLogger(BaseLogger):
                 - log_graph (bool): Log model computational graph
             tb_log_dir: Directory for TensorBoard event logs. Resolved via
                 output.subdirs.tensorboard. Defaults to {log_dir}/../tensorboard.
+            enable_history: If True, track logged data in history lists (for testing).
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -116,9 +118,10 @@ class ClassifierLogger(BaseLogger):
             enabled=self.tb_enabled,
         )
 
-        # Track logged data for testing
-        self.logged_metrics_history = []
-        self.logged_confusion_matrices = []
+        # Track logged data (only when enable_history=True, e.g. in tests)
+        self.enable_history = enable_history
+        self.logged_metrics_history: List[Dict[str, Any]] = []
+        self.logged_confusion_matrices: List[Dict[str, Any]] = []
 
     def log_metrics(
         self,
@@ -147,8 +150,9 @@ class ClassifierLogger(BaseLogger):
             log_entry["epoch"] = epoch
         log_entry.update(processed_metrics)
 
-        # Store for testing
-        self.logged_metrics_history.append(log_entry)
+        # Store for testing (only when history tracking is enabled)
+        if self.enable_history:
+            self.logged_metrics_history.append(log_entry)
 
         # Write to CSV
         self._write_metrics_to_csv(log_entry)
@@ -172,7 +176,10 @@ class ClassifierLogger(BaseLogger):
                 writer.writeheader()
             self.csv_initialized = True
         else:
-            assert self.csv_fieldnames is not None
+            if self.csv_fieldnames is None:
+                raise RuntimeError("CSV fieldnames not initialized")
+            # NOTE: This class is designed for single-process use only.
+            # CSV fieldnames mutation is not thread-safe.
             # Update fieldnames if new metrics are added
             new_fields = set(log_entry.keys()) - set(self.csv_fieldnames)
             if new_fields:
@@ -181,7 +188,8 @@ class ClassifierLogger(BaseLogger):
                 self._rewrite_csv_with_new_fields()
 
         # Append metrics
-        assert self.csv_fieldnames is not None
+        if self.csv_fieldnames is None:
+            raise RuntimeError("CSV fieldnames not initialized")
         with open(self.metrics_file, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
             # Fill missing fields with None
@@ -190,7 +198,8 @@ class ClassifierLogger(BaseLogger):
 
     def _rewrite_csv_with_new_fields(self) -> None:
         """Re-write CSV file with updated field names."""
-        assert self.csv_fieldnames is not None
+        if self.csv_fieldnames is None:
+            raise RuntimeError("CSV fieldnames not initialized")
         # Read existing data
         existing_data = []
         if self.metrics_file.exists():
@@ -355,15 +364,16 @@ class ClassifierLogger(BaseLogger):
         if isinstance(confusion_matrix, torch.Tensor):
             confusion_matrix = confusion_matrix.cpu().numpy()
 
-        # Store for testing
-        self.logged_confusion_matrices.append(
-            {
-                "matrix": confusion_matrix.copy(),
-                "step": step,
-                "epoch": epoch,
-                "normalize": normalize,
-            }
-        )
+        # Store for testing (only when history tracking is enabled)
+        if self.enable_history:
+            self.logged_confusion_matrices.append(
+                {
+                    "matrix": confusion_matrix.copy(),
+                    "step": step,
+                    "epoch": epoch,
+                    "normalize": normalize,
+                }
+            )
 
         # Use provided class names or fall back to instance class names
         labels = class_names or self.class_names

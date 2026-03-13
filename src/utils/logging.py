@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from zoneinfo import ZoneInfo
 
+# Track handlers added by this module so we only remove our own
+_own_handlers: set = set()
+
 
 class TimezoneFormatter(logging.Formatter):
     """Custom formatter that supports timezone-aware timestamps.
@@ -128,20 +131,26 @@ def setup_logging(
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)  # Set to DEBUG to allow all messages through
 
-    # Remove any existing handlers to avoid duplicates
-    root_logger.handlers.clear()
+    # Remove only handlers previously added by this module (avoid removing third-party handlers)
+    for handler in list(root_logger.handlers):
+        if handler in _own_handlers:
+            root_logger.removeHandler(handler)
+            handler.close()
+    _own_handlers.clear()
 
     # Create console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(getattr(logging, console_level.upper()))
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
+    _own_handlers.add(console_handler)
 
     # Create file handler
     file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
     file_handler.setLevel(getattr(logging, file_level.upper()))
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
+    _own_handlers.add(file_handler)
 
     # Configure module-specific log levels if provided
     if module_levels:

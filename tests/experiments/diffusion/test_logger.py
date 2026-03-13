@@ -27,7 +27,7 @@ def temp_log_dir():
 @pytest.fixture
 def logger(temp_log_dir):
     """Provide a basic logger instance."""
-    return DiffusionLogger(log_dir=temp_log_dir)
+    return DiffusionLogger(log_dir=temp_log_dir, enable_history=True)
 
 
 @pytest.fixture
@@ -71,6 +71,18 @@ class TestDiffusionLoggerInstantiation:
         assert logger.logged_metrics_history == []
         assert logger.logged_images == []
         assert logger.logged_denoising_sequences == []
+
+    def test_history_disabled_by_default(self, temp_log_dir):
+        """Logger does not track history by default."""
+        logger = DiffusionLogger(log_dir=temp_log_dir)
+        logger.log_metrics({"loss": 0.05}, step=1)
+        assert logger.logged_metrics_history == []
+
+    def test_history_enabled_when_requested(self, temp_log_dir):
+        """Logger tracks history when enable_history=True."""
+        logger = DiffusionLogger(log_dir=temp_log_dir, enable_history=True)
+        logger.log_metrics({"loss": 0.05}, step=1)
+        assert len(logger.logged_metrics_history) == 1
 
 
 @pytest.mark.unit
@@ -593,7 +605,7 @@ class TestTensorBoardIntegration:
 
     def test_log_metrics_no_tensorboard_when_writer_none(self, temp_log_dir):
         """log_metrics() skips TensorBoard when writer is None."""
-        logger = DiffusionLogger(log_dir=temp_log_dir)
+        logger = DiffusionLogger(log_dir=temp_log_dir, enable_history=True)
         assert logger.tb_writer is None
 
         # CSV logging should still work
@@ -647,7 +659,7 @@ class TestTensorBoardIntegration:
 
     def test_log_denoising_no_tensorboard_when_writer_none(self, temp_log_dir):
         """log_denoising_process() skips TensorBoard when writer is None."""
-        logger = DiffusionLogger(log_dir=temp_log_dir)
+        logger = DiffusionLogger(log_dir=temp_log_dir, enable_history=True)
         assert logger.tb_writer is None
 
         sequence = torch.randn(8, 3, 32, 32)
@@ -718,6 +730,7 @@ class TestTensorBoardIntegration:
             logger = DiffusionLogger(
                 log_dir=temp_log_dir,
                 tensorboard_config={"enabled": True},
+                enable_history=True,
             )
             assert logger.tb_writer is None
 

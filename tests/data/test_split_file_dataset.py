@@ -141,6 +141,106 @@ class TestSplitFileDatasetInit:
         with pytest.raises(ValueError, match="No samples found"):
             SplitFileDataset(split_file=str(split_file), split="train")
 
+    def test_path_traversal_outside_root_raises(self, tmp_path):
+        """Test that paths outside allowed_root raise ValueError."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "/etc/passwd", "label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            SplitFileDataset(
+                split_file=str(split_file),
+                split="train",
+                allowed_root=str(tmp_path),
+            )
+
+    def test_allowed_root_none_skips_validation(self, tmp_path):
+        """Test that allowed_root=None skips path validation."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "/nonexistent/img.png", "label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        # Should not raise - validation skipped when allowed_root is None
+        dataset = SplitFileDataset(split_file=str(split_file), split="train")
+        assert len(dataset) == 1
+
+    def test_path_within_allowed_root_succeeds(self, tmp_path):
+        """Test that paths within allowed_root are accepted."""
+        image_dir = tmp_path / "images"
+        image_dir.mkdir()
+        img_path = image_dir / "test.png"
+        from PIL import Image
+
+        Image.new("RGB", (8, 8), color="red").save(img_path)
+
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": str(img_path), "label": 0}],
+            "val": [{"path": str(img_path), "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        dataset = SplitFileDataset(
+            split_file=str(split_file),
+            split="train",
+            allowed_root=str(tmp_path),
+        )
+        assert len(dataset) == 1
+
+    def test_missing_path_key_raises(self, tmp_path):
+        """Test that entry missing 'path' key raises ValueError."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Missing 'path' key"):
+            SplitFileDataset(split_file=str(split_file), split="train")
+
+    def test_missing_label_key_raises(self, tmp_path):
+        """Test that entry missing 'label' key raises ValueError."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "x.png"}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Missing 'label' key"):
+            SplitFileDataset(split_file=str(split_file), split="train")
+
+    def test_non_dict_entry_raises(self, tmp_path):
+        """Test that non-dict entry raises ValueError."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": ["not_a_dict"],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="expected dict"):
+            SplitFileDataset(split_file=str(split_file), split="train")
+
 
 # ============================================================================
 # Component Tests - With actual image loading

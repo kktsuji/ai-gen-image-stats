@@ -161,6 +161,13 @@ class TestDownsampleDataset:
         assert class_counts[0] == 50
         assert class_counts[1] == 50
 
+    @pytest.mark.parametrize("target_ratio", [0, -1, 1.5])
+    def test_invalid_target_ratio_raises(self, target_ratio):
+        """Test that invalid target_ratio values raise ValueError."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20})
+        with pytest.raises(ValueError, match="target_ratio"):
+            downsample_dataset(dataset, target_ratio=target_ratio, seed=42)
+
 
 # =============================================================================
 # Unit Tests: upsample_dataset
@@ -246,6 +253,13 @@ class TestUpsampleDataset:
         extra_indices = subset.indices[original_count:]
         for idx in extra_indices:
             assert dataset.targets[idx] == 1  # Minority class
+
+    @pytest.mark.parametrize("target_ratio", [0, -1])
+    def test_invalid_target_ratio_raises(self, target_ratio):
+        """Test that invalid target_ratio values raise ValueError."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20})
+        with pytest.raises(ValueError, match="target_ratio"):
+            upsample_dataset(dataset, target_ratio=target_ratio, seed=42)
 
     def test_empty_dataset_raises(self):
         """Test that empty dataset raises ValueError."""

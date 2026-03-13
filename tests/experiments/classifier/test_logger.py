@@ -27,7 +27,9 @@ def temp_log_dir():
 @pytest.fixture
 def logger(temp_log_dir):
     """Provide a basic logger instance."""
-    return ClassifierLogger(log_dir=temp_log_dir, class_names=["Real", "Fake"])
+    return ClassifierLogger(
+        log_dir=temp_log_dir, class_names=["Real", "Fake"], enable_history=True
+    )
 
 
 @pytest.fixture
@@ -75,6 +77,18 @@ class TestClassifierLoggerInstantiation:
     def test_log_dir_is_path_object(self, logger):
         """Logger converts log_dir to Path object."""
         assert isinstance(logger.log_dir, Path)
+
+    def test_history_disabled_by_default(self, temp_log_dir):
+        """Logger does not track history by default."""
+        logger = ClassifierLogger(log_dir=temp_log_dir)
+        logger.log_metrics({"loss": 0.5}, step=1)
+        assert logger.logged_metrics_history == []
+
+    def test_history_enabled_when_requested(self, temp_log_dir):
+        """Logger tracks history when enable_history=True."""
+        logger = ClassifierLogger(log_dir=temp_log_dir, enable_history=True)
+        logger.log_metrics({"loss": 0.5}, step=1)
+        assert len(logger.logged_metrics_history) == 1
 
 
 @pytest.mark.unit
@@ -619,7 +633,7 @@ class TestTensorBoardIntegration:
     def test_log_metrics_does_not_call_add_scalar_when_tb_disabled(self, temp_log_dir):
         """log_metrics() does not call add_scalar when TensorBoard is disabled."""
 
-        logger = ClassifierLogger(log_dir=temp_log_dir)
+        logger = ClassifierLogger(log_dir=temp_log_dir, enable_history=True)
         assert logger.tb_writer is None
 
         # CSV still works
@@ -736,6 +750,7 @@ class TestTensorBoardIntegration:
             logger = ClassifierLogger(
                 log_dir=temp_log_dir,
                 tensorboard_config={"enabled": True},
+                enable_history=True,
             )
             # tb_writer should be None even though enabled=True
             assert logger.tb_writer is None

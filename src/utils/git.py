@@ -4,8 +4,11 @@ This module provides functions to get Git metadata like commit hash and reposito
 These are useful for experiment reproducibility and tracking.
 """
 
+import logging
 import subprocess
 from typing import Dict, Optional
+
+_logger = logging.getLogger(__name__)
 
 
 def get_git_commit_hash() -> Optional[str]:
@@ -28,7 +31,8 @@ def get_git_commit_hash() -> Optional[str]:
         subprocess.CalledProcessError,
         FileNotFoundError,
         subprocess.TimeoutExpired,
-    ):
+    ) as e:
+        _logger.debug("Git command failed: %s", e)
         return None
 
 
@@ -52,7 +56,8 @@ def get_git_repository_url() -> Optional[str]:
         subprocess.CalledProcessError,
         FileNotFoundError,
         subprocess.TimeoutExpired,
-    ):
+    ) as e:
+        _logger.debug("Git command failed: %s", e)
         return None
 
 

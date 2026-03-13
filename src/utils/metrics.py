@@ -21,7 +21,9 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 
-def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float:
+def calculate_fid(
+    real_features: np.ndarray, fake_features: np.ndarray, eps: float = 1e-6
+) -> float:
     """
     Calculate Fréchet Inception Distance (FID) between real and fake features.
 
@@ -32,6 +34,7 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
     Args:
         real_features: Feature vectors from real images, shape (N, D)
         fake_features: Feature vectors from generated images, shape (M, D)
+        eps: Small constant added to covariance diagonals for numerical stability
 
     Returns:
         FID score (float). Lower is better.
@@ -50,6 +53,10 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
     mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
     mu2, sigma2 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
 
+    # Add small epsilon to diagonal for numerical stability
+    sigma1 += np.eye(sigma1.shape[0]) * eps
+    sigma2 += np.eye(sigma2.shape[0]) * eps
+
     # Calculate squared difference of means
     diff = mu1 - mu2
 
@@ -58,10 +65,24 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
 
     # Handle numerical errors (complex values)
     if np.iscomplexobj(covmean):
+        if np.max(np.abs(covmean.imag)) > 1e-3:  # type: ignore[union-attr]
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "FID calculation: large imaginary component (max=%.6f) in "
+                "matrix square root. Results may be unreliable.",
+                np.max(np.abs(covmean.imag)),  # type: ignore[union-attr]
+            )
         covmean = covmean.real  # type: ignore[attr-defined]
 
     # Calculate FID
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
+
+    if np.isnan(fid):
+        raise ValueError(
+            "FID calculation resulted in NaN. Input features may be degenerate."
+        )
+
     return float(fid)
 
 

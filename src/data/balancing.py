@@ -74,6 +74,9 @@ def downsample_dataset(
     if not targets:
         raise ValueError("Dataset has no samples")
 
+    if target_ratio <= 0 or target_ratio > 1.0:
+        raise ValueError(f"target_ratio must be in (0, 1.0], got {target_ratio}")
+
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)
 
@@ -154,6 +157,9 @@ def upsample_dataset(
     targets: List[int] = getattr(dataset, "targets")
     if not targets:
         raise ValueError("Dataset has no samples")
+
+    if target_ratio <= 0:
+        raise ValueError(f"target_ratio must be positive, got {target_ratio}")
 
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)

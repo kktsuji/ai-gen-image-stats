@@ -286,7 +286,7 @@ class DiffusionTrainer(BaseTrainer):
                 )
                 _tb_writer.add_graph(self.model, dummy_input)
                 _logger.info("Logged model graph to TensorBoard")
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError) as e:
                 _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
 
     def train_epoch(self) -> Dict[str, float]:
@@ -1004,7 +1004,7 @@ class DiffusionTrainer(BaseTrainer):
         model = self.get_model()
         try:
             model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
-        except Exception as e:
+        except (RuntimeError, KeyError) as e:
             _logger.error("Failed to load model state dict")
             _logger.exception(f"Error details: {e}")
             if strict:
@@ -1020,7 +1020,7 @@ class DiffusionTrainer(BaseTrainer):
             optimizer = self.get_optimizer()
             try:
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            except Exception as e:
+            except (RuntimeError, ValueError, KeyError) as e:
                 _logger.error("Failed to load optimizer state dict")
                 _logger.exception(f"Error details: {e}")
                 _logger.warning("Continuing without optimizer state")

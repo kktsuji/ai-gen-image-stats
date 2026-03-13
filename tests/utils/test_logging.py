@@ -12,6 +12,7 @@ import pytest
 
 from src.utils.logging import (
     TimezoneFormatter,
+    _own_handlers,
     get_log_file_path,
     get_logger,
     setup_logging,
@@ -35,30 +36,24 @@ class TestLoggingSetup:
         log_file = tmp_path / "test.log"
         setup_logging(log_file=log_file, console_level="WARNING")
 
-        root_logger = logging.getLogger()
-        console_handlers = [
-            h for h in root_logger.handlers if isinstance(h, logging.StreamHandler)
+        # Filter for handlers managed by our module
+        our_console = [
+            h
+            for h in _own_handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
         ]
-
-        assert len(console_handlers) > 0
-        # Find the stdout handler (not file handler)
-        console_handler = [
-            h for h in console_handlers if not isinstance(h, logging.FileHandler)
-        ][0]
-        assert console_handler.level == logging.WARNING
+        assert len(our_console) > 0
+        assert our_console[0].level == logging.WARNING
 
     def test_setup_logging_file_handler(self, tmp_path):
         """setup_logging adds file handler with correct level."""
         log_file = tmp_path / "test.log"
         setup_logging(log_file=log_file, file_level="DEBUG")
 
-        root_logger = logging.getLogger()
-        file_handlers = [
-            h for h in root_logger.handlers if isinstance(h, logging.FileHandler)
-        ]
-
-        assert len(file_handlers) > 0
-        assert file_handlers[0].level == logging.DEBUG
+        our_file = [h for h in _own_handlers if isinstance(h, logging.FileHandler)]
+        assert len(our_file) > 0
+        assert our_file[0].level == logging.DEBUG
 
     def test_setup_logging_custom_format(self, tmp_path):
         """setup_logging accepts custom format string."""
@@ -67,9 +62,9 @@ class TestLoggingSetup:
 
         setup_logging(log_file=log_file, log_format=custom_format)
 
-        root_logger = logging.getLogger()
-        handler = root_logger.handlers[0]
-        formatter = handler.formatter
+        # Check our handler's formatter
+        our_handler = next(iter(_own_handlers))
+        formatter = our_handler.formatter
 
         assert formatter is not None
         assert custom_format in formatter._fmt  # type: ignore[operator]
@@ -99,15 +94,14 @@ class TestLoggingSetup:
         log_content = log_file.read_text()
         assert test_message in log_content
 
-        # Verify both handlers exist
-        root_logger = logging.getLogger()
-        assert len(root_logger.handlers) == 2  # Console + File
+        # Verify both our handlers exist
+        assert len(_own_handlers) == 2  # Console + File
         has_console = any(
             isinstance(h, logging.StreamHandler)
             and not isinstance(h, logging.FileHandler)
-            for h in root_logger.handlers
+            for h in _own_handlers
         )
-        has_file = any(isinstance(h, logging.FileHandler) for h in root_logger.handlers)
+        has_file = any(isinstance(h, logging.FileHandler) for h in _own_handlers)
         assert has_console and has_file
 
     def test_setup_logging_creates_nested_directories(self, tmp_path):
@@ -123,9 +117,8 @@ class TestLoggingSetup:
         log_file = tmp_path / "test.log"
         setup_logging(log_file=log_file)
 
-        root_logger = logging.getLogger()
-        handler = root_logger.handlers[0]
-        formatter = handler.formatter
+        our_handler = next(iter(_own_handlers))
+        formatter = our_handler.formatter
 
         assert formatter is not None
         # Default format should contain these components
@@ -171,14 +164,13 @@ class TestLoggingSetup:
         # Console caplog shows all due to caplog.set_level(DEBUG), but in real use
         # the console handler would filter DEBUG messages
         # We can verify handler level instead
-        root_logger = logging.getLogger()
-        console_handlers = [
+        our_console = [
             h
-            for h in root_logger.handlers
+            for h in _own_handlers
             if isinstance(h, logging.StreamHandler)
             and not isinstance(h, logging.FileHandler)
         ]
-        assert console_handlers[0].level == logging.INFO
+        assert our_console[0].level == logging.INFO
 
 
 @pytest.mark.unit

@@ -356,11 +356,13 @@ class SplitFileDataset(BaseDataset):
         split: str = "train",
         transform: Optional[Callable] = None,
         return_labels: bool = True,
+        allowed_root: Optional[str] = None,
     ):
         self.split_file = str(split_file)
         self.split = split
         self.transform = transform
         self.return_labels = return_labels
+        self.allowed_root = allowed_root
 
         # Validate split key
         if split not in ("train", "val"):
@@ -390,10 +392,30 @@ class SplitFileDataset(BaseDataset):
         self._classes = [name for name, _ in sorted_classes]
         self._class_to_idx = dict(self._classes_dict)
 
-        # Extract samples for this split
+        # Extract and validate samples for this split
         split_entries = data[split]
+        for i, entry in enumerate(split_entries):
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"Invalid entry at index {i} in '{split}' split: "
+                    f"expected dict, got {type(entry).__name__}"
+                )
+            if "path" not in entry:
+                raise ValueError(f"Missing 'path' key in entry {i} of '{split}' split")
+            if "label" not in entry:
+                raise ValueError(f"Missing 'label' key in entry {i} of '{split}' split")
         self._samples = [(entry["path"], entry["label"]) for entry in split_entries]
         self._targets = [entry["label"] for entry in split_entries]
+
+        if allowed_root is not None:
+            root = Path(allowed_root).resolve()
+            for i, (path, _) in enumerate(self._samples):
+                resolved = Path(path).resolve()
+                if not resolved.is_relative_to(root):
+                    raise ValueError(
+                        f"Path traversal detected: entry {i} path '{path}' "
+                        f"is outside allowed root '{root}'"
+                    )
 
         if len(self._samples) == 0:
             raise ValueError(f"No samples found in '{split}' split of {split_file}")

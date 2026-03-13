@@ -37,6 +37,11 @@ RUN PYTHON_VERSION=$(cat .python-version | tr -d '\n' | cut -d. -f1,2) && \
 # Copy requirements files and install Python packages in one layer
 COPY requirements.txt requirements-dev.txt ./
 # TODO: multi-stage build to separate dev and prod images
-RUN python3 -m pip install --no-cache-dir -U --ignore-installed pip setuptools wheel && \
+RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
     python3 -m pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt && \
     rm -rf /root/.cache/pip
+
+# Create non-root user for runtime
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --create-home appuser
+USER appuser

@@ -11,6 +11,7 @@ import os
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+_MAX_ERROR_MESSAGE_LENGTH = 200
 
 
 def _post_slack(text: str, webhook_url: str) -> None:
@@ -96,7 +97,7 @@ def notify_error(config: Dict[str, Any], error: Exception) -> None:
     experiment = config.get("experiment", "unknown")
     mode = config.get("mode")
     base_dir = config.get("output", {}).get("base_dir", "N/A")
-    error_msg = str(error)[:200]  # Truncate long errors
+    error_msg = str(error)[:_MAX_ERROR_MESSAGE_LENGTH]
 
     parts = [":x: *Experiment failed*"]
     parts.append(f"• Experiment: `{experiment}`")

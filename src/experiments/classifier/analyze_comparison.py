@@ -6,6 +6,7 @@ across different experiments (e.g., baseline vs. synthetic data augmentation).
 """
 
 import os
+import re
 from dataclasses import dataclass
 from glob import glob
 from typing import Dict, List, Optional, Tuple
@@ -52,7 +53,10 @@ class ExperimentResults:
         for csv_path in csv_paths:
             df = pd.read_csv(csv_path)
             # Extract seed number from path
-            seed = int(csv_path.split("seed_")[1].split(os.sep)[0])
+            match = re.search(r"seed_(\d+)", csv_path)
+            if match is None:
+                raise ValueError(f"Could not extract seed number from path: {csv_path}")
+            seed = int(match.group(1))
             df["seed"] = seed
             df["experiment"] = experiment_name
             results.append(df)
@@ -136,7 +140,7 @@ class ExperimentComparator:
             comparison_std = comparison_values.std()  # type: ignore[attr-defined]
 
             # Calculate improvement percentage
-            if baseline_mean != 0:
+            if abs(baseline_mean) > 1e-10:
                 improvement = ((comparison_mean - baseline_mean) / baseline_mean) * 100
             else:
                 improvement = 0.0
