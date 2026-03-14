@@ -146,6 +146,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     seed = config.get("compute", {}).get("seed")
 
     if seed is not None:
+        import random
+
+        import numpy as np
+
+        random.seed(seed)
+        np.random.seed(seed)
         torch.manual_seed(seed)
         if "cuda" in device:
             torch.cuda.manual_seed_all(seed)
@@ -497,6 +503,12 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Set random seed if specified (now in compute section)
     seed = compute_config.get("seed")
     if seed is not None:
+        import random
+
+        import numpy as np
+
+        random.seed(seed)
+        np.random.seed(seed)
         torch.manual_seed(seed)
         if "cuda" in str(device):
             torch.cuda.manual_seed_all(seed)
@@ -642,7 +654,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)
         all_samples = []
-        for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
+        for start_idx in range(0, num_samples, batch_size):
             end_idx = min(start_idx + batch_size, num_samples)
             batch_labels = (
                 class_labels[start_idx:end_idx] if class_labels is not None else None
@@ -940,7 +952,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         logger.info("Training completed successfully!")
 
 
-def setup_experiment_gan(config: Dict[str, Any]) -> None:
+def setup_experiment_gan(_: Dict[str, Any]) -> None:
     """Setup and run GAN experiment.
 
     Args:
