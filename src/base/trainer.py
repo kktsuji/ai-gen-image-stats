@@ -478,7 +478,7 @@ class BaseTrainer(ABC):
             raise ValueError(f"num_epochs must be a positive integer, got {num_epochs}")
 
         checkpoint_info = self.load_checkpoint(checkpoint_path)
-        start_epoch = checkpoint_info["epoch"]
+        start_epoch = checkpoint_info.get("epoch", 0)
         logger.info(f"Resuming training from epoch {start_epoch}")
         logger.info(f"Will train for {num_epochs} additional epochs")
 
@@ -652,7 +652,7 @@ class BaseTrainer(ABC):
                     logger.debug(f"Latest checkpoint updated: {latest_path}")
 
         # Save final checkpoint after all epochs complete
-        if checkpoint_dir is not None and train_metrics:
+        if checkpoint_dir is not None:
             final_path = checkpoint_dir / "final_model.pth"
             self.save_checkpoint(
                 final_path,

@@ -498,7 +498,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     seed = compute_config.get("seed")
     if seed is not None:
         torch.manual_seed(seed)
-        if device == "cuda":
+        if "cuda" in str(device):
             torch.cuda.manual_seed_all(seed)
         logger.info(f"Random seed set to: {seed}")
 

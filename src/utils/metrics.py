@@ -43,6 +43,14 @@ def calculate_fid(
         Heusel et al., "GANs Trained by a Two Time-Scale Update Rule
         Converge to a Local Nash Equilibrium", NeurIPS 2017
     """
+    if real_features.shape[0] < 2:
+        raise ValueError(
+            f"FID requires at least 2 real samples, got {real_features.shape[0]}"
+        )
+    if fake_features.shape[0] < 2:
+        raise ValueError(
+            f"FID requires at least 2 fake samples, got {fake_features.shape[0]}"
+        )
     if real_features.shape[1] != fake_features.shape[1]:
         raise ValueError(
             f"Feature dimension mismatch: real={real_features.shape[1]}, "
