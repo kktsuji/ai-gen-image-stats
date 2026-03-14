@@ -510,7 +510,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        if "cuda" in str(device):
+        if "cuda" in device:
             torch.cuda.manual_seed_all(seed)
         logger.info(f"Random seed set to: {seed}")
 

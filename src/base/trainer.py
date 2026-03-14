@@ -331,7 +331,12 @@ class BaseTrainer(ABC):
         logger.info(f"  Epoch: {epoch}, Global step: {self._global_step}")
 
         if metrics:
-            metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
+            metrics_str = ", ".join(
+                [
+                    f"{k}: {v:.6f}" if isinstance(v, (int, float)) else f"{k}: {v}"
+                    for k, v in metrics.items()
+                ]
+            )
             logger.info(f"  Metrics: {metrics_str}")
 
         if self._best_metric is not None:
@@ -429,7 +434,10 @@ class BaseTrainer(ABC):
 
         if "metrics" in checkpoint:
             metrics_str = ", ".join(
-                [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
+                [
+                    f"{k}: {v:.6f}" if isinstance(v, (int, float)) else f"{k}: {v}"
+                    for k, v in checkpoint["metrics"].items()
+                ]
             )
             logger.info(f"  Loaded metrics: {metrics_str}")
 
@@ -590,7 +598,9 @@ class BaseTrainer(ABC):
 
             # Best model tracking: only update on epochs where validation ran (H2)
             if save_best and val_metrics is not None:
-                current_metric_value = val_metrics.get(best_metric)
+                current_metric_value = val_metrics.get(best_metric) or val_metrics.get(
+                    f"val_{best_metric}"
+                )
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(

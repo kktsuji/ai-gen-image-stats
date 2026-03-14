@@ -1114,8 +1114,6 @@ class DDPMModel(BaseModel):
         # When collecting intermediates, only store at evenly-spaced intervals
         # to avoid OOM from storing all 1000+ denoising steps on GPU
         if return_intermediates:
-            import numpy as np
-
             capture_indices = set(
                 np.linspace(0, self.num_timesteps - 1, 16, dtype=int).tolist()
             )
@@ -1133,7 +1131,7 @@ class DDPMModel(BaseModel):
                 leave=False,
             )
 
-        for step_idx, i in enumerate(timesteps):
+        for i in timesteps:
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
                 x,
@@ -1144,7 +1142,7 @@ class DDPMModel(BaseModel):
                 dynamic_threshold_percentile,
             )
 
-            if return_intermediates and step_idx in capture_indices:
+            if return_intermediates and i in capture_indices:
                 intermediates.append(x.cpu())
 
         if return_intermediates:

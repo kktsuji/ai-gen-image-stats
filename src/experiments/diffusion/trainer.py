@@ -377,6 +377,13 @@ class DiffusionTrainer(BaseTrainer):
                             ),
                         )
 
+                # NaN/Inf check before backward to avoid wasted computation
+                if not math.isfinite(loss.item()):
+                    raise RuntimeError(
+                        f"Non-finite loss detected at epoch {self._current_epoch}, "
+                        f"batch {batch_idx + 1}: {loss.item()}. Training aborted."
+                    )
+
                 # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
 
@@ -410,6 +417,13 @@ class DiffusionTrainer(BaseTrainer):
                         ),
                     )
 
+                # NaN/Inf check before backward to avoid wasted computation
+                if not math.isfinite(loss.item()):
+                    raise RuntimeError(
+                        f"Non-finite loss detected at epoch {self._current_epoch}, "
+                        f"batch {batch_idx + 1}: {loss.item()}. Training aborted."
+                    )
+
                 # Backward pass
                 loss.backward()
 
@@ -434,11 +448,6 @@ class DiffusionTrainer(BaseTrainer):
 
             # Track metrics
             loss_val = loss.item()
-            if not math.isfinite(loss_val):
-                raise RuntimeError(
-                    f"Non-finite loss detected at epoch {self._current_epoch}, "
-                    f"batch {batch_idx + 1}: {loss_val}. Training aborted."
-                )
             total_loss += loss_val
             num_batches += 1
             self._global_step += 1
@@ -551,7 +560,14 @@ class DiffusionTrainer(BaseTrainer):
                     iterator.set_postfix({"val_loss": total_loss / num_batches})  # type: ignore[attr-defined]
 
         # Compute epoch metrics
-        avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+        if num_batches == 0:
+            _logger.warning(
+                f"Epoch {self._current_epoch} [Val] - No finite validation batches. "
+                "Skipping best-model update."
+            )
+            return None
+
+        avg_loss = total_loss / num_batches
 
         _logger.info(f"Epoch {self._current_epoch} [Val] - Loss: {avg_loss:.6f}")
         _logger.debug(f"Validation batches: {num_batches}")
@@ -663,7 +679,9 @@ class DiffusionTrainer(BaseTrainer):
 
             # Best model tracking: only update on epochs where validation ran (H2)
             if save_best and val_metrics is not None:
-                current_metric_value = val_metrics.get(best_metric)
+                current_metric_value = val_metrics.get(best_metric) or val_metrics.get(
+                    f"val_{best_metric}"
+                )
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -828,7 +846,9 @@ class DiffusionTrainer(BaseTrainer):
 
             # Best model tracking: only update on epochs where validation ran (H2)
             if save_best and val_metrics is not None:
-                current_metric_value = val_metrics.get(best_metric)
+                current_metric_value = val_metrics.get(best_metric) or val_metrics.get(
+                    f"val_{best_metric}"
+                )
 
                 if current_metric_value is not None:
                     is_best = self._is_best_metric(
@@ -1034,6 +1054,8 @@ class DiffusionTrainer(BaseTrainer):
             except (RuntimeError, ValueError, KeyError) as e:
                 _logger.error("Failed to load optimizer state dict")
                 _logger.exception(f"Error details: {e}")
+                if strict:
+                    raise
                 _logger.warning("Continuing without optimizer state")
 
         # Load EMA state

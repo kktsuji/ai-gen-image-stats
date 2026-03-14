@@ -110,15 +110,16 @@ class InceptionV3Classifier(BaseModel):
         # Build model architecture first
         inception = inception_v3(pretrained=False, transform_input=False)
 
-        if model_path.exists():
-            # Load from local cache (state_dict only)
-            state_dict = torch.load(model_path, weights_only=True)
-            inception.load_state_dict(state_dict)
-        elif self.pretrained:
-            # Download pretrained weights
-            inception = inception_v3(pretrained=True, transform_input=False)
-            # Cache the pretrained state_dict
-            torch.save(inception.state_dict(), model_path)
+        if self.pretrained:
+            if model_path.exists():
+                # Load from local cache (state_dict only)
+                state_dict = torch.load(model_path, weights_only=True)
+                inception.load_state_dict(state_dict)
+            else:
+                # Download pretrained weights
+                inception = inception_v3(pretrained=True, transform_input=False)
+                # Cache the pretrained state_dict
+                torch.save(inception.state_dict(), model_path)
 
         # Extract feature extraction layers (excluding aux classifier and fc)
         # We manually copy layers to avoid issues with aux classifier during training

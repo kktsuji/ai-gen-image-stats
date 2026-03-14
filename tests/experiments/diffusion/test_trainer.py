@@ -2111,7 +2111,7 @@ class TestDiffusionTrainerLoadCheckpointErrors:
                 )
 
     def test_load_checkpoint_optimizer_failure(self):
-        """load_checkpoint with optimizer load failure warns and continues."""
+        """load_checkpoint with optimizer load failure raises in strict mode, warns in non-strict."""
         from unittest.mock import patch as mock_patch
 
         trainer, _, _, optimizer, _ = _make_diffusion_trainer()
@@ -2126,11 +2126,15 @@ class TestDiffusionTrainerLoadCheckpointErrors:
                 "load_state_dict",
                 side_effect=RuntimeError("incompatible optimizer"),
             ):
+                # strict=True (default) — should re-raise
+                with pytest.raises(RuntimeError, match="incompatible optimizer"):
+                    trainer.load_checkpoint(ckpt_path, strict=True)
+
+                # strict=False — should warn and continue
                 with mock_patch(
                     "src.experiments.diffusion.trainer._logger"
                 ) as mock_logger:
-                    # Should not raise - warning is logged
-                    trainer.load_checkpoint(ckpt_path)
+                    trainer.load_checkpoint(ckpt_path, strict=False)
                     assert any(
                         "optimizer" in str(c).lower()
                         for c in mock_logger.warning.call_args_list

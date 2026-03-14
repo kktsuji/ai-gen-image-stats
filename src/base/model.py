@@ -255,4 +255,8 @@ class BaseModel(nn.Module, ABC):
         try:
             return next(self.parameters()).device
         except StopIteration:
+            pass
+        try:
+            return next(self.buffers()).device
+        except StopIteration:
             return torch.device("cpu")

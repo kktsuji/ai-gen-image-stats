@@ -419,7 +419,8 @@ class SplitFileDataset(BaseDataset):
 
         if allowed_root is not None:
             root = Path(allowed_root).resolve()
-            for i, (path, _) in enumerate(self._samples):
+            resolved_samples = []
+            for i, (path, label) in enumerate(self._samples):
                 # Reject absolute paths when allowed_root is set
                 if Path(path).is_absolute():
                     raise ValueError(
@@ -440,6 +441,8 @@ class SplitFileDataset(BaseDataset):
                         f"Path traversal detected: entry {i} path '{path}' "
                         f"is outside allowed root '{root}'"
                     )
+                resolved_samples.append((str(resolved), label))
+            self._samples = resolved_samples
         else:
             # When allowed_root is not set, validate paths for
             # directory traversal patterns (e.g., ../../../etc/passwd).
@@ -447,7 +450,8 @@ class SplitFileDataset(BaseDataset):
             # - Relative paths: resolve against split_dir and verify
             #   they stay within it
             split_dir = Path(split_file).resolve().parent
-            for i, (path, _) in enumerate(self._samples):
+            resolved_samples = []
+            for i, (path, label) in enumerate(self._samples):
                 p = Path(path)
                 if p.is_absolute():
                     # Block absolute paths with traversal components
@@ -456,6 +460,7 @@ class SplitFileDataset(BaseDataset):
                             f"Path traversal detected: entry {i} absolute "
                             f"path '{path}' contains '..' component."
                         )
+                    resolved_samples.append((path, label))
                 else:
                     resolved = (split_dir / path).resolve()
                     if not resolved.is_relative_to(split_dir):
@@ -465,6 +470,8 @@ class SplitFileDataset(BaseDataset):
                             f"'{split_dir}'. Set allowed_root explicitly or "
                             f"use absolute paths."
                         )
+                    resolved_samples.append((str(resolved), label))
+            self._samples = resolved_samples
 
         if len(self._samples) == 0:
             raise ValueError(f"No samples found in '{split}' split of {split_file}")

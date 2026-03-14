@@ -101,9 +101,13 @@ class ClassifierLogger(BaseLogger):
         if self.csv_initialized:
             with open(self.metrics_file, "r") as f:
                 reader = csv.DictReader(f)
-                self.csv_fieldnames = (
-                    list(reader.fieldnames) if reader.fieldnames is not None else None
-                )
+                if reader.fieldnames:
+                    self.csv_fieldnames = list(reader.fieldnames)
+                else:
+                    # Treat a CSV without header (or empty file) as uninitialized
+                    # so that later logging can write a fresh header safely.
+                    self.csv_initialized = False
+                    self.csv_fieldnames = None
 
         # Initialize TensorBoard logging
         self.tensorboard_config = tensorboard_config or {}
@@ -183,24 +187,13 @@ class ClassifierLogger(BaseLogger):
                 raise RuntimeError("CSV fieldnames not initialized")
             # NOTE: This class is designed for single-process use only.
             # CSV fieldnames mutation is not thread-safe.
-            # Allow one rewrite (e.g. to add validation fields after training
-            # fields have been established). Further rewrites are dropped with
-            # a warning to avoid unbounded O(n) full-file rewrites.
             new_fields = set(log_entry.keys()) - set(self.csv_fieldnames)
             if new_fields:
-                if not getattr(self, "_csv_rewritten_once", False):
-                    self.csv_fieldnames.extend(sorted(new_fields))
-                    self._rewrite_csv_with_new_fields()
-                    self._csv_rewritten_once = True
-                else:
-                    _logger.warning(
-                        "Ignoring unknown metric fields not present in CSV header: "
-                        "%s. To include these fields, restart training.",
-                        sorted(new_fields),
-                    )
-                    log_entry = {
-                        k: v for k, v in log_entry.items() if k in self.csv_fieldnames
-                    }
+                _logger.debug(
+                    "Expanding CSV schema with new fields: %s", sorted(new_fields)
+                )
+                self.csv_fieldnames.extend(sorted(new_fields))
+                self._rewrite_csv_with_new_fields()
 
         # Append metrics
         if self.csv_fieldnames is None:
@@ -304,6 +297,14 @@ class ClassifierLogger(BaseLogger):
         n_cols = 4
         n_rows = (n_images + n_cols - 1) // n_cols
 
+        # Validate channel count before allocating figure to avoid resource leak
+        n_channels = images[0].shape[0]
+        if n_channels not in (1, 3):
+            raise ValueError(
+                f"Unsupported number of image channels: {n_channels}. "
+                "Expected 1 (grayscale) or 3 (RGB)."
+            )
+
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 3 * n_rows))
         if n_rows == 1:
             axes = axes.reshape(1, -1)
@@ -315,12 +316,6 @@ class ClassifierLogger(BaseLogger):
 
             # Convert image to numpy and transpose to (H, W, C)
             img = images[idx].cpu().numpy()
-            n_channels = img.shape[0]
-            if n_channels not in (1, 3):
-                raise ValueError(
-                    f"Unsupported number of image channels: {n_channels}. "
-                    "Expected 1 (grayscale) or 3 (RGB)."
-                )
             if n_channels == 3:  # RGB
                 img = np.transpose(img, (1, 2, 0))
                 img = (img - img.min()) / (img.max() - img.min() + 1e-8)

@@ -86,5 +86,11 @@ RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
 
 # Create non-root user for runtime (UID/GID configurable via build args)
 RUN groupadd --gid ${APP_GID} appuser && \
-    useradd --uid ${APP_UID} --gid appuser --create-home appuser
+    useradd --uid ${APP_UID} --gid appuser --create-home appuser && \
+    chown appuser:appuser /work
+
+# Copy application source code and configs
+COPY --chown=${APP_UID}:${APP_GID} src/ /work/src/
+COPY --chown=${APP_UID}:${APP_GID} configs/ /work/configs/
+
 USER appuser

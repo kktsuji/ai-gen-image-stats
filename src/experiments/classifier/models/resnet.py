@@ -128,21 +128,22 @@ class ResNetClassifier(BaseModel):
         else:  # resnet152
             resnet = resnet152(pretrained=False)
 
-        if model_path.exists():
-            # Load from local cache (state_dict only)
-            state_dict = torch.load(model_path, weights_only=True)
-            resnet.load_state_dict(state_dict)
-        elif self.pretrained:
-            # Download pretrained weights
-            if self.variant == "resnet50":
-                resnet = resnet50(pretrained=True)
-            elif self.variant == "resnet101":
-                resnet = resnet101(pretrained=True)
-            else:  # resnet152
-                resnet = resnet152(pretrained=True)
+        if self.pretrained:
+            if model_path.exists():
+                # Load from local cache (state_dict only)
+                state_dict = torch.load(model_path, weights_only=True)
+                resnet.load_state_dict(state_dict)
+            else:
+                # Download pretrained weights
+                if self.variant == "resnet50":
+                    resnet = resnet50(pretrained=True)
+                elif self.variant == "resnet101":
+                    resnet = resnet101(pretrained=True)
+                else:  # resnet152
+                    resnet = resnet152(pretrained=True)
 
-            # Cache the pretrained state_dict
-            torch.save(resnet.state_dict(), model_path)
+                # Cache the pretrained state_dict
+                torch.save(resnet.state_dict(), model_path)
 
         # Extract feature extraction layers (excluding fc)
         # ResNet architecture: conv1 -> bn1 -> relu -> maxpool -> layer1-4 -> avgpool -> fc

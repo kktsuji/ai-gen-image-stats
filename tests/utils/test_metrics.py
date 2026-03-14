@@ -127,6 +127,16 @@ def test_calculate_fid_custom_eps():
     assert not np.isnan(fid_custom)
 
 
+@pytest.mark.unit
+def test_calculate_fid_requires_minimum_samples():
+    """Test that FID raises ValueError when fewer than 2 samples are provided."""
+    with pytest.raises(ValueError, match="at least 2 real samples"):
+        calculate_fid(np.random.randn(1, 10), np.random.randn(2, 10))
+
+    with pytest.raises(ValueError, match="at least 2 fake samples"):
+        calculate_fid(np.random.randn(2, 10), np.random.randn(1, 10))
+
+
 # ============================================================================
 # Unit Tests: Inception Score
 # ============================================================================
