@@ -105,11 +105,17 @@ class EMA:
     def load_state_dict(self, state_dict):
         """Load state dict from checkpoint."""
         self.decay = state_dict["decay"]
-        # Move shadow parameters to the correct device
+        # Derive device from the model's current parameters rather than the
+        # stale self.device set at init time (the model may have been moved
+        # since then, e.g. via .to(device) or DDP wrapping).
+        try:
+            current_device = next(self.model.parameters()).device
+        except StopIteration:
+            current_device = torch.device(self.device)
         # Strip torch.compile prefix if present
         shadow = state_dict["shadow"]
         self.shadow = {
-            name.removeprefix("_orig_mod."): tensor.to(self.device)
+            name.removeprefix("_orig_mod."): tensor.to(current_device)
             for name, tensor in shadow.items()
         }
 
@@ -718,24 +724,35 @@ class DDPMModel(BaseModel):
             "alphas_cumprod_prev", F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
         )
 
+        # Clamp alphas_cumprod to avoid division-by-zero and sqrt(negative) at
+        # late timesteps where values approach 0.
+        alphas_cumprod_safe = torch.clamp(self.alphas_cumprod, min=1e-10)
+        one_minus_alphas_cumprod_safe = torch.clamp(
+            1.0 - self.alphas_cumprod, min=1e-10
+        )
+
         # Calculations for diffusion q(x_t | x_{t-1})
         self.register_buffer("sqrt_alphas_cumprod", torch.sqrt(self.alphas_cumprod))
         self.register_buffer(
-            "sqrt_one_minus_alphas_cumprod", torch.sqrt(1.0 - self.alphas_cumprod)
+            "sqrt_one_minus_alphas_cumprod", torch.sqrt(one_minus_alphas_cumprod_safe)
         )
         self.register_buffer(
-            "log_one_minus_alphas_cumprod", torch.log(1.0 - self.alphas_cumprod)
+            "log_one_minus_alphas_cumprod", torch.log(one_minus_alphas_cumprod_safe)
         )
         self.register_buffer(
-            "sqrt_recip_alphas_cumprod", torch.sqrt(1.0 / self.alphas_cumprod)
+            "sqrt_recip_alphas_cumprod", torch.sqrt(1.0 / alphas_cumprod_safe)
         )
         self.register_buffer(
-            "sqrt_recipm1_alphas_cumprod", torch.sqrt(1.0 / self.alphas_cumprod - 1)
+            "sqrt_recipm1_alphas_cumprod",
+            torch.sqrt(torch.clamp(1.0 / alphas_cumprod_safe - 1, min=0)),
         )
 
         # Calculations for posterior q(x_{t-1} | x_t, x_0)
-        posterior_variance = (
-            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        posterior_variance = torch.clamp(
+            self.betas
+            * (1.0 - self.alphas_cumprod_prev)
+            / one_minus_alphas_cumprod_safe,
+            min=0,
         )
         self.register_buffer("posterior_variance", posterior_variance)
         self.register_buffer(
@@ -746,13 +763,13 @@ class DDPMModel(BaseModel):
             "posterior_mean_coef1",
             self.betas
             * torch.sqrt(self.alphas_cumprod_prev)
-            / (1.0 - self.alphas_cumprod),
+            / one_minus_alphas_cumprod_safe,
         )
         self.register_buffer(
             "posterior_mean_coef2",
             (1.0 - self.alphas_cumprod_prev)
             * torch.sqrt(self.alphas)
-            / (1.0 - self.alphas_cumprod),
+            / one_minus_alphas_cumprod_safe,
         )
 
     def _get_beta_schedule(
@@ -1054,7 +1071,10 @@ class DDPMModel(BaseModel):
         # No noise when t == 0
         nonzero_mask = (t != 0).float().view(-1, *([1] * (len(x_t.shape) - 1)))
 
-        return model_mean + nonzero_mask * torch.sqrt(model_variance) * noise
+        return (
+            model_mean
+            + nonzero_mask * torch.sqrt(torch.clamp(model_variance, min=0)) * noise
+        )
 
     @torch.no_grad()
     def sample(

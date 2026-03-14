@@ -29,6 +29,7 @@ Example 2: Upsampling
 """
 
 import logging
+import math
 from collections import Counter
 from typing import Dict, List
 
@@ -88,8 +89,9 @@ def downsample_dataset(
         f"min class count={min_count}, target_ratio={target_ratio}"
     )
 
-    # Compute target count: each class should have at most this many samples
-    target_count = int(min_count / target_ratio)
+    # Compute target count: each class should have at most this many samples.
+    # Use ceil to avoid silently discarding samples via truncation.
+    target_count = math.ceil(min_count / target_ratio)
 
     # Group indices by class
     class_indices: Dict[int, List[int]] = {}
@@ -166,8 +168,9 @@ def upsample_dataset(
         f"max class count={max_count}, target_ratio={target_ratio}"
     )
 
-    # Compute target count: each class should have at least this many samples
-    target_count = int(max_count * target_ratio)
+    # Compute target count: each class should have at least this many samples.
+    # Use ceil to avoid silently discarding samples via truncation.
+    target_count = math.ceil(max_count * target_ratio)
 
     # Group indices by class
     class_indices: Dict[int, List[int]] = {}

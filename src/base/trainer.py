@@ -6,6 +6,7 @@ the required abstract methods.
 """
 
 import logging
+import math
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -536,13 +537,12 @@ class BaseTrainer(ABC):
             train_metrics = self.train_epoch()
             epoch_time = time.time() - epoch_start_time
 
-            # NaN/Inf loss detection (M1)
+            # NaN/Inf loss detection
             loss_value = train_metrics.get("loss")
             if loss_value is not None and (
                 not isinstance(loss_value, (int, float))
-                or loss_value != loss_value  # NaN check
-                or loss_value == float("inf")
-                or loss_value == float("-inf")
+                or math.isnan(loss_value)
+                or math.isinf(loss_value)
             ):
                 logger.critical(
                     f"Training loss is NaN or Inf ({loss_value}) at epoch "

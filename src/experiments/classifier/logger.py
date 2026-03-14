@@ -300,10 +300,16 @@ class ClassifierLogger(BaseLogger):
 
             # Convert image to numpy and transpose to (H, W, C)
             img = images[idx].cpu().numpy()
-            if img.shape[0] == 3:  # RGB
+            n_channels = img.shape[0]
+            if n_channels not in (1, 3):
+                raise ValueError(
+                    f"Unsupported number of image channels: {n_channels}. "
+                    "Expected 1 (grayscale) or 3 (RGB)."
+                )
+            if n_channels == 3:  # RGB
                 img = np.transpose(img, (1, 2, 0))
                 img = (img - img.min()) / (img.max() - img.min() + 1e-8)
-            elif img.shape[0] == 1:  # Grayscale
+            else:  # Grayscale
                 img = img[0]
 
             ax.imshow(img, cmap="gray" if len(img.shape) == 2 else None)
