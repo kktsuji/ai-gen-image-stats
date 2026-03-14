@@ -139,6 +139,9 @@ class DiffusionSampler:
             ... )
         """
         # Validate inputs
+        if guidance_scale < 0.0:
+            raise ValueError(f"guidance_scale must be >= 0.0, got {guidance_scale}")
+
         if class_labels is not None:
             if len(class_labels) != num_samples:
                 logger.error(

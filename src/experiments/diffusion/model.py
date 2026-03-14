@@ -69,9 +69,10 @@ class EMA:
                         f"EMA update: parameter '{name}' not found in shadow. "
                         f"Model may have been modified after EMA initialization."
                     )
+                shadow_on_device = self.shadow[name].to(param.device)
                 new_average = (
                     1.0 - self.decay
-                ) * param.data + self.decay * self.shadow[name]
+                ) * param.data + self.decay * shadow_on_device
                 self.shadow[name] = new_average.clone()
 
     def apply_shadow(self):
@@ -84,7 +85,7 @@ class EMA:
                         f"Model may have been modified after EMA initialization."
                     )
                 self.backup[name] = param.data.clone()
-                param.data = self.shadow[name].clone()
+                param.data = self.shadow[name].to(param.device).clone()
 
     def restore(self):
         """Restore original parameters (after inference)."""

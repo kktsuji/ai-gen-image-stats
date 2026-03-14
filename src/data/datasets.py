@@ -9,7 +9,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from PIL import Image
@@ -149,7 +149,7 @@ class ImageFolderDataset(BaseDataset):
         """Return the total number of samples."""
         return len(self._dataset)
 
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+    def __getitem__(self, index: int) -> Union[Tuple[torch.Tensor, int], torch.Tensor]:
         """
         Get a sample from the dataset.
 
@@ -427,7 +427,13 @@ class SplitFileDataset(BaseDataset):
                         f"in '{split}' split. Use relative paths when "
                         f"allowed_root is set."
                     )
-                # Resolve relative paths against the allowed_root
+                # Pre-validate: reject ".." components before symlink resolution
+                if ".." in Path(path).parts:
+                    raise ValueError(
+                        f"Path traversal detected: entry {i} path '{path}' "
+                        f"contains '..' component in '{split}' split."
+                    )
+                # Resolve relative paths against the allowed_root (follows symlinks)
                 resolved = (root / path).resolve()
                 if not resolved.is_relative_to(root):
                     raise ValueError(

@@ -312,6 +312,11 @@ class BaseTrainer(ABC):
             checkpoint["best_metric"] = self._best_metric
             checkpoint["best_metric_name"] = self._best_metric_name
 
+        # Save scheduler state if present
+        scheduler = getattr(self, "scheduler", None)
+        if scheduler is not None:
+            checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+
         # Add any additional metadata
         checkpoint.update(kwargs)
 
@@ -410,6 +415,14 @@ class BaseTrainer(ABC):
         self._global_step = checkpoint.get("global_step", 0)
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
+
+        # Restore scheduler state if present
+        scheduler = getattr(self, "scheduler", None)
+        if scheduler is not None and "scheduler_state_dict" in checkpoint:
+            try:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            except Exception as e:
+                logger.warning(f"Failed to restore scheduler state: {e}")
 
         logger.info("✓ Checkpoint loaded successfully")
         logger.info(f"  Epoch: {self._current_epoch}, Global step: {self._global_step}")

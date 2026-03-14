@@ -152,8 +152,9 @@ class TestLogMetrics:
         assert logger.logged_metrics_history[2]["loss"] == 0.25
 
     def test_log_metrics_handles_new_fields(self, logger, temp_log_dir):
-        """log_metrics() handles new fields being added."""
+        """log_metrics() allows one CSV rewrite for new fields, then drops extras."""
         logger.log_metrics({"loss": 0.05}, step=1)
+        # First new field triggers one allowed rewrite (e.g. validation metrics)
         logger.log_metrics({"loss": 0.04, "timestep": 500}, step=2)
 
         csv_file = Path(temp_log_dir) / "metrics" / "metrics.csv"
@@ -161,7 +162,7 @@ class TestLogMetrics:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert len(rows) == 2
-            # First row should have loss but empty timestep
+            # First row should have loss but empty timestep (backfilled by rewrite)
             assert rows[0]["loss"] == "0.05"
             assert rows[0]["timestep"] == ""
             # Second row should have both

@@ -147,7 +147,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     if seed is not None:
         torch.manual_seed(seed)
-        if device == "cuda":
+        if "cuda" in device:
             torch.cuda.manual_seed_all(seed)
         logger.info(f"Random seed set to: {seed}")
 

@@ -410,21 +410,18 @@ class TestInputValidation:
             sampler.sample(num_samples="invalid", use_ema=False)  # type: ignore[arg-type]
 
     def test_negative_guidance_scale(self, conditional_model, device):
-        """Test that negative guidance scale is handled (may be valid)."""
+        """Test that negative guidance scale raises ValueError."""
         sampler = DiffusionSampler(model=conditional_model, device=device)
 
         class_labels = torch.tensor([0, 1], device=device)
 
-        # Negative guidance scale might be valid in some contexts
-        # Just verify it doesn't crash
-        samples = sampler.sample(
-            num_samples=2,
-            class_labels=class_labels,
-            guidance_scale=-1.0,
-            use_ema=False,
-        )
-
-        assert samples.shape == (2, 3, 32, 32)
+        with pytest.raises(ValueError, match="guidance_scale must be >= 0.0"):
+            sampler.sample(
+                num_samples=2,
+                class_labels=class_labels,
+                guidance_scale=-1.0,
+                use_ema=False,
+            )
 
 
 # ========================================

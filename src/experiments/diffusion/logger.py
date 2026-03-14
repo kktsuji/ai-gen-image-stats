@@ -6,6 +6,7 @@ and denoising process visualizations.
 """
 
 import csv
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
@@ -27,6 +28,8 @@ from src.utils.tensorboard import (
 
 # Use non-interactive backend for headless environments
 matplotlib.use("Agg")
+
+_logger = logging.getLogger(__name__)
 
 
 class DiffusionLogger(BaseLogger):
@@ -178,12 +181,24 @@ class DiffusionLogger(BaseLogger):
                 raise RuntimeError("CSV fieldnames not initialized")
             # NOTE: This class is designed for single-process use only.
             # CSV fieldnames mutation is not thread-safe.
-            # Update fieldnames if new metrics are added
+            # Allow one rewrite (e.g. to add validation fields after training
+            # fields have been established). Further rewrites are dropped with
+            # a warning to avoid unbounded O(n) full-file rewrites.
             new_fields = set(log_entry.keys()) - set(self.csv_fieldnames)
             if new_fields:
-                self.csv_fieldnames.extend(sorted(new_fields))
-                # Re-write entire CSV with new headers
-                self._rewrite_csv_with_new_fields()
+                if not getattr(self, "_csv_rewritten_once", False):
+                    self.csv_fieldnames.extend(sorted(new_fields))
+                    self._rewrite_csv_with_new_fields()
+                    self._csv_rewritten_once = True
+                else:
+                    _logger.warning(
+                        "Ignoring unknown metric fields not present in CSV header: "
+                        "%s. To include these fields, restart training.",
+                        sorted(new_fields),
+                    )
+                    log_entry = {
+                        k: v for k, v in log_entry.items() if k in self.csv_fieldnames
+                    }
 
         # Append metrics
         if self.csv_fieldnames is None:
