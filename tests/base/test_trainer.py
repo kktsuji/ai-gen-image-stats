@@ -950,8 +950,33 @@ class TestLoadCheckpointErrorPaths:
         checkpoint_info = trainer2.load_checkpoint(checkpoint_path, strict=False)
         assert checkpoint_info["epoch"] == 1
 
-    def test_load_checkpoint_optimizer_load_failure(self, tmp_path):
-        """Save valid checkpoint, mock optimizer.load_state_dict to raise -> warning, continues."""
+    def test_load_checkpoint_optimizer_load_failure_strict(self, tmp_path):
+        """Save valid checkpoint, mock optimizer.load_state_dict to raise -> raises in strict mode."""
+        from unittest.mock import patch
+
+        model = SimpleTestModel()
+        dataloader = SimpleTestDataLoader()
+        optimizer = torch.optim.Adam(model.parameters())
+        logger = SimpleTestLogger()
+
+        trainer = MinimalValidTrainer(model, dataloader, optimizer, logger)
+        checkpoint_path = tmp_path / "checkpoint.pth"
+        trainer.save_checkpoint(checkpoint_path, epoch=1)
+
+        # Create new trainer and mock optimizer.load_state_dict to fail
+        model2 = SimpleTestModel()
+        optimizer2 = torch.optim.Adam(model2.parameters())
+        trainer2 = MinimalValidTrainer(model2, dataloader, optimizer2, logger)
+
+        with patch.object(
+            optimizer2, "load_state_dict", side_effect=RuntimeError("bad state")
+        ):
+            # Should raise in strict mode (default)
+            with pytest.raises(RuntimeError, match="bad state"):
+                trainer2.load_checkpoint(checkpoint_path)
+
+    def test_load_checkpoint_optimizer_load_failure_non_strict(self, tmp_path):
+        """Save valid checkpoint, mock optimizer.load_state_dict to raise -> continues with strict=False."""
         from unittest.mock import patch
 
         model = SimpleTestModel()
@@ -971,8 +996,8 @@ class TestLoadCheckpointErrorPaths:
         with patch.object(
             optimizer2, "load_state_dict", side_effect=RuntimeError("bad state")
         ) as mock_load_state_dict:
-            # Should not raise, just warn and continue
-            checkpoint_info = trainer2.load_checkpoint(checkpoint_path)
+            # Should not raise with strict=False, just warn and continue
+            checkpoint_info = trainer2.load_checkpoint(checkpoint_path, strict=False)
             assert checkpoint_info["epoch"] == 1
             mock_load_state_dict.assert_called_once()
 

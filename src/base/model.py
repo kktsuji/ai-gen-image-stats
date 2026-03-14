@@ -240,6 +240,9 @@ class BaseModel(nn.Module, ABC):
     def get_device(self) -> torch.device:
         """Get the device where the model is located.
 
+        Returns the device of the first parameter, or CPU if the model
+        has no parameters.
+
         Returns:
             Device (CPU or CUDA) where model parameters are located
 
@@ -247,4 +250,7 @@ class BaseModel(nn.Module, ABC):
             >>> device = model.get_device()
             >>> print(f"Model is on: {device}")
         """
-        return next(self.parameters()).device
+        try:
+            return next(self.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")

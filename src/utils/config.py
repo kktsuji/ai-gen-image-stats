@@ -4,6 +4,7 @@ This module provides utilities for loading and merging configuration files.
 Priority order: CLI arguments > Config file > Code defaults
 """
 
+import copy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -68,7 +69,7 @@ def merge_configs(
     if override_config is None:
         return base_config.copy() if base_config else {}
 
-    result = base_config.copy()
+    result = copy.deepcopy(base_config)
 
     for key, value in override_config.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):

@@ -1033,7 +1033,11 @@ def main(args: Optional[list] = None) -> None:
         notify_error(config, e)
         sys.exit(1)
     except Exception as e:
-        logger.exception(f"Experiment '{experiment}' failed with error: {e}")
+        # Log to logger and stderr as fallback (logger may not be initialized)
+        try:
+            logger.exception(f"Experiment '{experiment}' failed with error: {e}")
+        except Exception:
+            print(f"FATAL: Experiment '{experiment}' failed: {e}", file=sys.stderr)
         notify_error(config, e)
         sys.exit(1)
 

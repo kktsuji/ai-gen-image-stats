@@ -6,6 +6,7 @@ with support for forcing CPU-only mode for testing.
 """
 
 import logging
+import threading
 from typing import Optional, Union
 
 import torch
@@ -145,6 +146,7 @@ class DeviceManager:
 
 # Global device manager instance (initialized on first use)
 _global_device_manager: Optional[DeviceManager] = None
+_device_manager_lock = threading.Lock()
 
 
 def get_device_manager(
@@ -163,8 +165,11 @@ def get_device_manager(
     """
     global _global_device_manager
 
-    if _global_device_manager is None or reset:
-        _global_device_manager = DeviceManager(force_cpu=force_cpu, device_id=device_id)
+    with _device_manager_lock:
+        if _global_device_manager is None or reset:
+            _global_device_manager = DeviceManager(
+                force_cpu=force_cpu, device_id=device_id
+            )
 
     return _global_device_manager
 

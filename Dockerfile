@@ -1,9 +1,15 @@
 # syntax=docker/dockerfile:1
 
+# Configurable timezone and user ID for runtime
+ARG TZ=Asia/Tokyo
+ARG APP_UID=1000
+ARG APP_GID=1000
+
 # ---- Builder stage: install all dependencies (prod + dev) ----
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 AS builder
 
-ENV TZ=Asia/Tokyo \
+ARG TZ
+ENV TZ=${TZ} \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -41,7 +47,10 @@ RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
 # ---- Production stage: only production dependencies ----
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 AS production
 
-ENV TZ=Asia/Tokyo \
+ARG TZ
+ARG APP_UID
+ARG APP_GID
+ENV TZ=${TZ} \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -75,7 +84,7 @@ RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
     python3 -m pip install --no-cache-dir -r requirements.txt && \
     rm -rf /root/.cache/pip
 
-# Create non-root user for runtime
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --create-home appuser
+# Create non-root user for runtime (UID/GID configurable via build args)
+RUN groupadd --gid ${APP_GID} appuser && \
+    useradd --uid ${APP_UID} --gid appuser --create-home appuser
 USER appuser

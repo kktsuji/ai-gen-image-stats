@@ -174,7 +174,7 @@ class TestSplitFileDatasetInit:
             SplitFileDataset(split_file=str(split_file), split="train")
 
     def test_allowed_root_none_allows_absolute_paths(self, tmp_path):
-        """Test that allowed_root=None allows absolute paths."""
+        """Test that allowed_root=None allows absolute paths without traversal."""
         split_file = tmp_path / "split.json"
         split_data = {
             "metadata": {"classes": {"a": 0}},
@@ -187,6 +187,20 @@ class TestSplitFileDatasetInit:
         # Absolute paths are allowed when allowed_root is None
         dataset = SplitFileDataset(split_file=str(split_file), split="train")
         assert len(dataset) == 1
+
+    def test_allowed_root_none_blocks_absolute_paths_with_traversal(self, tmp_path):
+        """Test that allowed_root=None blocks absolute paths with '..' components."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "/some/path/../../../etc/passwd", "label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            SplitFileDataset(split_file=str(split_file), split="train")
 
     def test_allowed_root_none_accepts_relative_paths(self, tmp_path):
         """Test that allowed_root=None accepts relative paths within split dir."""

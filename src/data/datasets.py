@@ -315,7 +315,14 @@ class SimpleImageDataset(BaseDataset):
             Transformed image tensor (or PIL Image if no transform is set)
         """
         img_path = self.image_paths[index]
-        image = Image.open(img_path).convert("RGB")
+        try:
+            image = Image.open(img_path).convert("RGB")
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Image file not found: {img_path}")
+        except OSError as e:
+            raise OSError(
+                f"Failed to load image at index {index}: {img_path} ({e})"
+            ) from e
 
         if self.transform is not None:
             image = self.transform(image)
@@ -428,18 +435,27 @@ class SplitFileDataset(BaseDataset):
                         f"is outside allowed root '{root}'"
                     )
         else:
-            # When allowed_root is not set, check relative paths for
+            # When allowed_root is not set, validate paths for
             # directory traversal patterns (e.g., ../../../etc/passwd).
-            # Absolute paths are allowed since they were explicitly placed
-            # in the split file by the data preparation step.
+            # - Absolute paths: check for ".." components (path traversal)
+            # - Relative paths: resolve against split_dir and verify
+            #   they stay within it
             split_dir = Path(split_file).resolve().parent
             for i, (path, _) in enumerate(self._samples):
-                if not Path(path).is_absolute():
+                p = Path(path)
+                if p.is_absolute():
+                    # Block absolute paths with traversal components
+                    if ".." in p.parts:
+                        raise ValueError(
+                            f"Path traversal detected: entry {i} absolute "
+                            f"path '{path}' contains '..' component."
+                        )
+                else:
                     resolved = (split_dir / path).resolve()
                     if not resolved.is_relative_to(split_dir):
                         raise ValueError(
-                            f"Path traversal detected: entry {i} relative path "
-                            f"'{path}' escapes split file directory "
+                            f"Path traversal detected: entry {i} relative "
+                            f"path '{path}' escapes split file directory "
                             f"'{split_dir}'. Set allowed_root explicitly or "
                             f"use absolute paths."
                         )
@@ -474,6 +490,11 @@ class SplitFileDataset(BaseDataset):
                 f"Image file not found: {path} "
                 f"(referenced in split file: {self.split_file})"
             )
+        except OSError as e:
+            raise OSError(
+                f"Failed to load image at index {index}: {path} "
+                f"(referenced in split file: {self.split_file}): {e}"
+            ) from e
 
         if self.transform is not None:
             image = self.transform(image)

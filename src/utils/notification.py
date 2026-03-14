@@ -8,10 +8,16 @@ If the variable is unset or empty, notifications are silently skipped.
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 _MAX_ERROR_MESSAGE_LENGTH = 200
+
+# Slack webhook URLs follow a known pattern
+_SLACK_WEBHOOK_PATTERN = re.compile(
+    r"^https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+$"
+)
 
 
 def _post_slack(text: str, webhook_url: str) -> None:
@@ -20,7 +26,16 @@ def _post_slack(text: str, webhook_url: str) -> None:
     Args:
         text: Message text to send.
         webhook_url: Slack incoming webhook URL.
+
+    Raises:
+        ValueError: If webhook_url does not match Slack webhook format.
     """
+    if not _SLACK_WEBHOOK_PATTERN.match(webhook_url):
+        raise ValueError(
+            "Invalid Slack webhook URL format. "
+            "Expected: https://hooks.slack.com/services/T.../B.../..."
+        )
+
     import requests
 
     message = {"text": text}
@@ -80,7 +95,7 @@ def notify_success(config: Dict[str, Any], duration_seconds: float) -> None:
         _post_slack(text, webhook_url)
         logger.debug("Slack notification sent (success)")
     except Exception as e:
-        logger.warning(f"Failed to send Slack notification: {e}")
+        logger.error(f"Failed to send Slack notification: {e}")
 
 
 def notify_error(config: Dict[str, Any], error: Exception) -> None:
@@ -112,4 +127,4 @@ def notify_error(config: Dict[str, Any], error: Exception) -> None:
         _post_slack(text, webhook_url)
         logger.debug("Slack notification sent (error)")
     except Exception as e:
-        logger.warning(f"Failed to send Slack notification: {e}")
+        logger.error(f"Failed to send Slack notification: {e}")

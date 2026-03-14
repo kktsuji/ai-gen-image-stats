@@ -272,7 +272,7 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
 
     # Validate balancing subsection (optional - backwards compatible)
     if "balancing" in data:
-        _validate_balancing_config(data["balancing"])
+        _validate_balancing_config(data["balancing"], config)
 
     aug = data["augmentation"]
     if "rotation_degrees" in aug:
@@ -285,11 +285,14 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
             )
 
 
-def _validate_balancing_config(balancing: Dict[str, Any]) -> None:
+def _validate_balancing_config(
+    balancing: Dict[str, Any], config: Dict[str, Any]
+) -> None:
     """Validate data.balancing configuration section.
 
     Args:
         balancing: The balancing configuration dictionary
+        config: Full configuration dictionary (for cross-validation)
 
     Raises:
         ValueError: If configuration values are invalid
@@ -323,6 +326,16 @@ def _validate_balancing_config(balancing: Dict[str, Any]) -> None:
                 raise ValueError(
                     "data.balancing.weighted_sampler.manual_weights must contain "
                     "only positive numbers"
+                )
+            # Cross-check against num_classes if available
+            num_classes = (
+                config.get("model", {}).get("conditioning", {}).get("num_classes")
+            )
+            if num_classes is not None and len(mw) != num_classes:
+                raise ValueError(
+                    f"data.balancing.weighted_sampler.manual_weights has "
+                    f"{len(mw)} entries but model.conditioning.num_classes "
+                    f"is {num_classes}. They must match."
                 )
 
         if "beta" in ws and ws["beta"] is not None:
@@ -405,6 +418,16 @@ def _validate_balancing_config(balancing: Dict[str, Any]) -> None:
                     "data.balancing.class_weights.manual_weights must contain "
                     "only positive numbers"
                 )
+            # Cross-check against num_classes if available
+            num_classes = (
+                config.get("model", {}).get("conditioning", {}).get("num_classes")
+            )
+            if num_classes is not None and len(mw) != num_classes:
+                raise ValueError(
+                    f"data.balancing.class_weights.manual_weights has "
+                    f"{len(mw)} entries but model.conditioning.num_classes "
+                    f"is {num_classes}. They must match."
+                )
 
         if "beta" in cw and cw["beta"] is not None:
             if (
@@ -458,6 +481,20 @@ def _validate_config_consistency(config: Dict[str, Any]) -> None:
             raise ValueError(
                 "model.conditioning.num_classes must be set and positive when "
                 "conditioning.type='class'"
+            )
+
+    # Check attention channel divisibility (num_heads=4 is hardcoded in AttentionBlock)
+    arch = model.get("architecture", {})
+    model_channels = arch.get("model_channels", 0)
+    channel_multipliers = arch.get("channel_multipliers", [])
+    use_attention = arch.get("use_attention", [])
+    num_heads = 4  # hardcoded in AttentionBlock
+    for i, (mult, has_attn) in enumerate(zip(channel_multipliers, use_attention)):
+        if has_attn and (model_channels * mult) % num_heads != 0:
+            raise ValueError(
+                f"model_channels ({model_channels}) * channel_multipliers[{i}] "
+                f"({mult}) = {model_channels * mult} is not divisible by "
+                f"num_heads ({num_heads}). Attention requires this."
             )
 
     # Check scheduler T_max (will be handled in code, not validation)

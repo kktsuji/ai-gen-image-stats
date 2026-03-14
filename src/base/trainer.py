@@ -245,6 +245,9 @@ class BaseTrainer(ABC):
             ...     best_metric_mode='min'
             ... )
         """
+        if num_epochs < 1:
+            raise ValueError(f"num_epochs must be a positive integer, got {num_epochs}")
+
         logger.info(f"Starting training for {num_epochs} epochs")
         self._run_training_loop(
             start_epoch=0,
@@ -394,7 +397,12 @@ class BaseTrainer(ABC):
             except Exception as e:
                 logger.error("Failed to load optimizer state dict")
                 logger.exception(f"Error details: {e}")
-                logger.warning("Continuing without optimizer state")
+                if strict:
+                    raise
+                logger.warning(
+                    "Continuing with fresh optimizer state (strict=False). "
+                    "Learning rate and momentum will be reset."
+                )
 
         # Restore training progress
         self._current_epoch = checkpoint.get("epoch", 0)
@@ -452,6 +460,9 @@ class BaseTrainer(ABC):
             ...     checkpoint_dir='outputs/checkpoints'
             ... )
         """
+        if num_epochs < 1:
+            raise ValueError(f"num_epochs must be a positive integer, got {num_epochs}")
+
         checkpoint_info = self.load_checkpoint(checkpoint_path)
         start_epoch = checkpoint_info["epoch"]
         logger.info(f"Resuming training from epoch {start_epoch}")

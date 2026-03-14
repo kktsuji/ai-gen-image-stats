@@ -312,6 +312,7 @@ class DiffusionTrainer(BaseTrainer):
 
         total_loss = 0.0
         num_batches = 0
+        max_grad_norm = 0.0
 
         # Debug: Log dataset info
         _logger.debug(f"Training on {len(train_loader)} batches")
@@ -385,6 +386,7 @@ class DiffusionTrainer(BaseTrainer):
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.gradient_clip_norm
                     )
+                    max_grad_norm = max(max_grad_norm, float(grad_norm))
                     if grad_norm > self.gradient_clip_norm:
                         _logger.warning(
                             f"Gradient clipped: norm {grad_norm:.4f} exceeded threshold {self.gradient_clip_norm}"
@@ -416,6 +418,7 @@ class DiffusionTrainer(BaseTrainer):
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.gradient_clip_norm
                     )
+                    max_grad_norm = max(max_grad_norm, float(grad_norm))
                     if grad_norm > self.gradient_clip_norm:
                         _logger.warning(
                             f"Gradient clipped: norm {grad_norm:.4f} exceeded threshold {self.gradient_clip_norm}"
@@ -466,7 +469,10 @@ class DiffusionTrainer(BaseTrainer):
         if self.use_ema:
             _logger.debug("EMA weights updated")
 
-        return {"loss": avg_loss}
+        metrics: Dict[str, float] = {"loss": avg_loss}
+        if self.gradient_clip_norm is not None:
+            metrics["grad_norm"] = max_grad_norm
+        return metrics
 
     def validate_epoch(self) -> Optional[Dict[str, float]]:
         """Execute one validation epoch.
@@ -530,7 +536,14 @@ class DiffusionTrainer(BaseTrainer):
                 )
 
                 # Track metrics
-                total_loss += loss.item()
+                loss_val = loss.item()
+                if not math.isfinite(loss_val):
+                    _logger.warning(
+                        f"Non-finite validation loss at epoch {self._current_epoch}, "
+                        f"batch {num_batches + 1}: {loss_val}. Skipping batch."
+                    )
+                    continue
+                total_loss += loss_val
                 num_batches += 1
 
                 # Update progress bar
