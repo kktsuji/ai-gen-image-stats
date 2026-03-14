@@ -377,7 +377,7 @@ class TestStandaloneSamplerUsage:
         )
 
         # Load checkpoint
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
 
         # Create EMA and load state
@@ -454,7 +454,7 @@ class TestEndToEndWorkflow:
             channel_multipliers=(1, 2),
         )
 
-        checkpoint = torch.load(latest_checkpoint)
+        checkpoint = torch.load(latest_checkpoint, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
 
         ema = EMA(model, decay=0.999, device=device)

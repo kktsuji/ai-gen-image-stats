@@ -57,9 +57,10 @@ def _scan_image_files(directory: str) -> List[str]:
     if not image_files:
         raise ValueError(f"No image files found in: {directory}")
 
-    # Convert to relative paths (from project root) and sort for determinism
-    relative_paths = sorted(str(p) for p in image_files)
-    return relative_paths
+    # Deduplicate (case-insensitive FS may match same file for both patterns)
+    # and convert to relative paths, sorted for determinism
+    unique_paths = sorted(set(str(p) for p in image_files))
+    return unique_paths
 
 
 def _split_list(items: List[str], train_ratio: float, rng: random.Random) -> tuple:

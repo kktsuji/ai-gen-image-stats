@@ -184,7 +184,27 @@ def get_device(
     Returns:
         torch.device: The selected device
     """
-    manager = get_device_manager(force_cpu=force_cpu, device_id=device_id)
+    # Detect mismatched parameters on cached singleton
+    global _global_device_manager
+    needs_reset = False
+    if _global_device_manager is not None:
+        if force_cpu != _global_device_manager._force_cpu:
+            needs_reset = True
+            logger.warning(
+                f"get_device called with force_cpu={force_cpu} but device manager "
+                f"was initialized with force_cpu={_global_device_manager._force_cpu}. "
+                f"Reinitializing."
+            )
+        if device_id is not None and device_id != _global_device_manager._device_id:
+            needs_reset = True
+            logger.warning(
+                f"get_device called with device_id={device_id} but device manager "
+                f"was initialized with device_id={_global_device_manager._device_id}. "
+                f"Reinitializing."
+            )
+    manager = get_device_manager(
+        force_cpu=force_cpu, device_id=device_id, reset=needs_reset
+    )
     return manager.device
 
 

@@ -159,8 +159,22 @@ class TestSplitFileDatasetInit:
                 allowed_root=str(tmp_path),
             )
 
-    def test_allowed_root_none_logs_warning(self, tmp_path):
-        """Test that allowed_root=None logs a warning but still works."""
+    def test_allowed_root_none_blocks_relative_traversal(self, tmp_path):
+        """Test that allowed_root=None blocks relative path traversal."""
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "../../../etc/passwd", "label": 0}],
+            "val": [{"path": "y.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            SplitFileDataset(split_file=str(split_file), split="train")
+
+    def test_allowed_root_none_allows_absolute_paths(self, tmp_path):
+        """Test that allowed_root=None allows absolute paths."""
         split_file = tmp_path / "split.json"
         split_data = {
             "metadata": {"classes": {"a": 0}},
@@ -170,7 +184,25 @@ class TestSplitFileDatasetInit:
         with open(split_file, "w") as f:
             json.dump(split_data, f)
 
-        # Should not raise - validation skipped when allowed_root is None
+        # Absolute paths are allowed when allowed_root is None
+        dataset = SplitFileDataset(split_file=str(split_file), split="train")
+        assert len(dataset) == 1
+
+    def test_allowed_root_none_accepts_relative_paths(self, tmp_path):
+        """Test that allowed_root=None accepts relative paths within split dir."""
+        # Create actual image file
+        img_path = tmp_path / "img.png"
+        Image.new("RGB", (8, 8)).save(img_path)
+
+        split_file = tmp_path / "split.json"
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": "img.png", "label": 0}],
+            "val": [{"path": "img.png", "label": 0}],
+        }
+        with open(split_file, "w") as f:
+            json.dump(split_data, f)
+
         dataset = SplitFileDataset(split_file=str(split_file), split="train")
         assert len(dataset) == 1
 

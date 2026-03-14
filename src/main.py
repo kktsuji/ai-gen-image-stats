@@ -369,6 +369,15 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     except KeyboardInterrupt:
         logger.warning("")
         logger.warning("Training interrupted by user")
+        interrupted_path = checkpoint_dir / "interrupted_checkpoint.pth"
+        try:
+            trainer.save_checkpoint(
+                interrupted_path,
+                epoch=trainer._current_epoch,
+            )
+            logger.info(f"Interrupted checkpoint saved to {interrupted_path}")
+        except Exception as save_err:
+            logger.error(f"Failed to save interrupted checkpoint: {save_err}")
         metrics_logger.close()
         sys.exit(0)
     except Exception as e:
@@ -908,6 +917,15 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         except KeyboardInterrupt:
             logger.warning("")
             logger.warning("Training interrupted by user")
+            interrupted_path = checkpoint_dir / "interrupted_checkpoint.pth"
+            try:
+                trainer.save_checkpoint(
+                    interrupted_path,
+                    epoch=trainer._current_epoch,
+                )
+                logger.info(f"Interrupted checkpoint saved to {interrupted_path}")
+            except Exception as save_err:
+                logger.error(f"Failed to save interrupted checkpoint: {save_err}")
             metrics_logger.close()
             sys.exit(0)
         except Exception as e:

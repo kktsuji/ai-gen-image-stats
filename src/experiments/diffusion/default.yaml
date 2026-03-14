@@ -180,7 +180,7 @@ training:
   validation:
     enabled: true # Run validation
     frequency: 50 # Validate every N epochs
-    metric: loss # Metric to monitor
+    metric: val_loss # Metric to monitor
 
   # Visualization: Sample generation during training
   visualization:

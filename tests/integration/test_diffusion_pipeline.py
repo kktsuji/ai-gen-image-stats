@@ -452,7 +452,9 @@ class TestDiffusionPipelineCheckpoints:
         )
 
         # Load checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["device"], weights_only=True
+        )
         model_loaded.load_state_dict(checkpoint["model_state_dict"])
 
         # Verify loaded weights match original
@@ -722,7 +724,9 @@ class TestDiffusionPipelineGeneration:
             device=config["device"],
         )
 
-        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["device"], weights_only=True
+        )
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
         logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
@@ -882,7 +886,9 @@ class TestDiffusionPipelineGeneration:
             device=config["device"],
         )
 
-        checkpoint = torch.load(checkpoint_path, map_location=config["device"])
+        checkpoint = torch.load(
+            checkpoint_path, map_location=config["device"], weights_only=True
+        )
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
         logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))

@@ -11,8 +11,31 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from zoneinfo import ZoneInfo
 
+# Valid log level names
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
 # Track handlers added by this module so we only remove our own
 _own_handlers: set = set()
+
+
+def _resolve_log_level(level: str) -> int:
+    """Resolve a log level string to its numeric value.
+
+    Args:
+        level: Log level name (e.g., "DEBUG", "INFO")
+
+    Returns:
+        Numeric log level
+
+    Raises:
+        ValueError: If the level string is not a valid log level
+    """
+    upper = level.upper()
+    if upper not in _VALID_LOG_LEVELS:
+        raise ValueError(
+            f"Invalid log level: '{level}'. Valid levels: {sorted(_VALID_LOG_LEVELS)}"
+        )
+    return getattr(logging, upper)
 
 
 class TimezoneFormatter(logging.Formatter):
@@ -140,14 +163,14 @@ def setup_logging(
 
     # Create console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(getattr(logging, console_level.upper()))
+    console_handler.setLevel(_resolve_log_level(console_level))
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
     _own_handlers.add(console_handler)
 
     # Create file handler
     file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
-    file_handler.setLevel(getattr(logging, file_level.upper()))
+    file_handler.setLevel(_resolve_log_level(file_level))
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
     _own_handlers.add(file_handler)
@@ -156,7 +179,7 @@ def setup_logging(
     if module_levels:
         for module_name, level in module_levels.items():
             module_logger = logging.getLogger(module_name)
-            module_logger.setLevel(getattr(logging, level.upper()))
+            module_logger.setLevel(_resolve_log_level(level))
 
     # Suppress verbose third-party library logs
     # PIL/Pillow logs debug messages for every image chunk read

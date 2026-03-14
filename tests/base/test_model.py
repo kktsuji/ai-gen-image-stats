@@ -198,7 +198,7 @@ class TestCheckpointSaveLoad:
         model.save_checkpoint(checkpoint_path)
 
         assert checkpoint_path.exists()
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert "model_state_dict" in checkpoint
         assert "model_class" in checkpoint
 
@@ -210,7 +210,7 @@ class TestCheckpointSaveLoad:
         metrics = {"accuracy": 0.95, "loss": 0.123}
         model.save_checkpoint(checkpoint_path, epoch=10, metrics=metrics)
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert checkpoint["epoch"] == 10
         assert checkpoint["metrics"] == metrics
 
@@ -222,7 +222,7 @@ class TestCheckpointSaveLoad:
 
         model.save_checkpoint(checkpoint_path, optimizer_state=optimizer.state_dict())
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert "optimizer_state_dict" in checkpoint
 
     def test_save_checkpoint_creates_directory(self, tmp_path):
@@ -244,7 +244,7 @@ class TestCheckpointSaveLoad:
             checkpoint_path, custom_field="custom_value", experiment_id=12345
         )
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         assert checkpoint["custom_field"] == "custom_value"
         assert checkpoint["experiment_id"] == 12345
 
@@ -328,7 +328,7 @@ class TestCheckpointSaveLoad:
         model1.save_checkpoint(checkpoint_path)
 
         # Manually modify checkpoint to have extra key (simulating unexpected key)
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         checkpoint["model_state_dict"]["extra_param"] = torch.randn(5, 5)
         torch.save(checkpoint, checkpoint_path)
 

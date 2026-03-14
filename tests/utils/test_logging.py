@@ -68,6 +68,8 @@ class TestLoggingSetup:
 
         assert formatter is not None
         assert custom_format in formatter._fmt  # type: ignore[operator]
+
+    def test_setup_logging_module_levels(self, tmp_path):
         """setup_logging configures module-specific log levels."""
         log_file = tmp_path / "test.log"
         module_levels = {"test.module": "ERROR", "another.module": "INFO"}

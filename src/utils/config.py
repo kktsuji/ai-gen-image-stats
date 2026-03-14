@@ -35,6 +35,9 @@ def load_config(config_path: Optional[Union[str, Path]]) -> Dict[str, Any]:
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
+    if config is None:
+        return {}
+
     return config
 
 

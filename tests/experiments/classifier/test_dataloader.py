@@ -254,6 +254,10 @@ def test_get_train_loader_basic(mock_classifier_dataset):
     assert isinstance(train_loader, torch.utils.data.DataLoader)
     assert train_loader.batch_size == 2
     assert len(train_loader.dataset) > 0  # type: ignore[arg-type]
+
+
+@pytest.mark.component
+def test_get_val_loader_basic(mock_classifier_dataset):
     """Test basic validation loader creation."""
     split_file = mock_classifier_dataset
 

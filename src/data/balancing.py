@@ -80,20 +80,16 @@ def downsample_dataset(
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)
 
-    # Identify minority and majority classes
-    minority_class = min(class_counts, key=lambda k: class_counts[k])
-    majority_class = max(class_counts, key=lambda k: class_counts[k])
-    minority_count = class_counts[minority_class]
-    majority_count = class_counts[majority_class]
+    # Identify the smallest class as the target size reference
+    min_count = min(class_counts.values())
 
     _logger.info(
-        f"Downsampling: minority class {minority_class} ({minority_count} samples), "
-        f"majority class {majority_class} ({majority_count} samples)"
+        f"Downsampling: {len(class_counts)} classes, "
+        f"min class count={min_count}, target_ratio={target_ratio}"
     )
 
-    # Compute target majority count
-    target_majority_count = int(minority_count / target_ratio)
-    target_majority_count = min(target_majority_count, majority_count)
+    # Compute target count: each class should have at most this many samples
+    target_count = int(min_count / target_ratio)
 
     # Group indices by class
     class_indices: Dict[int, List[int]] = {}
@@ -104,16 +100,14 @@ def downsample_dataset(
     generator = torch.Generator()
     generator.manual_seed(seed)
 
-    # Build balanced indices
+    # Build balanced indices — downsample every class that exceeds target_count
     balanced_indices: List[int] = []
     for cls, indices in class_indices.items():
-        if cls == majority_class:
-            # Randomly select target_majority_count indices
+        if len(indices) > target_count:
             perm = torch.randperm(len(indices), generator=generator)
-            selected = perm[:target_majority_count].tolist()
+            selected = perm[:target_count].tolist()
             balanced_indices.extend([indices[i] for i in selected])
         else:
-            # Keep all minority class samples
             balanced_indices.extend(indices)
 
     _logger.info(
@@ -164,24 +158,16 @@ def upsample_dataset(
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)
 
-    # Identify minority and majority classes
-    minority_class = min(class_counts, key=lambda k: class_counts[k])
-    majority_class = max(class_counts, key=lambda k: class_counts[k])
-    minority_count = class_counts[minority_class]
-    majority_count = class_counts[majority_class]
+    # Identify the largest class as the target size reference
+    max_count = max(class_counts.values())
 
     _logger.info(
-        f"Upsampling: minority class {minority_class} ({minority_count} samples), "
-        f"majority class {majority_class} ({majority_count} samples)"
+        f"Upsampling: {len(class_counts)} classes, "
+        f"max class count={max_count}, target_ratio={target_ratio}"
     )
 
-    # Compute target minority count
-    target_minority_count = int(majority_count * target_ratio)
-    extra = target_minority_count - minority_count
-
-    if extra <= 0:
-        _logger.info("No upsampling needed (minority already meets target ratio)")
-        return Subset(dataset, list(range(len(targets))))
+    # Compute target count: each class should have at least this many samples
+    target_count = int(max_count * target_ratio)
 
     # Group indices by class
     class_indices: Dict[int, List[int]] = {}
@@ -195,17 +181,21 @@ def upsample_dataset(
     # Start with all original indices
     all_indices: List[int] = list(range(len(targets)))
 
-    # Randomly pick extra indices (with replacement) from minority class
-    minority_indices = class_indices[minority_class]
-    extra_selection = torch.randint(
-        0, len(minority_indices), (extra,), generator=generator
-    )
-    extra_indices = [minority_indices[i] for i in extra_selection.tolist()]
-    all_indices.extend(extra_indices)
+    # Upsample every class that is below the target count
+    total_extra = 0
+    for cls, indices in class_indices.items():
+        extra = target_count - len(indices)
+        if extra > 0:
+            extra_selection = torch.randint(
+                0, len(indices), (extra,), generator=generator
+            )
+            extra_indices = [indices[i] for i in extra_selection.tolist()]
+            all_indices.extend(extra_indices)
+            total_extra += extra
 
     _logger.info(
         f"Upsampling result: {len(all_indices)} samples "
-        f"(added {extra} duplicated minority samples)"
+        f"(added {total_extra} duplicated samples)"
     )
 
     return Subset(dataset, all_indices)

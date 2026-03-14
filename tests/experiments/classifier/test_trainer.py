@@ -585,8 +585,7 @@ def test_classifier_trainer_logs_epoch_summary(
     trainer.train_epoch()
 
     # Check that training activity was logged
-    # Should have some logging activity
-    assert len(capture_logs.records) >= 0
+    assert len(capture_logs.records) > 0
 
 
 @pytest.mark.integration
@@ -616,7 +615,7 @@ def test_classifier_trainer_logs_best_model_updates(
         )
 
         # Check that logging occurred during training
-        assert len(capture_logs.records) >= 0
+        assert len(capture_logs.records) > 0
 
 
 @pytest.mark.component

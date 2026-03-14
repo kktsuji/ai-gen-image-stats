@@ -428,11 +428,21 @@ class SplitFileDataset(BaseDataset):
                         f"is outside allowed root '{root}'"
                     )
         else:
-            _logger.warning(
-                "SplitFileDataset: allowed_root is not set. "
-                "Paths in the split file are not validated against a root directory. "
-                "Set allowed_root for production use."
-            )
+            # When allowed_root is not set, check relative paths for
+            # directory traversal patterns (e.g., ../../../etc/passwd).
+            # Absolute paths are allowed since they were explicitly placed
+            # in the split file by the data preparation step.
+            split_dir = Path(split_file).resolve().parent
+            for i, (path, _) in enumerate(self._samples):
+                if not Path(path).is_absolute():
+                    resolved = (split_dir / path).resolve()
+                    if not resolved.is_relative_to(split_dir):
+                        raise ValueError(
+                            f"Path traversal detected: entry {i} relative path "
+                            f"'{path}' escapes split file directory "
+                            f"'{split_dir}'. Set allowed_root explicitly or "
+                            f"use absolute paths."
+                        )
 
         if len(self._samples) == 0:
             raise ValueError(f"No samples found in '{split}' split of {split_file}")
@@ -457,13 +467,13 @@ class SplitFileDataset(BaseDataset):
         """
         path, label = self._samples[index]
 
-        if not Path(path).exists():
+        try:
+            image = Image.open(path).convert("RGB")
+        except FileNotFoundError:
             raise FileNotFoundError(
                 f"Image file not found: {path} "
                 f"(referenced in split file: {self.split_file})"
             )
-
-        image = Image.open(path).convert("RGB")
 
         if self.transform is not None:
             image = self.transform(image)

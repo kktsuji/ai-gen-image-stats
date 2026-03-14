@@ -64,7 +64,11 @@ class EMA:
         """Update EMA parameters."""
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                assert name in self.shadow
+                if name not in self.shadow:
+                    raise RuntimeError(
+                        f"EMA update: parameter '{name}' not found in shadow. "
+                        f"Model may have been modified after EMA initialization."
+                    )
                 new_average = (
                     1.0 - self.decay
                 ) * param.data + self.decay * self.shadow[name]
@@ -74,7 +78,11 @@ class EMA:
         """Apply EMA parameters to the model (for inference)."""
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                assert name in self.shadow
+                if name not in self.shadow:
+                    raise RuntimeError(
+                        f"EMA apply_shadow: parameter '{name}' not found in shadow. "
+                        f"Model may have been modified after EMA initialization."
+                    )
                 self.backup[name] = param.data.clone()
                 param.data = self.shadow[name].clone()
 
@@ -82,7 +90,11 @@ class EMA:
         """Restore original parameters (after inference)."""
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                assert name in self.backup
+                if name not in self.backup:
+                    raise RuntimeError(
+                        f"EMA restore: parameter '{name}' not found in backup. "
+                        f"Did you call apply_shadow() first?"
+                    )
                 param.data = self.backup[name].clone()
         self.backup = {}
 
@@ -1078,7 +1090,17 @@ class DDPMModel(BaseModel):
         # Start from pure noise
         x = torch.randn(shape, device=device)
 
-        intermediates = [x] if return_intermediates else None
+        # When collecting intermediates, only store at evenly-spaced intervals
+        # to avoid OOM from storing all 1000+ denoising steps on GPU
+        if return_intermediates:
+            import numpy as np
+
+            capture_indices = set(
+                np.linspace(0, self.num_timesteps - 1, 16, dtype=int).tolist()
+            )
+            intermediates: list[torch.Tensor] = [x.cpu()]
+        else:
+            capture_indices = set()
 
         # Iteratively denoise
         timesteps = reversed(range(self.num_timesteps))
@@ -1090,7 +1112,7 @@ class DDPMModel(BaseModel):
                 leave=False,
             )
 
-        for i in timesteps:
+        for step_idx, i in enumerate(timesteps):
             t = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(
                 x,
@@ -1101,11 +1123,11 @@ class DDPMModel(BaseModel):
                 dynamic_threshold_percentile,
             )
 
-            if return_intermediates and intermediates is not None:
-                intermediates.append(x)
+            if return_intermediates and step_idx in capture_indices:
+                intermediates.append(x.cpu())
 
-        if return_intermediates and intermediates is not None:
-            return torch.stack(intermediates)  # type: ignore[arg-type]
+        if return_intermediates:
+            return torch.stack(intermediates).to(device)  # type: ignore[arg-type]
 
         return x
 

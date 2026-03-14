@@ -153,7 +153,9 @@ class ExperimentComparator:
                     comparison_mean=float(comparison_mean),
                     comparison_std=float(comparison_std),
                     improvement_percent=float(improvement),
-                    is_improvement=bool(improvement > 0),
+                    is_improvement=bool(improvement > 0)
+                    if "loss" not in metric.lower()
+                    else bool(improvement < 0),
                 )
             )
 

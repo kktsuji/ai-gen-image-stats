@@ -6,6 +6,7 @@ training and generation logic.
 """
 
 import logging
+import math
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, cast
 
@@ -305,7 +306,9 @@ class DiffusionTrainer(BaseTrainer):
             >>> print(f"Diffusion Loss: {metrics['loss']:.4f}")
         """
         self.model.train()
-        train_loader = self.dataloader.get_train_loader()
+        if not hasattr(self, "_cached_train_loader"):
+            self._cached_train_loader = self.dataloader.get_train_loader()
+        train_loader = self._cached_train_loader
 
         total_loss = 0.0
         num_batches = 0
@@ -427,7 +430,13 @@ class DiffusionTrainer(BaseTrainer):
                 self.ema.update()
 
             # Track metrics
-            total_loss += loss.item()
+            loss_val = loss.item()
+            if not math.isfinite(loss_val):
+                raise RuntimeError(
+                    f"Non-finite loss detected at epoch {self._current_epoch}, "
+                    f"batch {batch_idx + 1}: {loss_val}. Training aborted."
+                )
+            total_loss += loss_val
             num_batches += 1
             self._global_step += 1
 
