@@ -694,8 +694,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Save individual samples if configured
         if output_config["save_individual"]:
-            for i, sample in enumerate(samples):
-                save_image(sample, output_dir / f"sample_{i:04d}.png", normalize=True)
+            for i, img in enumerate(samples):
+                save_image(img, output_dir / f"sample_{i:04d}.png", normalize=True)
             logger.info(f"Saved {len(samples)} individual samples to: {output_dir}")
 
         metrics_logger.close()
