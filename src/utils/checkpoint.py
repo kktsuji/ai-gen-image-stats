@@ -1,202 +1,185 @@
-"""Checkpoint Manager Utility
+"""Checkpoint Utility Functions
 
-Composable utility for saving and loading training checkpoints.
-Extracted from BaseTrainer to allow use without inheritance.
+Standalone functions for saving and loading training checkpoints.
 """
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import torch
 
 logger = logging.getLogger(__name__)
 
 
-class CheckpointManager:
-    """Composable utility for checkpoint save/load operations.
+def save_checkpoint(
+    path: Union[str, Path],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    global_step: int,
+    is_best: bool = False,
+    metrics: Optional[Dict[str, float]] = None,
+    best_metric: Optional[float] = None,
+    best_metric_name: Optional[str] = None,
+    trainer_class: Optional[str] = None,
+    **kwargs: Any,
+) -> None:
+    """Save training checkpoint.
 
     Args:
-        model_fn: Callable that returns the model (e.g., lambda: self.model)
-        optimizer_fn: Callable that returns the optimizer (e.g., lambda: self.optimizer)
+        path: Path to save checkpoint file
+        model: The model whose state to save
+        optimizer: The optimizer whose state to save
+        epoch: Current epoch number
+        global_step: Current global training step
+        is_best: Whether this is the best model so far
+        metrics: Dictionary of current metrics
+        best_metric: Best metric value so far
+        best_metric_name: Name of the best metric
+        trainer_class: Name of the trainer class
+        **kwargs: Additional metadata to save
     """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-    def __init__(
-        self,
-        model_fn: Callable[[], torch.nn.Module],
-        optimizer_fn: Callable[[], torch.optim.Optimizer],
-    ):
-        self._model_fn = model_fn
-        self._optimizer_fn = optimizer_fn
+    checkpoint: Dict[str, Any] = {
+        "epoch": epoch,
+        "global_step": global_step,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "is_best": is_best,
+    }
 
-    def save(
-        self,
-        path: Union[str, Path],
-        epoch: int,
-        global_step: int,
-        is_best: bool = False,
-        metrics: Optional[Dict[str, float]] = None,
-        best_metric: Optional[float] = None,
-        best_metric_name: Optional[str] = None,
-        trainer_class: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Save training checkpoint.
+    if trainer_class is not None:
+        checkpoint["trainer_class"] = trainer_class
 
-        Args:
-            path: Path to save checkpoint file
-            epoch: Current epoch number
-            global_step: Current global training step
-            is_best: Whether this is the best model so far
-            metrics: Dictionary of current metrics
-            best_metric: Best metric value so far
-            best_metric_name: Name of the best metric
-            trainer_class: Name of the trainer class
-            **kwargs: Additional metadata to save
-        """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+    if metrics is not None:
+        checkpoint["metrics"] = metrics
 
-        model = self._model_fn()
-        optimizer = self._optimizer_fn()
+    if best_metric is not None:
+        checkpoint["best_metric"] = best_metric
+        checkpoint["best_metric_name"] = best_metric_name
 
-        checkpoint: Dict[str, Any] = {
-            "epoch": epoch,
-            "global_step": global_step,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "is_best": is_best,
-        }
+    checkpoint.update(kwargs)
 
-        if trainer_class is not None:
-            checkpoint["trainer_class"] = trainer_class
+    torch.save(checkpoint, path)
 
-        if metrics is not None:
-            checkpoint["metrics"] = metrics
+    if is_best:
+        logger.info(f"✓ Best model checkpoint saved: {path}")
+    else:
+        logger.info(f"✓ Checkpoint saved: {path}")
 
-        if best_metric is not None:
-            checkpoint["best_metric"] = best_metric
-            checkpoint["best_metric_name"] = best_metric_name
+    logger.info(f"  Epoch: {epoch}, Global step: {global_step}")
 
-        checkpoint.update(kwargs)
+    if metrics:
+        metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
+        logger.info(f"  Metrics: {metrics_str}")
 
-        torch.save(checkpoint, path)
+    if best_metric is not None:
+        logger.info(f"  Best {best_metric_name}: {best_metric:.6f}")
 
-        if is_best:
-            logger.info(f"✓ Best model checkpoint saved: {path}")
-        else:
-            logger.info(f"✓ Checkpoint saved: {path}")
+    logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+    logger.debug(f"  File size: {path.stat().st_size / 1024 / 1024:.2f} MB")
 
-        logger.info(f"  Epoch: {epoch}, Global step: {global_step}")
 
-        if metrics:
-            metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
-            logger.info(f"  Metrics: {metrics_str}")
+def load_checkpoint(
+    path: Union[str, Path],
+    model: torch.nn.Module,
+    optimizer: Optional[torch.optim.Optimizer] = None,
+    strict: bool = True,
+) -> Dict[str, Any]:
+    """Load training checkpoint.
 
-        if best_metric is not None:
-            logger.info(f"  Best {best_metric_name}: {best_metric:.6f}")
+    Args:
+        path: Path to checkpoint file
+        model: The model to load state into
+        optimizer: The optimizer to load state into (None to skip)
+        strict: Whether to strictly enforce state dict keys match
 
-        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
-        logger.debug(f"  File size: {path.stat().st_size / 1024 / 1024:.2f} MB")
+    Returns:
+        Dictionary containing full checkpoint data
 
-    def load(
-        self,
-        path: Union[str, Path],
-        load_optimizer: bool = True,
-        strict: bool = True,
-    ) -> Dict[str, Any]:
-        """Load training checkpoint.
+    Raises:
+        FileNotFoundError: If checkpoint file doesn't exist
+    """
+    path = Path(path)
+    if not path.exists():
+        logger.error(f"Checkpoint not found: {path}")
+        raise FileNotFoundError(f"Checkpoint not found: {path}")
 
-        Args:
-            path: Path to checkpoint file
-            load_optimizer: Whether to load optimizer state
-            strict: Whether to strictly enforce state dict keys match
+    logger.info(f"Loading checkpoint from {path}")
 
-        Returns:
-            Dictionary containing full checkpoint data
+    try:
+        checkpoint = torch.load(path, map_location="cpu")
+    except Exception as e:
+        logger.critical(f"Failed to load checkpoint from {path}")
+        logger.exception(f"Error details: {e}")
+        raise
 
-        Raises:
-            FileNotFoundError: If checkpoint file doesn't exist
-        """
-        path = Path(path)
-        if not path.exists():
-            logger.error(f"Checkpoint not found: {path}")
-            raise FileNotFoundError(f"Checkpoint not found: {path}")
+    logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
+    logger.debug(f"  Trainer class: {checkpoint.get('trainer_class', 'unknown')}")
 
-        logger.info(f"Loading checkpoint from {path}")
-
-        try:
-            checkpoint = torch.load(path, map_location="cpu")
-        except Exception as e:
-            logger.critical(f"Failed to load checkpoint from {path}")
-            logger.exception(f"Error details: {e}")
+    # Load model state
+    try:
+        model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+    except Exception as e:
+        logger.error("Failed to load model state dict")
+        logger.exception(f"Error details: {e}")
+        if strict:
             raise
+        else:
+            logger.warning("Continuing with non-strict loading")
 
-        logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
-        logger.debug(f"  Trainer class: {checkpoint.get('trainer_class', 'unknown')}")
-
-        # Load model state
-        model = self._model_fn()
+    # Load optimizer state
+    if optimizer is not None and "optimizer_state_dict" in checkpoint:
         try:
-            model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         except Exception as e:
-            logger.error("Failed to load model state dict")
+            logger.error("Failed to load optimizer state dict")
             logger.exception(f"Error details: {e}")
-            if strict:
-                raise
-            else:
-                logger.warning("Continuing with non-strict loading")
+            logger.warning("Continuing without optimizer state")
 
-        # Load optimizer state
-        if load_optimizer and "optimizer_state_dict" in checkpoint:
-            optimizer = self._optimizer_fn()
-            try:
-                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            except Exception as e:
-                logger.error("Failed to load optimizer state dict")
-                logger.exception(f"Error details: {e}")
-                logger.warning("Continuing without optimizer state")
+    logger.info("✓ Checkpoint loaded successfully")
+    logger.info(
+        f"  Epoch: {checkpoint.get('epoch', 0)}, "
+        f"Global step: {checkpoint.get('global_step', 0)}"
+    )
 
-        logger.info("✓ Checkpoint loaded successfully")
+    if "metrics" in checkpoint:
+        metrics_str = ", ".join(
+            [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
+        )
+        logger.info(f"  Loaded metrics: {metrics_str}")
+
+    if checkpoint.get("best_metric") is not None:
         logger.info(
-            f"  Epoch: {checkpoint.get('epoch', 0)}, "
-            f"Global step: {checkpoint.get('global_step', 0)}"
+            f"  Best {checkpoint.get('best_metric_name')}: "
+            f"{checkpoint['best_metric']:.6f}"
         )
 
-        if "metrics" in checkpoint:
-            metrics_str = ", ".join(
-                [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
-            )
-            logger.info(f"  Loaded metrics: {metrics_str}")
+    return checkpoint
 
-        if checkpoint.get("best_metric") is not None:
-            logger.info(
-                f"  Best {checkpoint.get('best_metric_name')}: "
-                f"{checkpoint['best_metric']:.6f}"
-            )
 
-        return checkpoint
+def is_best_metric(
+    current_value: float, best_value: Optional[float], mode: str
+) -> bool:
+    """Check if current metric value is the best so far.
 
-    @staticmethod
-    def is_best_metric(
-        current_value: float, best_value: Optional[float], mode: str
-    ) -> bool:
-        """Check if current metric value is the best so far.
+    Args:
+        current_value: Current metric value
+        best_value: Previous best metric value (None if first)
+        mode: 'min' or 'max' for comparison
 
-        Args:
-            current_value: Current metric value
-            best_value: Previous best metric value (None if first)
-            mode: 'min' or 'max' for comparison
+    Returns:
+        True if current value is better than best so far
+    """
+    if best_value is None:
+        return True
 
-        Returns:
-            True if current value is better than best so far
-        """
-        if best_value is None:
-            return True
-
-        if mode == "min":
-            return current_value < best_value
-        elif mode == "max":
-            return current_value > best_value
-        else:
-            raise ValueError(f"Invalid metric mode: {mode}. Must be 'min' or 'max'")
+    if mode == "min":
+        return current_value < best_value
+    elif mode == "max":
+        return current_value > best_value
+    else:
+        raise ValueError(f"Invalid metric mode: {mode}. Must be 'min' or 'max'")
