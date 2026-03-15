@@ -1,10 +1,12 @@
 """Shared experiment setup utilities."""
 
 import logging
+import random
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import torch
 
 from src.utils.config import resolve_output_path, save_config
@@ -90,6 +92,8 @@ def setup_experiment_common(
     # 7. Set seed if configured
     seed = compute_config.get("seed")
     if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
         torch.manual_seed(seed)
         if device == "cuda":
             torch.cuda.manual_seed_all(seed)

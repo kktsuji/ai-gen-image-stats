@@ -8,9 +8,12 @@ upsampling).
 
 import json
 import logging
+import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
@@ -31,7 +34,7 @@ def create_train_loader(
     shuffle: bool = True,
     return_labels: bool = True,
     balancing_config: Optional[Dict[str, Any]] = None,
-    seed: int = 0,
+    seed: Optional[int] = None,
 ) -> DataLoader:
     """Create a training DataLoader from a split JSON file.
 
@@ -46,7 +49,9 @@ def create_train_loader(
         return_labels: Whether to return class labels
         balancing_config: Optional balancing configuration (weighted_sampler,
             downsampling, upsampling)
-        seed: Random seed for balancing reproducibility
+        seed: Random seed for balancing and DataLoader reproducibility.
+            When provided, sets generator for shuffle and worker_init_fn
+            for worker-process RNG seeding. When None, no seeding is applied.
 
     Returns:
         DataLoader for training data
@@ -97,7 +102,7 @@ def create_train_loader(
             dataset_to_use = downsample_dataset(
                 train_dataset,
                 target_ratio=ds_config.get("target_ratio", 1.0),
-                seed=seed,
+                seed=seed if seed is not None else 0,
             )
 
         elif us_config.get("enabled"):
@@ -105,8 +110,23 @@ def create_train_loader(
             dataset_to_use = upsample_dataset(
                 train_dataset,
                 target_ratio=us_config.get("target_ratio", 1.0),
-                seed=seed,
+                seed=seed if seed is not None else 0,
             )
+
+    # Set up reproducible DataLoader when seed is provided
+    generator = None
+    worker_init_fn = None
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+
+        def _worker_init_fn(worker_id: int) -> None:
+            worker_seed = seed + worker_id  # type: ignore[operator]
+            random.seed(worker_seed)
+            np.random.seed(worker_seed)
+            torch.manual_seed(worker_seed)
+
+        worker_init_fn = _worker_init_fn
 
     return DataLoader(
         dataset_to_use,
@@ -116,6 +136,8 @@ def create_train_loader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
+        generator=generator,
+        worker_init_fn=worker_init_fn,
     )
 
 

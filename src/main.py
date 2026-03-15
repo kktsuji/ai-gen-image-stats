@@ -136,6 +136,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     )
 
     # Create data loaders
+    compute_config = config.get("compute", {})
+    seed = compute_config.get("seed")
+    balancing_config = data_config.get("balancing")
     train_loader = create_train_loader(
         split_file=split_file,
         batch_size=batch_size,
@@ -144,6 +147,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         pin_memory=pin_memory,
         drop_last=drop_last,
         shuffle=shuffle_train,
+        balancing_config=balancing_config,
+        seed=seed,
     )
     val_loader = create_val_loader(
         split_file=split_file,
@@ -500,7 +505,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Initialize data loaders
         data_config = config["data"]
         balancing_config = data_config.get("balancing")
-        seed = compute_config.get("seed", 0) or 0
+        seed = compute_config.get("seed")
         image_size = derive_image_size_from_model(config)
         return_labels = derive_return_labels_from_model(config)
 
