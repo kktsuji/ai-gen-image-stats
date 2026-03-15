@@ -1157,11 +1157,24 @@ class DiffusionTrainer:
 
         # 4. log_denoising_process
         if self.log_denoising_interval and epoch % self.log_denoising_interval == 0:
-            if hasattr(logger, "log_denoising_process"):
-                logger.log_denoising_process(  # type: ignore[attr-defined]
+            denoising_dir = getattr(logger, "dirs", {}).get("denoising")
+            if denoising_dir is not None:
+                from src.experiments.diffusion.visualization import (
+                    save_denoising_process,
+                )
+
+                filename_parts = ["denoising", f"step{step}"]
+                if epoch is not None:
+                    filename_parts.insert(1, f"epoch{epoch}")
+                filename = "_".join(filename_parts) + ".png"
+                save_path = denoising_dir / filename
+
+                save_denoising_process(
                     denoising_seq,
+                    save_path=save_path,
                     step=step,
-                    epoch=epoch,
+                    tb_writer=getattr(logger, "tb_writer", None),
+                    tb_log_images=getattr(logger, "tb_log_images", True),
                 )
 
     def get_model(self) -> Any:

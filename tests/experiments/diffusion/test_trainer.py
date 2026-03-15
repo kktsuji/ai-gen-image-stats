@@ -138,10 +138,14 @@ def _make_diffusion_val_loader(
 class SimpleDiffusionLogger:
     """Simple logger for testing diffusion trainer."""
 
-    def __init__(self):
+    def __init__(self, denoising_dir: Optional[Path] = None):
         self.logged_metrics = []
         self.logged_images = []
-        self.logged_denoising_sequences = []
+        self.dirs: Dict[str, Path] = {}
+        if denoising_dir is not None:
+            self.dirs["denoising"] = denoising_dir
+        self.tb_writer = None
+        self.tb_log_images = False
 
     def log_metrics(
         self,
@@ -161,17 +165,6 @@ class SimpleDiffusionLogger:
     ) -> None:
         self.logged_images.append(
             {"images": images, "tag": tag, "step": step, "epoch": epoch, **kwargs}
-        )
-
-    def log_denoising_process(
-        self,
-        denoising_sequence: torch.Tensor,
-        step: int,
-        epoch: Optional[int] = None,
-        num_steps_to_show: int = 8,
-    ) -> None:
-        self.logged_denoising_sequences.append(
-            {"sequence": denoising_sequence, "step": step, "epoch": epoch}
         )
 
     def log_hyperparams(self, hyperparams: Dict) -> None:
@@ -818,37 +811,41 @@ def test_diffusion_trainer_sample_generation_during_training():
     model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
     train_loader = _make_diffusion_train_loader(num_samples=16, batch_size=4)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    logger = SimpleDiffusionLogger()
 
-    # Create trainer with sample generation enabled
-    trainer = DiffusionTrainer(
-        model=model,
-        train_loader=train_loader,
-        optimizer=optimizer,
-        logger=logger,
-        device="cpu",
-        show_progress=False,
-        use_ema=False,
-        log_images_interval=1,  # Generate every epoch
-        log_denoising_interval=1,
-        num_samples=4,
-    )
-
-    # Train for 2 epochs
     with tempfile.TemporaryDirectory() as tmpdir:
+        denoising_dir = Path(tmpdir) / "denoising"
+        denoising_dir.mkdir()
+        logger = SimpleDiffusionLogger(denoising_dir=denoising_dir)
+
+        # Create trainer with sample generation enabled
+        trainer = DiffusionTrainer(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=False,
+            log_images_interval=1,  # Generate every epoch
+            log_denoising_interval=1,
+            num_samples=4,
+        )
+
+        # Train for 2 epochs
         trainer.train(num_epochs=2, checkpoint_dir=tmpdir)
 
-    # Check that samples were logged
-    assert len(logger.logged_images) > 0
+        # Check that samples were logged
+        assert len(logger.logged_images) > 0
 
-    # Check sample properties
-    for log_entry in logger.logged_images:
-        assert "images" in log_entry
-        assert "tag" in log_entry
-        assert log_entry["images"].shape[1] == 3  # RGB
+        # Check sample properties
+        for log_entry in logger.logged_images:
+            assert "images" in log_entry
+            assert "tag" in log_entry
+            assert log_entry["images"].shape[1] == 3  # RGB
 
-    # Check that sample comparisons and denoising were also logged
-    assert len(logger.logged_denoising_sequences) > 0
+        # Check that denoising files were saved
+        denoising_files = list(denoising_dir.glob("*.png"))
+        assert len(denoising_files) > 0
 
 
 @pytest.mark.integration
@@ -1244,8 +1241,6 @@ def test_log_images_called_at_interval():
     # log_images called at epoch 2 and 4 (every 2 epochs)
     # Each trigger logs both samples and quality_comparison = 4 total
     assert len(logger.logged_images) == 4
-    # denoising should NOT be called
-    assert len(logger.logged_denoising_sequences) == 0
 
 
 @pytest.mark.integration
@@ -1276,35 +1271,38 @@ def test_quality_comparison_logged_via_log_images():
         e for e in logger.logged_images if e["tag"] == "quality_comparison"
     ]
     assert len(quality_entries) == 2
-    assert len(logger.logged_denoising_sequences) == 0
 
 
 @pytest.mark.integration
 def test_log_denoising_called_at_interval():
-    """Verify log_denoising_process is called at the correct interval."""
+    """Verify save_denoising_process is called at the correct interval."""
     model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
     train_loader = _make_diffusion_train_loader(num_samples=16, batch_size=4)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    logger = SimpleDiffusionLogger()
-
-    trainer = DiffusionTrainer(
-        model=model,
-        train_loader=train_loader,
-        optimizer=optimizer,
-        logger=logger,
-        device="cpu",
-        show_progress=False,
-        use_ema=False,
-        log_images_interval=None,
-        log_denoising_interval=2,
-    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        denoising_dir = Path(tmpdir) / "denoising"
+        denoising_dir.mkdir()
+        logger = SimpleDiffusionLogger(denoising_dir=denoising_dir)
+
+        trainer = DiffusionTrainer(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=False,
+            log_images_interval=None,
+            log_denoising_interval=2,
+        )
+
         trainer.train(num_epochs=4, checkpoint_dir=tmpdir, validate_frequency=0)
 
-    # log_denoising_process at epochs 2, 4
-    assert len(logger.logged_denoising_sequences) == 2
-    assert len(logger.logged_images) == 0
+        # save_denoising_process at epochs 2, 4
+        denoising_files = list(denoising_dir.glob("*.png"))
+        assert len(denoising_files) == 2
+        assert len(logger.logged_images) == 0
 
 
 @pytest.mark.integration
@@ -1315,21 +1313,24 @@ def test_samples_generated_once_when_all_intervals_trigger():
     model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
     train_loader = _make_diffusion_train_loader(num_samples=16, batch_size=4)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    logger = SimpleDiffusionLogger()
-
-    trainer = DiffusionTrainer(
-        model=model,
-        train_loader=train_loader,
-        optimizer=optimizer,
-        logger=logger,
-        device="cpu",
-        show_progress=False,
-        use_ema=False,
-        log_images_interval=1,
-        log_denoising_interval=1,
-    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        denoising_dir = Path(tmpdir) / "denoising"
+        denoising_dir.mkdir()
+        logger = SimpleDiffusionLogger(denoising_dir=denoising_dir)
+
+        trainer = DiffusionTrainer(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            logger=logger,
+            device="cpu",
+            show_progress=False,
+            use_ema=False,
+            log_images_interval=1,
+            log_denoising_interval=1,
+        )
+
         with patch.object(
             trainer.sampler,
             "sample_with_intermediates",
@@ -1340,10 +1341,11 @@ def test_samples_generated_once_when_all_intervals_trigger():
             # Sampler called exactly once per epoch - one epoch means one call
             assert mock_sample.call_count == 1
 
-    # Both logger methods should have been called
-    # log_images is called twice per epoch (samples + quality_comparison)
-    assert len(logger.logged_images) == 2
-    assert len(logger.logged_denoising_sequences) == 1
+        # Both image logging and denoising should have been triggered
+        # log_images is called twice per epoch (samples + quality_comparison)
+        assert len(logger.logged_images) == 2
+        denoising_files = list(denoising_dir.glob("*.png"))
+        assert len(denoising_files) == 1
 
 
 @pytest.mark.integration
@@ -1376,7 +1378,6 @@ def test_visualization_disabled_when_all_intervals_null():
             assert mock_sample.call_count == 0
 
     assert len(logger.logged_images) == 0
-    assert len(logger.logged_denoising_sequences) == 0
 
 
 # Bug fix tests

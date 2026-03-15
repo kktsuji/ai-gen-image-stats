@@ -21,12 +21,12 @@ import pytest
 import torch
 import yaml
 
-from src.experiments.classifier.logger import ClassifierLogger
 from src.experiments.classifier.models.inceptionv3 import InceptionV3Classifier
 from src.experiments.classifier.models.resnet import ResNetClassifier
 from src.experiments.classifier.trainer import ClassifierTrainer
 from src.utils.data.loaders import create_train_loader, create_val_loader
 from src.utils.data.transforms import get_train_transforms, get_val_transforms
+from src.utils.experiment_logger import ExperimentLogger
 from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
@@ -106,7 +106,7 @@ class TestClassifierPipelineBasic:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -140,7 +140,7 @@ class TestClassifierPipelineBasic:
         assert len(checkpoint_files) > 0, "No checkpoint files saved"
 
         # Verify metrics CSV
-        metrics_csv = log_dir / "metrics.csv"
+        metrics_csv = log_dir / "metrics" / "metrics.csv"
         assert metrics_csv.exists(), "Metrics CSV not created"
 
         # Read and verify metrics
@@ -219,7 +219,7 @@ class TestClassifierPipelineBasic:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -286,7 +286,7 @@ class TestClassifierPipelineCheckpoints:
             num_workers=0,
         )
 
-        logger = ClassifierLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(log_dir=str(log_dir))
         optimizer = torch.optim.Adam(model1.parameters(), lr=0.001)
 
         trainer = ClassifierTrainer(
@@ -358,7 +358,7 @@ class TestClassifierPipelineCheckpoints:
             num_workers=0,
         )
 
-        logger = ClassifierLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(log_dir=str(log_dir))
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
         trainer = ClassifierTrainer(
@@ -482,7 +482,7 @@ class TestClassifierPipelineWithScheduler:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -580,7 +580,7 @@ class TestClassifierPipelineWithScheduler:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
 
         optimizer = torch.optim.SGD(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -674,7 +674,7 @@ class TestClassifierPipelineValidation:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
         )
@@ -694,7 +694,7 @@ class TestClassifierPipelineValidation:
         )
 
         # Read metrics CSV
-        metrics_csv = Path(config["output"]["log_dir"]) / "metrics.csv"
+        metrics_csv = Path(config["output"]["log_dir"]) / "metrics" / "metrics.csv"
         assert metrics_csv.exists()
 
         with open(metrics_csv, "r") as f:
@@ -743,7 +743,7 @@ class TestClassifierPipelineMultipleModels:
             num_workers=0,
         )
 
-        logger = ClassifierLogger(log_dir=str(tmp_path / "logs"))
+        logger = ExperimentLogger(log_dir=str(tmp_path / "logs"))
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
         trainer = ClassifierTrainer(
@@ -807,7 +807,7 @@ class TestClassifierPipelineMultipleModels:
                 num_workers=0,
             )
 
-            logger = ClassifierLogger(log_dir=str(log_dir))
+            logger = ExperimentLogger(log_dir=str(log_dir))
 
             # Create optimizer
             if opt_class == torch.optim.SGD:
@@ -917,7 +917,7 @@ class TestClassifierPipelineConfigDriven:
             num_workers=config["data"]["num_workers"],
         )
 
-        logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(log_dir=config["output"]["log_dir"])
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -944,11 +944,11 @@ class TestClassifierPipelineConfigDriven:
 
         assert checkpoint_dir.exists()
         assert log_dir.exists()
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
         assert len(list(checkpoint_dir.glob("*.pth"))) > 0
 
         # Verify metrics CSV has correct structure
-        with open(log_dir / "metrics.csv", "r") as f:
+        with open(log_dir / "metrics" / "metrics.csv", "r") as f:
             lines = f.readlines()
             # Each epoch generates 2 lines: one for train metrics, one for val metrics
             # Plus 1 for header
