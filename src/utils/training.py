@@ -101,7 +101,12 @@ def create_scheduler(
     scheduler_type_str = scheduler_type.lower()
 
     if scheduler_type_str == "cosine":
-        t_max = kwargs.pop("T_max", kwargs.pop("t_max", "auto"))
+        if "T_max" in kwargs:
+            t_max = kwargs.pop("T_max")
+        elif "t_max" in kwargs:
+            t_max = kwargs.pop("t_max")
+        else:
+            t_max = "auto"
         if t_max == "auto":
             t_max = num_epochs
         return torch.optim.lr_scheduler.CosineAnnealingLR(

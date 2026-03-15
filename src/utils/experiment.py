@@ -181,14 +181,13 @@ def run_training(
     except KeyboardInterrupt:
         logger.warning("")
         logger.warning("Training interrupted by user")
-        metrics_logger.close()
         sys.exit(0)
     except Exception as e:
         logger.error("")
         logger.exception(f"Training failed with error: {e}")
-        metrics_logger.close()
         raise
-
-    metrics_logger.close()
-    logger.info("")
-    logger.info("Training completed successfully!")
+    else:
+        logger.info("")
+        logger.info("Training completed successfully!")
+    finally:
+        metrics_logger.close()

@@ -986,6 +986,20 @@ class TestValidateSchedulerSection:
         # Should not raise
         validate_scheduler_section(scheduler_config)
 
+    def test_valid_scheduler_none_string(self):
+        """Test valid scheduler config with string 'none' (quoted YAML value)."""
+        scheduler_config = {"type": "none"}
+
+        # Should not raise — "none" string is equivalent to None for disabling scheduler
+        validate_scheduler_section(scheduler_config)
+
+    def test_valid_scheduler_none_string_case_insensitive(self):
+        """Test that 'None' and 'NONE' strings are also accepted."""
+        for none_str in ["None", "NONE"]:
+            scheduler_config = {"type": none_str}
+            # Should not raise
+            validate_scheduler_section(scheduler_config)
+
     def test_missing_type(self):
         """Test error when scheduler type is missing."""
         scheduler_config = {}

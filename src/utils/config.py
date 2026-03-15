@@ -453,10 +453,11 @@ def validate_scheduler_section(
         raise KeyError("Missing required field: scheduler.type")
 
     if valid_types is None:
-        valid_types = ["cosine", "step", "plateau", None]
+        valid_types = ["cosine", "step", "plateau", None, "none"]
 
     sched_type = scheduler_config["type"]
-    if sched_type not in valid_types:
+    normalized = sched_type.lower() if isinstance(sched_type, str) else sched_type
+    if normalized not in valid_types:
         raise ValueError(
             f"Invalid scheduler type: {sched_type}. Must be one of {valid_types}"
         )
