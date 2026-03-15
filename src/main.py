@@ -448,7 +448,18 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         batch_size = sampling_config.get("batch_size", num_samples)
         num_batches = (num_samples + batch_size - 1) // batch_size
         all_samples = []
+        # Read the configured console log level so we can restore it after
+        # logging_redirect_tqdm replaces the console handler (it defaults
+        # the replacement handler to NOTSET, which leaks DEBUG messages).
+        console_level = config.get("logging", {}).get("console_level", "INFO")
+
         with logging_redirect_tqdm():
+            # Restore the original console handler level on the tqdm
+            # replacement handler(s) that default to NOTSET.
+            for h in logging.root.handlers:
+                if isinstance(h, logging.StreamHandler) and h.level == logging.NOTSET:
+                    h.setLevel(getattr(logging, console_level.upper()))
+
             for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
                 end_idx = min(start_idx + batch_size, num_samples)
                 batch_labels = (
