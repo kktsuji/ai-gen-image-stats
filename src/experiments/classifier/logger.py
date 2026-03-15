@@ -5,7 +5,6 @@ It provides functionality for logging classification metrics, confusion matrices
 and sample predictions with visualizations.
 """
 
-import csv
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
@@ -16,21 +15,18 @@ import seaborn as sns
 import torch
 from torchvision.utils import save_image
 
-from src.base.logger import BaseLogger
+from src.utils.metrics_writer import MetricsWriter
 from src.utils.tensorboard import (
-    close_tensorboard_writer,
-    create_tensorboard_writer,
     safe_log_figure,
     safe_log_hparams,
     safe_log_images,
-    safe_log_scalar,
 )
 
 # Use non-interactive backend for headless environments
 matplotlib.use("Agg")
 
 
-class ClassifierLogger(BaseLogger):
+class ClassifierLogger:
     """Logger for classification experiments.
 
     This logger handles logging of classification-specific metrics including:
@@ -87,33 +83,18 @@ class ClassifierLogger(BaseLogger):
         self.confusion_dir.mkdir(exist_ok=True)
         self.predictions_dir.mkdir(exist_ok=True)
 
-        # Initialize metrics CSV file
-        self.metrics_file = self.log_dir / "metrics.csv"
-        self.csv_initialized = self.metrics_file.exists()
-        self.csv_fieldnames: Optional[List[str]] = None
-
-        # If CSV exists, load existing fieldnames
-        if self.csv_initialized:
-            with open(self.metrics_file, "r") as f:
-                reader = csv.DictReader(f)
-                self.csv_fieldnames = (
-                    list(reader.fieldnames) if reader.fieldnames is not None else None
-                )
-
-        # Initialize TensorBoard logging
+        # Initialize metrics writer (CSV + TensorBoard)
         self.tensorboard_config = tensorboard_config or {}
-        self.tb_enabled = self.tensorboard_config.get("enabled", False)
         self.tb_log_images = self.tensorboard_config.get("log_images", True)
         self.tb_log_histograms = self.tensorboard_config.get("log_histograms", False)
 
         if tb_log_dir is None:
             tb_log_dir = self.log_dir.parent / "tensorboard"
-        flush_secs = self.tensorboard_config.get("flush_secs", 30)
 
-        self.tb_writer = create_tensorboard_writer(
-            log_dir=tb_log_dir,
-            flush_secs=flush_secs,
-            enabled=self.tb_enabled,
+        self.metrics_writer = MetricsWriter(
+            metrics_file=self.log_dir / "metrics.csv",
+            tensorboard_config=self.tensorboard_config,
+            tb_log_dir=tb_log_dir,
         )
 
         # Track logged data for testing
@@ -150,62 +131,9 @@ class ClassifierLogger(BaseLogger):
         # Store for testing
         self.logged_metrics_history.append(log_entry)
 
-        # Write to CSV
-        self._write_metrics_to_csv(log_entry)
-
-        # Write to TensorBoard
-        if self.tb_writer is not None:
-            for key, value in processed_metrics.items():
-                safe_log_scalar(self.tb_writer, f"metrics/{key}", value, step)
-
-    def _write_metrics_to_csv(self, log_entry: Dict[str, Any]) -> None:
-        """Write a single metrics entry to CSV file.
-
-        Args:
-            log_entry: Dictionary of metrics to write
-        """
-        # Initialize CSV on first write
-        if not self.csv_initialized:
-            self.csv_fieldnames = list(log_entry.keys())
-            with open(self.metrics_file, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
-                writer.writeheader()
-            self.csv_initialized = True
-        else:
-            assert self.csv_fieldnames is not None
-            # Update fieldnames if new metrics are added
-            new_fields = set(log_entry.keys()) - set(self.csv_fieldnames)
-            if new_fields:
-                self.csv_fieldnames.extend(sorted(new_fields))
-                # Re-write entire CSV with new headers
-                self._rewrite_csv_with_new_fields()
-
-        # Append metrics
-        assert self.csv_fieldnames is not None
-        with open(self.metrics_file, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
-            # Fill missing fields with None
-            row = {field: log_entry.get(field) for field in self.csv_fieldnames}
-            writer.writerow(row)
-
-    def _rewrite_csv_with_new_fields(self) -> None:
-        """Re-write CSV file with updated field names."""
-        assert self.csv_fieldnames is not None
-        # Read existing data
-        existing_data = []
-        if self.metrics_file.exists():
-            with open(self.metrics_file, "r") as f:
-                reader = csv.DictReader(f)
-                existing_data = list(reader)
-
-        # Write with new fieldnames
-        with open(self.metrics_file, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
-            writer.writeheader()
-            for row in existing_data:
-                # Fill missing fields with None
-                updated_row = {field: row.get(field) for field in self.csv_fieldnames}
-                writer.writerow(updated_row)
+        # Write to CSV and TensorBoard
+        self.metrics_writer.write_metrics(log_entry)
+        self.metrics_writer.log_scalars(processed_metrics, step)
 
     def log_images(
         self,
@@ -419,6 +347,11 @@ class ClassifierLogger(BaseLogger):
 
         plt.close(fig)
 
+    @property
+    def tb_writer(self):
+        """Access the TensorBoard writer for logger-specific image/figure logging."""
+        return self.metrics_writer.tb_writer
+
     def log_hyperparams(self, hyperparams: Dict[str, Any]) -> None:
         """Log hyperparameters to TensorBoard.
 
@@ -430,7 +363,15 @@ class ClassifierLogger(BaseLogger):
 
     def close(self) -> None:
         """Cleanup and finalize logging."""
-        close_tensorboard_writer(self.tb_writer)
-        self.tb_writer = None
+        self.metrics_writer.close()
         # Flush any remaining matplotlib figures
         plt.close("all")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with automatic cleanup."""
+        self.close()
+        return False

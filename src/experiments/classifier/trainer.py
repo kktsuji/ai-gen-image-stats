@@ -13,16 +13,13 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.base.dataloader import BaseDataLoader
-from src.base.logger import BaseLogger
-from src.base.model import BaseModel
-from src.base.trainer import BaseTrainer
+from src.utils.checkpoint import CheckpointManager
 
 # Module-level logger for application logging
 _logger = logging.getLogger(__name__)
 
 
-class ClassifierTrainer(BaseTrainer):
+class ClassifierTrainer:
     """Trainer for classification experiments.
 
     This trainer implements the training and validation loops for classification
@@ -58,10 +55,10 @@ class ClassifierTrainer(BaseTrainer):
 
     def __init__(
         self,
-        model: BaseModel,
-        dataloader: BaseDataLoader,
+        model: Any,
+        dataloader: Any,
         optimizer: torch.optim.Optimizer,
-        logger: BaseLogger,
+        logger: Any,
         device: str = "cpu",
         show_progress: bool = True,
         scheduler: Optional[
@@ -87,7 +84,11 @@ class ClassifierTrainer(BaseTrainer):
             config: Full experiment configuration dictionary used for hyperparameter
                 logging and model graph visualization
         """
-        super().__init__()
+        self._current_epoch = 0
+        self._global_step = 0
+        self._best_metric: Optional[float] = None
+        self._best_metric_name: Optional[str] = None
+
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -97,6 +98,12 @@ class ClassifierTrainer(BaseTrainer):
         self.scheduler = scheduler
         self.log_interval = log_interval
         self.config = config or {}
+
+        # Checkpoint manager
+        self.checkpoint_manager = CheckpointManager(
+            model_fn=lambda: self.model,
+            optimizer_fn=lambda: self.optimizer,
+        )
 
         # Move model to device
         self.model.to(self.device)
@@ -329,22 +336,26 @@ class ClassifierTrainer(BaseTrainer):
                 current_metric_value = metrics_to_check.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = self._is_best_metric(
-                        current_metric_value, best_metric_mode
+                    is_best = CheckpointManager.is_best_metric(
+                        current_metric_value, self._best_metric, best_metric_mode
                     )
 
                     if is_best:
                         self._best_metric = current_metric_value
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
-                            self.save_checkpoint(
+                            self.checkpoint_manager.save(
                                 best_path,
                                 epoch=self._current_epoch,
+                                global_step=self._global_step,
                                 is_best=True,
                                 metrics={
                                     **train_metrics,
                                     **(val_metrics if val_metrics else {}),
                                 },
+                                best_metric=self._best_metric,
+                                best_metric_name=self._best_metric_name,
+                                trainer_class=self.__class__.__name__,
                             )
 
             # Regular checkpoint saving
@@ -353,39 +364,51 @@ class ClassifierTrainer(BaseTrainer):
                     checkpoint_path = (
                         checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
                     )
-                    self.save_checkpoint(
+                    self.checkpoint_manager.save(
                         checkpoint_path,
                         epoch=self._current_epoch,
+                        global_step=self._global_step,
                         is_best=False,
                         metrics={
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        best_metric=self._best_metric,
+                        best_metric_name=self._best_metric_name,
+                        trainer_class=self.__class__.__name__,
                     )
 
                 if save_latest_checkpoint:
                     latest_path = checkpoint_dir / "latest_checkpoint.pth"
-                    self.save_checkpoint(
+                    self.checkpoint_manager.save(
                         latest_path,
                         epoch=self._current_epoch,
+                        global_step=self._global_step,
                         is_best=False,
                         metrics={
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        best_metric=self._best_metric,
+                        best_metric_name=self._best_metric_name,
+                        trainer_class=self.__class__.__name__,
                     )
 
         # Save final checkpoint after all epochs complete
         if checkpoint_dir is not None:
             final_path = checkpoint_dir / "final_model.pth"
-            self.save_checkpoint(
+            self.checkpoint_manager.save(
                 final_path,
                 epoch=self._current_epoch,
+                global_step=self._global_step,
                 is_best=False,
                 metrics={
                     **train_metrics,
                     **(val_metrics if val_metrics else {}),
                 },
+                best_metric=self._best_metric,
+                best_metric_name=self._best_metric_name,
+                trainer_class=self.__class__.__name__,
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 
@@ -467,37 +490,75 @@ class ClassifierTrainer(BaseTrainer):
             "val_accuracy": accuracy,
         }
 
-    def get_model(self) -> BaseModel:
-        """Return the classification model.
-
-        Returns:
-            The model being trained
-        """
+    def get_model(self) -> Any:
+        """Return the classification model."""
         return self.model
 
-    def get_dataloader(self) -> BaseDataLoader:
-        """Return the dataloader.
-
-        Returns:
-            The dataloader providing training/validation data
-        """
+    def get_dataloader(self) -> Any:
+        """Return the dataloader."""
         return self.dataloader
 
     def get_optimizer(self) -> torch.optim.Optimizer:
-        """Return the optimizer.
-
-        Returns:
-            The optimizer used for parameter updates
-        """
+        """Return the optimizer."""
         return self.optimizer
 
-    def get_logger(self) -> BaseLogger:
-        """Return the logger.
-
-        Returns:
-            The logger for recording metrics
-        """
+    def get_logger(self) -> Any:
+        """Return the logger."""
         return self.logger
+
+    def save_checkpoint(
+        self,
+        path: Union[str, Path],
+        epoch: int,
+        is_best: bool = False,
+        metrics: Optional[Dict[str, float]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Save training checkpoint (delegates to CheckpointManager)."""
+        self.checkpoint_manager.save(
+            path=path,
+            epoch=epoch,
+            global_step=self._global_step,
+            is_best=is_best,
+            metrics=metrics,
+            best_metric=self._best_metric,
+            best_metric_name=self._best_metric_name,
+            trainer_class=self.__class__.__name__,
+            **kwargs,
+        )
+
+    def load_checkpoint(
+        self,
+        path: Union[str, Path],
+        load_optimizer: bool = True,
+        strict: bool = True,
+    ) -> Dict[str, Any]:
+        """Load training checkpoint (delegates to CheckpointManager)."""
+        checkpoint = self.checkpoint_manager.load(
+            path=path,
+            load_optimizer=load_optimizer,
+            strict=strict,
+        )
+        self._current_epoch = checkpoint.get("epoch", 0)
+        self._global_step = checkpoint.get("global_step", 0)
+        self._best_metric = checkpoint.get("best_metric", None)
+        self._best_metric_name = checkpoint.get("best_metric_name", None)
+        return checkpoint
+
+    @property
+    def current_epoch(self) -> int:
+        """Get the current training epoch."""
+        return self._current_epoch
+
+    @property
+    def global_step(self) -> int:
+        """Get the global training step counter."""
+        return self._global_step
+
+    @property
+    def best_metric(self) -> Optional[float]:
+        """Get the best metric value achieved so far."""
+        return self._best_metric
 
     def evaluate(self, dataloader: Optional[DataLoader] = None) -> Dict[str, float]:
         """Evaluate the model on a specific dataloader.

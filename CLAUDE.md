@@ -36,30 +36,28 @@ docker run --rm -it --gpus all --network=host --shm-size=4g \
 
 ## Architecture
 
-The project uses a **Vertical Slice + Base Class** pattern. Each experiment type is fully self-contained under `src/experiments/<type>/`. Shared logic lives in `src/base/` abstract base classes.
+The project uses a **Vertical Slice** pattern. Each experiment type is fully self-contained under `src/experiments/<type>/`. Shared logic lives in composable utilities under `src/utils/`.
 
 ### Data Flow
 
 1. `src/main.py` parses the YAML config and dispatches to the appropriate `setup_experiment_*` function
 2. Each experiment function wires together: Config → DataLoader → Model → Trainer → Logger
-3. `BaseTrainer.train()` orchestrates the epoch loop, checkpointing, and validation
+3. Each trainer's `train()` method orchestrates the epoch loop, checkpointing, and validation
 4. Metrics are dual-logged: application logs (Python `logging`) + experiment metrics (CSV/TensorBoard)
 
-### Key Abstractions
+### Shared Utilities
 
-- **`src/base/trainer.py`** — `BaseTrainer` (abstract): implements `train()`, `save_checkpoint()`, `load_checkpoint()`. Subclasses must implement `train_epoch()`, `validate_epoch()`, `get_model()`, `get_dataloader()`, `get_optimizer()`, `get_logger()`
-- **`src/base/model.py`** — `BaseModel` (abstract): model interface
-- **`src/base/dataloader.py`** — `BaseDataLoader` (abstract): dataloader interface
-- **`src/base/logger.py`** — `BaseLogger` (abstract): metrics logging interface
+- **`src/utils/checkpoint.py`** — `CheckpointManager`: composable checkpoint save/load utility (used by ClassifierTrainer)
+- **`src/utils/metrics_writer.py`** — `MetricsWriter`: composable CSV + TensorBoard metrics writing (used by both loggers)
 
 ### Experiment Slices
 
 Each experiment under `src/experiments/<type>/` contains:
 
 - `config.py` — loads `default.yaml` (colocated) and validates the merged config (strict mode, no code defaults)
-- `trainer.py` — extends `BaseTrainer`
-- `dataloader.py` — extends `BaseDataLoader`
-- `logger.py` — extends `BaseLogger`, writes CSV + optional TensorBoard
+- `trainer.py` — standalone trainer class (owns its training loop, checkpoint logic)
+- `dataloader.py` — standalone dataloader class (duck typing)
+- `logger.py` — standalone logger class, uses `MetricsWriter` for CSV + optional TensorBoard
 - `default.yaml` — **canonical source of defaults** for that experiment
 
 ### Configuration System

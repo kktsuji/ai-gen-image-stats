@@ -582,7 +582,7 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
 
         logger.log_metrics({"loss": 0.05, "timestep": 500}, step=1000)
 
@@ -606,7 +606,7 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
         logger.tb_log_images = True
 
         images = torch.randn(4, 3, 32, 32)
@@ -620,7 +620,7 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
         logger.tb_log_images = False
 
         images = torch.randn(4, 3, 32, 32)
@@ -636,7 +636,7 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
         logger.tb_log_images = True
 
         sequence = torch.randn(8, 3, 32, 32)
@@ -660,7 +660,7 @@ class TestTensorBoardIntegration:
 
         logger = DiffusionLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
 
         logger.log_hyperparams({"lr": 0.0001, "timesteps": 1000})
 

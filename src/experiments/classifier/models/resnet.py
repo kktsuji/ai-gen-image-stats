@@ -19,10 +19,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import resnet50, resnet101, resnet152
 
-from src.base.model import BaseModel
 
-
-class ResNetClassifier(BaseModel):
+class ResNetClassifier(nn.Module):
     """ResNet-based classifier with transfer learning support.
 
     This model wraps torchvision's ResNet architectures and adapts them for

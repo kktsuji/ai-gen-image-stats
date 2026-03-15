@@ -10,7 +10,6 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.base.model import BaseModel
 from src.experiments.diffusion.model import (
     EMA,
     AttentionBlock,
@@ -265,7 +264,7 @@ class TestDDPMModel:
 
         assert model.image_size == 40
         assert model.num_classes is None
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
         assert isinstance(model.model, UNet)
 
     def test_initialization_conditional(self):
@@ -743,19 +742,20 @@ class TestDDPMModelCheckpointing:
     """Component tests for model checkpointing."""
 
     def test_save_and_load_checkpoint(self, tmp_path):
-        """Test saving and loading model checkpoint."""
+        """Test saving and loading model state dict."""
         model = DDPMModel(image_size=32, model_channels=32, channel_multipliers=(1, 2))
 
         checkpoint_path = tmp_path / "model.pth"
 
         # Save checkpoint
-        model.save_checkpoint(checkpoint_path)
+        torch.save({"model_state_dict": model.state_dict()}, checkpoint_path)
 
         # Create new model and load
         new_model = DDPMModel(
             image_size=32, model_channels=32, channel_multipliers=(1, 2)
         )
-        new_model.load_checkpoint(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        new_model.load_state_dict(checkpoint["model_state_dict"])
 
         # Check that weights match
         for p1, p2 in zip(model.parameters(), new_model.parameters()):
@@ -764,12 +764,12 @@ class TestDDPMModelCheckpointing:
 
 @pytest.mark.component
 class TestModelInheritance:
-    """Test that DDPMModel properly inherits from BaseModel."""
+    """Test that DDPMModel properly inherits from nn.Module."""
 
-    def test_isinstance_basemodel(self):
-        """Test that DDPMModel is instance of BaseModel."""
+    def test_isinstance_nn_module(self):
+        """Test that DDPMModel is instance of nn.Module."""
         model = DDPMModel()
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
 
     def test_implements_required_methods(self):
         """Test that DDPMModel implements required abstract methods."""

@@ -21,8 +21,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from src.base.model import BaseModel
-
 
 class EMA:
     """Exponential Moving Average of model parameters.
@@ -600,7 +598,7 @@ class UNet(nn.Module):
         return self.conv_out(h)
 
 
-class DDPMModel(BaseModel):
+class DDPMModel(nn.Module):
     """Denoising Diffusion Probabilistic Model with Classifier-Free Guidance.
 
     This model implements DDPM for image generation with support for:

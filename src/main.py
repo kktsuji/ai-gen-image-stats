@@ -37,12 +37,11 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 import torch
 from dotenv import load_dotenv
 
-from src.base.model import BaseModel
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
 from src.utils.config import save_config
@@ -858,7 +857,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Initialize trainer (use training.visualization for sampling)
         trainer = DiffusionTrainer(
-            model=cast(BaseModel, model),
+            model=model,
             dataloader=dataloader,
             optimizer=optimizer,
             logger=metrics_logger,

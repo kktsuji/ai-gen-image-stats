@@ -18,10 +18,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import inception_v3
 
-from src.base.model import BaseModel
 
-
-class InceptionV3Classifier(BaseModel):
+class InceptionV3Classifier(nn.Module):
     """InceptionV3-based classifier with transfer learning support.
 
     This model wraps torchvision's InceptionV3 architecture and adapts it for

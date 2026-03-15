@@ -11,7 +11,6 @@ import pytest
 import torch
 from PIL import Image
 
-from src.base.dataloader import BaseDataLoader
 from src.experiments.diffusion.dataloader import DiffusionDataLoader
 
 # ==============================================================================
@@ -104,9 +103,10 @@ def _create_split_json_train_only(tmp_path, train_per_class=4, num_classes=2):
 
 
 @pytest.mark.unit
-def test_diffusion_dataloader_inherits_from_base():
-    """Test that DiffusionDataLoader inherits from BaseDataLoader."""
-    assert issubclass(DiffusionDataLoader, BaseDataLoader)
+def test_diffusion_dataloader_has_required_methods():
+    """Test that DiffusionDataLoader has required interface methods."""
+    assert hasattr(DiffusionDataLoader, "get_train_loader")
+    assert hasattr(DiffusionDataLoader, "get_val_loader")
 
 
 @pytest.mark.unit
@@ -196,36 +196,6 @@ def mock_diffusion_dataset(tmp_path):
         Path string to the split JSON file.
     """
     return _create_split_json(tmp_path, train_per_class=4, val_per_class=4)
-
-
-@pytest.mark.unit
-def test_diffusion_dataloader_get_config(tmp_path):
-    """Test that get_config returns expected configuration."""
-    split_file = _create_split_json(tmp_path)
-
-    dataloader = DiffusionDataLoader(
-        split_file=split_file, batch_size=16, num_workers=2
-    )
-
-    config = dataloader.get_config()
-
-    assert "split_file" in config
-    assert "batch_size" in config
-    assert "num_workers" in config
-    assert config["batch_size"] == 16
-    assert config["num_workers"] == 2
-
-
-@pytest.mark.unit
-def test_diffusion_dataloader_repr(tmp_path):
-    """Test string representation of dataloader."""
-    split_file = _create_split_json(tmp_path)
-
-    dataloader = DiffusionDataLoader(split_file=split_file, batch_size=32)
-
-    repr_str = repr(dataloader)
-    assert "DiffusionDataLoader" in repr_str
-    assert "batch_size=32" in repr_str
 
 
 # ==============================================================================

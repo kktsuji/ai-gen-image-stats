@@ -17,15 +17,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.base.dataloader import BaseDataLoader
-from src.base.logger import BaseLogger
-from src.base.model import BaseModel
 from src.experiments.diffusion.trainer import DiffusionTrainer
 
 # Test fixtures and helper classes
 
 
-class SimpleDiffusionModel(BaseModel):
+class SimpleDiffusionModel(nn.Module):
     """Simple diffusion model for testing."""
 
     def __init__(
@@ -100,7 +97,7 @@ class SimpleDiffusionModel(BaseModel):
         return samples
 
 
-class SimpleDiffusionDataLoader(BaseDataLoader):
+class SimpleDiffusionDataLoader:
     """Simple dataloader for testing diffusion trainer."""
 
     def __init__(
@@ -151,7 +148,7 @@ class SimpleDiffusionDataLoader(BaseDataLoader):
         return DataLoader(dataset, batch_size=self.batch_size, shuffle=False)
 
 
-class SimpleDiffusionLogger(BaseLogger):
+class SimpleDiffusionLogger:
     """Simple logger for testing diffusion trainer."""
 
     def __init__(self):
@@ -189,6 +186,9 @@ class SimpleDiffusionLogger(BaseLogger):
         self.logged_denoising_sequences.append(
             {"sequence": denoising_sequence, "step": step, "epoch": epoch}
         )
+
+    def log_hyperparams(self, hyperparams: Dict) -> None:
+        pass
 
 
 # Fixtures
@@ -377,10 +377,10 @@ def test_diffusion_trainer_getters(diffusion_trainer):
     optimizer = diffusion_trainer.get_optimizer()
     logger = diffusion_trainer.get_logger()
 
-    assert isinstance(model, BaseModel)
-    assert isinstance(dataloader, BaseDataLoader)
+    assert model is not None
+    assert dataloader is not None
     assert isinstance(optimizer, torch.optim.Optimizer)
-    assert isinstance(logger, BaseLogger)
+    assert logger is not None
 
 
 # Component Tests

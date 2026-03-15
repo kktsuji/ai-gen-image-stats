@@ -9,9 +9,9 @@ import logging
 from typing import List, Optional, Tuple
 
 import torch
+import torch.nn as nn
 from tqdm import tqdm
 
-from src.base.model import BaseModel
 from src.experiments.diffusion.model import EMA
 
 # Module-level logger
@@ -71,7 +71,7 @@ class DiffusionSampler:
 
     def __init__(
         self,
-        model: BaseModel,
+        model: nn.Module,
         device: str = "cpu",
         ema: Optional[EMA] = None,
     ):

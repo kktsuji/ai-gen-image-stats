@@ -254,17 +254,14 @@ class TestEndToEndLogging:
         import torch.nn.functional as F
         from torch.utils.data import DataLoader, TensorDataset
 
-        from src.base.dataloader import BaseDataLoader
-        from src.base.logger import BaseLogger
-        from src.base.model import BaseModel
-        from src.base.trainer import BaseTrainer
+        from src.utils.checkpoint import CheckpointManager
 
         # Setup logging first
         log_file = tmp_path / "training.log"
         setup_logging(log_file=log_file, console_level="INFO", file_level="DEBUG")
 
         # Create minimal training components
-        class SimpleModel(BaseModel):
+        class SimpleModel(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.fc = nn.Linear(10, 2)
@@ -275,7 +272,7 @@ class TestEndToEndLogging:
             def compute_loss(self, predictions, targets):
                 return F.cross_entropy(predictions, targets)
 
-        class SimpleDataLoader(BaseDataLoader):
+        class SimpleDataLoader:
             def get_train_loader(self):
                 X = torch.randn(10, 10)
                 y = torch.randint(0, 2, (10,))
@@ -284,57 +281,41 @@ class TestEndToEndLogging:
             def get_val_loader(self):
                 return None
 
-        class SimpleLogger(BaseLogger):
+        class SimpleLogger:
             def log_metrics(self, metrics, step, epoch=None):
                 pass
 
             def log_images(self, images, tag, step, epoch=None, **kwargs):
                 pass
 
-        class SimpleTrainer(BaseTrainer):
-            def __init__(self, model, dataloader, optimizer, logger):
-                super().__init__()
-                self.model = model
-                self.dataloader = dataloader
-                self.optimizer = optimizer
-                self.logger = logger
+            def log_hyperparams(self, hyperparams):
+                pass
 
-            def train_epoch(self):
-                for data, target in self.dataloader.get_train_loader():
-                    self.optimizer.zero_grad()
-                    loss = self.model.compute_loss(self.model(data), target)
-                    loss.backward()
-                    self.optimizer.step()
-                return {"loss": 0.5}
-
-            def validate_epoch(self):
-                return None
-
-            def get_model(self):
-                return self.model
-
-            def get_dataloader(self):
-                return self.dataloader
-
-            def get_optimizer(self):
-                return self.optimizer
-
-            def get_logger(self):
-                return self.logger
-
-        # Create and train
+        # Create model and checkpoint manager
         model = SimpleModel()
-        trainer = SimpleTrainer(
-            model=model,
-            dataloader=SimpleDataLoader(),
-            optimizer=torch.optim.SGD(model.parameters(), lr=0.01),
-            logger=SimpleLogger(),
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        checkpoint_manager = CheckpointManager(
+            model_fn=lambda: model,
+            optimizer_fn=lambda: optimizer,
         )
 
-        # Train for 1 epoch
+        # Simple training loop
+        dataloader = SimpleDataLoader()
+        for data, target in dataloader.get_train_loader():
+            optimizer.zero_grad()
+            loss = model.compute_loss(model(data), target)
+            loss.backward()
+            optimizer.step()
+
+        # Save a checkpoint
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir()
-        trainer.train(num_epochs=1, checkpoint_dir=str(checkpoint_dir))
+        checkpoint_manager.save(
+            checkpoint_dir / "test.pth",
+            epoch=1,
+            global_step=5,
+            metrics={"loss": 0.5},
+        )
 
         # Verify log file exists and has content
         assert log_file.exists()
