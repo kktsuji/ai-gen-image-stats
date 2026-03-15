@@ -61,6 +61,12 @@ class TestSinusoidalPositionEmbeddings:
 
         assert not torch.allclose(output1, output2)
 
+    @pytest.mark.parametrize("dim", [0, 1, 3, 5, -1])
+    def test_rejects_invalid_dim(self, dim):
+        """Test that odd or too-small dim values are rejected."""
+        with pytest.raises(ValueError, match="dim must be an even integer >= 2"):
+            SinusoidalPositionEmbeddings(dim)
+
 
 @pytest.mark.unit
 class TestEMA:

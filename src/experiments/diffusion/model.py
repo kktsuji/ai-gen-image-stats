@@ -112,6 +112,8 @@ class SinusoidalPositionEmbeddings(nn.Module):
 
     def __init__(self, dim: int):
         super().__init__()
+        if dim < 2 or dim % 2 != 0:
+            raise ValueError("dim must be an even integer >= 2")
         self.dim = dim
 
     def forward(self, time: torch.Tensor) -> torch.Tensor:
