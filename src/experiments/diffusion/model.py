@@ -125,7 +125,7 @@ class SinusoidalPositionEmbeddings(nn.Module):
         """
         device = time.device
         half_dim = self.dim // 2
-        embeddings = np.log(10000) / (half_dim - 1)
+        embeddings = np.log(10000) / max(half_dim - 1, 1)
         embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
@@ -710,7 +710,8 @@ class DDPMModel(nn.Module):
             "sqrt_one_minus_alphas_cumprod", torch.sqrt(1.0 - self.alphas_cumprod)
         )
         self.register_buffer(
-            "log_one_minus_alphas_cumprod", torch.log(1.0 - self.alphas_cumprod)
+            "log_one_minus_alphas_cumprod",
+            torch.log(torch.clamp(1.0 - self.alphas_cumprod, min=1e-20)),
         )
         self.register_buffer(
             "sqrt_recip_alphas_cumprod", torch.sqrt(1.0 / self.alphas_cumprod)
@@ -720,8 +721,14 @@ class DDPMModel(nn.Module):
         )
 
         # Calculations for posterior q(x_{t-1} | x_t, x_0)
+        # Clamp denominator to avoid division by zero when alphas_cumprod ≈ 1.0
+        one_minus_alphas_cumprod_clamped = torch.clamp(
+            1.0 - self.alphas_cumprod, min=1e-20
+        )
         posterior_variance = (
-            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+            self.betas
+            * (1.0 - self.alphas_cumprod_prev)
+            / one_minus_alphas_cumprod_clamped
         )
         self.register_buffer("posterior_variance", posterior_variance)
         self.register_buffer(
@@ -732,13 +739,13 @@ class DDPMModel(nn.Module):
             "posterior_mean_coef1",
             self.betas
             * torch.sqrt(self.alphas_cumprod_prev)
-            / (1.0 - self.alphas_cumprod),
+            / one_minus_alphas_cumprod_clamped,
         )
         self.register_buffer(
             "posterior_mean_coef2",
             (1.0 - self.alphas_cumprod_prev)
             * torch.sqrt(self.alphas)
-            / (1.0 - self.alphas_cumprod),
+            / one_minus_alphas_cumprod_clamped,
         )
 
     def _get_beta_schedule(

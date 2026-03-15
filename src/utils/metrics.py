@@ -46,23 +46,38 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
             f"fake={fake_features.shape[1]}"
         )
 
-    # Calculate mean and covariance
-    mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
-    mu2, sigma2 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
+    # Calculate mean and covariance (atleast_2d guards against 1D features)
+    mu1, sigma1 = (
+        real_features.mean(axis=0),
+        np.atleast_2d(np.cov(real_features, rowvar=False)),
+    )
+    mu2, sigma2 = (
+        fake_features.mean(axis=0),
+        np.atleast_2d(np.cov(fake_features, rowvar=False)),
+    )
 
     # Calculate squared difference of means
     diff = mu1 - mu2
+
+    # Regularize covariance matrices for numerical stability
+    eps = 1e-6
+    sigma1 += np.eye(sigma1.shape[0]) * eps
+    sigma2 += np.eye(sigma2.shape[0]) * eps
 
     # Calculate matrix square root of product of covariances
     covmean: np.ndarray = sqrtm(sigma1.dot(sigma2))  # type: ignore[assignment]
 
     # Handle numerical errors (complex values)
     if np.iscomplexobj(covmean):
+        if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):  # type: ignore[union-attr]
+            raise ValueError(
+                "sqrtm produced significant imaginary components in FID computation"
+            )
         covmean = covmean.real  # type: ignore[attr-defined]
 
-    # Calculate FID
+    # Calculate FID (clamp to 0 since FID is non-negative by definition)
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
-    return float(fid)
+    return float(max(fid, 0.0))
 
 
 def calculate_inception_score(
@@ -91,6 +106,15 @@ def calculate_inception_score(
     """
     if predictions.ndim != 2:
         raise ValueError(f"Expected 2D predictions, got shape {predictions.shape}")
+
+    if np.any(predictions < 0):
+        raise ValueError("Predictions must be non-negative (softmax probabilities)")
+
+    row_sums = predictions.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-3):
+        raise ValueError(
+            "Predictions must sum to 1 along axis 1 (softmax probabilities)"
+        )
 
     # Split predictions into groups
     split_size = predictions.shape[0] // splits
