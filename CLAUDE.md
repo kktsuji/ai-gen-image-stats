@@ -47,7 +47,7 @@ The project uses a **Vertical Slice** pattern. Each experiment type is fully sel
 
 ### Shared Utilities
 
-- **`src/utils/checkpoint.py`** — `CheckpointManager`: composable checkpoint save/load utility (used by ClassifierTrainer)
+- **`src/utils/checkpoint.py`** — `save_checkpoint`, `load_checkpoint`, `is_best_metric`: standalone checkpoint functions (used by ClassifierTrainer)
 - **`src/utils/metrics_writer.py`** — `MetricsWriter`: composable CSV + TensorBoard metrics writing (used by both loggers)
 
 ### Experiment Slices

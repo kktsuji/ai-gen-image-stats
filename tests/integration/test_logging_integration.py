@@ -254,7 +254,7 @@ class TestEndToEndLogging:
         import torch.nn.functional as F
         from torch.utils.data import DataLoader, TensorDataset
 
-        from src.utils.checkpoint import CheckpointManager
+        from src.utils.checkpoint import save_checkpoint
 
         # Setup logging first
         log_file = tmp_path / "training.log"
@@ -291,13 +291,9 @@ class TestEndToEndLogging:
             def log_hyperparams(self, hyperparams):
                 pass
 
-        # Create model and checkpoint manager
+        # Create model and optimizer
         model = SimpleModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        checkpoint_manager = CheckpointManager(
-            model_fn=lambda: model,
-            optimizer_fn=lambda: optimizer,
-        )
 
         # Simple training loop
         dataloader = SimpleDataLoader()
@@ -310,8 +306,10 @@ class TestEndToEndLogging:
         # Save a checkpoint
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir()
-        checkpoint_manager.save(
+        save_checkpoint(
             checkpoint_dir / "test.pth",
+            model=model,
+            optimizer=optimizer,
             epoch=1,
             global_step=5,
             metrics={"loss": 0.5},

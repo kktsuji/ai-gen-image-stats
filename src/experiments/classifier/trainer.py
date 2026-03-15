@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.utils.checkpoint import CheckpointManager
+from src.utils.checkpoint import is_best_metric, load_checkpoint, save_checkpoint
 
 # Module-level logger for application logging
 _logger = logging.getLogger(__name__)
@@ -101,12 +101,6 @@ class ClassifierTrainer:
         self.scheduler = scheduler
         self.log_interval = log_interval
         self.config = config or {}
-
-        # Checkpoint manager
-        self.checkpoint_manager = CheckpointManager(
-            model_fn=lambda: self.model,
-            optimizer_fn=lambda: self.optimizer,
-        )
 
         # Move model to device
         self.model.to(self.device)
@@ -339,7 +333,7 @@ class ClassifierTrainer:
                 current_metric_value = metrics_to_check.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = CheckpointManager.is_best_metric(
+                    is_best = is_best_metric(
                         current_metric_value, self._best_metric, best_metric_mode
                     )
 
@@ -347,8 +341,10 @@ class ClassifierTrainer:
                         self._best_metric = current_metric_value
                         if checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
-                            self.checkpoint_manager.save(
+                            save_checkpoint(
                                 best_path,
+                                model=self.model,
+                                optimizer=self.optimizer,
                                 epoch=self._current_epoch,
                                 global_step=self._global_step,
                                 is_best=True,
@@ -367,8 +363,10 @@ class ClassifierTrainer:
                     checkpoint_path = (
                         checkpoint_dir / f"checkpoint_epoch_{self._current_epoch}.pth"
                     )
-                    self.checkpoint_manager.save(
+                    save_checkpoint(
                         checkpoint_path,
+                        model=self.model,
+                        optimizer=self.optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -383,8 +381,10 @@ class ClassifierTrainer:
 
                 if save_latest_checkpoint:
                     latest_path = checkpoint_dir / "latest_checkpoint.pth"
-                    self.checkpoint_manager.save(
+                    save_checkpoint(
                         latest_path,
+                        model=self.model,
+                        optimizer=self.optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -400,8 +400,10 @@ class ClassifierTrainer:
         # Save final checkpoint after all epochs complete
         if checkpoint_dir is not None:
             final_path = checkpoint_dir / "final_model.pth"
-            self.checkpoint_manager.save(
+            save_checkpoint(
                 final_path,
+                model=self.model,
+                optimizer=self.optimizer,
                 epoch=self._current_epoch,
                 global_step=self._global_step,
                 is_best=False,
@@ -520,9 +522,11 @@ class ClassifierTrainer:
         metrics: Optional[Dict[str, float]] = None,
         **kwargs: Any,
     ) -> None:
-        """Save training checkpoint (delegates to CheckpointManager)."""
-        self.checkpoint_manager.save(
+        """Save training checkpoint."""
+        save_checkpoint(
             path=path,
+            model=self.model,
+            optimizer=self.optimizer,
             epoch=epoch,
             global_step=self._global_step,
             is_best=is_best,
@@ -539,10 +543,11 @@ class ClassifierTrainer:
         load_optimizer: bool = True,
         strict: bool = True,
     ) -> Dict[str, Any]:
-        """Load training checkpoint (delegates to CheckpointManager)."""
-        checkpoint = self.checkpoint_manager.load(
+        """Load training checkpoint."""
+        checkpoint = load_checkpoint(
             path=path,
-            load_optimizer=load_optimizer,
+            model=self.model,
+            optimizer=self.optimizer if load_optimizer else None,
             strict=strict,
         )
         self._current_epoch = checkpoint.get("epoch", 0)

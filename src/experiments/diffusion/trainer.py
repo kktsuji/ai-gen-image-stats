@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from src.experiments.diffusion.model import EMA
 from src.experiments.diffusion.sampler import sample_with_intermediates
-from src.utils.checkpoint import CheckpointManager
+from src.utils.checkpoint import is_best_metric
 
 # Module-level logger
 _logger = logging.getLogger(__name__)
@@ -645,7 +645,7 @@ class DiffusionTrainer:
                     current_metric_value = train_metrics.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = CheckpointManager.is_best_metric(
+                    is_best = is_best_metric(
                         current_metric_value, self._best_metric, best_metric_mode
                     )
 
@@ -814,7 +814,7 @@ class DiffusionTrainer:
                     current_metric_value = train_metrics.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = CheckpointManager.is_best_metric(
+                    is_best = is_best_metric(
                         current_metric_value, self._best_metric, best_metric_mode
                     )
                     if is_best:
