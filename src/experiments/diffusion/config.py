@@ -16,11 +16,16 @@ from typing import Any, Dict
 
 from src.utils.config import (
     get_default_config_from_module,
+    validate_checkpointing_section,
     validate_compute_section,
     validate_data_loading_section,
+    validate_experiment_section,
     validate_optimizer_section,
     validate_output_section,
     validate_scheduler_section,
+    validate_split_file,
+    validate_training_epochs,
+    validate_validation_section,
 )
 
 _logger = logging.getLogger(__name__)
@@ -77,16 +82,9 @@ def validate_config(config: Dict[str, Any]) -> None:
         >>> config["model"]["architecture"]["image_size"] = -1
         >>> validate_config(config)  # Raises ValueError
     """
-    # Validate experiment type
-    if config.get("experiment") != "diffusion":
-        raise ValueError(
-            f"Invalid experiment type: {config.get('experiment')}. Must be 'diffusion'"
-        )
-
-    # Validate mode
+    # Validate experiment type and mode
+    validate_experiment_section(config, "diffusion", ["train", "generate"])
     mode = config.get("mode", "train")
-    if mode not in ["train", "generate"]:
-        raise ValueError(f"Invalid mode: {mode}. Must be 'train' or 'generate'")
 
     # Validate compute section
     _validate_compute_config(config)
@@ -257,11 +255,7 @@ def _validate_data_config(config: Dict[str, Any]) -> None:
     data = config["data"]
 
     # Validate split_file
-    if "split_file" not in data or data["split_file"] is None:
-        raise ValueError("data.split_file is required and cannot be None")
-
-    if not isinstance(data["split_file"], str) or not data["split_file"]:
-        raise ValueError("data.split_file must be a non-empty string")
+    validate_split_file(data)
 
     # Validate loading subsection
     validate_data_loading_section(data)
@@ -480,11 +474,7 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
     training = config["training"]
 
     # Validate core training parameters
-    if "epochs" not in training or training["epochs"] is None:
-        raise ValueError("training.epochs is required and cannot be None")
-
-    if not isinstance(training["epochs"], int) or training["epochs"] < 1:
-        raise ValueError("training.epochs must be a positive integer")
+    validate_training_epochs(training)
 
     # Validate optimizer subsection
     if "optimizer" not in training:
@@ -529,25 +519,11 @@ def _validate_training_config(config: Dict[str, Any]) -> None:
     if "checkpointing" not in training:
         raise KeyError("Missing required config key: training.checkpointing")
 
-    ckpt = training["checkpointing"]
-    if "save_frequency" in ckpt:
-        if not isinstance(ckpt["save_frequency"], int) or ckpt["save_frequency"] < 1:
-            raise ValueError(
-                "training.checkpointing.save_frequency must be a positive integer"
-            )
-    if "save_latest" in ckpt and not isinstance(ckpt["save_latest"], bool):
-        raise ValueError("training.checkpointing.save_latest must be a boolean")
+    validate_checkpointing_section(training["checkpointing"])
 
     # Validate validation subsection
     if "validation" in training:
-        val = training["validation"]
-        if "frequency" in val:
-            if not isinstance(val["frequency"], int) or val["frequency"] < 1:
-                raise ValueError(
-                    "training.validation.frequency must be a positive integer"
-                )
-        if "metric" in val and not isinstance(val["metric"], str):
-            raise ValueError("training.validation.metric must be a string")
+        validate_validation_section(training["validation"])
 
     # Validate visualization subsection
     if "visualization" in training:

@@ -453,10 +453,114 @@ def validate_scheduler_section(
         raise KeyError("Missing required field: scheduler.type")
 
     if valid_types is None:
-        valid_types = ["cosine", "step", "plateau", None]
+        valid_types = ["cosine", "step", "plateau", None, "none"]
 
     sched_type = scheduler_config["type"]
-    if sched_type not in valid_types:
+    normalized = sched_type.lower() if isinstance(sched_type, str) else sched_type
+    if normalized not in valid_types:
         raise ValueError(
             f"Invalid scheduler type: {sched_type}. Must be one of {valid_types}"
+        )
+
+
+def validate_checkpointing_section(checkpointing_config: Dict[str, Any]) -> None:
+    """Validate training.checkpointing configuration section.
+
+    Args:
+        checkpointing_config: The checkpointing section of configuration dictionary
+
+    Raises:
+        ValueError: If values are invalid
+    """
+    if "save_frequency" in checkpointing_config:
+        sf = checkpointing_config["save_frequency"]
+        if isinstance(sf, bool) or not isinstance(sf, int) or sf < 1:
+            raise ValueError(
+                "training.checkpointing.save_frequency must be a positive integer"
+            )
+    if "save_latest" in checkpointing_config:
+        if not isinstance(checkpointing_config["save_latest"], bool):
+            raise ValueError("training.checkpointing.save_latest must be a boolean")
+    if "save_best_only" in checkpointing_config:
+        if not isinstance(checkpointing_config["save_best_only"], bool):
+            raise ValueError("training.checkpointing.save_best_only must be a boolean")
+
+
+def validate_validation_section(validation_config: Dict[str, Any]) -> None:
+    """Validate training.validation configuration section.
+
+    Args:
+        validation_config: The validation section of configuration dictionary
+
+    Raises:
+        ValueError: If values are invalid
+    """
+    if "frequency" in validation_config:
+        freq = validation_config["frequency"]
+        if isinstance(freq, bool) or not isinstance(freq, int) or freq < 1:
+            raise ValueError("training.validation.frequency must be a positive integer")
+    if "metric" in validation_config:
+        if not isinstance(validation_config["metric"], str):
+            raise ValueError("training.validation.metric must be a string")
+
+
+def validate_training_epochs(training_config: Dict[str, Any]) -> None:
+    """Validate training.epochs configuration.
+
+    Args:
+        training_config: The training section of configuration dictionary
+
+    Raises:
+        ValueError: If epochs is missing, None, or invalid
+    """
+    if "epochs" not in training_config or training_config["epochs"] is None:
+        raise ValueError("training.epochs is required and cannot be None")
+
+    if (
+        isinstance(training_config["epochs"], bool)
+        or not isinstance(training_config["epochs"], int)
+        or training_config["epochs"] < 1
+    ):
+        raise ValueError("training.epochs must be a positive integer")
+
+
+def validate_split_file(data_config: Dict[str, Any]) -> None:
+    """Validate data.split_file configuration.
+
+    Args:
+        data_config: The data section of configuration dictionary
+
+    Raises:
+        ValueError: If split_file is missing, None, or invalid
+    """
+    if "split_file" not in data_config or data_config["split_file"] is None:
+        raise ValueError("data.split_file is required and cannot be None")
+
+    if not isinstance(data_config["split_file"], str) or not data_config["split_file"]:
+        raise ValueError("data.split_file must be a non-empty string")
+
+
+def validate_experiment_section(
+    config: Dict[str, Any],
+    expected_type: str,
+    valid_modes: List[str],
+) -> None:
+    """Validate the experiment type and mode fields in a config dict.
+
+    Args:
+        config: The merged configuration dictionary.
+        expected_type: The expected value of config["experiment"].
+        valid_modes: List of allowed values for config["mode"].
+
+    Raises:
+        ValueError: If experiment type or mode is invalid.
+    """
+    if config.get("experiment") != expected_type:
+        raise ValueError(
+            f"Invalid experiment type: '{config.get('experiment')}'. "
+            f"Expected '{expected_type}'."
+        )
+    if config.get("mode") not in valid_modes:
+        raise ValueError(
+            f"Invalid mode: '{config.get('mode')}'. Valid modes: {valid_modes}"
         )

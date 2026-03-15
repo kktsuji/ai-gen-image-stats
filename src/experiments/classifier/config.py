@@ -10,11 +10,15 @@ from typing import Any, Dict
 
 from src.utils.config import (
     get_default_config_from_module,
+    validate_checkpointing_section,
     validate_compute_section,
     validate_data_loading_section,
+    validate_experiment_section,
     validate_optimizer_section,
     validate_output_section,
     validate_scheduler_section,
+    validate_split_file,
+    validate_training_epochs,
 )
 
 
@@ -121,18 +125,8 @@ def validate_config(config: Dict[str, Any]) -> None:
         if key not in config:
             raise KeyError(f"Missing required config key: {key}")
 
-    # Validate experiment type
-    if config["experiment"] != "classifier":
-        raise ValueError(
-            f"Invalid experiment type: {config['experiment']}. Must be 'classifier'"
-        )
-
-    # Validate mode
-    valid_modes = ["train", "evaluate"]
-    if config["mode"] not in valid_modes:
-        raise ValueError(
-            f"Invalid mode: {config['mode']}. Must be one of {valid_modes}"
-        )
+    # Validate experiment type and mode
+    validate_experiment_section(config, "classifier", ["train", "evaluate"])
 
     # Validate compute configuration
     validate_compute_section(config)
@@ -178,8 +172,7 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise KeyError(f"Missing required field: data.{section}")
 
     # Validate split_file
-    if not isinstance(data["split_file"], str) or not data["split_file"]:
-        raise ValueError("data.split_file must be a non-empty string")
+    validate_split_file(data)
 
     # Validate loading
     validate_data_loading_section(data)
@@ -226,8 +219,7 @@ def validate_config(config: Dict[str, Any]) -> None:
             if field not in training:
                 raise KeyError(f"Missing required field: training.{field}")
 
-        if not isinstance(training["epochs"], int) or training["epochs"] < 1:
-            raise ValueError("epochs must be a positive integer")
+        validate_training_epochs(training)
 
         # Validate optimizer
         optimizer = training["optimizer"]
@@ -243,9 +235,7 @@ def validate_config(config: Dict[str, Any]) -> None:
 
         # Validate checkpointing
         if "checkpointing" in training:
-            ckpt = training["checkpointing"]
-            if "save_latest" in ckpt and not isinstance(ckpt["save_latest"], bool):
-                raise ValueError("training.checkpointing.save_latest must be a boolean")
+            validate_checkpointing_section(training["checkpointing"])
 
     elif config["mode"] == "evaluate":
         if "evaluation" not in config:
