@@ -327,12 +327,18 @@ def denormalize_image(
     # Handle both (C, H, W) and (B, C, H, W) shapes
     if image.dim() == 3:
         c, h, w = image.shape
-        mean_t = torch.tensor(mean).view(c, 1, 1)
-        std_t = torch.tensor(std).view(c, 1, 1)
+        mean_t = torch.tensor(mean, device=image.device, dtype=image.dtype).view(
+            c, 1, 1
+        )
+        std_t = torch.tensor(std, device=image.device, dtype=image.dtype).view(c, 1, 1)
     elif image.dim() == 4:
         b, c, h, w = image.shape
-        mean_t = torch.tensor(mean).view(1, c, 1, 1)
-        std_t = torch.tensor(std).view(1, c, 1, 1)
+        mean_t = torch.tensor(mean, device=image.device, dtype=image.dtype).view(
+            1, c, 1, 1
+        )
+        std_t = torch.tensor(std, device=image.device, dtype=image.dtype).view(
+            1, c, 1, 1
+        )
     else:
         raise ValueError(f"Expected 3D or 4D tensor, got {image.dim()}D")
 

@@ -20,6 +20,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
+_FID_REG_EPS = 1e-6
+_FID_REG_EPS_STRONG = 1e-4
+
 
 def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float:
     """
@@ -46,23 +49,52 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
             f"fake={fake_features.shape[1]}"
         )
 
-    # Calculate mean and covariance
-    mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
-    mu2, sigma2 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
+    # Calculate mean and covariance (atleast_2d guards against scalar output when feature_dim=1)
+    mu1, sigma1 = (
+        real_features.mean(axis=0),
+        np.atleast_2d(np.cov(real_features, rowvar=False)),
+    )
+    mu2, sigma2 = (
+        fake_features.mean(axis=0),
+        np.atleast_2d(np.cov(fake_features, rowvar=False)),
+    )
 
     # Calculate squared difference of means
     diff = mu1 - mu2
 
+    # Regularize covariance matrices for numerical stability
+    n = sigma1.shape[0]
+    sigma1_reg = sigma1 + np.eye(n) * _FID_REG_EPS
+    sigma2_reg = sigma2 + np.eye(n) * _FID_REG_EPS
+
     # Calculate matrix square root of product of covariances
-    covmean: np.ndarray = sqrtm(sigma1.dot(sigma2))  # type: ignore[assignment]
+    covmean: np.ndarray = sqrtm(sigma1_reg.dot(sigma2_reg))  # type: ignore[assignment]
+
+    # Handle numerical errors (NaN from ill-conditioned matrices)
+    if np.isnan(covmean).any():
+        # Retry with stronger per-matrix regularization.
+        # Note: covmean uses stronger regularization, but the trace (line below)
+        # still uses original sigmas to minimize bias.
+        covmean = sqrtm(  # type: ignore[assignment]
+            (sigma1 + np.eye(n) * _FID_REG_EPS_STRONG).dot(
+                sigma2 + np.eye(n) * _FID_REG_EPS_STRONG
+            )
+        )
+        if np.isnan(covmean).any():
+            raise ValueError("sqrtm produced NaN values in FID computation")
 
     # Handle numerical errors (complex values)
     if np.iscomplexobj(covmean):
+        if not np.allclose(covmean.imag, 0, atol=1e-3):  # type: ignore[union-attr]
+            raise ValueError(
+                "sqrtm produced significant imaginary components in FID computation"
+            )
         covmean = covmean.real  # type: ignore[attr-defined]
 
-    # Calculate FID
+    # Calculate FID using original (unregularized) covariances for the trace
+    # so regularization bias does not inflate the score
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
-    return float(fid)
+    return float(max(fid, 0.0))
 
 
 def calculate_inception_score(
@@ -91,6 +123,15 @@ def calculate_inception_score(
     """
     if predictions.ndim != 2:
         raise ValueError(f"Expected 2D predictions, got shape {predictions.shape}")
+
+    if np.any(predictions < 0):
+        raise ValueError("Predictions must be non-negative (softmax probabilities)")
+
+    row_sums = predictions.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-3):
+        raise ValueError(
+            "Predictions must sum to 1 along axis 1 (softmax probabilities)"
+        )
 
     # Split predictions into groups
     split_size = predictions.shape[0] // splits

@@ -92,6 +92,23 @@ def test_calculate_fid_small_samples(small_features):
     assert fid >= 0
 
 
+@pytest.mark.unit
+def test_calculate_fid_near_singular_covariance():
+    """Test FID handles near-singular covariance matrices without NaN."""
+    np.random.seed(42)
+    # Create features with highly correlated dimensions (near-singular covariance)
+    base = np.random.randn(50, 1)
+    real = np.hstack([base + np.random.randn(50, 1) * 1e-8 for _ in range(10)])
+    fake = np.hstack([base + np.random.randn(50, 1) * 1e-8 for _ in range(10)]) + 0.5
+
+    fid = calculate_fid(real, fake)
+
+    assert isinstance(fid, float), "FID should return a float"
+    assert not np.isnan(fid), "FID should not be NaN for near-singular covariances"
+    assert not np.isinf(fid), "FID should not be infinite"
+    assert fid >= 0, "FID should be non-negative"
+
+
 # ============================================================================
 # Unit Tests: Inception Score
 # ============================================================================
@@ -152,6 +169,24 @@ def test_calculate_inception_score_too_few_samples():
 
     with pytest.raises(ValueError, match="Not enough samples"):
         calculate_inception_score(predictions, splits=10)
+
+
+@pytest.mark.unit
+def test_calculate_inception_score_negative_predictions():
+    """Test IS raises error on negative prediction values."""
+    predictions = np.array([[-0.1, 1.1], [0.5, 0.5]])
+
+    with pytest.raises(ValueError, match="non-negative"):
+        calculate_inception_score(predictions)
+
+
+@pytest.mark.unit
+def test_calculate_inception_score_not_summing_to_one():
+    """Test IS raises error when predictions don't sum to 1."""
+    predictions = np.array([[0.3, 0.3], [0.5, 0.5]])
+
+    with pytest.raises(ValueError, match="sum to 1"):
+        calculate_inception_score(predictions)
 
 
 # ============================================================================
