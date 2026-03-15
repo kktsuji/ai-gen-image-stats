@@ -96,6 +96,14 @@ class TestSaveAnnotatedPredictions:
         save_annotated_predictions(images, labels, predictions, save_path)
         assert save_path.exists()
 
+    def test_raises_on_unexpected_channels(self, temp_dir):
+        """save_annotated_predictions() raises ValueError for unsupported channel count."""
+        images = torch.randn(4, 5, 32, 32)  # 5 channels — not RGB or grayscale
+        save_path = temp_dir / "bad_channels.png"
+
+        with pytest.raises(ValueError, match="Unexpected number of channels"):
+            save_annotated_predictions(images, [0, 1, 0, 1], [0, 1, 1, 1], save_path)
+
 
 @pytest.mark.unit
 class TestSaveConfusionMatrix:

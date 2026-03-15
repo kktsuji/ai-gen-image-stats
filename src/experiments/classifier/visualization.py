@@ -62,6 +62,8 @@ def save_annotated_predictions(
             img = (img - img.min()) / (img.max() - img.min() + 1e-8)
         elif img.shape[0] == 1:  # Grayscale
             img = img[0]
+        else:
+            raise ValueError(f"Unexpected number of channels: {img.shape[0]}")
 
         ax.imshow(img, cmap="gray" if len(img.shape) == 2 else None)
         ax.axis("off")

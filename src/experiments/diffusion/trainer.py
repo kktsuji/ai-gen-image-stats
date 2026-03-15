@@ -1165,10 +1165,8 @@ class DiffusionTrainer:
                     save_denoising_process,
                 )
 
-                filename_parts = ["denoising", f"step{step}"]
-                if epoch is not None:
-                    filename_parts.insert(1, f"epoch{epoch}")
-                filename = "_".join(filename_parts) + ".png"
+                # epoch is always an int here (parameter typed as int)
+                filename = f"denoising_epoch{epoch}_step{step}.png"
                 save_path = denoising_dir / filename
 
                 save_denoising_process(

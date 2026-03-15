@@ -292,6 +292,24 @@ class TestLogImages:
         image_file = Path(temp_log_dir) / "samples" / "grayscale_step100.png"
         assert image_file.exists()
 
+    def test_log_images_with_class_labels(self, logger, temp_log_dir):
+        """log_images() annotates grid when class_labels provided."""
+        images = torch.randn(4, 3, 32, 32)
+        logger.log_images(
+            images, tag="conditional", step=100, class_labels=[0, 0, 1, 1]
+        )
+
+        image_file = Path(temp_log_dir) / "samples" / "conditional_step100.png"
+        assert image_file.exists()
+        # Verify labels are stored in history
+        assert logger.logged_images[0]["class_labels"] == [0, 0, 1, 1]
+
+    def test_log_images_without_class_labels_stores_none(self, logger):
+        """log_images() stores None for class_labels when not provided."""
+        images = torch.randn(2, 3, 32, 32)
+        logger.log_images(images, tag="plain", step=1)
+        assert logger.logged_images[0]["class_labels"] is None
+
 
 @pytest.mark.unit
 class TestLogHyperparams:

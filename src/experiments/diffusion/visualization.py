@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+# safe_log_* wrappers guard on writer=None and wrap calls in try/except,
+# so they are safe even when tensorboard is not installed.
 from src.utils.tensorboard import safe_log_figure, safe_log_images
 
 # Use non-interactive backend for headless environments
