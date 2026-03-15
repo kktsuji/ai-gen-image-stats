@@ -1,7 +1,7 @@
 """Metrics Writer Utility
 
 Composable utility for writing metrics to CSV files and TensorBoard.
-Extracted from shared logic between DiffusionLogger and ClassifierLogger.
+Extracted from shared logic used by ExperimentLogger.
 """
 
 import csv

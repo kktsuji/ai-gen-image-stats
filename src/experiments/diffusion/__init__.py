@@ -26,6 +26,5 @@ Usage:
 __all__: list[str] = [
     # Will be populated as components are implemented
     # 'DiffusionTrainer',
-    # 'DiffusionLogger',
     # 'DDPMModel',
 ]

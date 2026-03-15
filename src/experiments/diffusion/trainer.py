@@ -116,12 +116,12 @@ class DiffusionTrainer:
     Example:
         >>> from src.experiments.diffusion.model import create_ddpm
         >>> from src.experiments.diffusion.dataloader import DiffusionDataLoader
-        >>> from src.experiments.diffusion.logger import DiffusionLogger
+        >>> from src.utils.experiment_logger import ExperimentLogger
         >>>
         >>> model = create_ddpm(image_size=64, num_classes=2, device="cuda")
         >>> dataloader = DiffusionDataLoader(train_path="data/train", batch_size=128)
         >>> optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-        >>> logger = DiffusionLogger(log_dir="outputs/logs/diffusion")
+        >>> logger = ExperimentLogger(log_dir="outputs/logs/diffusion")
         >>>
         >>> trainer = DiffusionTrainer(
         ...     model=model,
@@ -1144,6 +1144,7 @@ class DiffusionTrainer:
                 tag=f"samples_epoch_{epoch}",
                 step=step,
                 epoch=epoch,
+                value_range=(-1, 1),
                 **kwargs,
             )
 
@@ -1153,6 +1154,7 @@ class DiffusionTrainer:
                 tag="quality_comparison",
                 step=step,
                 epoch=epoch,
+                value_range=(-1, 1),
             )
 
         # 4. log_denoising_process
