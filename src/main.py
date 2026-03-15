@@ -67,7 +67,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     from src.experiments.classifier.config import (
         validate_config as validate_classifier_config,
     )
-    from src.experiments.classifier.logger import ClassifierLogger
     from src.experiments.classifier.models import (
         InceptionV3Classifier,
         ResNetClassifier,
@@ -341,9 +340,14 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         if "tensorboard" in config.get("output", {}).get("subdirs", {})
         else None
     )
-    metrics_logger = ClassifierLogger(
+    from src.utils.experiment_logger import ExperimentLogger
+
+    metrics_logger = ExperimentLogger(
         log_dir=log_dir,
-        class_names=class_names,
+        subdirs={
+            "images": "predictions",
+            "confusion_matrices": "confusion_matrices",
+        },
         tensorboard_config=tensorboard_config,
         tb_log_dir=tb_log_dir,
     )
@@ -428,7 +432,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     from src.experiments.diffusion.config import (
         validate_config as validate_diffusion_config,
     )
-    from src.experiments.diffusion.logger import DiffusionLogger
     from src.experiments.diffusion.model import create_ddpm
     from src.experiments.diffusion.trainer import DiffusionTrainer
     from src.utils.config import (
@@ -621,7 +624,9 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 sampling_config["use_ema"] = False
 
         # Initialize metrics logger for metadata
-        metrics_logger = DiffusionLogger(log_dir=log_dir)
+        from src.utils.experiment_logger import ExperimentLogger
+
+        metrics_logger = ExperimentLogger(log_dir=log_dir)
 
         # Create sampler (no optimizer or dataloader needed!)
         sampler = DiffusionSampler(
@@ -821,8 +826,14 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             if "tensorboard" in config.get("output", {}).get("subdirs", {})
             else None
         )
-        metrics_logger = DiffusionLogger(
+        from src.utils.experiment_logger import ExperimentLogger
+
+        metrics_logger = ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "samples",
+                "denoising": "denoising",
+            },
             tensorboard_config=tensorboard_config,
             tb_log_dir=tb_log_dir,
         )

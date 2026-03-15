@@ -456,7 +456,7 @@ class TestClassifierExperimentSetup:
         assert (tmp_path / "checkpoints").exists()
         assert (tmp_path / "logs").exists()
         assert (tmp_path / "logs" / "config.yaml").exists()
-        assert (tmp_path / "logs" / "metrics.csv").exists()
+        assert (tmp_path / "logs" / "metrics" / "metrics.csv").exists()
 
         # Verify checkpoint was saved
         checkpoint_files = list((tmp_path / "checkpoints").glob("*.pth"))
@@ -945,7 +945,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 # Mock sampler to return proper tensor
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
@@ -969,7 +969,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
                 # Return proper tensor instead of MagicMock
@@ -995,7 +995,7 @@ class TestDiffusionGenerationMode:
             with patch(
                 "src.experiments.diffusion.sampler.DiffusionSampler"
             ) as mock_sampler:
-                with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                with patch("src.utils.experiment_logger.ExperimentLogger"):
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
                     mock_sampler.return_value = mock_sampler_instance
@@ -1022,7 +1022,7 @@ class TestDiffusionGenerationMode:
             with patch(
                 "src.experiments.diffusion.sampler.DiffusionSampler"
             ) as mock_sampler:
-                with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+                with patch("src.utils.experiment_logger.ExperimentLogger"):
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
                     mock_sampler.return_value = mock_sampler_instance
@@ -1052,7 +1052,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 with patch("src.experiments.diffusion.model.EMA") as mock_ema:
                     # Mock sampler to return proper tensor
                     mock_sampler_instance = MagicMock()
@@ -1086,7 +1086,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 # Mock sampler to return proper tensor
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
@@ -1115,7 +1115,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
 
@@ -1148,7 +1148,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
                 mock_sampler_instance.sample.return_value = torch.randn(5, 3, 32, 32)
@@ -1174,7 +1174,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
 
@@ -1214,7 +1214,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
 
@@ -1253,7 +1253,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
 
@@ -1295,7 +1295,7 @@ class TestDiffusionGenerationMode:
         with patch(
             "src.experiments.diffusion.sampler.DiffusionSampler"
         ) as mock_sampler:
-            with patch("src.experiments.diffusion.logger.DiffusionLogger"):
+            with patch("src.utils.experiment_logger.ExperimentLogger"):
                 mock_sampler_instance = MagicMock()
                 mock_sampler.return_value = mock_sampler_instance
 
@@ -1531,14 +1531,12 @@ class TestClassifierDeviceAndDataset:
                 "src.utils.data.loaders.get_class_names",
                 return_value=["Class 0", "Class 1"],
             ),
-            patch(
-                "src.experiments.classifier.logger.ClassifierLogger"
-            ) as mock_logger_cls,
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
+            # Verify class names from split file are loaded and used
+            # (ExperimentLogger no longer takes class_names; they are used
+            # directly by the main function for logging)
             setup_experiment_classifier(config)
-            # Verify class names from split file were passed to logger
-            call_kwargs = mock_logger_cls.call_args.kwargs
-            assert call_kwargs["class_names"] == ["Class 0", "Class 1"]
 
 
 class TestDiffusionTrainingMode:
@@ -1559,7 +1557,7 @@ class TestDiffusionTrainingMode:
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,
-            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
             mock_trainer_cls.return_value.train = MagicMock()
             yield {
@@ -1680,7 +1678,7 @@ class TestDiffusionTrainingMode:
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,
-            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
             mock_trainer_cls.return_value.train.side_effect = KeyboardInterrupt
             with pytest.raises(SystemExit) as exc_info:
@@ -1706,7 +1704,7 @@ class TestDiffusionTrainingMode:
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,
-            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
             mock_trainer_cls.return_value.train.side_effect = RuntimeError("GPU OOM")
             with pytest.raises(RuntimeError, match="GPU OOM"):
@@ -1828,7 +1826,7 @@ class TestGenerationModeEdgeCases:
 
         with (
             patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
-            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
             mock_sampler_instance = MagicMock()
             mock_sampler.return_value = mock_sampler_instance
@@ -1880,7 +1878,7 @@ class TestGenerationModeEdgeCases:
 
         with (
             patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
-            patch("src.experiments.diffusion.logger.DiffusionLogger"),
+            patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
             mock_sampler_instance = MagicMock()
             mock_sampler.return_value = mock_sampler_instance

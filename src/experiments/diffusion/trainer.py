@@ -116,12 +116,12 @@ class DiffusionTrainer:
     Example:
         >>> from src.experiments.diffusion.model import create_ddpm
         >>> from src.experiments.diffusion.dataloader import DiffusionDataLoader
-        >>> from src.experiments.diffusion.logger import DiffusionLogger
+        >>> from src.utils.experiment_logger import ExperimentLogger
         >>>
         >>> model = create_ddpm(image_size=64, num_classes=2, device="cuda")
         >>> dataloader = DiffusionDataLoader(train_path="data/train", batch_size=128)
         >>> optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-        >>> logger = DiffusionLogger(log_dir="outputs/logs/diffusion")
+        >>> logger = ExperimentLogger(log_dir="outputs/logs/diffusion")
         >>>
         >>> trainer = DiffusionTrainer(
         ...     model=model,
@@ -1144,6 +1144,7 @@ class DiffusionTrainer:
                 tag=f"samples_epoch_{epoch}",
                 step=step,
                 epoch=epoch,
+                value_range=(-1, 1),
                 **kwargs,
             )
 
@@ -1153,15 +1154,32 @@ class DiffusionTrainer:
                 tag="quality_comparison",
                 step=step,
                 epoch=epoch,
+                value_range=(-1, 1),
             )
 
         # 4. log_denoising_process
         if self.log_denoising_interval and epoch % self.log_denoising_interval == 0:
-            if hasattr(logger, "log_denoising_process"):
-                logger.log_denoising_process(  # type: ignore[attr-defined]
+            denoising_dir = getattr(logger, "dirs", {}).get("denoising")
+            if denoising_dir is not None:
+                from src.experiments.diffusion.visualization import (
+                    save_denoising_process,
+                )
+
+                # epoch is always an int here (parameter typed as int)
+                filename = f"denoising_epoch{epoch}_step{step}.png"
+                save_path = denoising_dir / filename
+
+                save_denoising_process(
                     denoising_seq,
+                    save_path=save_path,
                     step=step,
-                    epoch=epoch,
+                    tb_writer=getattr(logger, "tb_writer", None),
+                    tb_log_images=getattr(logger, "tb_log_images", True),
+                )
+            else:
+                _logger.warning(
+                    "log_denoising_interval is enabled, but logger.dirs['denoising'] "
+                    "is not configured; denoising artifacts will not be saved"
                 )
 
     def get_model(self) -> Any:

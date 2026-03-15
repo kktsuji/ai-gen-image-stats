@@ -24,12 +24,12 @@ import torch
 import yaml
 from torchvision.utils import save_image
 
-from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import EMA, create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
 from src.utils.data.loaders import create_train_loader, create_val_loader
 from src.utils.data.transforms import get_diffusion_val_transforms
+from src.utils.experiment_logger import ExperimentLogger
 from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
@@ -137,7 +137,10 @@ class TestDiffusionPipelineBasic:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(
+            log_dir=config["output"]["log_dir"],
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -300,7 +303,10 @@ class TestDiffusionPipelineBasic:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(
+            log_dir=config["output"]["log_dir"],
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -438,7 +444,10 @@ class TestDiffusionPipelineCheckpoints:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(
+            log_dir=str(log_dir),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -573,7 +582,10 @@ class TestDiffusionPipelineCheckpoints:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(
+            log_dir=str(log_dir),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -616,7 +628,10 @@ class TestDiffusionPipelineCheckpoints:
             device=config["device"],
         )
 
-        logger_resumed = DiffusionLogger(log_dir=str(log_dir / "resumed"))
+        logger_resumed = ExperimentLogger(
+            log_dir=str(log_dir / "resumed"),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer_resumed = torch.optim.Adam(
             model_resumed.parameters(), lr=config["training"]["learning_rate"]
@@ -732,7 +747,10 @@ class TestDiffusionPipelineGeneration:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(
+            log_dir=str(log_dir),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -777,7 +795,10 @@ class TestDiffusionPipelineGeneration:
         checkpoint = torch.load(checkpoint_path, map_location=config["device"])
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
-        logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
+        logger_gen = ExperimentLogger(
+            log_dir=str(log_dir / "generation"),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer_gen = torch.optim.Adam(model_gen.parameters(), lr=0.0001)
 
@@ -902,7 +923,10 @@ class TestDiffusionPipelineGeneration:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(
+            log_dir=str(log_dir),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -948,7 +972,10 @@ class TestDiffusionPipelineGeneration:
         checkpoint = torch.load(checkpoint_path, map_location=config["device"])
         model_gen.load_state_dict(checkpoint["model_state_dict"])
 
-        logger_gen = DiffusionLogger(log_dir=str(log_dir / "generation"))
+        logger_gen = ExperimentLogger(
+            log_dir=str(log_dir / "generation"),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer_gen = torch.optim.Adam(model_gen.parameters(), lr=0.0001)
 
@@ -1060,7 +1087,10 @@ class TestDiffusionPipelineGeneration:
             return_labels=False,
         )
 
-        logger = DiffusionLogger(log_dir=str(log_dir))
+        logger = ExperimentLogger(
+            log_dir=str(log_dir),
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
         trainer = DiffusionTrainer(
@@ -1244,7 +1274,10 @@ class TestDiffusionPipelineAdvanced:
             return_labels=config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=config["output"]["log_dir"])
+        logger = ExperimentLogger(
+            log_dir=config["output"]["log_dir"],
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=config["training"]["learning_rate"]
@@ -1378,7 +1411,10 @@ class TestDiffusionPipelineAdvanced:
             return_labels=loaded_config["data"]["return_labels"],
         )
 
-        logger = DiffusionLogger(log_dir=loaded_config["output"]["log_dir"])
+        logger = ExperimentLogger(
+            log_dir=loaded_config["output"]["log_dir"],
+            subdirs={"images": "samples", "denoising": "denoising"},
+        )
 
         optimizer = torch.optim.Adam(
             model.parameters(), lr=loaded_config["training"]["learning_rate"]

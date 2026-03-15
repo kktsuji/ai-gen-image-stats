@@ -48,7 +48,7 @@ class ClassifierTrainer:
         >>> model = InceptionV3Classifier(num_classes=2)
         >>> dataloader = ClassifierDataLoader(train_path="data/train")
         >>> optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        >>> logger = ClassifierLogger(log_dir="outputs/logs")
+        >>> logger = ExperimentLogger(log_dir="outputs/logs")
         >>> trainer = ClassifierTrainer(model, dataloader, optimizer, logger)
         >>> trainer.train(num_epochs=10, checkpoint_dir="outputs/checkpoints")
     """

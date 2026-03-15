@@ -15,11 +15,11 @@ from pathlib import Path
 import pytest
 import torch
 
-from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
 from src.utils.data.loaders import create_train_loader
+from src.utils.experiment_logger import ExperimentLogger
 
 # ========================================
 # Fixtures
@@ -106,7 +106,10 @@ def small_dataloader(temp_dir):
 @pytest.fixture
 def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, device):
     """Create a trainer instance for testing."""
-    logger = DiffusionLogger(log_dir=str(temp_dir / "logs"))
+    logger = ExperimentLogger(
+        log_dir=str(temp_dir / "logs"),
+        subdirs={"images": "samples", "denoising": "denoising"},
+    )
     optimizer = torch.optim.Adam(small_conditional_model.parameters(), lr=0.0001)
 
     trainer = DiffusionTrainer(

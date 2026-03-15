@@ -1,15 +1,15 @@
 """Integration tests for TensorBoard logging.
 
-This module tests end-to-end TensorBoard integration with both ClassifierLogger
-and DiffusionLogger, verifying that:
+This module tests end-to-end TensorBoard integration with ExperimentLogger,
+verifying that:
 - Both CSV and TensorBoard logs are produced during a training run
 - TensorBoard can be disabled without affecting CSV output
 - Custom log directories are respected
 - Missing tensorboard package is handled gracefully
 
 Test Coverage:
-- Full logging run with TensorBoard enabled (Classifier)
-- Full logging run with TensorBoard enabled (Diffusion)
+- Full logging run with TensorBoard enabled (Classifier subdirs)
+- Full logging run with TensorBoard enabled (Diffusion subdirs)
 - Backward compatibility: TensorBoard disabled, CSV unchanged
 - Custom log_dir configuration
 - Graceful degradation without tensorboard package
@@ -20,12 +20,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 import torch
 
-from src.experiments.classifier.logger import ClassifierLogger
-from src.experiments.diffusion.logger import DiffusionLogger
+from src.utils.experiment_logger import ExperimentLogger
 from src.utils.tensorboard import TENSORBOARD_AVAILABLE
 
 # ============================================================================
@@ -77,9 +75,12 @@ class TestClassifierTensorBoardEnabled:
         """CSV and TensorBoard event files are both created during a logging run."""
         log_dir, tb_dir, config = classifier_tb_config
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
-            class_names=["Normal", "Abnormal"],
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config=config,
             tb_log_dir=tb_dir,
         ) as logger:
@@ -94,8 +95,8 @@ class TestClassifierTensorBoardEnabled:
                 )
 
         # CSV output
-        assert (log_dir / "metrics.csv").exists()
-        with open(log_dir / "metrics.csv") as f:
+        assert (log_dir / "metrics" / "metrics.csv").exists()
+        with open(log_dir / "metrics" / "metrics.csv") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 3
         assert float(rows[0]["train_loss"]) == pytest.approx(1.0)
@@ -108,8 +109,12 @@ class TestClassifierTensorBoardEnabled:
         """Validation metrics appear in both CSV and TensorBoard."""
         log_dir, tb_dir, config = classifier_tb_config
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config=config,
             tb_log_dir=tb_dir,
         ) as logger:
@@ -117,28 +122,7 @@ class TestClassifierTensorBoardEnabled:
                 {"val_loss": 0.4, "val_accuracy": 0.85}, step=10, epoch=1
             )
 
-        assert (log_dir / "metrics.csv").exists()
-        event_files = list(tb_dir.glob("events.out.tfevents.*"))
-        assert len(event_files) > 0
-
-    def test_confusion_matrix_logged_to_both_outputs(self, classifier_tb_config):
-        """Confusion matrix is saved to file and TensorBoard."""
-        log_dir, tb_dir, config = classifier_tb_config
-
-        with ClassifierLogger(
-            log_dir=log_dir,
-            class_names=["Normal", "Abnormal"],
-            tensorboard_config=config,
-            tb_log_dir=tb_dir,
-        ) as logger:
-            cm = np.array([[80, 20], [10, 90]])
-            logger.log_confusion_matrix(cm, step=5, epoch=1)
-
-        # Verify file output
-        cm_files = list((log_dir / "confusion_matrices").glob("*.png"))
-        assert len(cm_files) == 1
-
-        # Verify TensorBoard output
+        assert (log_dir / "metrics" / "metrics.csv").exists()
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
@@ -146,8 +130,12 @@ class TestClassifierTensorBoardEnabled:
         """Images are saved to file and TensorBoard."""
         log_dir, tb_dir, config = classifier_tb_config
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config=config,
             tb_log_dir=tb_dir,
         ) as logger:
@@ -164,8 +152,12 @@ class TestClassifierTensorBoardEnabled:
         """Hyperparams are logged to TensorBoard."""
         log_dir, tb_dir, config = classifier_tb_config
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config=config,
             tb_log_dir=tb_dir,
         ) as logger:
@@ -178,9 +170,12 @@ class TestClassifierTensorBoardEnabled:
         """Multi-epoch logging run creates all expected outputs."""
         log_dir, tb_dir, config = classifier_tb_config
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
-            class_names=["Normal", "Abnormal"],
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config=config,
             tb_log_dir=tb_dir,
         ) as logger:
@@ -198,12 +193,8 @@ class TestClassifierTensorBoardEnabled:
                 images = torch.randn(4, 3, 32, 32)
                 logger.log_images(images, tag="epoch_samples", step=epoch, epoch=epoch)
 
-                cm = np.array([[50 + epoch * 5, 10 - epoch], [5, 35 + epoch * 5]])
-                logger.log_confusion_matrix(cm, step=epoch, epoch=epoch)
-
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
         assert len(list((log_dir / "predictions").glob("*.png"))) == 3
-        assert len(list((log_dir / "confusion_matrices").glob("*.png"))) == 3
         assert len(list(tb_dir.glob("events.out.tfevents.*"))) > 0
 
 
@@ -221,8 +212,11 @@ class TestDiffusionTensorBoardEnabled:
         """CSV and TensorBoard event files are both created during a diffusion run."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(
-            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        with ExperimentLogger(
+            log_dir=log_dir,
+            subdirs={"images": "samples", "denoising": "denoising"},
+            tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             for step in range(3):
                 logger.log_metrics(
@@ -239,28 +233,15 @@ class TestDiffusionTensorBoardEnabled:
         event_files = list(tb_dir.glob("events.out.tfevents.*"))
         assert len(event_files) > 0
 
-    def test_denoising_process_logged_to_both_outputs(self, diffusion_tb_config):
-        """Denoising process is saved to file and TensorBoard."""
-        log_dir, tb_dir, config = diffusion_tb_config
-
-        with DiffusionLogger(
-            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
-        ) as logger:
-            sequence = torch.rand(8, 3, 32, 32)
-            logger.log_denoising_process(sequence, step=1000, epoch=1)
-
-        denoising_files = list((log_dir / "denoising").glob("*.png"))
-        assert len(denoising_files) == 1
-
-        event_files = list(tb_dir.glob("events.out.tfevents.*"))
-        assert len(event_files) > 0
-
     def test_generated_samples_logged_to_both_outputs(self, diffusion_tb_config):
         """Generated samples are saved to file and TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(
-            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        with ExperimentLogger(
+            log_dir=log_dir,
+            subdirs={"images": "samples", "denoising": "denoising"},
+            tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             samples = torch.rand(8, 3, 32, 32)
             logger.log_images(samples, tag="samples", step=1000, epoch=1)
@@ -275,8 +256,11 @@ class TestDiffusionTensorBoardEnabled:
         """Hyperparams are logged to TensorBoard."""
         log_dir, tb_dir, config = diffusion_tb_config
 
-        with DiffusionLogger(
-            log_dir=log_dir, tensorboard_config=config, tb_log_dir=tb_dir
+        with ExperimentLogger(
+            log_dir=log_dir,
+            subdirs={"images": "samples", "denoising": "denoising"},
+            tensorboard_config=config,
+            tb_log_dir=tb_dir,
         ) as logger:
             logger.log_hyperparams(
                 {"lr": 0.0001, "timesteps": 1000, "beta_schedule": "linear"}
@@ -301,18 +285,28 @@ class TestBackwardCompatibility:
 
         # Run without TensorBoard
         with tempfile.TemporaryDirectory() as log_dir_a:
-            with ClassifierLogger(log_dir=log_dir_a) as logger_a:
+            with ExperimentLogger(
+                log_dir=log_dir_a,
+                subdirs={
+                    "images": "predictions",
+                    "confusion_matrices": "confusion_matrices",
+                },
+            ) as logger_a:
                 logger_a.log_metrics(metrics, step=1, epoch=1)
-            rows_a = _read_csv(Path(log_dir_a) / "metrics.csv")
+            rows_a = _read_csv(Path(log_dir_a) / "metrics" / "metrics.csv")
 
         # Run with TensorBoard disabled explicitly
         with tempfile.TemporaryDirectory() as log_dir_b:
-            with ClassifierLogger(
+            with ExperimentLogger(
                 log_dir=log_dir_b,
+                subdirs={
+                    "images": "predictions",
+                    "confusion_matrices": "confusion_matrices",
+                },
                 tensorboard_config={"enabled": False},
             ) as logger_b:
                 logger_b.log_metrics(metrics, step=1, epoch=1)
-            rows_b = _read_csv(Path(log_dir_b) / "metrics.csv")
+            rows_b = _read_csv(Path(log_dir_b) / "metrics" / "metrics.csv")
 
         assert rows_a == rows_b
 
@@ -321,13 +315,17 @@ class TestBackwardCompatibility:
         metrics = {"loss": 0.05, "timestep": 500}
 
         with tempfile.TemporaryDirectory() as log_dir_a:
-            with DiffusionLogger(log_dir=log_dir_a) as logger_a:
+            with ExperimentLogger(
+                log_dir=log_dir_a,
+                subdirs={"images": "samples", "denoising": "denoising"},
+            ) as logger_a:
                 logger_a.log_metrics(metrics, step=100)
             rows_a = _read_csv(Path(log_dir_a) / "metrics" / "metrics.csv")
 
         with tempfile.TemporaryDirectory() as log_dir_b:
-            with DiffusionLogger(
+            with ExperimentLogger(
                 log_dir=log_dir_b,
+                subdirs={"images": "samples", "denoising": "denoising"},
                 tensorboard_config={"enabled": False},
             ) as logger_b:
                 logger_b.log_metrics(metrics, step=100)
@@ -339,8 +337,12 @@ class TestBackwardCompatibility:
         """No TensorBoard event files are created when disabled."""
         log_dir = tmp_path / "logs"
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config={"enabled": False},
         ) as logger:
             logger.log_metrics({"loss": 0.5}, step=1)
@@ -352,12 +354,15 @@ class TestBackwardCompatibility:
             assert len(event_files) == 0
 
     def test_classifier_all_methods_work_without_tensorboard(self, tmp_path):
-        """All ClassifierLogger methods work when TensorBoard is disabled."""
+        """All ExperimentLogger methods work when TensorBoard is disabled."""
         log_dir = tmp_path / "logs"
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
-            class_names=["Normal", "Abnormal"],
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config={"enabled": False},
         ) as logger:
             logger.log_hyperparams({"lr": 0.001})
@@ -366,17 +371,15 @@ class TestBackwardCompatibility:
             images = torch.randn(4, 3, 32, 32)
             logger.log_images(images, tag="samples", step=1)
 
-            cm = np.array([[80, 20], [10, 90]])
-            logger.log_confusion_matrix(cm, step=1)
-
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
 
     def test_diffusion_all_methods_work_without_tensorboard(self, tmp_path):
-        """All DiffusionLogger methods work when TensorBoard is disabled."""
+        """All ExperimentLogger methods work when TensorBoard is disabled."""
         log_dir = tmp_path / "logs"
 
-        with DiffusionLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={"images": "samples", "denoising": "denoising"},
             tensorboard_config={"enabled": False},
         ) as logger:
             logger.log_hyperparams({"lr": 0.0001})
@@ -384,9 +387,6 @@ class TestBackwardCompatibility:
 
             samples = torch.rand(4, 3, 32, 32)
             logger.log_images(samples, tag="samples", step=1000)
-
-            sequence = torch.rand(8, 3, 32, 32)
-            logger.log_denoising_process(sequence, step=1000)
 
         assert (log_dir / "metrics" / "metrics.csv").exists()
 
@@ -402,12 +402,16 @@ class TestCustomLogDir:
     """Verify TensorBoard logs are written to custom directories."""
 
     def test_classifier_uses_custom_log_dir(self, tmp_path):
-        """ClassifierLogger respects custom TensorBoard tb_log_dir."""
+        """ExperimentLogger respects custom TensorBoard tb_log_dir."""
         log_dir = tmp_path / "logs"
         custom_tb_dir = tmp_path / "my_custom_tb"
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config={"enabled": True},
             tb_log_dir=custom_tb_dir,
         ) as logger:
@@ -425,12 +429,13 @@ class TestCustomLogDir:
             assert len(default_event_files) == 0
 
     def test_diffusion_uses_custom_log_dir(self, tmp_path):
-        """DiffusionLogger respects custom TensorBoard tb_log_dir."""
+        """ExperimentLogger respects custom TensorBoard tb_log_dir."""
         log_dir = tmp_path / "logs"
         custom_tb_dir = tmp_path / "diffusion_tb"
 
-        with DiffusionLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={"images": "samples", "denoising": "denoising"},
             tensorboard_config={"enabled": True},
             tb_log_dir=custom_tb_dir,
         ) as logger:
@@ -445,8 +450,12 @@ class TestCustomLogDir:
         log_dir = tmp_path / "logs"
         nested_tb_dir = tmp_path / "deep" / "nested" / "tensorboard"
 
-        with ClassifierLogger(
+        with ExperimentLogger(
             log_dir=log_dir,
+            subdirs={
+                "images": "predictions",
+                "confusion_matrices": "confusion_matrices",
+            },
             tensorboard_config={"enabled": True},
             tb_log_dir=nested_tb_dir,
         ) as logger:
@@ -465,13 +474,16 @@ class TestGracefulDegradation:
     """Verify training continues and logs degrade gracefully if tensorboard is absent."""
 
     def test_classifier_continues_without_tensorboard_package(self, tmp_path):
-        """ClassifierLogger continues normally when tensorboard package is missing."""
+        """ExperimentLogger continues normally when tensorboard package is missing."""
         log_dir = tmp_path / "logs"
 
         with patch("src.utils.tensorboard.TENSORBOARD_AVAILABLE", False):
-            with ClassifierLogger(
+            with ExperimentLogger(
                 log_dir=log_dir,
-                class_names=["Normal", "Abnormal"],
+                subdirs={
+                    "images": "predictions",
+                    "confusion_matrices": "confusion_matrices",
+                },
                 tensorboard_config={"enabled": True},
             ) as logger:
                 assert logger.tb_writer is None
@@ -481,26 +493,24 @@ class TestGracefulDegradation:
                 images = torch.randn(4, 3, 32, 32)
                 logger.log_images(images, tag="samples", step=1)
 
-                cm = np.array([[80, 20], [10, 90]])
-                logger.log_confusion_matrix(cm, step=1)
-
                 logger.log_hyperparams({"lr": 0.001})
 
         # CSV should still be present
-        assert (log_dir / "metrics.csv").exists()
+        assert (log_dir / "metrics" / "metrics.csv").exists()
 
-        with open(log_dir / "metrics.csv") as f:
+        with open(log_dir / "metrics" / "metrics.csv") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 1
         assert rows[0]["loss"] == "0.5"
 
     def test_diffusion_continues_without_tensorboard_package(self, tmp_path):
-        """DiffusionLogger continues normally when tensorboard package is missing."""
+        """ExperimentLogger continues normally when tensorboard package is missing."""
         log_dir = tmp_path / "logs"
 
         with patch("src.utils.tensorboard.TENSORBOARD_AVAILABLE", False):
-            with DiffusionLogger(
+            with ExperimentLogger(
                 log_dir=log_dir,
+                subdirs={"images": "samples", "denoising": "denoising"},
                 tensorboard_config={"enabled": True},
             ) as logger:
                 assert logger.tb_writer is None
@@ -509,9 +519,6 @@ class TestGracefulDegradation:
 
                 samples = torch.rand(4, 3, 32, 32)
                 logger.log_images(samples, tag="samples", step=1000)
-
-                sequence = torch.rand(8, 3, 32, 32)
-                logger.log_denoising_process(sequence, step=1000)
 
                 logger.log_hyperparams({"lr": 0.0001})
 
@@ -529,7 +536,7 @@ class TestGracefulDegradation:
 
         with patch("src.utils.tensorboard.TENSORBOARD_AVAILABLE", False):
             with caplog.at_level(logging.WARNING, logger="src.utils.tensorboard"):
-                ClassifierLogger(
+                ExperimentLogger(
                     log_dir=log_dir,
                     tensorboard_config={"enabled": True},
                 )

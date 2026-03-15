@@ -25,7 +25,6 @@ __all__ = [
     # Will be populated as components are implemented
     # 'ClassifierTrainer',
     # 'ClassifierDataLoader',
-    # 'ClassifierLogger',
     # 'InceptionV3',
     # 'ResNet50',
     # 'ResNet101',
