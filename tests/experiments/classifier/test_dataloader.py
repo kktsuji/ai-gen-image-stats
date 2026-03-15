@@ -12,7 +12,6 @@ import pytest
 import torch
 from PIL import Image
 
-from src.base.dataloader import BaseDataLoader
 from src.experiments.classifier.dataloader import ClassifierDataLoader
 
 # ==============================================================================
@@ -105,9 +104,10 @@ def _create_split_json_train_only(tmp_path, train_per_class=3, num_classes=2):
 
 
 @pytest.mark.unit
-def test_classifier_dataloader_inherits_from_base():
-    """Test that ClassifierDataLoader inherits from BaseDataLoader."""
-    assert issubclass(ClassifierDataLoader, BaseDataLoader)
+def test_classifier_dataloader_has_required_methods():
+    """Test that ClassifierDataLoader has required interface methods."""
+    assert hasattr(ClassifierDataLoader, "get_train_loader")
+    assert hasattr(ClassifierDataLoader, "get_val_loader")
 
 
 @pytest.mark.unit
@@ -182,36 +182,6 @@ def test_classifier_dataloader_custom_parameters(tmp_path):
     assert dataloader.pin_memory is False
     assert dataloader.drop_last is True
     assert dataloader.shuffle_train is False
-
-
-@pytest.mark.unit
-def test_classifier_dataloader_get_config(tmp_path):
-    """Test that get_config returns expected configuration."""
-    split_file = _create_split_json(tmp_path)
-
-    dataloader = ClassifierDataLoader(
-        split_file=split_file, batch_size=16, num_workers=2
-    )
-
-    config = dataloader.get_config()
-
-    assert "split_file" in config
-    assert "batch_size" in config
-    assert "num_workers" in config
-    assert config["batch_size"] == 16
-    assert config["num_workers"] == 2
-
-
-@pytest.mark.unit
-def test_classifier_dataloader_repr(tmp_path):
-    """Test string representation of dataloader."""
-    split_file = _create_split_json(tmp_path)
-
-    dataloader = ClassifierDataLoader(split_file=split_file, batch_size=32)
-
-    repr_str = repr(dataloader)
-    assert "ClassifierDataLoader" in repr_str
-    assert "batch_size=32" in repr_str
 
 
 # ==============================================================================

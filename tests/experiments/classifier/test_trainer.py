@@ -17,15 +17,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.base.dataloader import BaseDataLoader
-from src.base.logger import BaseLogger
-from src.base.model import BaseModel
 from src.experiments.classifier.trainer import ClassifierTrainer
 
 # Test fixtures and helper classes
 
 
-class SimpleClassifierModel(BaseModel):
+class SimpleClassifierModel(nn.Module):
     """Simple classifier model for testing."""
 
     def __init__(self, input_dim: int = 10, num_classes: int = 2):
@@ -41,7 +38,7 @@ class SimpleClassifierModel(BaseModel):
         return F.cross_entropy(predictions, targets)
 
 
-class SimpleClassifierDataLoader(BaseDataLoader):
+class SimpleClassifierDataLoader:
     """Simple dataloader for testing classifier trainer."""
 
     def __init__(
@@ -73,12 +70,15 @@ class SimpleClassifierDataLoader(BaseDataLoader):
         return DataLoader(dataset, batch_size=self.batch_size, shuffle=False)
 
 
-class SimpleClassifierLogger(BaseLogger):
+class SimpleClassifierLogger:
     """Simple logger for testing classifier trainer."""
 
     def __init__(self):
         self.logged_metrics = []
         self.logged_images = []
+
+    def log_hyperparams(self, hyperparams) -> None:
+        pass
 
     def log_metrics(
         self,
@@ -193,10 +193,10 @@ def test_classifier_trainer_getters(classifier_trainer):
     optimizer = classifier_trainer.get_optimizer()
     logger = classifier_trainer.get_logger()
 
-    assert isinstance(model, BaseModel)
-    assert isinstance(dataloader, BaseDataLoader)
+    assert model is not None
+    assert dataloader is not None
     assert isinstance(optimizer, torch.optim.Optimizer)
-    assert isinstance(logger, BaseLogger)
+    assert logger is not None
 
 
 @pytest.mark.unit

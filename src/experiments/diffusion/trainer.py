@@ -14,12 +14,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from src.base.dataloader import BaseDataLoader
-from src.base.logger import BaseLogger
-from src.base.model import BaseModel
-from src.base.trainer import BaseTrainer
 from src.experiments.diffusion.model import EMA
 from src.experiments.diffusion.sampler import DiffusionSampler
+from src.utils.checkpoint import CheckpointManager
 
 # Module-level logger
 _logger = logging.getLogger(__name__)
@@ -71,7 +68,7 @@ class ClassWeightedMSELoss(nn.Module):
         return loss
 
 
-class DiffusionTrainer(BaseTrainer):
+class DiffusionTrainer:
     """Trainer for diffusion model experiments.
 
     This trainer implements the training and validation loops for diffusion
@@ -143,10 +140,10 @@ class DiffusionTrainer(BaseTrainer):
 
     def __init__(
         self,
-        model: BaseModel,
-        dataloader: BaseDataLoader,
+        model: Any,
+        dataloader: Any,
         optimizer: torch.optim.Optimizer,
-        logger: BaseLogger,
+        logger: Any,
         device: str = "cpu",
         show_progress: bool = True,
         use_ema: bool = True,
@@ -190,7 +187,11 @@ class DiffusionTrainer(BaseTrainer):
                 logging and model graph visualization
             class_weights: Optional per-class weight tensor for weighted loss
         """
-        super().__init__()
+        self._current_epoch = 0
+        self._global_step = 0
+        self._best_metric: Optional[float] = None
+        self._best_metric_name: Optional[str] = None
+
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -651,8 +652,8 @@ class DiffusionTrainer(BaseTrainer):
                     current_metric_value = train_metrics.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = self._is_best_metric(
-                        current_metric_value, best_metric_mode
+                    is_best = CheckpointManager.is_best_metric(
+                        current_metric_value, self._best_metric, best_metric_mode
                     )
 
                     if is_best:
@@ -820,8 +821,8 @@ class DiffusionTrainer(BaseTrainer):
                     current_metric_value = train_metrics.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = self._is_best_metric(
-                        current_metric_value, best_metric_mode
+                    is_best = CheckpointManager.is_best_metric(
+                        current_metric_value, self._best_metric, best_metric_mode
                     )
                     if is_best:
                         self._best_metric = current_metric_value
@@ -1093,7 +1094,7 @@ class DiffusionTrainer(BaseTrainer):
                 return True
         return False
 
-    def _generate_samples(self, logger: BaseLogger, step: int, epoch: int) -> None:
+    def _generate_samples(self, logger: Any, step: int, epoch: int) -> None:
         """Generate and log sample images during training.
 
         Generates samples once and dispatches to each logger method whose
@@ -1161,34 +1162,33 @@ class DiffusionTrainer(BaseTrainer):
                     epoch=epoch,
                 )
 
-    def get_model(self) -> BaseModel:
-        """Return the model being trained.
-
-        Returns:
-            The diffusion model instance
-        """
+    def get_model(self) -> Any:
+        """Return the model being trained."""
         return self.model
 
-    def get_dataloader(self) -> BaseDataLoader:
-        """Return the dataloader.
-
-        Returns:
-            The dataloader instance
-        """
+    def get_dataloader(self) -> Any:
+        """Return the dataloader."""
         return self.dataloader
 
     def get_optimizer(self) -> torch.optim.Optimizer:
-        """Return the optimizer.
-
-        Returns:
-            The optimizer instance
-        """
+        """Return the optimizer."""
         return self.optimizer
 
-    def get_logger(self) -> BaseLogger:
-        """Return the logger.
-
-        Returns:
-            The logger instance
-        """
+    def get_logger(self) -> Any:
+        """Return the logger."""
         return self.logger
+
+    @property
+    def current_epoch(self) -> int:
+        """Get the current training epoch."""
+        return self._current_epoch
+
+    @property
+    def global_step(self) -> int:
+        """Get the global training step counter."""
+        return self._global_step
+
+    @property
+    def best_metric(self) -> Optional[float]:
+        """Get the best metric value achieved so far."""
+        return self._best_metric

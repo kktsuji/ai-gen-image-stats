@@ -607,7 +607,7 @@ class TestTensorBoardIntegration:
 
         logger = ClassifierLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
 
         logger.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=10)
 
@@ -634,12 +634,13 @@ class TestTensorBoardIntegration:
             log_dir=temp_log_dir,
             tensorboard_config={"enabled": True, "log_images": True},
         )
-        logger.tb_writer = MagicMock()
+        logger.metrics_writer.tb_writer = MagicMock()
 
         images = torch.randn(4, 3, 32, 32)
         logger.log_images(images, tag="samples", step=5)
 
-        logger.tb_writer.add_images.assert_called_once()
+        assert logger.metrics_writer.tb_writer is not None
+        logger.metrics_writer.tb_writer.add_images.assert_called_once()
 
     def test_log_images_skipped_when_log_images_false(self, temp_log_dir):
         """log_images() skips TensorBoard when log_images config is False."""
@@ -650,7 +651,7 @@ class TestTensorBoardIntegration:
             tensorboard_config={"enabled": True, "log_images": False},
         )
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
         logger.tb_log_images = False
 
         images = torch.randn(4, 3, 32, 32)
@@ -664,7 +665,7 @@ class TestTensorBoardIntegration:
 
         logger = ClassifierLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
         logger.tb_log_images = True
 
         cm = np.array([[50, 10], [5, 35]])
@@ -678,7 +679,7 @@ class TestTensorBoardIntegration:
 
         logger = ClassifierLogger(log_dir=temp_log_dir)
         mock_writer = MagicMock()
-        logger.tb_writer = mock_writer
+        logger.metrics_writer.tb_writer = mock_writer
 
         logger.log_hyperparams({"lr": 0.001, "batch_size": 32})
 

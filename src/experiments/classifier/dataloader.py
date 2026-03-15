@@ -10,7 +10,6 @@ from typing import Optional
 
 from torch.utils.data import DataLoader
 
-from src.base.dataloader import BaseDataLoader
 from src.data.datasets import SplitFileDataset
 from src.data.transforms import (
     get_base_transforms,
@@ -19,7 +18,7 @@ from src.data.transforms import (
 )
 
 
-class ClassifierDataLoader(BaseDataLoader):
+class ClassifierDataLoader:
     """DataLoader for classification experiments.
 
     This dataloader provides functionality for loading image classification datasets

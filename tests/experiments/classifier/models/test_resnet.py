@@ -13,7 +13,6 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.base.model import BaseModel
 from src.experiments.classifier.models.resnet import ResNetClassifier
 
 # ============================================================================
@@ -30,7 +29,7 @@ class TestResNetInstantiation:
         model = ResNetClassifier(num_classes=2)
         assert model is not None
         assert isinstance(model, nn.Module)
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
 
     def test_model_creation_resnet50(self):
         """Test ResNet50 variant creation."""
@@ -73,14 +72,12 @@ class TestResNetInstantiation:
             assert model.dropout == 0.5
             assert model.model_dir == Path(tmpdir)
 
-    def test_model_inherits_from_base_model(self):
-        """Test that ResNetClassifier properly inherits from BaseModel."""
+    def test_model_inherits_from_nn_module(self):
+        """Test that ResNetClassifier properly inherits from nn.Module."""
         model = ResNetClassifier(num_classes=2, pretrained=False)
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
         assert hasattr(model, "forward")
         assert hasattr(model, "compute_loss")
-        assert hasattr(model, "save_checkpoint")
-        assert hasattr(model, "load_checkpoint")
 
     def test_model_has_required_attributes(self):
         """Test model has all required attributes after initialization."""
@@ -592,7 +589,7 @@ class TestResNetCheckpointing:
     """Test model checkpoint save/load functionality."""
 
     def test_save_and_load_checkpoint(self):
-        """Test saving and loading model checkpoint."""
+        """Test saving and loading model state dict."""
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pth"
 
@@ -600,7 +597,7 @@ class TestResNetCheckpointing:
             model1 = ResNetClassifier(
                 num_classes=5, variant="resnet50", pretrained=False
             )
-            model1.save_checkpoint(str(checkpoint_path))
+            torch.save({"model_state_dict": model1.state_dict()}, checkpoint_path)
 
             assert checkpoint_path.exists()
 
@@ -608,7 +605,8 @@ class TestResNetCheckpointing:
             model2 = ResNetClassifier(
                 num_classes=5, variant="resnet50", pretrained=False
             )
-            model2.load_checkpoint(str(checkpoint_path))
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            model2.load_state_dict(checkpoint["model_state_dict"])
 
             # Verify weights are the same
             for p1, p2 in zip(model1.parameters(), model2.parameters()):
@@ -626,7 +624,7 @@ class TestResNetCheckpointing:
                 freeze_backbone=True,
                 pretrained=False,
             )
-            model1.save_checkpoint(str(checkpoint_path))
+            torch.save({"model_state_dict": model1.state_dict()}, checkpoint_path)
 
             # Load into new model
             model2 = ResNetClassifier(
@@ -635,7 +633,8 @@ class TestResNetCheckpointing:
                 freeze_backbone=True,
                 pretrained=False,
             )
-            model2.load_checkpoint(str(checkpoint_path))
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            model2.load_state_dict(checkpoint["model_state_dict"])
 
             # Verify trainability is preserved
             assert model2.fc.weight.requires_grad

@@ -13,7 +13,6 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.base.model import BaseModel
 from src.experiments.classifier.models.inceptionv3 import InceptionV3Classifier
 
 # ============================================================================
@@ -30,7 +29,7 @@ class TestInceptionV3Instantiation:
         model = InceptionV3Classifier(num_classes=2)
         assert model is not None
         assert isinstance(model, nn.Module)
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
 
     def test_model_creation_custom_params(self):
         """Test model creation with custom parameters."""
@@ -48,14 +47,12 @@ class TestInceptionV3Instantiation:
             assert model.dropout == 0.3
             assert model.model_dir == Path(tmpdir)
 
-    def test_model_inherits_from_base_model(self):
-        """Test that InceptionV3Classifier properly inherits from BaseModel."""
+    def test_model_inherits_from_nn_module(self):
+        """Test that InceptionV3Classifier properly inherits from nn.Module."""
         model = InceptionV3Classifier(num_classes=2)
-        assert isinstance(model, BaseModel)
+        assert isinstance(model, nn.Module)
         assert hasattr(model, "forward")
         assert hasattr(model, "compute_loss")
-        assert hasattr(model, "save_checkpoint")
-        assert hasattr(model, "load_checkpoint")
 
     def test_model_has_required_attributes(self):
         """Test model has all required attributes after initialization."""
