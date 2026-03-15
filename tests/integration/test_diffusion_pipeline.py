@@ -25,7 +25,7 @@ import yaml
 from torchvision.utils import save_image
 
 from src.experiments.diffusion.model import EMA, create_ddpm
-from src.experiments.diffusion.sampler import DiffusionSampler
+from src.experiments.diffusion.sampler import sample
 from src.experiments.diffusion.trainer import DiffusionTrainer
 from src.utils.data.loaders import create_train_loader, create_val_loader
 from src.utils.data.transforms import get_diffusion_val_transforms
@@ -814,7 +814,9 @@ class TestDiffusionPipelineGeneration:
 
         # Generate samples
         num_samples = 8
-        samples = trainer_gen.sampler.sample(
+        samples = sample(
+            trainer_gen.model,
+            trainer_gen.device,
             num_samples=num_samples,
             class_labels=None,
             guidance_scale=0.0,
@@ -993,7 +995,9 @@ class TestDiffusionPipelineGeneration:
         num_samples = 8
         class_labels = torch.tensor([0, 1] * 4, device=config["device"])
 
-        samples = trainer_gen.sampler.sample(
+        samples = sample(
+            trainer_gen.model,
+            trainer_gen.device,
             num_samples=num_samples,
             class_labels=class_labels,
             guidance_scale=2.0,  # Use classifier-free guidance
@@ -1036,7 +1040,7 @@ class TestDiffusionPipelineGeneration:
         - Train unconditional model with EMA for 1 epoch
         - Save checkpoint with EMA state
         - In separate scope: create fresh model, load checkpoint
-        - Create DiffusionSampler directly (no trainer needed)
+        - Use sampler functions directly (no trainer needed)
         - Generate samples with use_ema=True
         - Generate samples with use_ema=False
         - Verify output shapes for both
@@ -1144,9 +1148,6 @@ class TestDiffusionPipelineGeneration:
         ema = EMA(model_gen, decay=0.9999, device=TEST_DEVICE)
         ema.load_state_dict(checkpoint["ema_state_dict"])
 
-        # Create standalone sampler
-        sampler = DiffusionSampler(model=model_gen, device=TEST_DEVICE, ema=ema)
-
         expected_shape = (
             model_config["in_channels"],
             model_config["image_size"],
@@ -1155,11 +1156,14 @@ class TestDiffusionPipelineGeneration:
 
         # Generate with EMA weights
         num_samples = 4
-        samples_ema = sampler.sample(
+        samples_ema = sample(
+            model_gen,
+            TEST_DEVICE,
             num_samples=num_samples,
             class_labels=None,
             guidance_scale=0.0,
             use_ema=True,
+            ema=ema,
         )
         assert samples_ema.shape[0] == num_samples
         assert samples_ema.shape[1:] == expected_shape, (
@@ -1167,7 +1171,9 @@ class TestDiffusionPipelineGeneration:
         )
 
         # Generate without EMA weights
-        samples_no_ema = sampler.sample(
+        samples_no_ema = sample(
+            model_gen,
+            TEST_DEVICE,
             num_samples=num_samples,
             class_labels=None,
             guidance_scale=0.0,
