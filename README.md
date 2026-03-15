@@ -716,8 +716,8 @@ tests/
 │   ├── classifier/
 │   ├── diffusion/
 │   └── gan/
-├── utils/                   # Tests for src/utils/
-└── data/                    # Tests for src/data/
+└── utils/                   # Tests for src/utils/
+    └── data/                # Tests for src/utils/data/
 ```
 
 ### Writing New Tests

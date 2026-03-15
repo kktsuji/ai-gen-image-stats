@@ -1786,11 +1786,11 @@ class TestDiffusionTrainingMode:
 
         with (
             patch(
-                "src.data.datasets.SplitFileDataset",
+                "src.utils.data.datasets.SplitFileDataset",
                 return_value=mock_dataset,
             ),
             patch(
-                "src.data.samplers.compute_weights_from_config",
+                "src.utils.data.samplers.compute_weights_from_config",
                 return_value={0: 0.5, 1: 1.5},
             ) as mock_compute_weights,
         ):

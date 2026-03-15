@@ -12,9 +12,9 @@ from typing import Any, Dict, Optional
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from src.data.balancing import downsample_dataset, upsample_dataset
-from src.data.datasets import SplitFileDataset
-from src.data.samplers import compute_weights_from_config, create_weighted_sampler
+from src.utils.data.balancing import downsample_dataset, upsample_dataset
+from src.utils.data.datasets import SplitFileDataset
+from src.utils.data.samplers import compute_weights_from_config, create_weighted_sampler
 
 _logger = logging.getLogger(__name__)
 

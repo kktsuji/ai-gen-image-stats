@@ -19,9 +19,9 @@ import pytest
 import torch
 from torchvision import transforms
 
-from src.data.datasets import SplitFileDataset
 from src.experiments.data_preparation.config import validate_config
 from src.experiments.data_preparation.prepare import prepare_split
+from src.utils.data.datasets import SplitFileDataset
 
 
 class TestDataPreparationPipeline:

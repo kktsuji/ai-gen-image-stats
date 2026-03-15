@@ -10,8 +10,8 @@ from typing import Optional
 
 from torch.utils.data import DataLoader
 
-from src.data.datasets import SplitFileDataset
-from src.data.transforms import (
+from src.utils.data.datasets import SplitFileDataset
+from src.utils.data.transforms import (
     get_base_transforms,
     get_normalization_transform,
     get_train_transforms,

@@ -400,7 +400,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         FileNotFoundError: If checkpoint file not found in generation mode
         RuntimeError: If experiment execution fails
     """
-    from src.data.datasets import SplitFileDataset
     from src.experiments.diffusion.config import (
         validate_config as validate_diffusion_config,
     )
@@ -413,6 +412,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         derive_return_labels_from_model,
         resolve_output_path,
     )
+    from src.utils.data.datasets import SplitFileDataset
 
     # Validate diffusion config (strict mode - no defaults)
     validate_diffusion_config(config)
@@ -723,7 +723,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         if balancing_config and balancing_config.get("class_weights", {}).get(
             "enabled"
         ):
-            from src.data.samplers import compute_weights_from_config
+            from src.utils.data.samplers import compute_weights_from_config
 
             cw_config = balancing_config["class_weights"]
             # Need to get targets from dataset to compute weights
