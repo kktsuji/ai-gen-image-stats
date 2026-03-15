@@ -346,6 +346,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     if mode == "generate":
         # Generation mode: load checkpoint and generate samples
         # Import sampler for inference-only workflow
+        from tqdm.contrib.logging import logging_redirect_tqdm
+
         from src.experiments.diffusion.sampler import sample
 
         generation_config = config["generation"]
@@ -444,23 +446,29 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)
+        num_batches = (num_samples + batch_size - 1) // batch_size
         all_samples = []
-        for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
-            end_idx = min(start_idx + batch_size, num_samples)
-            batch_labels = (
-                class_labels[start_idx:end_idx] if class_labels is not None else None
-            )
+        with logging_redirect_tqdm():
+            for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
+                end_idx = min(start_idx + batch_size, num_samples)
+                batch_labels = (
+                    class_labels[start_idx:end_idx]
+                    if class_labels is not None
+                    else None
+                )
 
-            batch_samples = sample(
-                model,
-                device,
-                num_samples=end_idx - start_idx,
-                class_labels=batch_labels,
-                guidance_scale=sampling_config["guidance_scale"],
-                use_ema=use_ema,
-                ema=ema,
-            )
-            all_samples.append(batch_samples)
+                batch_samples = sample(
+                    model,
+                    device,
+                    num_samples=end_idx - start_idx,
+                    class_labels=batch_labels,
+                    guidance_scale=sampling_config["guidance_scale"],
+                    use_ema=use_ema,
+                    ema=ema,
+                    show_progress=True,
+                    progress_desc=f"Denoising batch {batch_idx}/{num_batches}",
+                )
+                all_samples.append(batch_samples)
 
         samples = torch.cat(all_samples, dim=0)
 
