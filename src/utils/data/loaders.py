@@ -179,6 +179,7 @@ def get_num_classes(split_file: str) -> int:
 
     Raises:
         FileNotFoundError: If split file doesn't exist
+        ValueError: If no class metadata found in split file
     """
     split_path = Path(split_file)
     if not split_path.exists():
@@ -188,6 +189,8 @@ def get_num_classes(split_file: str) -> int:
         data = json.load(f)
 
     classes = data.get("metadata", {}).get("classes", {})
+    if not classes:
+        raise ValueError(f"No class metadata found in split file: {split_file}")
     return len(classes)
 
 
@@ -202,6 +205,7 @@ def get_class_names(split_file: str) -> List[str]:
 
     Raises:
         FileNotFoundError: If split file doesn't exist
+        ValueError: If no class metadata found in split file
     """
     split_path = Path(split_file)
     if not split_path.exists():
@@ -211,5 +215,7 @@ def get_class_names(split_file: str) -> List[str]:
         data = json.load(f)
 
     classes_dict = data.get("metadata", {}).get("classes", {})
+    if not classes_dict:
+        raise ValueError(f"No class metadata found in split file: {split_file}")
     sorted_classes = sorted(classes_dict.items(), key=lambda x: x[1])
     return [name for name, _ in sorted_classes]

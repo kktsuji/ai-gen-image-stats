@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from torchvision import transforms
 
 from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import create_ddpm
@@ -91,14 +90,9 @@ def small_dataloader(temp_dir):
     split_file.write_text(json.dumps(split_data))
 
     # Create train loader
-    transform = transforms.Compose(
-        [
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
+    from src.utils.data.transforms import get_diffusion_val_transforms
+
+    transform = get_diffusion_val_transforms(image_size=32)
     train_loader = create_train_loader(
         split_file=str(split_file),
         batch_size=2,

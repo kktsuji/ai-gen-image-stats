@@ -165,6 +165,24 @@ def test_get_class_names(tmp_path):
     assert "1.Class1" in names
 
 
+@pytest.mark.unit
+def test_get_num_classes_missing_metadata(tmp_path):
+    """Test that get_num_classes raises ValueError when metadata is missing."""
+    split_file = tmp_path / "no_metadata.json"
+    split_file.write_text(json.dumps({"train": [], "val": []}))
+    with pytest.raises(ValueError, match="No class metadata found"):
+        get_num_classes(str(split_file))
+
+
+@pytest.mark.unit
+def test_get_class_names_missing_metadata(tmp_path):
+    """Test that get_class_names raises ValueError when metadata is missing."""
+    split_file = tmp_path / "no_metadata.json"
+    split_file.write_text(json.dumps({"train": [], "val": []}))
+    with pytest.raises(ValueError, match="No class metadata found"):
+        get_class_names(str(split_file))
+
+
 # ==============================================================================
 # Component Tests - Classifier-style transforms
 # ==============================================================================
@@ -336,16 +354,9 @@ def mock_diffusion_split(tmp_path):
 @pytest.mark.component
 def test_diffusion_train_loader_normalization(mock_diffusion_split):
     """Test that diffusion transforms normalize to [-1, 1] range."""
-    from torchvision import transforms
+    from src.utils.data.transforms import get_diffusion_val_transforms
 
-    transform = transforms.Compose(
-        [
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
+    transform = get_diffusion_val_transforms(image_size=32)
     loader = create_train_loader(
         split_file=mock_diffusion_split,
         batch_size=4,
@@ -600,19 +611,14 @@ def test_full_classifier_workflow(tmp_path):
 @pytest.mark.integration
 def test_full_diffusion_workflow(tmp_path):
     """Test complete diffusion-style data loading workflow."""
-    from torchvision import transforms
+    from src.utils.data.transforms import (
+        get_diffusion_transforms,
+        get_diffusion_val_transforms,
+    )
 
     split_file = _create_split_json(tmp_path, train_per_class=4, val_per_class=4)
 
-    transform = transforms.Compose(
-        [
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
+    transform = get_diffusion_transforms(image_size=32, horizontal_flip=True)
 
     train_loader = create_train_loader(
         split_file=split_file,
@@ -621,14 +627,7 @@ def test_full_diffusion_workflow(tmp_path):
         num_workers=0,
         return_labels=True,
     )
-    val_transform = transforms.Compose(
-        [
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
+    val_transform = get_diffusion_val_transforms(image_size=32)
     val_loader = create_val_loader(
         split_file=split_file,
         batch_size=2,
@@ -654,18 +653,11 @@ def test_full_diffusion_workflow(tmp_path):
 @pytest.mark.integration
 def test_unconditional_diffusion_workflow(tmp_path):
     """Test unconditional diffusion workflow (no labels)."""
-    from torchvision import transforms
+    from src.utils.data.transforms import get_diffusion_val_transforms
 
     split_file = _create_split_json(tmp_path, train_per_class=4, val_per_class=4)
 
-    transform = transforms.Compose(
-        [
-            transforms.Resize(32),
-            transforms.CenterCrop(32),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
+    transform = get_diffusion_val_transforms(image_size=32)
 
     train_loader = create_train_loader(
         split_file=split_file,

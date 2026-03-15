@@ -438,6 +438,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     )
     from src.utils.data.datasets import SplitFileDataset
     from src.utils.data.loaders import create_train_loader, create_val_loader
+    from src.utils.data.transforms import (
+        get_diffusion_transforms,
+        get_diffusion_val_transforms,
+    )
 
     # Validate diffusion config (strict mode - no defaults)
     validate_diffusion_config(config)
@@ -714,37 +718,16 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         return_labels = derive_return_labels_from_model(config)
 
         # Build diffusion transforms
-        from torchvision import transforms as T
-
-        train_transform_list = [
-            T.Resize(image_size),
-            T.CenterCrop(image_size),
-        ]
-        if data_config["augmentation"]["horizontal_flip"]:
-            train_transform_list.append(T.RandomHorizontalFlip(p=0.5))
-        if data_config["augmentation"]["rotation_degrees"] > 0:
-            train_transform_list.append(
-                T.RandomRotation(data_config["augmentation"]["rotation_degrees"])
-            )
-        if data_config["augmentation"]["color_jitter"]["enabled"]:
-            strength = data_config["augmentation"]["color_jitter"]["strength"]
-            train_transform_list.append(
-                T.ColorJitter(brightness=strength, contrast=strength)
-            )
-        train_transform_list.append(T.ToTensor())
-        train_transform_list.append(
-            T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        augmentation_config = data_config["augmentation"]
+        color_jitter_config = augmentation_config["color_jitter"]
+        train_transform = get_diffusion_transforms(
+            image_size=image_size,
+            horizontal_flip=augmentation_config["horizontal_flip"],
+            rotation_degrees=augmentation_config["rotation_degrees"],
+            color_jitter=color_jitter_config["enabled"],
+            color_jitter_strength=color_jitter_config.get("strength", 0.1),
         )
-        train_transform = T.Compose(train_transform_list)
-
-        val_transform = T.Compose(
-            [
-                T.Resize(image_size),
-                T.CenterCrop(image_size),
-                T.ToTensor(),
-                T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        val_transform = get_diffusion_val_transforms(image_size=image_size)
 
         train_loader = create_train_loader(
             split_file=data_config["split_file"],

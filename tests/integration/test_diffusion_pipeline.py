@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 import torch
 import yaml
-from torchvision import transforms
 from torchvision.utils import save_image
 
 from src.experiments.diffusion.logger import DiffusionLogger
@@ -30,6 +29,7 @@ from src.experiments.diffusion.model import EMA, create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
 from src.utils.data.loaders import create_train_loader, create_val_loader
+from src.utils.data.transforms import get_diffusion_val_transforms
 from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
@@ -121,14 +121,7 @@ class TestDiffusionPipelineBasic:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -291,14 +284,7 @@ class TestDiffusionPipelineBasic:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -436,14 +422,7 @@ class TestDiffusionPipelineCheckpoints:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -578,14 +557,7 @@ class TestDiffusionPipelineCheckpoints:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -744,14 +716,7 @@ class TestDiffusionPipelineGeneration:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -921,14 +886,7 @@ class TestDiffusionPipelineGeneration:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -1086,14 +1044,7 @@ class TestDiffusionPipelineGeneration:
             device=TEST_DEVICE,
         )
 
-        transform = transforms.Compose(
-            [
-                transforms.Resize(32),
-                transforms.CenterCrop(32),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=32)
         train_loader = create_train_loader(
             split_file=str(split_file),
             batch_size=4,
@@ -1277,14 +1228,7 @@ class TestDiffusionPipelineAdvanced:
         )
 
         image_size = config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
@@ -1418,14 +1362,7 @@ class TestDiffusionPipelineAdvanced:
         )
 
         image_size = loaded_config["data"]["image_size"]
-        transform = transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
+        transform = get_diffusion_val_transforms(image_size=image_size)
         train_loader = create_train_loader(
             split_file=loaded_config["data"]["split_file"],
             batch_size=loaded_config["data"]["batch_size"],

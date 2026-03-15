@@ -200,16 +200,21 @@ def get_val_transforms(
 def get_diffusion_transforms(
     image_size: int = 64,
     horizontal_flip: bool = True,
+    rotation_degrees: int = 0,
+    color_jitter: bool = False,
+    color_jitter_strength: float = 0.1,
 ) -> transforms.Compose:
     """
     Get transforms for diffusion model training.
 
-    Diffusion models typically use simpler transforms and don't require
-    normalization since they model the full data distribution.
+    Normalizes to [-1, 1] range to match the diffusion process.
 
     Args:
         image_size: Size to resize images to (typically 64, 128, or 256)
         horizontal_flip: Whether to apply random horizontal flip
+        rotation_degrees: Max rotation degrees (0 = no rotation)
+        color_jitter: Whether to apply color jittering
+        color_jitter_strength: Brightness/contrast jitter strength
 
     Returns:
         Composed transforms
@@ -222,9 +227,47 @@ def get_diffusion_transforms(
     if horizontal_flip:
         transform_list.append(transforms.RandomHorizontalFlip(p=0.5))
 
+    if rotation_degrees > 0:
+        transform_list.append(transforms.RandomRotation(rotation_degrees))
+
+    if color_jitter:
+        transform_list.append(
+            transforms.ColorJitter(
+                brightness=color_jitter_strength,
+                contrast=color_jitter_strength,
+            )
+        )
+
     transform_list.append(transforms.ToTensor())
+    transform_list.append(
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    )
 
     return transforms.Compose(transform_list)
+
+
+def get_diffusion_val_transforms(
+    image_size: int = 64,
+) -> transforms.Compose:
+    """
+    Get transforms for diffusion model validation.
+
+    Deterministic transforms (no augmentation) with [-1, 1] normalization.
+
+    Args:
+        image_size: Size to resize images to
+
+    Returns:
+        Composed transforms
+    """
+    return transforms.Compose(
+        [
+            transforms.Resize(image_size),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
 
 
 def get_gan_transforms(
