@@ -19,9 +19,6 @@ Usage:
     # Initialize components
     trainer = ClassifierTrainer(config)
     trainer.train()
-
-For more information, see the Architecture Specification at:
-docs/standards/architecture.md
 """
 
 __all__ = [

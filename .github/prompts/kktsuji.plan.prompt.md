@@ -24,7 +24,6 @@ Take the user input and create a plan to implement it.
 1. **Understand the User Input**: Analyze the user input to grasp the requirements and objectives of the implementation.
 2. **Read Documentation**: If necessary, read relevant documentation or resources to gather information that will aid in creating the plan.
 
-- `docs/standards/architecture.md`: This document provides an overview of the system architecture.
 - `README.md`: This document contains general information about the project.
 
 3. **Investigate the Codebase**: Investigate the codebase to understand the existing structure and identify where changes or additions may be needed to implement the desired functionality. This may involve reviewing relevant files, modules, or components that are related to the implementation.
@@ -54,7 +53,7 @@ Note:
 
 - Add the tests for implementation phases to ensure that the new functionality works as expected and does not introduce regressions.
 - Add the tests phase to validate that all tests pass after all the implementation phases are completed.
-- If necessary, add the documentation phase to update or create new documentation related to the implementation (e.g., `README.md`, `docs/standards/architecture.md`).
+- If necessary, add the documentation phase to update or create new documentation related to the implementation (e.g., `README.md`).
 
 ## Phase Details
 
