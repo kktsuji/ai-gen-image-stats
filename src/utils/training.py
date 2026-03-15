@@ -28,7 +28,7 @@ def create_optimizer(
     if valid_types is None:
         valid_types = ["adam", "adamw", "sgd"]
 
-    optimizer_type = optimizer_config.get("type", "").lower()
+    optimizer_type = (optimizer_config.get("type") or "").lower()
 
     if optimizer_type not in valid_types:
         raise ValueError(
@@ -83,7 +83,7 @@ def create_scheduler(
     else:
         scheduler_type_lower = scheduler_type
 
-    if scheduler_type_lower not in valid_types and scheduler_type not in valid_types:
+    if scheduler_type_lower not in valid_types:
         raise ValueError(
             f"Unknown scheduler type: '{scheduler_type}'. "
             f"Valid types: {[t for t in valid_types if t is not None]}"

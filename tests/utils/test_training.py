@@ -128,6 +128,13 @@ class TestCreateOptimizer:
 
         assert isinstance(optimizer, torch.optim.Adam)
 
+    def test_none_type_raises(self):
+        """Test that type=None raises ValueError instead of AttributeError."""
+        optimizer_config = {"type": None, "learning_rate": 1e-3}
+
+        with pytest.raises(ValueError, match="Unknown optimizer type"):
+            create_optimizer(_make_params(), optimizer_config)
+
 
 # ==============================================================================
 # TestCreateScheduler

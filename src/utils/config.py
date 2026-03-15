@@ -474,7 +474,7 @@ def validate_checkpointing_section(checkpointing_config: Dict[str, Any]) -> None
     """
     if "save_frequency" in checkpointing_config:
         sf = checkpointing_config["save_frequency"]
-        if not isinstance(sf, int) or sf < 1:
+        if isinstance(sf, bool) or not isinstance(sf, int) or sf < 1:
             raise ValueError(
                 "training.checkpointing.save_frequency must be a positive integer"
             )
@@ -497,7 +497,7 @@ def validate_validation_section(validation_config: Dict[str, Any]) -> None:
     """
     if "frequency" in validation_config:
         freq = validation_config["frequency"]
-        if not isinstance(freq, int) or freq < 1:
+        if isinstance(freq, bool) or not isinstance(freq, int) or freq < 1:
             raise ValueError("training.validation.frequency must be a positive integer")
     if "metric" in validation_config:
         if not isinstance(validation_config["metric"], str):
@@ -516,7 +516,11 @@ def validate_training_epochs(training_config: Dict[str, Any]) -> None:
     if "epochs" not in training_config or training_config["epochs"] is None:
         raise ValueError("training.epochs is required and cannot be None")
 
-    if not isinstance(training_config["epochs"], int) or training_config["epochs"] < 1:
+    if (
+        isinstance(training_config["epochs"], bool)
+        or not isinstance(training_config["epochs"], int)
+        or training_config["epochs"] < 1
+    ):
         raise ValueError("training.epochs must be a positive integer")
 
 

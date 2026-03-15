@@ -1123,6 +1123,14 @@ class TestValidateCheckpointingSection:
         ):
             validate_checkpointing_section({"save_frequency": 1.5})
 
+    def test_invalid_save_frequency_bool(self):
+        """Test error with boolean save_frequency (bool is subclass of int)."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_frequency must be a positive integer",
+        ):
+            validate_checkpointing_section({"save_frequency": True})
+
     def test_invalid_save_latest_non_bool(self):
         """Test error with non-boolean save_latest."""
         with pytest.raises(
@@ -1177,6 +1185,14 @@ class TestValidateValidationSection:
         ):
             validate_validation_section({"frequency": 2.5})
 
+    def test_invalid_frequency_bool(self):
+        """Test error with boolean frequency (bool is subclass of int)."""
+        with pytest.raises(
+            ValueError,
+            match="training.validation.frequency must be a positive integer",
+        ):
+            validate_validation_section({"frequency": True})
+
     def test_invalid_metric_non_string(self):
         """Test error with non-string metric."""
         with pytest.raises(
@@ -1227,6 +1243,13 @@ class TestValidateTrainingEpochs:
             ValueError, match="training.epochs must be a positive integer"
         ):
             validate_training_epochs({"epochs": 10.5})
+
+    def test_bool_epochs(self):
+        """Test error with boolean epochs (bool is subclass of int)."""
+        with pytest.raises(
+            ValueError, match="training.epochs must be a positive integer"
+        ):
+            validate_training_epochs({"epochs": True})
 
 
 @pytest.mark.unit

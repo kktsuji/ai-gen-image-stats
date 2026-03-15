@@ -397,7 +397,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Load EMA if requested and available
         ema = None
-        if sampling_config["use_ema"]:
+        use_ema = sampling_config["use_ema"]
+        if use_ema:
             if "ema_state_dict" in checkpoint:
                 from src.experiments.diffusion.model import EMA
 
@@ -408,7 +409,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             else:
                 logger.warning("use_ema=True but checkpoint has no EMA weights")
                 logger.warning("Falling back to standard model weights")
-                sampling_config["use_ema"] = False
+                use_ema = False
 
         # Initialize metrics logger for metadata
         metrics_logger = create_experiment_logger(config, log_dir)
@@ -451,7 +452,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 num_samples=end_idx - start_idx,
                 class_labels=batch_labels,
                 guidance_scale=sampling_config["guidance_scale"],
-                use_ema=sampling_config["use_ema"],
+                use_ema=use_ema,
                 ema=ema,
             )
             all_samples.append(batch_samples)
@@ -675,7 +676,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             metrics_logger,
             num_epochs=training_config["epochs"],
             checkpoint_dir=str(checkpoint_dir),
-            save_best=checkpointing_config["save_best_only"],
+            save_best=checkpointing_config.get("save_best_only", True),
             checkpoint_frequency=checkpointing_config["save_frequency"],
             save_latest_checkpoint=checkpointing_config.get("save_latest", True),
             validate_frequency=validation_config["frequency"],

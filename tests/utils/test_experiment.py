@@ -277,3 +277,22 @@ class TestRunTraining:
 
         with pytest.raises(ValueError, match="bad config"):
             run_training(trainer, metrics_logger, **self._make_training_args())
+
+    def test_close_failure_does_not_mask_training_exception(self):
+        """Test that a close() failure doesn't mask the primary training exception."""
+        trainer = MagicMock()
+        trainer.train.side_effect = RuntimeError("training failed")
+        metrics_logger = MagicMock()
+        metrics_logger.close.side_effect = OSError("close failed")
+
+        with pytest.raises(RuntimeError, match="training failed"):
+            run_training(trainer, metrics_logger, **self._make_training_args())
+
+    def test_close_failure_does_not_mask_on_success(self):
+        """Test that a close() failure on success path doesn't raise."""
+        trainer = MagicMock()
+        metrics_logger = MagicMock()
+        metrics_logger.close.side_effect = OSError("close failed")
+
+        # Should not raise — close failure is logged but swallowed
+        run_training(trainer, metrics_logger, **self._make_training_args())

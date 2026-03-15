@@ -60,7 +60,6 @@ def setup_experiment_common(
     )
 
     # 4. Log experiment start with banner
-    logger = logging.getLogger(__name__)
     logger.info("=" * 80)
     logger.info(experiment_label)
     logger.info("=" * 80)
@@ -190,4 +189,7 @@ def run_training(
         logger.info("")
         logger.info("Training completed successfully!")
     finally:
-        metrics_logger.close()
+        try:
+            metrics_logger.close()
+        except Exception:
+            logger.warning("Failed to close metrics logger", exc_info=True)
