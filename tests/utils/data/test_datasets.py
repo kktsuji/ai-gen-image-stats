@@ -17,6 +17,7 @@ from src.utils.data.datasets import (
     BaseDataset,
     ImageFolderDataset,
     SimpleImageDataset,
+    SplitFileDataset,
     get_dataset,
 )
 
@@ -426,3 +427,74 @@ class TestDatasetEdgeCases:
 
         # Should find all 3 images
         assert len(dataset) >= 3
+
+
+@pytest.mark.unit
+class TestSplitFileDatasetUnit:
+    """Unit tests for SplitFileDataset."""
+
+    def _make_split_json(self, tmp_path, image_paths):
+        """Create a split JSON file referencing the given image paths."""
+        import json
+
+        split_data = {
+            "metadata": {"classes": {"cat": 0, "dog": 1}},
+            "train": [{"path": str(p), "label": 0} for p in image_paths],
+            "val": [],
+        }
+        split_file = tmp_path / "split.json"
+        split_file.write_text(json.dumps(split_data))
+        return str(split_file)
+
+    def test_missing_image_raises_file_not_found(self, tmp_path):
+        """Should raise FileNotFoundError when image file does not exist."""
+        nonexistent = tmp_path / "ghost.png"
+        split_file = self._make_split_json(tmp_path, [nonexistent])
+
+        dataset = SplitFileDataset(split_file, split="train")
+        with pytest.raises(FileNotFoundError):
+            dataset[0]
+
+    def test_get_dataset_splitfile_factory(self, tmp_path):
+        """Should create SplitFileDataset via get_dataset factory."""
+        img = Image.new("RGB", (4, 4))
+        img_path = tmp_path / "real.png"
+        img.save(img_path)
+        split_file = self._make_split_json(tmp_path, [img_path])
+
+        dataset = get_dataset("splitfile", split_file=split_file, split="train")
+        assert isinstance(dataset, SplitFileDataset)
+        assert len(dataset) == 1
+
+    def test_get_classes_returns_sorted(self, tmp_path):
+        """SplitFileDataset.get_classes() returns classes sorted by label index."""
+        img = Image.new("RGB", (4, 4))
+        img_path = tmp_path / "real.png"
+        img.save(img_path)
+        split_file = self._make_split_json(tmp_path, [img_path])
+
+        dataset = SplitFileDataset(split_file, split="train")
+        classes = dataset.get_classes()
+        assert isinstance(classes, list)
+        assert "cat" in classes
+
+
+@pytest.mark.unit
+class TestImageFolderDatasetPrintSummaryUnit:
+    """Unit test for ImageFolderDataset.print_summary()."""
+
+    def test_print_summary_outputs_content(self, tmp_path, capsys):
+        """print_summary() writes dataset info to stdout."""
+        (tmp_path / "cat").mkdir()
+        (tmp_path / "dog").mkdir()
+        Image.new("RGB", (4, 4)).save(tmp_path / "cat" / "a.png")
+        Image.new("RGB", (4, 4)).save(tmp_path / "dog" / "b.png")
+
+        dataset = ImageFolderDataset(str(tmp_path))
+        dataset.print_summary()
+
+        captured = capsys.readouterr()
+        assert "Total samples:" in captured.out
+        assert "Classes:" in captured.out
+        assert "cat" in captured.out
+        assert "dog" in captured.out

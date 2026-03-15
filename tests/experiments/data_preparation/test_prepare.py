@@ -91,6 +91,14 @@ class TestScanImageFiles:
         with pytest.raises(ValueError, match="No image files found"):
             _scan_image_files(str(class_dir))
 
+    def test_file_path_raises_not_a_directory(self, tmp_path):
+        """Test that passing a file path raises NotADirectoryError."""
+        file_path = tmp_path / "notadir.txt"
+        file_path.write_text("I am a file")
+
+        with pytest.raises(NotADirectoryError):
+            _scan_image_files(str(file_path))
+
 
 # ============================================================================
 # Unit Tests - _split_list

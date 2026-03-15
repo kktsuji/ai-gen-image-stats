@@ -252,6 +252,118 @@ class TestExperimentComparator:
             assert stats["final_mean"] > stats["early_mean"]
 
 
+@pytest.mark.unit
+class TestComparisonReporterUnit:
+    """Unit tests for ComparisonReporter using synthetic in-memory data."""
+
+    def _make_results(self, name, val_accuracy_offset=0):
+        """Create ExperimentResults from a synthetic DataFrame."""
+        epochs = list(range(1, 6))
+        seeds = [0, 1]
+        rows = []
+        for seed in seeds:
+            for epoch in epochs:
+                rows.append(
+                    {
+                        "epoch": epoch,
+                        "seed": seed,
+                        "experiment": name,
+                        "val_accuracy": 70 + epoch * 2 + val_accuracy_offset,
+                        "train_loss": 1.5 - epoch * 0.1,
+                    }
+                )
+        df = pd.DataFrame(rows)
+        metrics = ["val_accuracy", "train_loss"]
+        return ExperimentResults(name=name, data=df, metrics=metrics)
+
+    def test_generate_summary_report_contains_section_headers(self):
+        """generate_summary_report() returns a string with expected sections."""
+        baseline = self._make_results("baseline")
+        comparison = self._make_results("comparison", val_accuracy_offset=3)
+
+        comparator = ExperimentComparator(baseline, comparison)
+        reporter = ComparisonReporter(comparator)
+        report = reporter.generate_summary_report(final_epoch=5)
+
+        assert isinstance(report, str)
+        assert "EXPERIMENT COMPARISON REPORT" in report
+        assert "FINAL EPOCH METRICS" in report
+        assert "CONCLUSION" in report
+
+    def test_generate_summary_report_saves_to_file(self, tmp_path):
+        """generate_summary_report() writes report content to the given file."""
+        baseline = self._make_results("baseline")
+        comparison = self._make_results("comparison", val_accuracy_offset=3)
+
+        comparator = ExperimentComparator(baseline, comparison)
+        reporter = ComparisonReporter(comparator)
+        output_file = tmp_path / "report.txt"
+
+        report = reporter.generate_summary_report(
+            final_epoch=5, output_file=str(output_file)
+        )
+
+        assert output_file.exists()
+        assert output_file.read_text() == report
+
+
+@pytest.mark.unit
+class TestCompareExperimentsUnit:
+    """Unit tests for compare_experiments() with mocked data loading."""
+
+    def test_compare_experiments_returns_metrics_and_report(self, tmp_path):
+        """compare_experiments() returns (metrics_list, report_str) without error."""
+        from unittest.mock import patch
+
+        import pandas as pd
+
+        epochs = list(range(1, 6))
+        seeds = [0, 1]
+
+        def make_df(name, offset=0):
+            rows = [
+                {
+                    "epoch": e,
+                    "seed": s,
+                    "experiment": name,
+                    "val_accuracy": 70 + e + offset,
+                    "train_loss": 1.0 - e * 0.05,
+                }
+                for s in seeds
+                for e in epochs
+            ]
+            return pd.DataFrame(rows)
+
+        baseline_results = ExperimentResults(
+            name="baseline",
+            data=make_df("baseline"),
+            metrics=["val_accuracy", "train_loss"],
+        )
+        comparison_results = ExperimentResults(
+            name="comparison",
+            data=make_df("comparison", offset=3),
+            metrics=["val_accuracy", "train_loss"],
+        )
+
+        with patch.object(
+            ExperimentResults,
+            "from_csv_pattern",
+            side_effect=[baseline_results, comparison_results],
+        ):
+            metrics, report = compare_experiments(
+                base_path=str(tmp_path),
+                baseline_name="baseline",
+                comparison_name="comparison",
+                final_epoch=5,
+                output_dir=None,
+            )
+
+        assert isinstance(metrics, list)
+        assert len(metrics) > 0
+        assert isinstance(report, str)
+        assert len(report) > 0
+
+
 # ============================================================================
 # COMPONENT TESTS
 # ============================================================================

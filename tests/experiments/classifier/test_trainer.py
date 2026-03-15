@@ -154,6 +154,38 @@ def classifier_trainer(
 
 
 @pytest.mark.unit
+def test_evaluate_fallback_when_no_val_loader(
+    simple_model, simple_train_loader, simple_optimizer, simple_logger
+):
+    """evaluate() returns {'loss': 0.0, 'accuracy': 0.0} when val_loader is None."""
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        train_loader=simple_train_loader,
+        optimizer=simple_optimizer,
+        logger=simple_logger,
+        val_loader=None,
+        device="cpu",
+        show_progress=False,
+    )
+    result = trainer.evaluate()
+    assert result == {"loss": 0.0, "accuracy": 0.0}
+
+
+@pytest.mark.unit
+def test_save_checkpoint_delegates_to_utility(classifier_trainer, tmp_path):
+    """save_checkpoint() delegates to the save_checkpoint utility function."""
+    from unittest.mock import patch
+
+    checkpoint_path = tmp_path / "test_checkpoint.pth"
+
+    with patch("src.experiments.classifier.trainer.save_checkpoint") as mock_save:
+        classifier_trainer.save_checkpoint(path=checkpoint_path, epoch=5)
+        mock_save.assert_called_once()
+        # Verify epoch is passed through
+        assert mock_save.call_args.kwargs.get("epoch") == 5
+
+
+@pytest.mark.unit
 def test_classifier_trainer_initialization(classifier_trainer):
     """Test that ClassifierTrainer initializes correctly."""
     assert classifier_trainer is not None
