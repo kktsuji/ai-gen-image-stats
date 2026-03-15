@@ -294,6 +294,57 @@ def _make_diffusion_trainer(
 
 
 @pytest.mark.unit
+class TestShouldVisualize:
+    """Unit tests for DiffusionTrainer._should_visualize()."""
+
+    def _make_trainer(self, log_images_interval, log_denoising_interval):
+        model = SimpleDiffusionModel(in_channels=1, image_size=4)
+        train_loader = _make_diffusion_train_loader(
+            num_samples=4, batch_size=2, in_channels=1, image_size=4
+        )
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        logger = SimpleDiffusionLogger()
+        return DiffusionTrainer(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            logger=logger,
+            device="cpu",
+            use_ema=False,
+            use_amp=False,
+            log_images_interval=log_images_interval,
+            log_denoising_interval=log_denoising_interval,
+        )
+
+    def test_returns_true_on_interval_match(self):
+        """_should_visualize returns True when epoch is a multiple of the interval."""
+        trainer = self._make_trainer(log_images_interval=2, log_denoising_interval=None)
+        assert trainer._should_visualize(2) is True
+        assert trainer._should_visualize(4) is True
+
+    def test_returns_false_between_intervals(self):
+        """_should_visualize returns False for non-matching epochs."""
+        trainer = self._make_trainer(log_images_interval=2, log_denoising_interval=None)
+        assert trainer._should_visualize(1) is False
+        assert trainer._should_visualize(3) is False
+
+    def test_both_none_returns_false(self):
+        """_should_visualize always returns False when both intervals are None."""
+        trainer = self._make_trainer(
+            log_images_interval=None, log_denoising_interval=None
+        )
+        for epoch in range(1, 6):
+            assert trainer._should_visualize(epoch) is False
+
+    def test_denoising_interval_triggers(self):
+        """_should_visualize triggers on denoising_interval even if images is None."""
+        trainer = self._make_trainer(log_images_interval=None, log_denoising_interval=3)
+        assert trainer._should_visualize(3) is True
+        assert trainer._should_visualize(6) is True
+        assert trainer._should_visualize(1) is False
+
+
+@pytest.mark.unit
 def test_diffusion_trainer_initialization(diffusion_trainer):
     """Test that DiffusionTrainer initializes correctly."""
     assert diffusion_trainer is not None

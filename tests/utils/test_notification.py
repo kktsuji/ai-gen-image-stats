@@ -11,6 +11,8 @@ Tests cover:
 import json
 from unittest.mock import patch
 
+import pytest
+
 from src.utils.notification import (
     _format_duration,
     _get_webhook_url,
@@ -20,6 +22,7 @@ from src.utils.notification import (
 )
 
 
+@pytest.mark.unit
 class TestPostSlack:
     """Tests for _post_slack() helper function."""
 
@@ -35,6 +38,7 @@ class TestPostSlack:
             )
 
 
+@pytest.mark.unit
 class TestGetWebhookUrl:
     """Tests for _get_webhook_url() function."""
 
@@ -59,6 +63,7 @@ class TestGetWebhookUrl:
         assert _get_webhook_url() is None
 
 
+@pytest.mark.unit
 class TestFormatDuration:
     """Tests for _format_duration() function."""
 
@@ -82,7 +87,12 @@ class TestFormatDuration:
         """Test formatting of exactly one minute."""
         assert _format_duration(60) == "1m 0s"
 
+    def test_format_duration_exact_hour(self):
+        """Test formatting of exactly one hour."""
+        assert _format_duration(3600) == "1h 0m 0s"
 
+
+@pytest.mark.unit
 class TestNotifySuccess:
     """Tests for notify_success() function."""
 
@@ -146,6 +156,7 @@ class TestNotifySuccess:
             assert "Mode" not in text
 
 
+@pytest.mark.unit
 class TestNotifyError:
     """Tests for notify_error() function."""
 
@@ -194,6 +205,7 @@ class TestNotifyError:
             mock_post.assert_not_called()
 
 
+@pytest.mark.unit
 class TestNotifyDoesNotRaise:
     """Tests that notification failures never propagate."""
 

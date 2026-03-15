@@ -205,6 +205,58 @@ def test_get_class_names_missing_metadata(tmp_path):
         get_class_names(str(split_file))
 
 
+@pytest.mark.component
+def test_create_train_loader_downsampling_unit(tmp_path):
+    """Component test: downsampling balancing returns a DataLoader with a valid dataset."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    balancing_config = {
+        "weighted_sampler": {"enabled": False},
+        "downsampling": {"enabled": True, "target_ratio": 1.0},
+        "upsampling": {"enabled": False},
+    }
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        balancing_config=balancing_config,
+        seed=42,
+    )
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) > 0  # type: ignore[arg-type]
+
+
+@pytest.mark.component
+def test_create_train_loader_upsampling_unit(tmp_path):
+    """Component test: upsampling balancing config is applied and returns a valid DataLoader."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    balancing_config = {
+        "weighted_sampler": {"enabled": False},
+        "downsampling": {"enabled": False},
+        "upsampling": {"enabled": True, "target_ratio": 1.0},
+    }
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        balancing_config=balancing_config,
+        seed=42,
+    )
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) >= 8  # type: ignore[arg-type]
+
+
 @pytest.mark.unit
 def test_create_train_loader_with_seed_sets_generator(tmp_path):
     """Test that passing a seed sets generator on the DataLoader."""
