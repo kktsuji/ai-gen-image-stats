@@ -1431,7 +1431,7 @@ class TestClassifierDeviceAndDataset:
 
         with (
             patch("src.experiments.classifier.trainer.ClassifierTrainer.train"),
-            patch("src.main.get_device") as mock_get_device,
+            patch("src.utils.experiment.get_device") as mock_get_device,
         ):
             setup_experiment_classifier(config)
             # get_device should NOT be called when device is explicitly set
@@ -1648,7 +1648,7 @@ class TestDiffusionTrainingMode:
         config = _base_diffusion_train_config(tmp_path)
         config["compute"]["device"] = "cpu"
 
-        with patch("src.main.get_device") as mock_get_device:
+        with patch("src.utils.experiment.get_device") as mock_get_device:
             setup_experiment_diffusion(config)
             mock_get_device.assert_not_called()
 

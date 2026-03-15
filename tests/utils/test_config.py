@@ -20,11 +20,16 @@ from src.utils.config import (
     load_config,
     merge_configs,
     save_config,
+    validate_checkpointing_section,
     validate_compute_section,
     validate_data_loading_section,
+    validate_experiment_section,
     validate_optimizer_section,
     validate_output_section,
     validate_scheduler_section,
+    validate_split_file,
+    validate_training_epochs,
+    validate_validation_section,
 )
 
 
@@ -1018,3 +1023,230 @@ class TestValidateSchedulerSection:
         # Should fail with custom valid_types that don't include None
         with pytest.raises(ValueError, match="Invalid scheduler type"):
             validate_scheduler_section(scheduler_config, valid_types=["cosine", "step"])
+
+
+@pytest.mark.unit
+class TestValidateExperimentSection:
+    """Test validate_experiment_section function."""
+
+    def test_valid_classifier_train(self):
+        """Test valid classifier experiment in train mode."""
+        config = {"experiment": "classifier", "mode": "train"}
+
+        # Should not raise
+        validate_experiment_section(config, "classifier", ["train", "evaluate"])
+
+    def test_valid_diffusion_generate(self):
+        """Test valid diffusion experiment in generate mode."""
+        config = {"experiment": "diffusion", "mode": "generate"}
+
+        # Should not raise
+        validate_experiment_section(config, "diffusion", ["train", "generate"])
+
+    def test_wrong_experiment_type_raises(self):
+        """Test that a mismatched experiment type raises ValueError."""
+        config = {"experiment": "classifier", "mode": "train"}
+
+        with pytest.raises(ValueError, match="Invalid experiment type"):
+            validate_experiment_section(config, "diffusion", ["train", "generate"])
+
+    def test_invalid_mode_raises(self):
+        """Test that an invalid mode raises ValueError."""
+        config = {"experiment": "classifier", "mode": "invalid_mode"}
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            validate_experiment_section(config, "classifier", ["train", "evaluate"])
+
+    def test_none_experiment_raises(self):
+        """Test that None experiment raises ValueError."""
+        config = {"experiment": None, "mode": "train"}
+
+        with pytest.raises(ValueError, match="Invalid experiment type"):
+            validate_experiment_section(config, "classifier", ["train", "evaluate"])
+
+    def test_missing_mode_raises(self):
+        """Test that missing mode key raises ValueError."""
+        config = {"experiment": "classifier"}
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            validate_experiment_section(config, "classifier", ["train", "evaluate"])
+
+
+@pytest.mark.unit
+class TestValidateCheckpointingSection:
+    """Test validate_checkpointing_section function."""
+
+    def test_valid_checkpointing_config(self):
+        """Test valid checkpointing configuration."""
+        config = {"save_frequency": 10, "save_latest": True, "save_best_only": False}
+        validate_checkpointing_section(config)
+
+    def test_empty_config_valid(self):
+        """Test that empty config is valid (all fields optional)."""
+        validate_checkpointing_section({})
+
+    def test_invalid_save_frequency_zero(self):
+        """Test error with save_frequency = 0."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_frequency must be a positive integer",
+        ):
+            validate_checkpointing_section({"save_frequency": 0})
+
+    def test_invalid_save_frequency_negative(self):
+        """Test error with negative save_frequency."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_frequency must be a positive integer",
+        ):
+            validate_checkpointing_section({"save_frequency": -1})
+
+    def test_invalid_save_frequency_non_int(self):
+        """Test error with non-integer save_frequency."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_frequency must be a positive integer",
+        ):
+            validate_checkpointing_section({"save_frequency": 1.5})
+
+    def test_invalid_save_latest_non_bool(self):
+        """Test error with non-boolean save_latest."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_latest must be a boolean",
+        ):
+            validate_checkpointing_section({"save_latest": "yes"})
+
+    def test_invalid_save_best_only_non_bool(self):
+        """Test error with non-boolean save_best_only."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_best_only must be a boolean",
+        ):
+            validate_checkpointing_section({"save_best_only": 1})
+
+
+@pytest.mark.unit
+class TestValidateValidationSection:
+    """Test validate_validation_section function."""
+
+    def test_valid_validation_config(self):
+        """Test valid validation configuration."""
+        config = {"frequency": 5, "metric": "loss"}
+        validate_validation_section(config)
+
+    def test_empty_config_valid(self):
+        """Test that empty config is valid (all fields optional)."""
+        validate_validation_section({})
+
+    def test_invalid_frequency_zero(self):
+        """Test error with frequency = 0."""
+        with pytest.raises(
+            ValueError,
+            match="training.validation.frequency must be a positive integer",
+        ):
+            validate_validation_section({"frequency": 0})
+
+    def test_invalid_frequency_negative(self):
+        """Test error with negative frequency."""
+        with pytest.raises(
+            ValueError,
+            match="training.validation.frequency must be a positive integer",
+        ):
+            validate_validation_section({"frequency": -1})
+
+    def test_invalid_frequency_non_int(self):
+        """Test error with non-integer frequency."""
+        with pytest.raises(
+            ValueError,
+            match="training.validation.frequency must be a positive integer",
+        ):
+            validate_validation_section({"frequency": 2.5})
+
+    def test_invalid_metric_non_string(self):
+        """Test error with non-string metric."""
+        with pytest.raises(
+            ValueError, match="training.validation.metric must be a string"
+        ):
+            validate_validation_section({"metric": 123})
+
+
+@pytest.mark.unit
+class TestValidateTrainingEpochs:
+    """Test validate_training_epochs function."""
+
+    def test_valid_epochs(self):
+        """Test valid epochs configuration."""
+        validate_training_epochs({"epochs": 100})
+
+    def test_missing_epochs(self):
+        """Test error when epochs is missing."""
+        with pytest.raises(
+            ValueError, match="training.epochs is required and cannot be None"
+        ):
+            validate_training_epochs({})
+
+    def test_none_epochs(self):
+        """Test error when epochs is None."""
+        with pytest.raises(
+            ValueError, match="training.epochs is required and cannot be None"
+        ):
+            validate_training_epochs({"epochs": None})
+
+    def test_zero_epochs(self):
+        """Test error with epochs = 0."""
+        with pytest.raises(
+            ValueError, match="training.epochs must be a positive integer"
+        ):
+            validate_training_epochs({"epochs": 0})
+
+    def test_negative_epochs(self):
+        """Test error with negative epochs."""
+        with pytest.raises(
+            ValueError, match="training.epochs must be a positive integer"
+        ):
+            validate_training_epochs({"epochs": -5})
+
+    def test_non_integer_epochs(self):
+        """Test error with non-integer epochs."""
+        with pytest.raises(
+            ValueError, match="training.epochs must be a positive integer"
+        ):
+            validate_training_epochs({"epochs": 10.5})
+
+
+@pytest.mark.unit
+class TestValidateSplitFile:
+    """Test validate_split_file function."""
+
+    def test_valid_split_file(self):
+        """Test valid split_file configuration."""
+        validate_split_file({"split_file": "data/split.json"})
+
+    def test_missing_split_file(self):
+        """Test error when split_file is missing."""
+        with pytest.raises(
+            ValueError, match="data.split_file is required and cannot be None"
+        ):
+            validate_split_file({})
+
+    def test_none_split_file(self):
+        """Test error when split_file is None."""
+        with pytest.raises(
+            ValueError, match="data.split_file is required and cannot be None"
+        ):
+            validate_split_file({"split_file": None})
+
+    def test_empty_split_file(self):
+        """Test error when split_file is empty string."""
+        with pytest.raises(
+            ValueError, match="data.split_file must be a non-empty string"
+        ):
+            validate_split_file({"split_file": ""})
+
+    def test_non_string_split_file(self):
+        """Test error when split_file is not a string."""
+        with pytest.raises(
+            ValueError, match="data.split_file must be a non-empty string"
+        ):
+            validate_split_file({"split_file": 123})

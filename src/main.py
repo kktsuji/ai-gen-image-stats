@@ -44,11 +44,13 @@ from dotenv import load_dotenv
 
 from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
-from src.utils.config import save_config
-from src.utils.device import get_device
-from src.utils.git import get_git_info
-from src.utils.logging import get_log_file_path, setup_logging
+from src.utils.experiment import (
+    create_experiment_logger,
+    run_training,
+    setup_experiment_common,
+)
 from src.utils.notification import notify_error, notify_success
+from src.utils.training import create_optimizer, create_scheduler
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -88,81 +90,14 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Validate classifier config (strict mode - no defaults)
     validate_classifier_config(config)
 
-    # Create output directories first (needed for log file)
+    # Create checkpoint directory first (needed before common setup)
     checkpoint_dir = resolve_output_path(config, "checkpoints")
-    log_dir = resolve_output_path(config, "logs")
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get logging configuration (with defaults)
-    logging_config = config.get("logging", {})
-    console_level = logging_config.get("console_level", "INFO")
-    file_level = logging_config.get("file_level", "DEBUG")
-    log_format = logging_config.get("format")
-    date_format = logging_config.get("date_format")
-    timezone = logging_config.get("timezone", "UTC")
-    module_levels = logging_config.get("module_levels")
+    # Run shared experiment setup (logging, device, seed, config snapshot)
+    device, log_dir = setup_experiment_common(config, "CLASSIFIER EXPERIMENT STARTED")
 
-    # Setup logging FIRST (before any other operations)
-    log_file = get_log_file_path(
-        output_base_dir=config["output"]["base_dir"],
-        log_subdir=config["output"]["subdirs"]["logs"],
-        timezone=timezone,
-    )
-
-    # Initialize logging
-    setup_logging(
-        log_file=log_file,
-        console_level=console_level,
-        file_level=file_level,
-        log_format=log_format,
-        date_format=date_format,
-        timezone=timezone,
-        module_levels=module_levels,
-    )
-
-    # Log experiment start with banner
-    logger.info("=" * 80)
-    logger.info("CLASSIFIER EXPERIMENT STARTED")
-    logger.info("=" * 80)
-
-    # Log Git information for reproducibility
-    git_info = get_git_info()
-    if git_info["repository_url"]:
-        logger.info(f"Repository: {git_info['repository_url']}")
-    if git_info["commit_hash"]:
-        logger.info(f"Commit: {git_info['commit_hash']}")
-
-    logger.info(f"Log file: {log_file}")
-    logger.info(f"Console log level: {console_level}")
-    logger.info(f"File log level: {file_level}")
     logger.info(f"Checkpoint directory: {checkpoint_dir}")
-    logger.info(f"Log directory: {log_dir}")
-
-    # Set up device
-    device_config = config.get("compute", {}).get("device", "auto")
-
-    if device_config == "auto":
-        device = get_device()
-    else:
-        device = device_config
-    device = str(device)
-
-    logger.info(f"Using device: {device}")
-
-    # Set random seed if specified
-    seed = config.get("compute", {}).get("seed")
-
-    if seed is not None:
-        torch.manual_seed(seed)
-        if device == "cuda":
-            torch.cuda.manual_seed_all(seed)
-        logger.info(f"Random seed set to: {seed}")
-
-    # Save configuration to log directory
-    config_save_path = log_dir / "config.yaml"
-    save_config(config, config_save_path)
-    logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize data loaders
     data_config = config["data"]
@@ -262,94 +197,33 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Initialize optimizer
     training_config = config["training"]
     optimizer_config = training_config["optimizer"]
-    optimizer_name = optimizer_config["type"].lower()
-    learning_rate = optimizer_config["learning_rate"]
-    weight_decay = optimizer_config.get("weight_decay", 0.0)
-    # TODO: Implement gradient clipping in trainer
-    # gradient_clip_norm = optimizer_config.get("gradient_clip_norm")
+    optimizer = create_optimizer(
+        model.parameters(),
+        optimizer_config,
+        valid_types=["adam", "adamw", "sgd"],
+    )
 
-    # Build optimizer kwargs
-    optimizer_kwargs = {"weight_decay": weight_decay}
-    if "betas" in optimizer_config:
-        optimizer_kwargs["betas"] = optimizer_config["betas"]
-    if "momentum" in optimizer_config:
-        optimizer_kwargs["momentum"] = optimizer_config["momentum"]
-
-    if optimizer_name == "adam":
-        optimizer = torch.optim.Adam(
-            model.parameters(), lr=learning_rate, **optimizer_kwargs
-        )
-    elif optimizer_name == "adamw":
-        optimizer = torch.optim.AdamW(
-            model.parameters(), lr=learning_rate, **optimizer_kwargs
-        )
-    elif optimizer_name == "sgd":
-        # SGD typically needs momentum
-        if "momentum" not in optimizer_kwargs:
-            optimizer_kwargs["momentum"] = 0.9
-        optimizer = torch.optim.SGD(
-            model.parameters(), lr=learning_rate, **optimizer_kwargs
-        )
-    else:
-        raise ValueError(
-            f"Unknown optimizer: {optimizer_name}. Supported: adam, adamw, sgd"
-        )
-
-    logger.info(f"Optimizer: {optimizer_name}")
-    logger.info(f"Learning rate: {learning_rate}")
+    logger.info(f"Optimizer: {optimizer_config['type'].lower()}")
+    logger.info(f"Learning rate: {optimizer_config['learning_rate']}")
 
     # Initialize scheduler if specified
-    scheduler = None
     scheduler_config = training_config.get("scheduler", {})
-    scheduler_name = scheduler_config.get("type")
-
-    if scheduler_name and scheduler_name.lower() != "none":
-        # Handle auto T_max
-        if scheduler_name.lower() == "cosine":
-            t_max = scheduler_config.get("T_max", "auto")
-            if t_max == "auto":
-                t_max = training_config["epochs"]
-            eta_min = scheduler_config.get("eta_min", 1e-6)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=t_max, eta_min=eta_min
-            )
-        elif scheduler_name.lower() == "step":
-            step_size = scheduler_config.get("step_size", 30)
-            gamma = scheduler_config.get("gamma", 0.1)
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer, step_size=step_size, gamma=gamma
-            )
-        elif scheduler_name.lower() == "plateau":
-            mode = scheduler_config.get("mode", "min")
-            factor = scheduler_config.get("factor", 0.1)
-            patience = scheduler_config.get("patience", 10)
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode=mode, factor=factor, patience=patience
-            )
-        else:
-            raise ValueError(
-                f"Unknown scheduler: {scheduler_name}. "
-                f"Supported: cosine, step, plateau, none"
-            )
-        logger.info(f"Scheduler: {scheduler_name}")
+    scheduler = create_scheduler(
+        optimizer,
+        scheduler_config,
+        num_epochs=training_config["epochs"],
+    )
+    if scheduler is not None:
+        logger.info(f"Scheduler: {scheduler_config.get('type')}")
 
     # Initialize metrics logger (for training metrics)
-    tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
-    tb_log_dir = (
-        resolve_output_path(config, "tensorboard")
-        if "tensorboard" in config.get("output", {}).get("subdirs", {})
-        else None
-    )
-    from src.utils.experiment_logger import ExperimentLogger
-
-    metrics_logger = ExperimentLogger(
-        log_dir=log_dir,
+    metrics_logger = create_experiment_logger(
+        config,
+        log_dir,
         subdirs={
             "images": "predictions",
             "confusion_matrices": "confusion_matrices",
         },
-        tensorboard_config=tensorboard_config,
-        tb_log_dir=tb_log_dir,
     )
 
     # Initialize trainer
@@ -368,42 +242,18 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     if scheduler is not None:
         trainer.scheduler = scheduler
 
-    # Get training parameters
-    num_epochs = training_config["epochs"]
-    save_best = training_config["checkpointing"].get("save_best_only", True)
-    checkpoint_frequency = training_config["checkpointing"].get("save_frequency", 10)
-    save_latest = training_config["checkpointing"].get("save_latest", True)
-    validate_frequency = training_config["validation"].get("frequency", 1)
-    best_metric = training_config["validation"].get("metric", "accuracy")
-
-    logger.info("")
-    logger.info(f"Starting training for {num_epochs} epochs...")
-
-    try:
-        trainer.train(
-            num_epochs=num_epochs,
-            checkpoint_dir=str(checkpoint_dir),
-            save_best=save_best,
-            checkpoint_frequency=checkpoint_frequency,
-            validate_frequency=validate_frequency,
-            best_metric=best_metric,
-            save_latest_checkpoint=save_latest,
-        )
-    except KeyboardInterrupt:
-        logger.warning("")
-        logger.warning("Training interrupted by user")
-        metrics_logger.close()
-        sys.exit(0)
-    except Exception as e:
-        logger.error("")
-        logger.exception(f"Training failed with error: {e}")
-        metrics_logger.close()
-        raise
-
-    # Close metrics logger
-    metrics_logger.close()
-    logger.info("")
-    logger.info("Training completed successfully!")
+    # Run training with standard error handling
+    run_training(
+        trainer,
+        metrics_logger,
+        num_epochs=training_config["epochs"],
+        checkpoint_dir=str(checkpoint_dir),
+        save_best=training_config["checkpointing"].get("save_best_only", True),
+        checkpoint_frequency=training_config["checkpointing"].get("save_frequency", 10),
+        save_latest=training_config["checkpointing"].get("save_latest", True),
+        validate_frequency=training_config["validation"].get("frequency", 1),
+        best_metric=training_config["validation"].get("metric", "accuracy"),
+    )
 
 
 def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
@@ -452,77 +302,12 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     # Get mode (train or generate)
     mode = config.get("mode", "train")
 
-    # Create output directories first (needed for log file)
-    log_dir = resolve_output_path(config, "logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get logging configuration (with defaults)
-    logging_config = config.get("logging", {})
-    console_level = logging_config.get("console_level", "INFO")
-    file_level = logging_config.get("file_level", "DEBUG")
-    log_format = logging_config.get("format")
-    date_format = logging_config.get("date_format")
-    timezone = logging_config.get("timezone", "UTC")
-    module_levels = logging_config.get("module_levels")
-
-    # Setup logging FIRST (before any other operations)
-    log_file = get_log_file_path(
-        output_base_dir=config["output"]["base_dir"],
-        log_subdir=config["output"]["subdirs"]["logs"],
-        timezone=timezone,
+    # Run shared experiment setup (logging, device, seed, config snapshot)
+    device, log_dir = setup_experiment_common(
+        config, f"DIFFUSION EXPERIMENT STARTED - Mode: {mode.upper()}"
     )
 
-    # Initialize logging
-    setup_logging(
-        log_file=log_file,
-        console_level=console_level,
-        file_level=file_level,
-        log_format=log_format,
-        date_format=date_format,
-        timezone=timezone,
-        module_levels=module_levels,
-    )
-
-    # Log experiment start with banner
-    logger.info("=" * 80)
-    logger.info(f"DIFFUSION EXPERIMENT STARTED - Mode: {mode.upper()}")
-    logger.info("=" * 80)
-
-    # Log Git information for reproducibility
-    git_info = get_git_info()
-    if git_info["repository_url"]:
-        logger.info(f"Repository: {git_info['repository_url']}")
-    if git_info["commit_hash"]:
-        logger.info(f"Commit: {git_info['commit_hash']}")
-
-    logger.info(f"Log file: {log_file}")
-    logger.info(f"Console log level: {console_level}")
-    logger.info(f"File log level: {file_level}")
-    logger.info(f"Log directory: {log_dir}")
-
-    # Set up device (now in compute section)
     compute_config = config.get("compute", {})
-    device_config = compute_config.get("device", "auto")
-    if device_config == "auto":
-        device = get_device()
-    else:
-        device = device_config
-    device = str(device)
-
-    logger.info(f"Using device: {device}")
-
-    # Set random seed if specified (now in compute section)
-    seed = compute_config.get("seed")
-    if seed is not None:
-        torch.manual_seed(seed)
-        if device == "cuda":
-            torch.cuda.manual_seed_all(seed)
-        logger.info(f"Random seed set to: {seed}")
-
-    # Save configuration to log directory
-    config_save_path = log_dir / "config.yaml"
-    save_config(config, config_save_path)
-    logger.info(f"Configuration saved to: {config_save_path}")
 
     # Initialize model
     model_config = config["model"]
@@ -624,9 +409,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 sampling_config["use_ema"] = False
 
         # Initialize metrics logger for metadata
-        from src.utils.experiment_logger import ExperimentLogger
-
-        metrics_logger = ExperimentLogger(log_dir=log_dir)
+        metrics_logger = create_experiment_logger(config, log_dir)
 
         logger.info("")
         logger.info(f"Generating {num_samples} samples...")
@@ -816,88 +599,35 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 logger.warning(f"Failed to compile model: {e}")
 
         # Initialize metrics logger
-        tensorboard_config = logging_config.get("metrics", {}).get("tensorboard", {})
-        tb_log_dir = (
-            resolve_output_path(config, "tensorboard")
-            if "tensorboard" in config.get("output", {}).get("subdirs", {})
-            else None
-        )
-        from src.utils.experiment_logger import ExperimentLogger
-
-        metrics_logger = ExperimentLogger(
-            log_dir=log_dir,
+        metrics_logger = create_experiment_logger(
+            config,
+            log_dir,
             subdirs={
                 "images": "samples",
                 "denoising": "denoising",
             },
-            tensorboard_config=tensorboard_config,
-            tb_log_dir=tb_log_dir,
         )
 
         # Initialize optimizer
         optimizer_config = training_config["optimizer"]
-        optimizer_name = optimizer_config["type"].lower()
+        optimizer = create_optimizer(
+            model.parameters(),
+            optimizer_config,
+            valid_types=["adam", "adamw"],
+        )
 
-        # Extract optimizer kwargs (excluding type, learning_rate, gradient_clip_norm)
-        optimizer_kwargs = {
-            k: v
-            for k, v in optimizer_config.items()
-            if k not in ["type", "learning_rate", "gradient_clip_norm"]
-        }
-
-        if optimizer_name == "adam":
-            optimizer = torch.optim.Adam(
-                model.parameters(),
-                lr=optimizer_config["learning_rate"],
-                **optimizer_kwargs,
-            )
-        elif optimizer_name == "adamw":
-            optimizer = torch.optim.AdamW(
-                model.parameters(),
-                lr=optimizer_config["learning_rate"],
-                **optimizer_kwargs,
-            )
-        else:
-            raise ValueError(
-                f"Unknown optimizer: {optimizer_name}. Supported: adam, adamw"
-            )
-
-        logger.info(f"Optimizer: {optimizer_name}")
+        logger.info(f"Optimizer: {optimizer_config['type'].lower()}")
         logger.info(f"Learning rate: {optimizer_config['learning_rate']}")
 
         # Initialize scheduler if specified
-        scheduler = None
         scheduler_config = training_config["scheduler"]
-        scheduler_name = scheduler_config.get("type")
-
-        if scheduler_name and scheduler_name.lower() not in ["none", None]:
-            # Extract scheduler kwargs (excluding type)
-            scheduler_kwargs = {
-                k: v for k, v in scheduler_config.items() if k != "type"
-            }
-
-            # Handle auto T_max for cosine scheduler
-            if scheduler_name.lower() == "cosine":
-                if scheduler_kwargs.get("T_max") == "auto":
-                    scheduler_kwargs["T_max"] = training_config["epochs"]
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, **scheduler_kwargs
-                )
-            elif scheduler_name.lower() == "step":
-                scheduler = torch.optim.lr_scheduler.StepLR(
-                    optimizer, **scheduler_kwargs
-                )
-            elif scheduler_name.lower() == "plateau":
-                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, **scheduler_kwargs
-                )
-            else:
-                raise ValueError(
-                    f"Unknown scheduler: {scheduler_name}. "
-                    f"Supported: cosine, step, plateau, none"
-                )
-
-            logger.info(f"Scheduler: {scheduler_name}")
+        scheduler = create_scheduler(
+            optimizer,
+            scheduler_config,
+            num_epochs=training_config["epochs"],
+        )
+        if scheduler is not None:
+            logger.info(f"Scheduler: {scheduler_config.get('type')}")
 
         # Get configuration sections
         ema_config = training_config["ema"]
@@ -937,36 +667,18 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             class_weights=class_weight_tensor,
         )
 
-        # Train the model
-        num_epochs = training_config["epochs"]
-        logger.info("")
-        logger.info(f"Starting training for {num_epochs} epochs...")
-
-        try:
-            trainer.train(
-                num_epochs=num_epochs,
-                checkpoint_dir=str(checkpoint_dir),
-                save_best=checkpointing_config["save_best_only"],
-                checkpoint_frequency=checkpointing_config["save_frequency"],
-                save_latest_checkpoint=checkpointing_config.get("save_latest", True),
-                validate_frequency=validation_config["frequency"],
-                best_metric=validation_config["metric"],
-            )
-        except KeyboardInterrupt:
-            logger.warning("")
-            logger.warning("Training interrupted by user")
-            metrics_logger.close()
-            sys.exit(0)
-        except Exception as e:
-            logger.error("")
-            logger.exception(f"Training failed with error: {e}")
-            metrics_logger.close()
-            raise
-
-        # Close metrics logger
-        metrics_logger.close()
-        logger.info("")
-        logger.info("Training completed successfully!")
+        # Run training with standard error handling
+        run_training(
+            trainer,
+            metrics_logger,
+            num_epochs=training_config["epochs"],
+            checkpoint_dir=str(checkpoint_dir),
+            save_best=checkpointing_config["save_best_only"],
+            checkpoint_frequency=checkpointing_config["save_frequency"],
+            save_latest=checkpointing_config.get("save_latest", True),
+            validate_frequency=validation_config["frequency"],
+            best_metric=validation_config["metric"],
+        )
 
 
 def setup_experiment_gan(config: Dict[str, Any]) -> None:
