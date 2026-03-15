@@ -1,0 +1,221 @@
+"""Factory functions for creating DataLoader instances.
+
+This module provides factory functions that replace the ClassifierDataLoader
+and DiffusionDataLoader wrapper classes. They create torch DataLoader instances
+directly, with support for balancing strategies (weighted sampling, downsampling,
+upsampling).
+"""
+
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from torch.utils.data import DataLoader
+from torchvision import transforms
+
+from src.utils.data.balancing import downsample_dataset, upsample_dataset
+from src.utils.data.datasets import SplitFileDataset
+from src.utils.data.samplers import compute_weights_from_config, create_weighted_sampler
+
+_logger = logging.getLogger(__name__)
+
+
+def create_train_loader(
+    split_file: str,
+    batch_size: int,
+    transform: transforms.Compose,
+    num_workers: int = 4,
+    pin_memory: bool = True,
+    drop_last: bool = False,
+    shuffle: bool = True,
+    return_labels: bool = True,
+    balancing_config: Optional[Dict[str, Any]] = None,
+    seed: int = 0,
+) -> DataLoader:
+    """Create a training DataLoader from a split JSON file.
+
+    Args:
+        split_file: Path to split JSON file
+        batch_size: Number of samples per batch
+        transform: Transform to apply to images
+        num_workers: Number of worker processes for data loading
+        pin_memory: Whether to pin memory for faster GPU transfer
+        drop_last: Whether to drop the last incomplete batch
+        shuffle: Whether to shuffle training data
+        return_labels: Whether to return class labels
+        balancing_config: Optional balancing configuration (weighted_sampler,
+            downsampling, upsampling)
+        seed: Random seed for balancing reproducibility
+
+    Returns:
+        DataLoader for training data
+
+    Raises:
+        FileNotFoundError: If split file doesn't exist
+        ValueError: If no valid images found in split
+    """
+    if not Path(split_file).exists():
+        raise FileNotFoundError(f"Split file not found: {split_file}")
+
+    train_dataset = SplitFileDataset(
+        split_file=str(split_file),
+        split="train",
+        transform=transform,
+        return_labels=return_labels,
+    )
+
+    sampler = None
+    dataset_to_use = train_dataset
+
+    # Apply balancing strategy if configured
+    if balancing_config:
+        ws_config = balancing_config.get("weighted_sampler", {})
+        ds_config = balancing_config.get("downsampling", {})
+        us_config = balancing_config.get("upsampling", {})
+
+        # Priority: weighted_sampler > downsampling > upsampling
+        if ws_config.get("enabled"):
+            _logger.info("Applying weighted_sampler balancing strategy")
+            weights = compute_weights_from_config(
+                targets=train_dataset.targets,
+                method=ws_config["method"],
+                beta=ws_config.get("beta", 0.999),
+                manual_weights=ws_config.get("manual_weights"),
+            )
+            _logger.info(f"Computed class weights: {weights}")
+            sampler = create_weighted_sampler(
+                targets=train_dataset.targets,
+                class_weights=weights,
+                replacement=ws_config.get("replacement", True),
+                num_samples=ws_config.get("num_samples"),
+            )
+            shuffle = False  # sampler and shuffle are mutually exclusive
+
+        elif ds_config.get("enabled"):
+            _logger.info("Applying downsampling balancing strategy")
+            dataset_to_use = downsample_dataset(
+                train_dataset,
+                target_ratio=ds_config.get("target_ratio", 1.0),
+                seed=seed,
+            )
+
+        elif us_config.get("enabled"):
+            _logger.info("Applying upsampling balancing strategy")
+            dataset_to_use = upsample_dataset(
+                train_dataset,
+                target_ratio=us_config.get("target_ratio", 1.0),
+                seed=seed,
+            )
+
+    return DataLoader(
+        dataset_to_use,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        sampler=sampler,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=drop_last,
+    )
+
+
+def create_val_loader(
+    split_file: str,
+    batch_size: int,
+    transform: transforms.Compose,
+    num_workers: int = 4,
+    pin_memory: bool = True,
+    return_labels: bool = True,
+) -> Optional[DataLoader]:
+    """Create a validation DataLoader from a split JSON file.
+
+    Returns None if the val split is empty.
+
+    Args:
+        split_file: Path to split JSON file
+        batch_size: Number of samples per batch
+        transform: Transform to apply to images
+        num_workers: Number of worker processes for data loading
+        pin_memory: Whether to pin memory for faster GPU transfer
+        return_labels: Whether to return class labels
+
+    Returns:
+        DataLoader for validation data, or None if val split is empty
+
+    Raises:
+        FileNotFoundError: If split file doesn't exist
+    """
+    if not Path(split_file).exists():
+        raise FileNotFoundError(f"Split file not found: {split_file}")
+
+    try:
+        val_dataset = SplitFileDataset(
+            split_file=str(split_file),
+            split="val",
+            transform=transform,
+            return_labels=return_labels,
+        )
+    except ValueError:
+        return None
+
+    return DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=False,
+    )
+
+
+def get_num_classes(split_file: str) -> int:
+    """Get the number of classes from a split JSON file.
+
+    Args:
+        split_file: Path to split JSON file
+
+    Returns:
+        Number of classes
+
+    Raises:
+        FileNotFoundError: If split file doesn't exist
+        ValueError: If no class metadata found in split file
+    """
+    split_path = Path(split_file)
+    if not split_path.exists():
+        raise FileNotFoundError(f"Split file not found: {split_file}")
+
+    with open(split_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    classes = data.get("metadata", {}).get("classes", {})
+    if not classes:
+        raise ValueError(f"No class metadata found in split file: {split_file}")
+    return len(classes)
+
+
+def get_class_names(split_file: str) -> List[str]:
+    """Get class names from a split JSON file.
+
+    Args:
+        split_file: Path to split JSON file
+
+    Returns:
+        List of class names sorted by label index
+
+    Raises:
+        FileNotFoundError: If split file doesn't exist
+        ValueError: If no class metadata found in split file
+    """
+    split_path = Path(split_file)
+    if not split_path.exists():
+        raise FileNotFoundError(f"Split file not found: {split_file}")
+
+    with open(split_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    classes_dict = data.get("metadata", {}).get("classes", {})
+    if not classes_dict:
+        raise ValueError(f"No class metadata found in split file: {split_file}")
+    sorted_classes = sorted(classes_dict.items(), key=lambda x: x[1])
+    return [name for name, _ in sorted_classes]

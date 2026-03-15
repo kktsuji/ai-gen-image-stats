@@ -21,6 +21,7 @@ from src.utils.data.transforms import (
     get_base_transforms,
     get_denormalization_transform,
     get_diffusion_transforms,
+    get_diffusion_val_transforms,
     get_gan_transforms,
     get_normalization_transform,
     get_train_transforms,
@@ -249,11 +250,52 @@ class TestGetDiffusionTransforms:
         assert output.shape == (3, 64, 64)
 
     def test_diffusion_output_range(self, sample_image):
-        # Diffusion transforms don't normalize, so output should be in [0, 1]
+        # Diffusion transforms normalize to [-1, 1]
         transform = get_diffusion_transforms()
         output = transform(sample_image)
-        assert output.min() >= 0.0
-        assert output.max() <= 1.0
+        assert output.min() >= -1.1
+        assert output.max() <= 1.1
+
+    def test_diffusion_transforms_with_rotation(self, sample_image):
+        transform = get_diffusion_transforms(rotation_degrees=15)
+        output = transform(sample_image)
+        assert output.shape == (3, 64, 64)
+
+    def test_diffusion_transforms_with_color_jitter(self, sample_image):
+        transform = get_diffusion_transforms(
+            color_jitter=True, color_jitter_strength=0.2
+        )
+        output = transform(sample_image)
+        assert output.shape == (3, 64, 64)
+
+
+@pytest.mark.unit
+class TestGetDiffusionValTransforms:
+    """Test diffusion model validation transform composition."""
+
+    def test_default_val_transforms(self, sample_image):
+        transform = get_diffusion_val_transforms()
+        output = transform(sample_image)
+        assert isinstance(output, torch.Tensor)
+        assert output.shape == (3, 64, 64)
+
+    def test_val_transforms_custom_size(self, sample_image):
+        transform = get_diffusion_val_transforms(image_size=128)
+        output = transform(sample_image)
+        assert output.shape == (3, 128, 128)
+
+    def test_val_output_range(self, sample_image):
+        # Validation transforms normalize to [-1, 1]
+        transform = get_diffusion_val_transforms()
+        output = transform(sample_image)
+        assert output.min() >= -1.1
+        assert output.max() <= 1.1
+
+    def test_val_transforms_deterministic(self, sample_image):
+        transform = get_diffusion_val_transforms()
+        output1 = transform(sample_image)
+        output2 = transform(sample_image)
+        assert torch.allclose(output1, output2)
 
 
 @pytest.mark.unit

@@ -1,14 +1,20 @@
 """Data loading and preprocessing utilities.
 
 This module provides dataset implementations, transformations,
-and custom samplers for loading and preprocessing image data.
+custom samplers, and DataLoader factory functions for loading
+and preprocessing image data.
 """
 
-# Import only implemented modules
-# from src.utils.data.datasets import ImageFolderDataset  # Step 9: Not yet implemented
-# from src.utils.data.samplers import get_sampler  # Step 10: Not yet implemented
+from src.utils.data.loaders import (
+    create_train_loader,
+    create_val_loader,
+    get_class_names,
+    get_num_classes,
+)
 
 __all__ = [
-    # "ImageFolderDataset",  # Step 9: Not yet implemented
-    # "get_sampler",  # Step 10: Not yet implemented
+    "create_train_loader",
+    "create_val_loader",
+    "get_class_names",
+    "get_num_classes",
 ]

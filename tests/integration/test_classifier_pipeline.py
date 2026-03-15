@@ -21,11 +21,12 @@ import pytest
 import torch
 import yaml
 
-from src.experiments.classifier.dataloader import ClassifierDataLoader
 from src.experiments.classifier.logger import ClassifierLogger
 from src.experiments.classifier.models.inceptionv3 import InceptionV3Classifier
 from src.experiments.classifier.models.resnet import ResNetClassifier
 from src.experiments.classifier.trainer import ClassifierTrainer
+from src.utils.data.loaders import create_train_loader, create_val_loader
+from src.utils.data.transforms import get_train_transforms, get_val_transforms
 from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
@@ -83,12 +84,26 @@ class TestClassifierPipelineBasic:
             pretrained=config["model"]["pretrained"],
         )
 
-        dataloader = ClassifierDataLoader(
+        train_transform = get_train_transforms(
+            image_size=config["data"].get("image_size", 256),
+            crop_size=config["data"].get("crop_size", 224),
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"].get("image_size", 256),
+            crop_size=config["data"].get("crop_size", 224),
+        )
+
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=train_transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"].get("image_size", 224),
-            crop_size=config["data"].get("crop_size", 224),
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -100,9 +115,10 @@ class TestClassifierPipelineBasic:
         # Initialize trainer
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["training"]["device"],
         )
 
@@ -181,12 +197,26 @@ class TestClassifierPipelineBasic:
             dropout=config["model"]["dropout"],
         )
 
-        dataloader = ClassifierDataLoader(
-            split_file=config["data"]["split_file"],
-            batch_size=config["data"]["batch_size"],
-            num_workers=config["data"]["num_workers"],
+        train_transform = get_train_transforms(
             image_size=config["data"]["image_size"],
             crop_size=config["data"]["crop_size"],
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"]["image_size"],
+            crop_size=config["data"]["crop_size"],
+        )
+
+        train_loader = create_train_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=train_transform,
+            num_workers=config["data"]["num_workers"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -198,9 +228,10 @@ class TestClassifierPipelineBasic:
         # Initialize trainer
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["training"]["device"],
         )
 
@@ -239,12 +270,20 @@ class TestClassifierPipelineCheckpoints:
         # First training run - train and save
         model1 = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
 
-        dataloader = ClassifierDataLoader(
+        train_transform = get_train_transforms(image_size=64, crop_size=32)
+        val_transform = get_val_transforms(image_size=64, crop_size=32)
+
+        train_loader = create_train_loader(
             split_file=str(split_file),
             batch_size=4,
+            transform=train_transform,
             num_workers=0,
-            image_size=64,
-            crop_size=32,
+        )
+        val_loader = create_val_loader(
+            split_file=str(split_file),
+            batch_size=4,
+            transform=val_transform,
+            num_workers=0,
         )
 
         logger = ClassifierLogger(log_dir=str(log_dir))
@@ -252,9 +291,10 @@ class TestClassifierPipelineCheckpoints:
 
         trainer = ClassifierTrainer(
             model=model1,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=TEST_DEVICE,
         )
 
@@ -302,12 +342,20 @@ class TestClassifierPipelineCheckpoints:
         # First training run - 1 epoch
         model = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
 
-        dataloader = ClassifierDataLoader(
+        train_transform = get_train_transforms(image_size=64, crop_size=32)
+        val_transform = get_val_transforms(image_size=64, crop_size=32)
+
+        train_loader = create_train_loader(
             split_file=str(split_file),
             batch_size=4,
+            transform=train_transform,
             num_workers=0,
-            image_size=64,
-            crop_size=32,
+        )
+        val_loader = create_val_loader(
+            split_file=str(split_file),
+            batch_size=4,
+            transform=val_transform,
+            num_workers=0,
         )
 
         logger = ClassifierLogger(log_dir=str(log_dir))
@@ -315,9 +363,10 @@ class TestClassifierPipelineCheckpoints:
 
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=TEST_DEVICE,
         )
 
@@ -352,9 +401,10 @@ class TestClassifierPipelineCheckpoints:
 
         trainer2 = ClassifierTrainer(
             model=model2,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer2,
             logger=logger,
+            val_loader=val_loader,
             device=TEST_DEVICE,
         )
 
@@ -410,12 +460,26 @@ class TestClassifierPipelineWithScheduler:
             pretrained=config["model"]["pretrained"],
         )
 
-        dataloader = ClassifierDataLoader(
-            split_file=config["data"]["split_file"],
-            batch_size=config["data"]["batch_size"],
-            num_workers=config["data"]["num_workers"],
+        train_transform = get_train_transforms(
             image_size=config["data"]["image_size"],
             crop_size=config["data"]["crop_size"],
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"]["image_size"],
+            crop_size=config["data"]["crop_size"],
+        )
+
+        train_loader = create_train_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=train_transform,
+            num_workers=config["data"]["num_workers"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -432,9 +496,10 @@ class TestClassifierPipelineWithScheduler:
         # Initialize trainer
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             scheduler=scheduler,
             device=config["training"]["device"],
         )
@@ -493,12 +558,26 @@ class TestClassifierPipelineWithScheduler:
             pretrained=config["model"]["pretrained"],
         )
 
-        dataloader = ClassifierDataLoader(
-            split_file=config["data"]["split_file"],
-            batch_size=config["data"]["batch_size"],
-            num_workers=config["data"]["num_workers"],
+        train_transform = get_train_transforms(
             image_size=config["data"]["image_size"],
             crop_size=config["data"]["crop_size"],
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"]["image_size"],
+            crop_size=config["data"]["crop_size"],
+        )
+
+        train_loader = create_train_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=train_transform,
+            num_workers=config["data"]["num_workers"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -513,9 +592,10 @@ class TestClassifierPipelineWithScheduler:
         # Initialize trainer
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["training"]["device"],
         )
 
@@ -572,12 +652,26 @@ class TestClassifierPipelineValidation:
             pretrained=config["model"]["pretrained"],
         )
 
-        dataloader = ClassifierDataLoader(
-            split_file=config["data"]["split_file"],
-            batch_size=config["data"]["batch_size"],
-            num_workers=config["data"]["num_workers"],
+        train_transform = get_train_transforms(
             image_size=config["data"]["image_size"],
             crop_size=config["data"]["crop_size"],
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"]["image_size"],
+            crop_size=config["data"]["crop_size"],
+        )
+
+        train_loader = create_train_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=train_transform,
+            num_workers=config["data"]["num_workers"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -587,9 +681,10 @@ class TestClassifierPipelineValidation:
 
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["training"]["device"],
         )
 
@@ -632,12 +727,20 @@ class TestClassifierPipelineMultipleModels:
 
         model = ResNetClassifier(num_classes=2, variant="resnet101", pretrained=False)
 
-        dataloader = ClassifierDataLoader(
+        train_transform = get_train_transforms(image_size=64, crop_size=32)
+        val_transform = get_val_transforms(image_size=64, crop_size=32)
+
+        train_loader = create_train_loader(
             split_file=str(split_file),
             batch_size=4,
+            transform=train_transform,
             num_workers=0,
-            image_size=64,
-            crop_size=32,
+        )
+        val_loader = create_val_loader(
+            split_file=str(split_file),
+            batch_size=4,
+            transform=val_transform,
+            num_workers=0,
         )
 
         logger = ClassifierLogger(log_dir=str(tmp_path / "logs"))
@@ -645,9 +748,10 @@ class TestClassifierPipelineMultipleModels:
 
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=TEST_DEVICE,
         )
 
@@ -687,12 +791,20 @@ class TestClassifierPipelineMultipleModels:
                 num_classes=2, variant="resnet50", pretrained=False
             )
 
-            dataloader = ClassifierDataLoader(
+            train_transform = get_train_transforms(image_size=64, crop_size=32)
+            val_transform = get_val_transforms(image_size=64, crop_size=32)
+
+            train_loader = create_train_loader(
                 split_file=str(split_file),
                 batch_size=4,
+                transform=train_transform,
                 num_workers=0,
-                image_size=64,
-                crop_size=32,
+            )
+            val_loader = create_val_loader(
+                split_file=str(split_file),
+                batch_size=4,
+                transform=val_transform,
+                num_workers=0,
             )
 
             logger = ClassifierLogger(log_dir=str(log_dir))
@@ -705,9 +817,10 @@ class TestClassifierPipelineMultipleModels:
 
             trainer = ClassifierTrainer(
                 model=model,
-                dataloader=dataloader,
+                train_loader=train_loader,
                 optimizer=optimizer,
                 logger=logger,
+                val_loader=val_loader,
                 device=TEST_DEVICE,
             )
 
@@ -782,12 +895,26 @@ class TestClassifierPipelineConfigDriven:
             pretrained=config["model"]["pretrained"],
         )
 
-        dataloader = ClassifierDataLoader(
-            split_file=config["data"]["split_file"],
-            batch_size=config["data"]["batch_size"],
-            num_workers=config["data"]["num_workers"],
+        train_transform = get_train_transforms(
             image_size=config["data"]["image_size"],
             crop_size=config["data"]["crop_size"],
+        )
+        val_transform = get_val_transforms(
+            image_size=config["data"]["image_size"],
+            crop_size=config["data"]["crop_size"],
+        )
+
+        train_loader = create_train_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=train_transform,
+            num_workers=config["data"]["num_workers"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=val_transform,
+            num_workers=config["data"]["num_workers"],
         )
 
         logger = ClassifierLogger(log_dir=config["output"]["log_dir"])
@@ -798,9 +925,10 @@ class TestClassifierPipelineConfigDriven:
 
         trainer = ClassifierTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["training"]["device"],
         )
 

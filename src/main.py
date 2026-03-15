@@ -67,7 +67,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     from src.experiments.classifier.config import (
         validate_config as validate_classifier_config,
     )
-    from src.experiments.classifier.dataloader import ClassifierDataLoader
     from src.experiments.classifier.logger import ClassifierLogger
     from src.experiments.classifier.models import (
         InceptionV3Classifier,
@@ -75,6 +74,17 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     )
     from src.experiments.classifier.trainer import ClassifierTrainer
     from src.utils.config import resolve_output_path
+    from src.utils.data.loaders import (
+        create_train_loader,
+        create_val_loader,
+    )
+    from src.utils.data.loaders import (
+        get_class_names as _get_class_names,
+    )
+    from src.utils.data.transforms import (
+        get_train_transforms,
+        get_val_transforms,
+    )
 
     # Validate classifier config (strict mode - no defaults)
     validate_classifier_config(config)
@@ -155,7 +165,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     save_config(config, config_save_path)
     logger.info(f"Configuration saved to: {config_save_path}")
 
-    # Initialize dataloader
+    # Initialize data loaders
     data_config = config["data"]
     split_file = data_config["split_file"]
     batch_size = data_config["loading"]["batch_size"]
@@ -175,28 +185,42 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         else color_jitter_config
     )
 
-    dataloader = ClassifierDataLoader(
-        split_file=split_file,
-        batch_size=batch_size,
-        num_workers=num_workers,
+    # Build transforms
+    normalize_str = normalize if normalize not in ["none", None] else None
+    train_transform = get_train_transforms(
         image_size=image_size,
         crop_size=crop_size,
         horizontal_flip=horizontal_flip,
         color_jitter=color_jitter,
         rotation_degrees=rotation_degrees,
-        normalize=normalize,
-        pin_memory=pin_memory,
-        drop_last=drop_last,
-        shuffle_train=shuffle_train,
+        normalize=normalize_str,
+    )
+    val_transform = get_val_transforms(
+        image_size=image_size,
+        crop_size=crop_size,
+        normalize=normalize_str,
     )
 
-    # Get class names from dataset
-    train_loader = dataloader.get_train_loader()
-    if hasattr(train_loader.dataset, "classes"):
-        class_names = getattr(train_loader.dataset, "classes")
-    else:
-        num_classes = config["model"]["architecture"]["num_classes"]
-        class_names = [f"Class {i}" for i in range(num_classes)]
+    # Create data loaders
+    train_loader = create_train_loader(
+        split_file=split_file,
+        batch_size=batch_size,
+        transform=train_transform,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=drop_last,
+        shuffle=shuffle_train,
+    )
+    val_loader = create_val_loader(
+        split_file=split_file,
+        batch_size=batch_size,
+        transform=val_transform,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+
+    # Get class names from split file
+    class_names = _get_class_names(split_file)
 
     logger.info(f"Number of classes: {len(class_names)}")
     logger.debug(f"Classes: {class_names}")
@@ -327,9 +351,10 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Initialize trainer
     trainer = ClassifierTrainer(
         model=model,
-        dataloader=dataloader,
+        train_loader=train_loader,
         optimizer=optimizer,
         logger=metrics_logger,
+        val_loader=val_loader,
         device=device,
         show_progress=True,
         config=config,
@@ -403,7 +428,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     from src.experiments.diffusion.config import (
         validate_config as validate_diffusion_config,
     )
-    from src.experiments.diffusion.dataloader import DiffusionDataLoader
     from src.experiments.diffusion.logger import DiffusionLogger
     from src.experiments.diffusion.model import create_ddpm
     from src.experiments.diffusion.trainer import DiffusionTrainer
@@ -413,6 +437,11 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         resolve_output_path,
     )
     from src.utils.data.datasets import SplitFileDataset
+    from src.utils.data.loaders import create_train_loader, create_val_loader
+    from src.utils.data.transforms import (
+        get_diffusion_transforms,
+        get_diffusion_val_transforms,
+    )
 
     # Validate diffusion config (strict mode - no defaults)
     validate_diffusion_config(config)
@@ -681,28 +710,44 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Checkpoint directory: {checkpoint_dir}")
 
-        # Initialize dataloader
+        # Initialize data loaders
         data_config = config["data"]
         balancing_config = data_config.get("balancing")
         seed = compute_config.get("seed", 0) or 0
+        image_size = derive_image_size_from_model(config)
+        return_labels = derive_return_labels_from_model(config)
 
-        dataloader = DiffusionDataLoader(
+        # Build diffusion transforms
+        augmentation_config = data_config["augmentation"]
+        color_jitter_config = augmentation_config["color_jitter"]
+        train_transform = get_diffusion_transforms(
+            image_size=image_size,
+            horizontal_flip=augmentation_config["horizontal_flip"],
+            rotation_degrees=augmentation_config["rotation_degrees"],
+            color_jitter=color_jitter_config["enabled"],
+            color_jitter_strength=color_jitter_config.get("strength", 0.1),
+        )
+        val_transform = get_diffusion_val_transforms(image_size=image_size)
+
+        train_loader = create_train_loader(
             split_file=data_config["split_file"],
             batch_size=data_config["loading"]["batch_size"],
+            transform=train_transform,
             num_workers=data_config["loading"]["num_workers"],
-            image_size=derive_image_size_from_model(config),
-            horizontal_flip=data_config["augmentation"]["horizontal_flip"],
-            rotation_degrees=data_config["augmentation"]["rotation_degrees"],
-            color_jitter=data_config["augmentation"]["color_jitter"]["enabled"],
-            color_jitter_strength=data_config["augmentation"]["color_jitter"][
-                "strength"
-            ],
             pin_memory=data_config["loading"]["pin_memory"],
             drop_last=data_config["loading"]["drop_last"],
-            shuffle_train=data_config["loading"]["shuffle_train"],
-            return_labels=derive_return_labels_from_model(config),
+            shuffle=data_config["loading"]["shuffle_train"],
+            return_labels=return_labels,
             balancing_config=balancing_config,
             seed=seed,
+        )
+        val_loader = create_val_loader(
+            split_file=data_config["split_file"],
+            batch_size=data_config["loading"]["batch_size"],
+            transform=val_transform,
+            num_workers=data_config["loading"]["num_workers"],
+            pin_memory=data_config["loading"]["pin_memory"],
+            return_labels=return_labels,
         )
 
         # Log balancing configuration summary
@@ -858,9 +903,10 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         # Initialize trainer (use training.visualization for sampling)
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=metrics_logger,
+            val_loader=val_loader,
             device=device,
             show_progress=True,
             use_ema=ema_config["enabled"],

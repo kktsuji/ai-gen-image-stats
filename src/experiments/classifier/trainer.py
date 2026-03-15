@@ -56,9 +56,10 @@ class ClassifierTrainer:
     def __init__(
         self,
         model: Any,
-        dataloader: Any,
+        train_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         logger: Any,
+        val_loader: Optional[DataLoader] = None,
         device: str = "cpu",
         show_progress: bool = True,
         scheduler: Optional[
@@ -74,9 +75,10 @@ class ClassifierTrainer:
 
         Args:
             model: The classification model to train
-            dataloader: DataLoader providing training and validation data
+            train_loader: DataLoader for training data
             optimizer: Optimizer for updating model parameters
             logger: Logger for recording metrics and checkpoints
+            val_loader: Optional DataLoader for validation data
             device: Device to run training on ('cpu' or 'cuda')
             show_progress: Whether to show progress bars during training
             scheduler: Optional learning rate scheduler
@@ -90,7 +92,8 @@ class ClassifierTrainer:
         self._best_metric_name: Optional[str] = None
 
         self.model = model
-        self.dataloader = dataloader
+        self.train_loader = train_loader
+        self.val_loader = val_loader
         self.optimizer = optimizer
         self.logger = logger
         self.device = device
@@ -152,7 +155,7 @@ class ClassifierTrainer:
             >>> print(f"Loss: {metrics['loss']:.4f}, Acc: {metrics['accuracy']:.4f}")
         """
         self.model.train()
-        train_loader = self.dataloader.get_train_loader()
+        train_loader = self.train_loader
 
         total_loss = 0.0
         correct = 0
@@ -428,8 +431,7 @@ class ClassifierTrainer:
             >>> if metrics:
             ...     print(f"Val Loss: {metrics['val_loss']:.4f}")
         """
-        val_loader = self.dataloader.get_val_loader()
-        if val_loader is None:
+        if self.val_loader is None:
             return None
 
         self.model.eval()
@@ -441,9 +443,9 @@ class ClassifierTrainer:
 
         # Create progress bar if enabled
         iterator = (
-            tqdm(val_loader, desc=f"Epoch {self._current_epoch} [Val]")
+            tqdm(self.val_loader, desc=f"Epoch {self._current_epoch} [Val]")
             if self.show_progress
-            else val_loader
+            else self.val_loader
         )
 
         with torch.no_grad():
@@ -494,9 +496,13 @@ class ClassifierTrainer:
         """Return the classification model."""
         return self.model
 
-    def get_dataloader(self) -> Any:
-        """Return the dataloader."""
-        return self.dataloader
+    def get_train_loader(self) -> DataLoader:
+        """Return the training DataLoader."""
+        return self.train_loader
+
+    def get_val_loader(self) -> Optional[DataLoader]:
+        """Return the validation DataLoader."""
+        return self.val_loader
 
     def get_optimizer(self) -> torch.optim.Optimizer:
         """Return the optimizer."""
@@ -580,7 +586,7 @@ class ClassifierTrainer:
             >>> print(f"Test Accuracy: {metrics['accuracy']:.2f}%")
         """
         if dataloader is None:
-            dataloader = self.dataloader.get_val_loader()
+            dataloader = self.val_loader
 
         if dataloader is None:
             return {"loss": 0.0, "accuracy": 0.0}
