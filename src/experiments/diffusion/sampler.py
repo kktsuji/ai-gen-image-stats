@@ -86,6 +86,7 @@ def sample(
         logger.debug("Using EMA weights for sampling")
 
     # Set model to evaluation mode
+    was_training = model.training
     model.eval()
 
     # Apply EMA weights if requested
@@ -112,6 +113,7 @@ def sample(
         # Always restore original weights if EMA was used
         if use_ema and ema is not None:
             ema.restore()
+        model.train(was_training)
 
 
 def sample_with_intermediates(
@@ -148,9 +150,22 @@ def sample_with_intermediates(
         - denoising_sequence: Intermediate steps for one sample,
           shape (num_steps_to_capture, C, H, W)
     """
+    # Validate inputs
+    if class_labels is not None:
+        if len(class_labels) != num_samples:
+            logger.error(
+                f"class_labels length ({len(class_labels)}) doesn't match "
+                f"num_samples ({num_samples})"
+            )
+            raise ValueError(
+                f"class_labels length ({len(class_labels)}) must match "
+                f"num_samples ({num_samples})"
+            )
+
     logger.info(f"Starting sample generation with intermediates: {num_samples} samples")
 
     # Set model to evaluation mode
+    was_training = model.training
     model.eval()
 
     # Apply EMA weights if requested
@@ -201,6 +216,7 @@ def sample_with_intermediates(
     finally:
         if use_ema and ema is not None:
             ema.restore()
+        model.train(was_training)
 
 
 def sample_by_class(

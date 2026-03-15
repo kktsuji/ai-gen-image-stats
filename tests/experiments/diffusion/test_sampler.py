@@ -15,7 +15,11 @@ import pytest
 import torch
 
 from src.experiments.diffusion.model import EMA, create_ddpm
-from src.experiments.diffusion.sampler import sample, sample_by_class
+from src.experiments.diffusion.sampler import (
+    sample,
+    sample_by_class,
+    sample_with_intermediates,
+)
 
 # ========================================
 # Fixtures
@@ -484,6 +488,79 @@ class TestSamplerPerformance:
 
         # Should complete in reasonable time (adjust threshold as needed)
         assert elapsed < 30.0  # 30 seconds should be enough for small model
+
+
+@pytest.mark.unit
+class TestTrainingModeRestoration:
+    """Test that sampling functions restore model.training state."""
+
+    def test_sample_restores_training_mode(self, unconditional_model, device):
+        """sample() restores model to training mode when it was training before."""
+        unconditional_model.train()
+        assert unconditional_model.training is True
+
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_samples):
+            sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is True
+
+    def test_sample_preserves_eval_mode(self, unconditional_model, device):
+        """sample() keeps model in eval mode when it was eval before."""
+        unconditional_model.eval()
+        assert unconditional_model.training is False
+
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_samples):
+            sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is False
+
+    def test_sample_with_intermediates_restores_training_mode(
+        self, unconditional_model, device
+    ):
+        """sample_with_intermediates() restores training mode."""
+        unconditional_model.train()
+        assert unconditional_model.training is True
+
+        # return_intermediates=True returns (T+1, N, C, H, W)
+        fake_steps = torch.zeros(11, 2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_steps):
+            sample_with_intermediates(
+                unconditional_model, device, num_samples=2, use_ema=False
+            )
+
+        assert unconditional_model.training is True
+
+    def test_sample_restores_training_mode_on_error(self, unconditional_model, device):
+        """sample() restores training mode even when model.sample() raises."""
+        unconditional_model.train()
+
+        with patch.object(
+            unconditional_model, "sample", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is True
+
+
+@pytest.mark.unit
+class TestSampleWithIntermediatesValidation:
+    """Test input validation for sample_with_intermediates."""
+
+    def test_invalid_class_labels_length(self, conditional_model, device):
+        """sample_with_intermediates() raises ValueError for mismatched labels."""
+        class_labels = torch.tensor([0, 1], device=device)
+
+        with pytest.raises(ValueError, match="class_labels length"):
+            sample_with_intermediates(
+                conditional_model,
+                device,
+                num_samples=4,  # Mismatch with labels
+                class_labels=class_labels,
+                use_ema=False,
+            )
 
 
 @pytest.mark.unit
