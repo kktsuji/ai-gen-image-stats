@@ -14,12 +14,13 @@ from pathlib import Path
 
 import pytest
 import torch
+from torchvision import transforms
 
-from src.experiments.diffusion.dataloader import DiffusionDataLoader
 from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
+from src.utils.data.loaders import create_train_loader
 
 # ========================================
 # Fixtures
@@ -89,15 +90,23 @@ def small_dataloader(temp_dir):
     }
     split_file.write_text(json.dumps(split_data))
 
-    # Create dataloader
-    dataloader = DiffusionDataLoader(
+    # Create train loader
+    transform = transforms.Compose(
+        [
+            transforms.Resize(32),
+            transforms.CenterCrop(32),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
+    train_loader = create_train_loader(
         split_file=str(split_file),
         batch_size=2,
+        transform=transform,
         num_workers=0,
-        image_size=32,
     )
 
-    return dataloader
+    return train_loader
 
 
 @pytest.fixture
@@ -108,7 +117,7 @@ def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, de
 
     trainer = DiffusionTrainer(
         model=small_conditional_model,
-        dataloader=small_dataloader,
+        train_loader=small_dataloader,
         optimizer=optimizer,
         logger=logger,
         device=device,
@@ -211,7 +220,7 @@ class TestSamplerAPI:
         """Test that trainer still has all expected attributes."""
         # Training-related attributes should still exist
         assert hasattr(trainer_with_sampler, "model")
-        assert hasattr(trainer_with_sampler, "dataloader")
+        assert hasattr(trainer_with_sampler, "train_loader")
         assert hasattr(trainer_with_sampler, "optimizer")
         assert hasattr(trainer_with_sampler, "logger")
         assert hasattr(trainer_with_sampler, "device")
@@ -301,7 +310,7 @@ class TestCheckpointIntegration:
 
         new_trainer = DiffusionTrainer(
             model=new_model,
-            dataloader=trainer_with_sampler.dataloader,
+            train_loader=trainer_with_sampler.train_loader,
             optimizer=torch.optim.Adam(new_model.parameters(), lr=0.0001),
             logger=trainer_with_sampler.logger,
             device=device,

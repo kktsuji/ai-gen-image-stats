@@ -22,13 +22,14 @@ from pathlib import Path
 import pytest
 import torch
 import yaml
+from torchvision import transforms
 from torchvision.utils import save_image
 
-from src.experiments.diffusion.dataloader import DiffusionDataLoader
 from src.experiments.diffusion.logger import DiffusionLogger
 from src.experiments.diffusion.model import EMA, create_ddpm
 from src.experiments.diffusion.sampler import DiffusionSampler
 from src.experiments.diffusion.trainer import DiffusionTrainer
+from src.utils.data.loaders import create_train_loader, create_val_loader
 from tests.helpers import create_split_json as _create_split_json
 
 # Dynamic device detection for testing
@@ -119,11 +120,27 @@ class TestDiffusionPipelineBasic:
             device=config["device"],  # Now from top level
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -136,9 +153,10 @@ class TestDiffusionPipelineBasic:
         # Initialize trainer
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
@@ -272,11 +290,27 @@ class TestDiffusionPipelineBasic:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -289,9 +323,10 @@ class TestDiffusionPipelineBasic:
         # Initialize trainer
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
             ema_decay=config["training"]["ema_decay"],
@@ -400,11 +435,27 @@ class TestDiffusionPipelineCheckpoints:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -416,9 +467,10 @@ class TestDiffusionPipelineCheckpoints:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
@@ -525,11 +577,27 @@ class TestDiffusionPipelineCheckpoints:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -541,9 +609,10 @@ class TestDiffusionPipelineCheckpoints:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
@@ -583,9 +652,10 @@ class TestDiffusionPipelineCheckpoints:
 
         trainer_resumed = DiffusionTrainer(
             model=model_resumed,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer_resumed,
             logger=logger_resumed,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
@@ -673,11 +743,27 @@ class TestDiffusionPipelineGeneration:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -689,9 +775,10 @@ class TestDiffusionPipelineGeneration:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
@@ -731,9 +818,10 @@ class TestDiffusionPipelineGeneration:
 
         trainer_gen = DiffusionTrainer(
             model=model_gen,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer_gen,
             logger=logger_gen,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=False,
         )
@@ -832,11 +920,27 @@ class TestDiffusionPipelineGeneration:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -848,9 +952,10 @@ class TestDiffusionPipelineGeneration:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=config["training"]["use_ema"],
         )
@@ -891,9 +996,10 @@ class TestDiffusionPipelineGeneration:
 
         trainer_gen = DiffusionTrainer(
             model=model_gen,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer_gen,
             logger=logger_gen,
+            val_loader=val_loader,
             device=config["device"],
             use_ema=False,
         )
@@ -980,11 +1086,26 @@ class TestDiffusionPipelineGeneration:
             device=TEST_DEVICE,
         )
 
-        dataloader = DiffusionDataLoader(
+        transform = transforms.Compose(
+            [
+                transforms.Resize(32),
+                transforms.CenterCrop(32),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=str(split_file),
             batch_size=4,
+            transform=transform,
             num_workers=0,
-            image_size=32,
+            return_labels=False,
+        )
+        val_loader = create_val_loader(
+            split_file=str(split_file),
+            batch_size=4,
+            transform=transform,
+            num_workers=0,
             return_labels=False,
         )
 
@@ -993,9 +1114,10 @@ class TestDiffusionPipelineGeneration:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=TEST_DEVICE,
             use_ema=True,
             ema_decay=0.9999,
@@ -1154,11 +1276,27 @@ class TestDiffusionPipelineAdvanced:
             device=config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=config["data"]["split_file"],
             batch_size=config["data"]["batch_size"],
+            transform=transform,
             num_workers=config["data"]["num_workers"],
-            image_size=config["data"]["image_size"],
+            return_labels=config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=config["data"]["split_file"],
+            batch_size=config["data"]["batch_size"],
+            transform=transform,
+            num_workers=config["data"]["num_workers"],
             return_labels=config["data"]["return_labels"],
         )
 
@@ -1175,9 +1313,10 @@ class TestDiffusionPipelineAdvanced:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=config["device"],
             scheduler=scheduler,
             use_ema=config["training"]["use_ema"],
@@ -1278,11 +1417,27 @@ class TestDiffusionPipelineAdvanced:
             device=loaded_config["device"],
         )
 
-        dataloader = DiffusionDataLoader(
+        image_size = loaded_config["data"]["image_size"]
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
+        train_loader = create_train_loader(
             split_file=loaded_config["data"]["split_file"],
             batch_size=loaded_config["data"]["batch_size"],
+            transform=transform,
             num_workers=loaded_config["data"]["num_workers"],
-            image_size=loaded_config["data"]["image_size"],
+            return_labels=loaded_config["data"]["return_labels"],
+        )
+        val_loader = create_val_loader(
+            split_file=loaded_config["data"]["split_file"],
+            batch_size=loaded_config["data"]["batch_size"],
+            transform=transform,
+            num_workers=loaded_config["data"]["num_workers"],
             return_labels=loaded_config["data"]["return_labels"],
         )
 
@@ -1294,9 +1449,10 @@ class TestDiffusionPipelineAdvanced:
 
         trainer = DiffusionTrainer(
             model=model,
-            dataloader=dataloader,
+            train_loader=train_loader,
             optimizer=optimizer,
             logger=logger,
+            val_loader=val_loader,
             device=loaded_config["device"],
             use_ema=loaded_config["training"]["use_ema"],
         )

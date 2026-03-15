@@ -1018,9 +1018,7 @@ class TestDiffusionGenerationMode:
         checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
         config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
-        with patch(
-            "src.experiments.diffusion.dataloader.DiffusionDataLoader"
-        ) as mock_dataloader:
+        with patch("src.utils.data.loaders.create_train_loader") as mock_create_train:
             with patch(
                 "src.experiments.diffusion.sampler.DiffusionSampler"
             ) as mock_sampler:
@@ -1034,8 +1032,8 @@ class TestDiffusionGenerationMode:
 
                     setup_experiment_diffusion(config)
 
-                    # Verify no dataloader was created
-                    mock_dataloader.assert_not_called()
+                    # Verify no train loader was created (generation mode)
+                    mock_create_train.assert_not_called()
 
     @pytest.mark.unit
     def test_generation_mode_loads_ema_when_available(self, tmp_path, capsys):
@@ -1525,15 +1523,20 @@ class TestClassifierDeviceAndDataset:
         with (
             patch("src.experiments.classifier.trainer.ClassifierTrainer.train"),
             patch(
-                "src.experiments.classifier.dataloader.ClassifierDataLoader",
-                return_value=mock_dataloader_instance,
+                "src.utils.data.loaders.create_train_loader",
+                return_value=mock_train_loader,
+            ),
+            patch("src.utils.data.loaders.create_val_loader", return_value=None),
+            patch(
+                "src.utils.data.loaders.get_class_names",
+                return_value=["Class 0", "Class 1"],
             ),
             patch(
                 "src.experiments.classifier.logger.ClassifierLogger"
             ) as mock_logger_cls,
         ):
             setup_experiment_classifier(config)
-            # Verify fallback class names were passed to logger
+            # Verify class names from split file were passed to logger
             call_kwargs = mock_logger_cls.call_args.kwargs
             assert call_kwargs["class_names"] == ["Class 0", "Class 1"]
 
@@ -1551,9 +1554,8 @@ class TestDiffusionTrainingMode:
                 "src.experiments.diffusion.model.create_ddpm",
                 return_value=mock_model,
             ),
-            patch(
-                "src.experiments.diffusion.dataloader.DiffusionDataLoader"
-            ) as mock_dl_cls,
+            patch("src.utils.data.loaders.create_train_loader") as mock_create_train,
+            patch("src.utils.data.loaders.create_val_loader", return_value=None),
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,
@@ -1562,7 +1564,7 @@ class TestDiffusionTrainingMode:
             mock_trainer_cls.return_value.train = MagicMock()
             yield {
                 "trainer_cls": mock_trainer_cls,
-                "dataloader_cls": mock_dl_cls,
+                "create_train_loader": mock_create_train,
                 "model": mock_model,
             }
 
@@ -1673,7 +1675,8 @@ class TestDiffusionTrainingMode:
                 "src.experiments.diffusion.model.create_ddpm",
                 return_value=mock_model,
             ),
-            patch("src.experiments.diffusion.dataloader.DiffusionDataLoader"),
+            patch("src.utils.data.loaders.create_train_loader"),
+            patch("src.utils.data.loaders.create_val_loader", return_value=None),
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,
@@ -1698,7 +1701,8 @@ class TestDiffusionTrainingMode:
                 "src.experiments.diffusion.model.create_ddpm",
                 return_value=mock_model,
             ),
-            patch("src.experiments.diffusion.dataloader.DiffusionDataLoader"),
+            patch("src.utils.data.loaders.create_train_loader"),
+            patch("src.utils.data.loaders.create_val_loader", return_value=None),
             patch(
                 "src.experiments.diffusion.trainer.DiffusionTrainer"
             ) as mock_trainer_cls,

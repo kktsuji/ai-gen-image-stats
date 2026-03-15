@@ -38,36 +38,32 @@ class SimpleClassifierModel(nn.Module):
         return F.cross_entropy(predictions, targets)
 
 
-class SimpleClassifierDataLoader:
-    """Simple dataloader for testing classifier trainer."""
+def _make_train_loader(
+    num_samples: int = 20,
+    batch_size: int = 4,
+    input_dim: int = 10,
+    num_classes: int = 2,
+) -> DataLoader:
+    """Create a simple training DataLoader for testing."""
+    X = torch.randn(num_samples, input_dim)
+    y = torch.randint(0, num_classes, (num_samples,))
+    dataset = TensorDataset(X, y)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    def __init__(
-        self,
-        num_train_samples: int = 20,
-        num_val_samples: int = 10,
-        batch_size: int = 4,
-        input_dim: int = 10,
-        num_classes: int = 2,
-    ):
-        self.num_train_samples = num_train_samples
-        self.num_val_samples = num_val_samples
-        self.batch_size = batch_size
-        self.input_dim = input_dim
-        self.num_classes = num_classes
 
-    def get_train_loader(self) -> DataLoader:
-        X = torch.randn(self.num_train_samples, self.input_dim)
-        y = torch.randint(0, self.num_classes, (self.num_train_samples,))
-        dataset = TensorDataset(X, y)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-
-    def get_val_loader(self) -> Optional[DataLoader]:
-        if self.num_val_samples == 0:
-            return None
-        X = torch.randn(self.num_val_samples, self.input_dim)
-        y = torch.randint(0, self.num_classes, (self.num_val_samples,))
-        dataset = TensorDataset(X, y)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False)
+def _make_val_loader(
+    num_samples: int = 10,
+    batch_size: int = 4,
+    input_dim: int = 10,
+    num_classes: int = 2,
+) -> Optional[DataLoader]:
+    """Create a simple validation DataLoader for testing."""
+    if num_samples == 0:
+        return None
+    X = torch.randn(num_samples, input_dim)
+    y = torch.randint(0, num_classes, (num_samples,))
+    dataset = TensorDataset(X, y)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 
 class SimpleClassifierLogger:
@@ -111,19 +107,15 @@ def simple_model():
 
 
 @pytest.fixture
-def simple_dataloader():
-    """Create a simple dataloader for testing."""
-    return SimpleClassifierDataLoader(
-        num_train_samples=20, num_val_samples=10, batch_size=4
-    )
+def simple_train_loader():
+    """Create a simple training DataLoader for testing."""
+    return _make_train_loader(num_samples=20, batch_size=4)
 
 
 @pytest.fixture
-def simple_dataloader_no_val():
-    """Create a simple dataloader without validation data."""
-    return SimpleClassifierDataLoader(
-        num_train_samples=20, num_val_samples=0, batch_size=4
-    )
+def simple_val_loader():
+    """Create a simple validation DataLoader for testing."""
+    return _make_val_loader(num_samples=10, batch_size=4)
 
 
 @pytest.fixture
@@ -140,14 +132,19 @@ def simple_logger():
 
 @pytest.fixture
 def classifier_trainer(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger
+    simple_model,
+    simple_train_loader,
+    simple_val_loader,
+    simple_optimizer,
+    simple_logger,
 ):
     """Create a classifier trainer for testing."""
     return ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
+        val_loader=simple_val_loader,
         device="cpu",
         show_progress=False,
     )
@@ -161,7 +158,7 @@ def test_classifier_trainer_initialization(classifier_trainer):
     """Test that ClassifierTrainer initializes correctly."""
     assert classifier_trainer is not None
     assert classifier_trainer.model is not None
-    assert classifier_trainer.dataloader is not None
+    assert classifier_trainer.train_loader is not None
     assert classifier_trainer.optimizer is not None
     assert classifier_trainer.logger is not None
     assert classifier_trainer.device == "cpu"
@@ -174,13 +171,13 @@ def test_classifier_trainer_implements_base_interface(classifier_trainer):
     assert hasattr(classifier_trainer, "train_epoch")
     assert hasattr(classifier_trainer, "validate_epoch")
     assert hasattr(classifier_trainer, "get_model")
-    assert hasattr(classifier_trainer, "get_dataloader")
+    assert hasattr(classifier_trainer, "get_train_loader")
     assert hasattr(classifier_trainer, "get_optimizer")
     assert hasattr(classifier_trainer, "get_logger")
     assert callable(classifier_trainer.train_epoch)
     assert callable(classifier_trainer.validate_epoch)
     assert callable(classifier_trainer.get_model)
-    assert callable(classifier_trainer.get_dataloader)
+    assert callable(classifier_trainer.get_train_loader)
     assert callable(classifier_trainer.get_optimizer)
     assert callable(classifier_trainer.get_logger)
 
@@ -189,24 +186,26 @@ def test_classifier_trainer_implements_base_interface(classifier_trainer):
 def test_classifier_trainer_getters(classifier_trainer):
     """Test that getter methods return correct objects."""
     model = classifier_trainer.get_model()
-    dataloader = classifier_trainer.get_dataloader()
+    train_loader = classifier_trainer.get_train_loader()
+    val_loader = classifier_trainer.get_val_loader()
     optimizer = classifier_trainer.get_optimizer()
     logger = classifier_trainer.get_logger()
 
     assert model is not None
-    assert dataloader is not None
+    assert train_loader is not None
+    assert val_loader is not None
     assert isinstance(optimizer, torch.optim.Optimizer)
     assert logger is not None
 
 
 @pytest.mark.unit
 def test_classifier_trainer_device_assignment(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger
+    simple_model, simple_train_loader, simple_optimizer, simple_logger
 ):
     """Test that model is moved to correct device."""
     trainer_cpu = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
         device="cpu",
@@ -285,14 +284,15 @@ def test_validate_epoch_no_gradient_updates(classifier_trainer):
 
 @pytest.mark.component
 def test_validate_epoch_without_val_data(
-    simple_model, simple_dataloader_no_val, simple_optimizer, simple_logger
+    simple_model, simple_train_loader, simple_optimizer, simple_logger
 ):
     """Test that validate_epoch returns None when no validation data."""
     trainer = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader_no_val,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
+        val_loader=None,
         device="cpu",
         show_progress=False,
     )
@@ -493,14 +493,19 @@ def test_loss_decreases_with_training(classifier_trainer):
 
 @pytest.mark.integration
 def test_progress_bar_disabled(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger
+    simple_model,
+    simple_train_loader,
+    simple_val_loader,
+    simple_optimizer,
+    simple_logger,
 ):
     """Test that progress bar can be disabled."""
     trainer_no_progress = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
+        val_loader=simple_val_loader,
         device="cpu",
         show_progress=False,
     )
@@ -511,23 +516,23 @@ def test_progress_bar_disabled(
 
 
 @pytest.mark.integration
-def test_multi_class_classification(simple_optimizer, simple_logger):
+def test_multi_class_classification(simple_logger):
     """Test classifier with more than 2 classes."""
     # Create 5-class problem
     model = SimpleClassifierModel(input_dim=10, num_classes=5)
-    dataloader = SimpleClassifierDataLoader(
-        num_train_samples=50,
-        num_val_samples=20,
-        batch_size=10,
-        input_dim=10,
-        num_classes=5,
+    train_loader = _make_train_loader(
+        num_samples=50, batch_size=10, input_dim=10, num_classes=5
+    )
+    val_loader = _make_val_loader(
+        num_samples=20, batch_size=10, input_dim=10, num_classes=5
     )
 
     trainer = ClassifierTrainer(
         model=model,
-        dataloader=dataloader,
+        train_loader=train_loader,
         optimizer=torch.optim.SGD(model.parameters(), lr=0.01),
         logger=simple_logger,
+        val_loader=val_loader,
         device="cpu",
         show_progress=False,
     )
@@ -544,14 +549,20 @@ def test_multi_class_classification(simple_optimizer, simple_logger):
 
 @pytest.mark.integration
 def test_classifier_trainer_logs_validation_results(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger, capture_logs
+    simple_model,
+    simple_train_loader,
+    simple_val_loader,
+    simple_optimizer,
+    simple_logger,
+    capture_logs,
 ):
     """Test that classifier trainer logs validation results."""
     trainer = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
+        val_loader=simple_val_loader,
         device="cpu",
         show_progress=False,
     )
@@ -569,12 +580,12 @@ def test_classifier_trainer_logs_validation_results(
 
 @pytest.mark.integration
 def test_classifier_trainer_logs_epoch_summary(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger, capture_logs
+    simple_model, simple_train_loader, simple_optimizer, simple_logger, capture_logs
 ):
     """Test that classifier trainer logs epoch summary."""
     trainer = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
         device="cpu",
@@ -591,14 +602,20 @@ def test_classifier_trainer_logs_epoch_summary(
 
 @pytest.mark.integration
 def test_classifier_trainer_logs_best_model_updates(
-    simple_model, simple_dataloader, simple_optimizer, simple_logger, capture_logs
+    simple_model,
+    simple_train_loader,
+    simple_val_loader,
+    simple_optimizer,
+    simple_logger,
+    capture_logs,
 ):
     """Test that classifier trainer logs best model updates."""
     trainer = ClassifierTrainer(
         model=simple_model,
-        dataloader=simple_dataloader,
+        train_loader=simple_train_loader,
         optimizer=simple_optimizer,
         logger=simple_logger,
+        val_loader=simple_val_loader,
         device="cpu",
         show_progress=False,
     )

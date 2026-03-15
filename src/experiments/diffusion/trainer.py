@@ -141,9 +141,10 @@ class DiffusionTrainer:
     def __init__(
         self,
         model: Any,
-        dataloader: Any,
+        train_loader: Any,
         optimizer: torch.optim.Optimizer,
         logger: Any,
+        val_loader: Any = None,
         device: str = "cpu",
         show_progress: bool = True,
         use_ema: bool = True,
@@ -168,9 +169,10 @@ class DiffusionTrainer:
 
         Args:
             model: The diffusion model to train
-            dataloader: DataLoader providing training and validation data
+            train_loader: DataLoader for training data
             optimizer: Optimizer for updating model parameters
             logger: Logger for recording metrics and checkpoints
+            val_loader: Optional DataLoader for validation data
             device: Device to run training on ('cpu' or 'cuda')
             show_progress: Whether to show progress bars during training
             use_ema: Whether to use exponential moving average
@@ -193,7 +195,8 @@ class DiffusionTrainer:
         self._best_metric_name: Optional[str] = None
 
         self.model = model
-        self.dataloader = dataloader
+        self.train_loader = train_loader
+        self.val_loader = val_loader
         self.optimizer = optimizer
         self.logger = logger
         self.device = device
@@ -306,7 +309,7 @@ class DiffusionTrainer:
             >>> print(f"Diffusion Loss: {metrics['loss']:.4f}")
         """
         self.model.train()
-        train_loader = self.dataloader.get_train_loader()
+        train_loader = self.train_loader
 
         total_loss = 0.0
         num_batches = 0
@@ -476,8 +479,7 @@ class DiffusionTrainer:
             >>> if metrics:
             ...     print(f"Val Loss: {metrics['val_loss']:.4f}")
         """
-        val_loader = self.dataloader.get_val_loader()
-        if val_loader is None:
+        if self.val_loader is None:
             return None
 
         self.model.eval()
@@ -486,9 +488,9 @@ class DiffusionTrainer:
 
         # Create progress bar if enabled
         iterator = (
-            tqdm(val_loader, desc=f"Epoch {self._current_epoch} [Val]")
+            tqdm(self.val_loader, desc=f"Epoch {self._current_epoch} [Val]")
             if self.show_progress
-            else val_loader
+            else self.val_loader
         )
 
         with torch.no_grad():
@@ -1166,9 +1168,13 @@ class DiffusionTrainer:
         """Return the model being trained."""
         return self.model
 
-    def get_dataloader(self) -> Any:
-        """Return the dataloader."""
-        return self.dataloader
+    def get_train_loader(self) -> Any:
+        """Return the training DataLoader."""
+        return self.train_loader
+
+    def get_val_loader(self) -> Any:
+        """Return the validation DataLoader."""
+        return self.val_loader
 
     def get_optimizer(self) -> torch.optim.Optimizer:
         """Return the optimizer."""

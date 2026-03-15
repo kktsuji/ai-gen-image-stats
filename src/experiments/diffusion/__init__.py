@@ -4,7 +4,6 @@ Diffusion Experiment Module
 This module contains the implementation for diffusion model experiments, including:
 - Diffusion model implementations (DDPM, etc.)
 - Diffusion-specific training logic
-- Data loading and preprocessing for diffusion tasks
 - Generated image logging and evaluation
 
 The diffusion experiment is used to:
@@ -14,7 +13,7 @@ The diffusion experiment is used to:
 4. Provide synthetic data augmentation for downstream tasks
 
 Usage:
-    from src.experiments.diffusion import DiffusionTrainer, DiffusionDataLoader
+    from src.experiments.diffusion import DiffusionTrainer
 
     # Initialize components
     trainer = DiffusionTrainer(config)
@@ -24,12 +23,9 @@ Usage:
     trainer.generate(num_samples=1000)
 """
 
-from src.experiments.diffusion.dataloader import DiffusionDataLoader
-
-__all__ = [
+__all__: list[str] = [
     # Will be populated as components are implemented
     # 'DiffusionTrainer',
-    "DiffusionDataLoader",
     # 'DiffusionLogger',
     # 'DDPMModel',
 ]
