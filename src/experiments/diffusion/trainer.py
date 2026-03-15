@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from src.experiments.diffusion.model import EMA
-from src.experiments.diffusion.sampler import DiffusionSampler
+from src.experiments.diffusion.sampler import sample_with_intermediates
 from src.utils.checkpoint import CheckpointManager
 
 # Module-level logger
@@ -90,11 +90,9 @@ class DiffusionTrainer:
 
     Note:
         For inference-only workflows (generating samples from a trained model),
-        use DiffusionSampler directly instead of creating a trainer. This avoids
-        the overhead of initializing optimizer, dataloaders, and other training
-        components. See DiffusionSampler documentation for examples.
-
-        During training, samples can be accessed via `trainer.sampler.sample()`.
+        use the sampler functions directly instead of creating a trainer. This
+        avoids the overhead of initializing optimizer, dataloaders, and other
+        training components. See ``src.experiments.diffusion.sampler`` for details.
 
     Args:
         model: The diffusion model to train (DDPM)
@@ -260,13 +258,6 @@ class DiffusionTrainer:
             _logger.info(
                 f"Class-weighted MSE loss enabled with weights: {class_weights.tolist()}"
             )
-
-        # Initialize sampler for sample generation
-        self.sampler = DiffusionSampler(
-            model=self.model,
-            device=self.device,
-            ema=self.ema,
-        )
 
         # Optional model graph logging to TensorBoard
         tb_config = (
@@ -1119,18 +1110,24 @@ class DiffusionTrainer:
                 num_classes, device=self.device
             ).repeat_interleave(samples_per_class)
 
-            samples, denoising_seq = self.sampler.sample_with_intermediates(
+            samples, denoising_seq = sample_with_intermediates(
+                self.model,
+                self.device,
                 num_samples=len(class_labels),
                 class_labels=class_labels,
                 guidance_scale=self.guidance_scale,
                 use_ema=self.use_ema,
+                ema=self.ema,
             )
             class_labels_list = class_labels.tolist()
         else:
-            samples, denoising_seq = self.sampler.sample_with_intermediates(
+            samples, denoising_seq = sample_with_intermediates(
+                self.model,
+                self.device,
                 num_samples=self.num_samples,
                 guidance_scale=0.0,
                 use_ema=self.use_ema,
+                ema=self.ema,
             )
             class_labels_list = None
 

@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.experiments.diffusion.sampler import sample_with_intermediates
 from src.experiments.diffusion.trainer import DiffusionTrainer
 
 # Test fixtures and helper classes
@@ -1331,10 +1332,9 @@ def test_samples_generated_once_when_all_intervals_trigger():
             log_denoising_interval=1,
         )
 
-        with patch.object(
-            trainer.sampler,
-            "sample_with_intermediates",
-            wraps=trainer.sampler.sample_with_intermediates,
+        with patch(
+            "src.experiments.diffusion.trainer.sample_with_intermediates",
+            wraps=sample_with_intermediates,
         ) as mock_sample:
             trainer.train(num_epochs=1, checkpoint_dir=tmpdir, validate_frequency=0)
 
@@ -1371,7 +1371,9 @@ def test_visualization_disabled_when_all_intervals_null():
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch.object(trainer.sampler, "sample_with_intermediates") as mock_sample:
+        with patch(
+            "src.experiments.diffusion.trainer.sample_with_intermediates"
+        ) as mock_sample:
             trainer.train(num_epochs=3, checkpoint_dir=tmpdir, validate_frequency=0)
 
             # Sampler should never be called

@@ -1,8 +1,7 @@
-"""Tests for Diffusion Sampler
+"""Tests for Diffusion Sampler Functions
 
-This module contains unit and integration tests for the DiffusionSampler class.
+This module contains unit and integration tests for the sampler functions.
 Tests verify:
-- Sampler initialization
 - Unconditional and conditional sampling
 - EMA weight management
 - Guidance scale application
@@ -16,7 +15,11 @@ import pytest
 import torch
 
 from src.experiments.diffusion.model import EMA, create_ddpm
-from src.experiments.diffusion.sampler import DiffusionSampler
+from src.experiments.diffusion.sampler import (
+    sample,
+    sample_by_class,
+    sample_with_intermediates,
+)
 
 # ========================================
 # Fixtures
@@ -72,55 +75,22 @@ def ema_model(conditional_model, device):
 
 
 @pytest.mark.unit
-class TestSamplerInitialization:
-    """Test DiffusionSampler initialization."""
-
-    def test_initialization_minimal(self, unconditional_model, device):
-        """Test initialization with minimal arguments."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        assert sampler.model is unconditional_model
-        assert sampler.device == device
-        assert sampler.ema is None
-
-    def test_initialization_with_ema(self, conditional_model, ema_model, device):
-        """Test initialization with EMA."""
-        sampler = DiffusionSampler(
-            model=conditional_model, device=device, ema=ema_model
-        )
-
-        assert sampler.model is conditional_model
-        assert sampler.device == device
-        assert sampler.ema is ema_model
-
-    def test_model_moved_to_device(self, unconditional_model, device):
-        """Test that model is moved to specified device."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        # Check that model parameters are on correct device
-        for param in sampler.model.parameters():
-            assert str(param.device).startswith(device.split(":")[0])
-
-
-@pytest.mark.unit
 class TestUnconditionalSampling:
     """Test unconditional sample generation."""
 
     def test_sample_shape(self, unconditional_model, device):
         """Test that generated samples have correct shape."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
         num_samples = 4
-        samples = sampler.sample(num_samples=num_samples, use_ema=False)
+        samples = sample(
+            unconditional_model, device, num_samples=num_samples, use_ema=False
+        )
 
         assert samples.shape == (num_samples, 3, 32, 32)
         assert samples.device.type == device.split(":")[0]
 
     def test_sample_value_range(self, unconditional_model, device):
         """Test that samples are in expected range [-1, 1]."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        samples = sampler.sample(num_samples=2, use_ema=False)
+        samples = sample(unconditional_model, device, num_samples=2, use_ema=False)
 
         # Diffusion models typically output in [-1, 1] range
         # Allow some tolerance for numerical precision
@@ -129,23 +99,21 @@ class TestUnconditionalSampling:
 
     def test_sample_deterministic_with_seed(self, unconditional_model, device):
         """Test that sampling is deterministic with fixed seed."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
         # Generate samples with same seed
         torch.manual_seed(42)
-        samples1 = sampler.sample(num_samples=2, use_ema=False)
+        samples1 = sample(unconditional_model, device, num_samples=2, use_ema=False)
 
         torch.manual_seed(42)
-        samples2 = sampler.sample(num_samples=2, use_ema=False)
+        samples2 = sample(unconditional_model, device, num_samples=2, use_ema=False)
 
         assert torch.allclose(samples1, samples2, atol=1e-5)
 
     def test_sample_different_batch_sizes(self, unconditional_model, device):
         """Test sampling with different batch sizes."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
         for batch_size in [1, 2, 4, 8]:
-            samples = sampler.sample(num_samples=batch_size, use_ema=False)
+            samples = sample(
+                unconditional_model, device, num_samples=batch_size, use_ema=False
+            )
             assert samples.shape[0] == batch_size
 
 
@@ -155,36 +123,40 @@ class TestConditionalSampling:
 
     def test_conditional_sample_shape(self, conditional_model, device):
         """Test conditional sampling with correct shape."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         num_samples = 4
         class_labels = torch.randint(0, 2, (num_samples,), device=device)
-        samples = sampler.sample(
-            num_samples=num_samples, class_labels=class_labels, use_ema=False
+        samples = sample(
+            conditional_model,
+            device,
+            num_samples=num_samples,
+            class_labels=class_labels,
+            use_ema=False,
         )
 
         assert samples.shape == (num_samples, 3, 32, 32)
 
     def test_conditional_sample_with_labels(self, conditional_model, device):
         """Test that conditional sampling accepts class labels."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         class_labels = torch.tensor([0, 1, 0, 1], device=device)
-        samples = sampler.sample(
-            num_samples=4, class_labels=class_labels, use_ema=False
+        samples = sample(
+            conditional_model,
+            device,
+            num_samples=4,
+            class_labels=class_labels,
+            use_ema=False,
         )
 
         assert samples.shape[0] == 4
 
     def test_conditional_sample_guidance_scale(self, conditional_model, device):
         """Test that guidance scale parameter is accepted."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         class_labels = torch.tensor([0, 1], device=device)
 
         # Test with different guidance scales
         for guidance_scale in [0.0, 1.0, 3.0]:
-            samples = sampler.sample(
+            samples = sample(
+                conditional_model,
+                device,
                 num_samples=2,
                 class_labels=class_labels,
                 guidance_scale=guidance_scale,
@@ -194,13 +166,13 @@ class TestConditionalSampling:
 
     def test_conditional_sample_invalid_labels_shape(self, conditional_model, device):
         """Test that invalid label shape raises error."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         # Wrong number of labels
         class_labels = torch.tensor([0, 1], device=device)
 
         with pytest.raises(ValueError, match="class_labels length"):
-            sampler.sample(
+            sample(
+                conditional_model,
+                device,
                 num_samples=4,  # Mismatch with labels
                 class_labels=class_labels,
                 use_ema=False,
@@ -208,14 +180,16 @@ class TestConditionalSampling:
 
     def test_conditional_sample_labels_moved_to_device(self, conditional_model, device):
         """Test that labels are moved to correct device."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         # Create labels on CPU
         class_labels = torch.tensor([0, 1, 0, 1])
 
-        # Should not raise error - sampler should move labels to device
-        samples = sampler.sample(
-            num_samples=4, class_labels=class_labels, use_ema=False
+        # Should not raise error - function should move labels to device
+        samples = sample(
+            conditional_model,
+            device,
+            num_samples=4,
+            class_labels=class_labels,
+            use_ema=False,
         )
 
         assert samples.shape[0] == 4
@@ -227,10 +201,6 @@ class TestEMAWeightManagement:
 
     def test_sample_with_ema_enabled(self, conditional_model, ema_model, device):
         """Test sampling with EMA weights."""
-        sampler = DiffusionSampler(
-            model=conditional_model, device=device, ema=ema_model
-        )
-
         # Store original param values
         original_params = {
             name: param.clone() for name, param in conditional_model.named_parameters()
@@ -241,7 +211,13 @@ class TestEMAWeightManagement:
         # only needs to verify that EMA weights are applied and then restored.
         fake_samples = torch.zeros(2, 3, 32, 32, device=device)
         with patch.object(conditional_model, "sample", return_value=fake_samples):
-            sampler.sample(num_samples=2, use_ema=True)
+            sample(
+                conditional_model,
+                device,
+                num_samples=2,
+                use_ema=True,
+                ema=ema_model,
+            )
 
         # After sampling, original weights should be restored
         for name, param in conditional_model.named_parameters():
@@ -249,35 +225,33 @@ class TestEMAWeightManagement:
 
     def test_sample_without_ema(self, conditional_model, device):
         """Test sampling without EMA (no EMA instance)."""
-        sampler = DiffusionSampler(model=conditional_model, device=device, ema=None)
-
         # Should work fine without EMA
-        samples = sampler.sample(num_samples=2, use_ema=True)
+        samples = sample(
+            conditional_model, device, num_samples=2, use_ema=True, ema=None
+        )
         assert samples.shape == (2, 3, 32, 32)
 
     def test_sample_ema_disabled(self, conditional_model, ema_model, device):
         """Test sampling with EMA available but disabled."""
-        sampler = DiffusionSampler(
-            model=conditional_model, device=device, ema=ema_model
-        )
-
         # Sample with use_ema=False
-        samples = sampler.sample(num_samples=2, use_ema=False)
+        samples = sample(
+            conditional_model, device, num_samples=2, use_ema=False, ema=ema_model
+        )
         assert samples.shape == (2, 3, 32, 32)
 
 
 @pytest.mark.unit
 class TestSampleByClass:
-    """Test sample_by_class method."""
+    """Test sample_by_class function."""
 
     def test_sample_by_class_shape(self, conditional_model, device):
         """Test that sample_by_class generates correct number of samples."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         samples_per_class = 2
         num_classes = 2
 
-        samples, labels = sampler.sample_by_class(
+        samples, labels = sample_by_class(
+            conditional_model,
+            device,
             samples_per_class=samples_per_class,
             num_classes=num_classes,
             use_ema=False,
@@ -289,12 +263,12 @@ class TestSampleByClass:
 
     def test_sample_by_class_labels_order(self, conditional_model, device):
         """Test that labels are in correct order."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         samples_per_class = 3
         num_classes = 2
 
-        samples, labels = sampler.sample_by_class(
+        samples, labels = sample_by_class(
+            conditional_model,
+            device,
             samples_per_class=samples_per_class,
             num_classes=num_classes,
             use_ema=False,
@@ -306,9 +280,9 @@ class TestSampleByClass:
 
     def test_sample_by_class_with_guidance(self, conditional_model, device):
         """Test sample_by_class with guidance scale."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
-        samples, labels = sampler.sample_by_class(
+        samples, labels = sample_by_class(
+            conditional_model,
+            device,
             samples_per_class=2,
             num_classes=2,
             guidance_scale=3.0,
@@ -331,12 +305,12 @@ class TestSampleByClass:
             channel_multipliers=(1, 2),
         )
 
-        sampler = DiffusionSampler(model=model, device=device)
-
         samples_per_class = 2
         num_classes = 5
 
-        samples, labels = sampler.sample_by_class(
+        samples, labels = sample_by_class(
+            model,
+            device,
             samples_per_class=samples_per_class,
             num_classes=num_classes,
             use_ema=False,
@@ -349,13 +323,11 @@ class TestSampleByClass:
 
 @pytest.mark.unit
 class TestDeviceHandling:
-    """Test device management in sampler."""
+    """Test device management in sampler functions."""
 
     def test_sample_on_correct_device(self, unconditional_model, device):
         """Test that samples are generated on correct device."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        samples = sampler.sample(num_samples=2, use_ema=False)
+        samples = sample(unconditional_model, device, num_samples=2, use_ema=False)
 
         assert str(samples.device).startswith(device.split(":")[0])
 
@@ -372,9 +344,7 @@ class TestDeviceHandling:
             channel_multipliers=(1, 2),
         )
 
-        sampler = DiffusionSampler(model=model, device="cuda")
-
-        samples = sampler.sample(num_samples=2, use_ema=False)
+        samples = sample(model, "cuda", num_samples=2, use_ema=False)
 
         assert samples.device.type == "cuda"
 
@@ -390,9 +360,7 @@ class TestDeviceHandling:
             channel_multipliers=(1, 2),
         )
 
-        sampler = DiffusionSampler(model=model, device="cpu")
-
-        samples = sampler.sample(num_samples=2, use_ema=False)
+        samples = sample(model, "cpu", num_samples=2, use_ema=False)
 
         assert samples.device.type == "cpu"
 
@@ -403,21 +371,19 @@ class TestInputValidation:
 
     def test_invalid_num_samples_type(self, unconditional_model, device):
         """Test that invalid num_samples type is handled."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
         # This should work - pytest will catch if it raises TypeError
         with pytest.raises(TypeError):
-            sampler.sample(num_samples="invalid", use_ema=False)  # type: ignore[arg-type]
+            sample(unconditional_model, device, num_samples="invalid", use_ema=False)  # type: ignore[arg-type]
 
     def test_negative_guidance_scale(self, conditional_model, device):
         """Test that negative guidance scale is handled (may be valid)."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         class_labels = torch.tensor([0, 1], device=device)
 
         # Negative guidance scale might be valid in some contexts
         # Just verify it doesn't crash
-        samples = sampler.sample(
+        samples = sample(
+            conditional_model,
+            device,
             num_samples=2,
             class_labels=class_labels,
             guidance_scale=-1.0,
@@ -438,11 +404,7 @@ class TestSamplerIntegration:
 
     def test_end_to_end_unconditional(self, unconditional_model, device):
         """Test complete unconditional sampling workflow."""
-        # Create sampler
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        # Generate samples
-        samples = sampler.sample(num_samples=8, use_ema=False)
+        samples = sample(unconditional_model, device, num_samples=8, use_ema=False)
 
         # Verify output
         assert samples.shape == (8, 3, 32, 32)
@@ -451,17 +413,15 @@ class TestSamplerIntegration:
 
     def test_end_to_end_conditional(self, conditional_model, ema_model, device):
         """Test complete conditional sampling workflow with EMA."""
-        # Create sampler with EMA
-        sampler = DiffusionSampler(
-            model=conditional_model, device=device, ema=ema_model
-        )
-
         # Generate class-balanced samples
-        samples, labels = sampler.sample_by_class(
+        samples, labels = sample_by_class(
+            conditional_model,
+            device,
             samples_per_class=4,
             num_classes=2,
             guidance_scale=3.0,
             use_ema=True,
+            ema=ema_model,
         )
 
         # Verify output
@@ -472,12 +432,16 @@ class TestSamplerIntegration:
 
     def test_batch_generation_workflow(self, conditional_model, device):
         """Test generating multiple batches."""
-        sampler = DiffusionSampler(model=conditional_model, device=device)
-
         all_samples = []
         for class_idx in [0, 1]:
             labels = torch.full((4,), class_idx, dtype=torch.long, device=device)
-            samples = sampler.sample(num_samples=4, class_labels=labels, use_ema=False)
+            samples = sample(
+                conditional_model,
+                device,
+                num_samples=4,
+                class_labels=labels,
+                use_ema=False,
+            )
             all_samples.append(samples)
 
         combined = torch.cat(all_samples, dim=0)
@@ -495,10 +459,7 @@ class TestSamplerPerformance:
 
     def test_large_batch_sampling(self, unconditional_model, device):
         """Test sampling with larger batch size."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        # Generate larger batch
-        samples = sampler.sample(num_samples=32, use_ema=False)
+        samples = sample(unconditional_model, device, num_samples=32, use_ema=False)
 
         assert samples.shape == (32, 3, 32, 32)
 
@@ -517,41 +478,102 @@ class TestSamplerPerformance:
             channel_multipliers=(1, 2),
         )
 
-        sampler = DiffusionSampler(model=model, device="cuda")
-
         # Warm-up
-        _ = sampler.sample(num_samples=2, use_ema=False)
+        _ = sample(model, "cuda", num_samples=2, use_ema=False)
 
         # Time the sampling
         start = time.time()
-        _ = sampler.sample(num_samples=16, use_ema=False)
+        _ = sample(model, "cuda", num_samples=16, use_ema=False)
         elapsed = time.time() - start
 
         # Should complete in reasonable time (adjust threshold as needed)
         assert elapsed < 30.0  # 30 seconds should be enough for small model
-        assert elapsed < 30.0  # 30 seconds should be enough for small model
+
+
+@pytest.mark.unit
+class TestTrainingModeRestoration:
+    """Test that sampling functions restore model.training state."""
+
+    def test_sample_restores_training_mode(self, unconditional_model, device):
+        """sample() restores model to training mode when it was training before."""
+        unconditional_model.train()
+        assert unconditional_model.training is True
+
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_samples):
+            sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is True
+
+    def test_sample_preserves_eval_mode(self, unconditional_model, device):
+        """sample() keeps model in eval mode when it was eval before."""
+        unconditional_model.eval()
+        assert unconditional_model.training is False
+
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_samples):
+            sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is False
+
+    def test_sample_with_intermediates_restores_training_mode(
+        self, unconditional_model, device
+    ):
+        """sample_with_intermediates() restores training mode."""
+        unconditional_model.train()
+        assert unconditional_model.training is True
+
+        # return_intermediates=True returns (T+1, N, C, H, W)
+        fake_steps = torch.zeros(11, 2, 3, 32, 32, device=device)
+        with patch.object(unconditional_model, "sample", return_value=fake_steps):
+            sample_with_intermediates(
+                unconditional_model, device, num_samples=2, use_ema=False
+            )
+
+        assert unconditional_model.training is True
+
+    def test_sample_restores_training_mode_on_error(self, unconditional_model, device):
+        """sample() restores training mode even when model.sample() raises."""
+        unconditional_model.train()
+
+        with patch.object(
+            unconditional_model, "sample", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                sample(unconditional_model, device, num_samples=2, use_ema=False)
+
+        assert unconditional_model.training is True
+
+
+@pytest.mark.unit
+class TestSampleWithIntermediatesValidation:
+    """Test input validation for sample_with_intermediates."""
+
+    def test_invalid_class_labels_length(self, conditional_model, device):
+        """sample_with_intermediates() raises ValueError for mismatched labels."""
+        class_labels = torch.tensor([0, 1], device=device)
+
+        with pytest.raises(ValueError, match="class_labels length"):
+            sample_with_intermediates(
+                conditional_model,
+                device,
+                num_samples=4,  # Mismatch with labels
+                class_labels=class_labels,
+                use_ema=False,
+            )
 
 
 @pytest.mark.unit
 class TestSampleRejectsShowProgress:
-    """Test that show_progress is no longer accepted by sample methods."""
+    """Test that show_progress is no longer accepted by sample functions."""
 
     def test_sample_rejects_show_progress_kwarg(self, unconditional_model, device):
         """sample() raises TypeError when show_progress is passed."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
         with pytest.raises(TypeError):
-            sampler.sample(num_samples=1, use_ema=False, show_progress=True)  # type: ignore[call-arg]
-
-    def test_sample_with_intermediates_rejects_show_progress_kwarg(
-        self, unconditional_model, device
-    ):
-        """sample_with_intermediates() raises TypeError when show_progress is passed."""
-        sampler = DiffusionSampler(model=unconditional_model, device=device)
-
-        with pytest.raises(TypeError):
-            sampler.sample_with_intermediates(
+            sample(
+                unconditional_model,
+                device,
                 num_samples=1,
                 use_ema=False,
-                show_progress=True,  # type: ignore[call-arg]
+                show_progress=True,  # type: ignore[call-arg]  # pyright: ignore[reportCallIssue]
             )

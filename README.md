@@ -159,12 +159,12 @@ docker run --rm -it --gpus all --network=host --shm-size=4g \
 
 #### Using Python API (Inference-Only)
 
-For inference-only workflows without training dependencies, use `DiffusionSampler` directly:
+For inference-only workflows without training dependencies, use sampler functions directly:
 
 ```python
 import torch
 from src.experiments.diffusion.model import create_ddpm, EMA
-from src.experiments.diffusion.sampler import DiffusionSampler
+from src.experiments.diffusion.sampler import sample, sample_by_class
 
 # Load trained model from checkpoint
 model = create_ddpm(image_size=64, num_classes=2, device="cuda")
@@ -176,27 +176,28 @@ ema = EMA(model, decay=0.9999, device="cuda")
 if "ema_state_dict" in checkpoint:
     ema.load_state_dict(checkpoint["ema_state_dict"])
 
-# Create sampler (no optimizer/dataloader needed!)
-sampler = DiffusionSampler(model=model, device="cuda", ema=ema)
-
-# Generate unconditional samples
-samples = sampler.sample(num_samples=64, use_ema=True)
+# Generate unconditional samples (no optimizer/dataloader needed!)
+samples = sample(model, "cuda", num_samples=64, use_ema=True, ema=ema)
 
 # Generate conditional samples with guidance
 labels = torch.tensor([0, 1] * 32, device="cuda")  # Alternating classes
-samples = sampler.sample(
+samples = sample(
+    model, "cuda",
     num_samples=64,
     class_labels=labels,
     guidance_scale=3.0,
-    use_ema=True
+    use_ema=True,
+    ema=ema,
 )
 
 # Generate balanced samples across all classes
-samples, labels = sampler.sample_by_class(
+samples, labels = sample_by_class(
+    model, "cuda",
     samples_per_class=10,
     num_classes=2,
     guidance_scale=3.0,
-    use_ema=True
+    use_ema=True,
+    ema=ema,
 )
 ```
 

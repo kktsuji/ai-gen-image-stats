@@ -1,10 +1,8 @@
 """Integration Tests for Trainer-Sampler Integration
 
-This module tests the integration between DiffusionTrainer and DiffusionSampler.
+This module tests the integration between DiffusionTrainer and sampler functions.
 Verifies:
-- Trainer correctly initializes sampler
-- Trainer's generate_samples() delegates to sampler
-- Trainer's _generate_samples() uses sampler
+- Trainer's _generate_samples() uses sampler functions
 - Backward compatibility with existing code
 - Checkpoint save/load preserves sampling ability
 """
@@ -16,7 +14,7 @@ import pytest
 import torch
 
 from src.experiments.diffusion.model import create_ddpm
-from src.experiments.diffusion.sampler import DiffusionSampler
+from src.experiments.diffusion.sampler import sample, sample_by_class
 from src.experiments.diffusion.trainer import DiffusionTrainer
 from src.utils.data.loaders import create_train_loader
 from src.utils.experiment_logger import ExperimentLogger
@@ -104,7 +102,7 @@ def small_dataloader(temp_dir):
 
 
 @pytest.fixture
-def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, device):
+def trainer_instance(small_conditional_model, small_dataloader, temp_dir, device):
     """Create a trainer instance for testing."""
     logger = ExperimentLogger(
         log_dir=str(temp_dir / "logs"),
@@ -135,160 +133,177 @@ def trainer_with_sampler(small_conditional_model, small_dataloader, temp_dir, de
 
 @pytest.mark.integration
 class TestTrainerSamplerIntegration:
-    """Test integration between trainer and sampler."""
+    """Test integration between trainer and sampler functions."""
 
-    def test_trainer_initializes_sampler(self, trainer_with_sampler):
-        """Test that trainer initializes sampler during __init__."""
-        assert hasattr(trainer_with_sampler, "sampler")
-        assert isinstance(trainer_with_sampler.sampler, DiffusionSampler)
+    def test_trainer_no_sampler_attribute(self, trainer_instance):
+        """Test that trainer no longer has a sampler attribute."""
+        assert not hasattr(trainer_instance, "sampler")
 
-    def test_sampler_has_correct_model(self, trainer_with_sampler):
-        """Test that sampler references correct model."""
-        assert trainer_with_sampler.sampler.model is trainer_with_sampler.model
-
-    def test_sampler_has_correct_device(self, trainer_with_sampler):
-        """Test that sampler has correct device."""
-        assert trainer_with_sampler.sampler.device == trainer_with_sampler.device
-
-    def test_sampler_has_ema_reference(self, trainer_with_sampler):
-        """Test that sampler has EMA reference."""
-        assert trainer_with_sampler.sampler.ema is trainer_with_sampler.ema
-
-    def test_trainer_generate_samples_works(self, trainer_with_sampler, device):
-        """Test that trainer's sampler can generate samples."""
-        samples = trainer_with_sampler.sampler.sample(num_samples=4, use_ema=False)
+    def test_trainer_can_generate_samples_via_function(self, trainer_instance, device):
+        """Test that sampler functions work with trainer's model."""
+        samples = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=4,
+            use_ema=False,
+        )
 
         assert samples.shape == (4, 3, 32, 32)
         assert samples.device.type == device.split(":")[0]
 
-    def test_trainer_generate_samples_with_labels(self, trainer_with_sampler, device):
-        """Test trainer's sampler generates samples with class labels."""
+    def test_trainer_can_generate_samples_with_labels(self, trainer_instance, device):
+        """Test sampler functions with trainer's model and class labels."""
         labels = torch.tensor([0, 1, 0, 1], device=device)
-        samples = trainer_with_sampler.sampler.sample(
-            num_samples=4, class_labels=labels, guidance_scale=3.0, use_ema=False
+        samples = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=4,
+            class_labels=labels,
+            guidance_scale=3.0,
+            use_ema=False,
         )
 
         assert samples.shape == (4, 3, 32, 32)
 
-    def test_trainer_generate_samples_delegates_to_sampler(
-        self, trainer_with_sampler, device
-    ):
-        """Test that sampler generates consistent samples."""
-        # Generate samples directly from sampler twice with same seed
+    def test_sampler_function_deterministic(self, trainer_instance, device):
+        """Test that sampler functions produce consistent samples."""
         labels = torch.tensor([0, 1], device=device)
 
         torch.manual_seed(42)
-        samples1 = trainer_with_sampler.sampler.sample(
-            num_samples=2, class_labels=labels, use_ema=False
+        samples1 = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=2,
+            class_labels=labels,
+            use_ema=False,
         )
 
-        # Generate samples again with same seed
         torch.manual_seed(42)
-        samples2 = trainer_with_sampler.sampler.sample(
-            num_samples=2, class_labels=labels, use_ema=False
+        samples2 = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=2,
+            class_labels=labels,
+            use_ema=False,
         )
 
-        # Should be identical (same random seed)
         assert torch.allclose(samples1, samples2, atol=1e-5)
 
 
 @pytest.mark.integration
 class TestSamplerAPI:
-    """Test the new sampler API after Phase 7 refactoring."""
+    """Test the sampler function API."""
 
-    def test_sampler_unconditional_generation(self, trainer_with_sampler, device):
-        """Test that sampler can generate unconditional samples."""
-        samples = trainer_with_sampler.sampler.sample(num_samples=8)
-
-        assert samples.shape == (8, 3, 32, 32)
-
-    def test_sampler_conditional_generation(self, trainer_with_sampler, device):
-        """Test that sampler can generate conditional samples."""
-        labels = torch.tensor([0, 1] * 4, device=device)
-
-        # New API usage through sampler
-        samples = trainer_with_sampler.sampler.sample(
-            num_samples=8, class_labels=labels, guidance_scale=3.0
+    def test_unconditional_generation(self, trainer_instance, device):
+        """Test unconditional sample generation."""
+        samples = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=8,
         )
 
         assert samples.shape == (8, 3, 32, 32)
 
-    def test_trainer_attributes_unchanged(self, trainer_with_sampler):
+    def test_conditional_generation(self, trainer_instance, device):
+        """Test conditional sample generation."""
+        labels = torch.tensor([0, 1] * 4, device=device)
+
+        samples = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=8,
+            class_labels=labels,
+            guidance_scale=3.0,
+        )
+
+        assert samples.shape == (8, 3, 32, 32)
+
+    def test_trainer_attributes_unchanged(self, trainer_instance):
         """Test that trainer still has all expected attributes."""
         # Training-related attributes should still exist
-        assert hasattr(trainer_with_sampler, "model")
-        assert hasattr(trainer_with_sampler, "train_loader")
-        assert hasattr(trainer_with_sampler, "optimizer")
-        assert hasattr(trainer_with_sampler, "logger")
-        assert hasattr(trainer_with_sampler, "device")
-        assert hasattr(trainer_with_sampler, "use_ema")
-        assert hasattr(trainer_with_sampler, "ema")
+        assert hasattr(trainer_instance, "model")
+        assert hasattr(trainer_instance, "train_loader")
+        assert hasattr(trainer_instance, "optimizer")
+        assert hasattr(trainer_instance, "logger")
+        assert hasattr(trainer_instance, "device")
+        assert hasattr(trainer_instance, "use_ema")
+        assert hasattr(trainer_instance, "ema")
         # generate_samples() method removed in Phase 7
-        assert not hasattr(trainer_with_sampler, "generate_samples")
+        assert not hasattr(trainer_instance, "generate_samples")
         # _generate_samples() internal method for logging should still exist
-        assert hasattr(trainer_with_sampler, "_generate_samples")
+        assert hasattr(trainer_instance, "_generate_samples")
 
-        # Sampler attribute should exist
-        assert hasattr(trainer_with_sampler, "sampler")
+        # Sampler attribute should NOT exist (converted to functions)
+        assert not hasattr(trainer_instance, "sampler")
 
 
 @pytest.mark.integration
 class TestCheckpointIntegration:
-    """Test checkpoint save/load with sampler."""
+    """Test checkpoint save/load with sampler functions."""
 
     def test_checkpoint_save_and_load_sampling(
-        self, trainer_with_sampler, temp_dir, device
+        self, trainer_instance, temp_dir, device
     ):
         """Test that sampling works after checkpoint save/load."""
         checkpoint_path = temp_dir / "test_checkpoint.pth"
 
         # Generate samples before save
         torch.manual_seed(42)
-        samples_before = trainer_with_sampler.sampler.sample(
-            num_samples=2, use_ema=False
+        samples_before = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=2,
+            use_ema=False,
         )
 
         # Save checkpoint
-        trainer_with_sampler.save_checkpoint(
+        trainer_instance.save_checkpoint(
             checkpoint_path, epoch=1, metrics={"loss": 0.5}
         )
 
         # Modify model weights
-        for param in trainer_with_sampler.model.parameters():
+        for param in trainer_instance.model.parameters():
             param.data += 0.1
 
         # Load checkpoint
-        trainer_with_sampler.load_checkpoint(checkpoint_path)
+        trainer_instance.load_checkpoint(checkpoint_path)
 
         # Generate samples after load
         torch.manual_seed(42)
-        samples_after = trainer_with_sampler.sampler.sample(
-            num_samples=2, use_ema=False
+        samples_after = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=2,
+            use_ema=False,
         )
 
         # Samples should be identical after restoring checkpoint
         assert torch.allclose(samples_before, samples_after, atol=1e-5)
 
     def test_checkpoint_preserves_ema_sampling(
-        self, trainer_with_sampler, temp_dir, device
+        self, trainer_instance, temp_dir, device
     ):
         """Test that EMA sampling works after checkpoint restore."""
         checkpoint_path = temp_dir / "test_checkpoint_ema.pth"
 
         # Update EMA a few times
         for _ in range(5):
-            for param in trainer_with_sampler.model.parameters():
+            for param in trainer_instance.model.parameters():
                 param.data += 0.01
-            trainer_with_sampler.ema.update()
+            trainer_instance.ema.update()
 
         # Generate EMA samples before save
         torch.manual_seed(42)
-        samples_before = trainer_with_sampler.sampler.sample(
-            num_samples=2, use_ema=True
+        samples_before = sample(
+            trainer_instance.model,
+            trainer_instance.device,
+            num_samples=2,
+            use_ema=True,
+            ema=trainer_instance.ema,
         )
 
         # Save checkpoint
-        trainer_with_sampler.save_checkpoint(
+        trainer_instance.save_checkpoint(
             checkpoint_path, epoch=1, metrics={"loss": 0.5}
         )
 
@@ -307,9 +322,9 @@ class TestCheckpointIntegration:
 
         new_trainer = DiffusionTrainer(
             model=new_model,
-            train_loader=trainer_with_sampler.train_loader,
+            train_loader=trainer_instance.train_loader,
             optimizer=torch.optim.Adam(new_model.parameters(), lr=0.0001),
-            logger=trainer_with_sampler.logger,
+            logger=trainer_instance.logger,
             device=device,
             use_ema=True,
             show_progress=False,
@@ -320,7 +335,13 @@ class TestCheckpointIntegration:
 
         # Generate EMA samples after load
         torch.manual_seed(42)
-        samples_after = new_trainer.sampler.sample(num_samples=2, use_ema=True)
+        samples_after = sample(
+            new_trainer.model,
+            new_trainer.device,
+            num_samples=2,
+            use_ema=True,
+            ema=new_trainer.ema,
+        )
 
         # Samples should be identical after restoring checkpoint
         assert torch.allclose(samples_before, samples_after, atol=1e-4)
@@ -330,41 +351,39 @@ class TestCheckpointIntegration:
 class TestTrainingSampleGeneration:
     """Test sample generation during training."""
 
-    def test_generate_samples_during_training(self, trainer_with_sampler, temp_dir):
+    def test_generate_samples_during_training(self, trainer_instance, temp_dir):
         """Test that _generate_samples() works during training loop."""
-        logger = trainer_with_sampler.logger
+        logger = trainer_instance.logger
 
         # Simulate training and sample generation
-        trainer_with_sampler._generate_samples(logger, step=1, epoch=1)
+        trainer_instance._generate_samples(logger, step=1, epoch=1)
 
-        # Verify that samples were logged (images should exist)
-        # Note: Actual file existence check depends on logger implementation
-        # Here we just verify the method runs without error
+        # Verify the method runs without error
 
-    def test_conditional_sample_generation_uses_sampler(self, trainer_with_sampler):
-        """Test that conditional _generate_samples uses sampler."""
+    def test_conditional_sample_generation_uses_functions(self, trainer_instance):
+        """Test that conditional _generate_samples uses sampler functions."""
         # The model has num_classes=2, so it's conditional
-        assert trainer_with_sampler.model.num_classes == 2
+        assert trainer_instance.model.num_classes == 2
 
-        # Generate samples (should use sampler.sample_with_intermediates)
-        logger = trainer_with_sampler.logger
-        trainer_with_sampler._generate_samples(logger, step=1, epoch=1)
+        # Generate samples (should use sample_with_intermediates function)
+        logger = trainer_instance.logger
+        trainer_instance._generate_samples(logger, step=1, epoch=1)
 
         # If this runs without error, the integration is working
 
 
 @pytest.mark.integration
 class TestStandaloneSamplerUsage:
-    """Test using sampler independently of trainer."""
+    """Test using sampler functions independently of trainer."""
 
     def test_standalone_sampler_from_checkpoint(
-        self, trainer_with_sampler, temp_dir, device
+        self, trainer_instance, temp_dir, device
     ):
-        """Test loading checkpoint and using sampler independently."""
+        """Test loading checkpoint and using sampler functions independently."""
         checkpoint_path = temp_dir / "inference_checkpoint.pth"
 
         # Save checkpoint from trainer
-        trainer_with_sampler.save_checkpoint(
+        trainer_instance.save_checkpoint(
             checkpoint_path, epoch=1, metrics={"loss": 0.5}
         )
 
@@ -390,16 +409,13 @@ class TestStandaloneSamplerUsage:
         ema = EMA(model, decay=0.999, device=device)
         ema.load_state_dict(checkpoint["ema_state_dict"])
 
-        # Create sampler (no trainer needed!)
-        sampler = DiffusionSampler(model=model, device=device, ema=ema)
-
-        # Generate samples
-        samples = sampler.sample(num_samples=4, use_ema=True)
+        # Use sampler functions directly (no trainer needed!)
+        samples = sample(model, device, num_samples=4, use_ema=True, ema=ema)
 
         assert samples.shape == (4, 3, 32, 32)
 
     def test_standalone_sampler_without_trainer_dependencies(self, device):
-        """Test that sampler doesn't require trainer dependencies."""
+        """Test that sampler functions don't require trainer dependencies."""
         from src.experiments.diffusion.model import create_ddpm
 
         # Create model independently
@@ -413,11 +429,8 @@ class TestStandaloneSamplerUsage:
             channel_multipliers=(1, 2),
         )
 
-        # Create sampler without optimizer, dataloader, logger, etc.
-        sampler = DiffusionSampler(model=model, device=device)
-
-        # Generate samples
-        samples = sampler.sample(num_samples=8)
+        # Use sampler functions without optimizer, dataloader, logger, etc.
+        samples = sample(model, device, num_samples=8)
 
         assert samples.shape == (8, 3, 32, 32)
 
@@ -428,14 +441,14 @@ class TestEndToEndWorkflow:
     """End-to-end workflow tests."""
 
     def test_complete_training_and_inference_workflow(
-        self, trainer_with_sampler, temp_dir, device
+        self, trainer_instance, temp_dir, device
     ):
         """Test complete workflow: train, save, load, infer."""
         checkpoint_dir = temp_dir / "checkpoints"
         checkpoint_dir.mkdir()
 
         # Train for 1 epoch
-        trainer_with_sampler.train(
+        trainer_instance.train(
             num_epochs=1,
             checkpoint_dir=checkpoint_dir,
             checkpoint_frequency=1,
@@ -447,7 +460,7 @@ class TestEndToEndWorkflow:
         latest_checkpoint = checkpoint_dir / "latest_checkpoint.pth"
         assert latest_checkpoint.exists()
 
-        # Load checkpoint into new sampler for inference
+        # Load checkpoint into new model for inference
         from src.experiments.diffusion.model import EMA, create_ddpm
 
         model = create_ddpm(
@@ -467,12 +480,14 @@ class TestEndToEndWorkflow:
         if "ema_state_dict" in checkpoint:
             ema.load_state_dict(checkpoint["ema_state_dict"])
 
-        # Create sampler for inference
-        sampler = DiffusionSampler(model=model, device=device, ema=ema)
-
-        # Generate samples
-        samples, labels = sampler.sample_by_class(
-            samples_per_class=2, num_classes=2, use_ema=True
+        # Use sampler functions for inference
+        samples, labels = sample_by_class(
+            model,
+            device,
+            samples_per_class=2,
+            num_classes=2,
+            use_ema=True,
+            ema=ema,
         )
 
         assert samples.shape == (4, 3, 32, 32)

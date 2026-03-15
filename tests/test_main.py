@@ -942,14 +942,9 @@ class TestDiffusionGenerationMode:
             num_classes=2,
         )
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                # Mock sampler to return proper tensor
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
-                mock_sampler_instance.sample.return_value = torch.randn(1, 3, 32, 32)
+                mock_sample.return_value = torch.randn(1, 3, 32, 32)
 
                 setup_experiment_diffusion(config)
 
@@ -958,7 +953,7 @@ class TestDiffusionGenerationMode:
 
     @pytest.mark.unit
     def test_generation_mode_uses_sampler_not_trainer(self, tmp_path):
-        """Test that generation mode uses DiffusionSampler, not DiffusionTrainer."""
+        """Test that generation mode uses sample function, not DiffusionTrainer."""
         import torch
 
         from src.main import setup_experiment_diffusion
@@ -966,20 +961,15 @@ class TestDiffusionGenerationMode:
         checkpoint_path = _mock_diffusion_checkpoint(tmp_path)
         config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
                 # Return proper tensor instead of MagicMock
-                mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+                mock_sample.return_value = torch.randn(10, 3, 32, 32)
 
                 setup_experiment_diffusion(config)
 
-                # Verify DiffusionSampler was created and used
-                mock_sampler.assert_called_once()
-                mock_sampler_instance.sample.assert_called_once()
+                # Verify sample function was called
+                mock_sample.assert_called_once()
 
     @pytest.mark.unit
     def test_generation_mode_no_optimizer_created(self, tmp_path):
@@ -992,16 +982,9 @@ class TestDiffusionGenerationMode:
         config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with patch("torch.optim.Adam") as mock_adam:
-            with patch(
-                "src.experiments.diffusion.sampler.DiffusionSampler"
-            ) as mock_sampler:
+            with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
                 with patch("src.utils.experiment_logger.ExperimentLogger"):
-                    # Mock sampler to return proper tensor
-                    mock_sampler_instance = MagicMock()
-                    mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(
-                        10, 3, 32, 32
-                    )
+                    mock_sample.return_value = torch.randn(10, 3, 32, 32)
 
                     setup_experiment_diffusion(config)
 
@@ -1019,16 +1002,9 @@ class TestDiffusionGenerationMode:
         config = _generation_config(tmp_path, checkpoint=str(checkpoint_path))
 
         with patch("src.utils.data.loaders.create_train_loader") as mock_create_train:
-            with patch(
-                "src.experiments.diffusion.sampler.DiffusionSampler"
-            ) as mock_sampler:
+            with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
                 with patch("src.utils.experiment_logger.ExperimentLogger"):
-                    # Mock sampler to return proper tensor
-                    mock_sampler_instance = MagicMock()
-                    mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(
-                        10, 3, 32, 32
-                    )
+                    mock_sample.return_value = torch.randn(10, 3, 32, 32)
 
                     setup_experiment_diffusion(config)
 
@@ -1049,17 +1025,10 @@ class TestDiffusionGenerationMode:
         # Set a custom ema_decay to verify it's read from config
         config["generation"]["sampling"]["ema_decay"] = 0.995
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
                 with patch("src.experiments.diffusion.model.EMA") as mock_ema:
-                    # Mock sampler to return proper tensor
-                    mock_sampler_instance = MagicMock()
-                    mock_sampler.return_value = mock_sampler_instance
-                    mock_sampler_instance.sample.return_value = torch.randn(
-                        10, 3, 32, 32
-                    )
+                    mock_sample.return_value = torch.randn(10, 3, 32, 32)
 
                     setup_experiment_diffusion(config)
 
@@ -1083,14 +1052,9 @@ class TestDiffusionGenerationMode:
             tmp_path, checkpoint=str(checkpoint_path), use_ema=True
         )
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                # Mock sampler to return proper tensor
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
-                mock_sampler_instance.sample.return_value = torch.randn(10, 3, 32, 32)
+                mock_sample.return_value = torch.randn(10, 3, 32, 32)
 
                 setup_experiment_diffusion(config)
 
@@ -1112,24 +1076,19 @@ class TestDiffusionGenerationMode:
         # Set batch_size smaller than num_samples to force multiple batches
         config["generation"]["sampling"]["batch_size"] = 3
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
-
                 # Each batch call returns appropriate number of samples
-                def sample_side_effect(**kwargs):
+                def sample_side_effect(*args, **kwargs):
                     n = kwargs.get("num_samples", 1)
                     return torch.randn(n, 3, 32, 32)
 
-                mock_sampler_instance.sample.side_effect = sample_side_effect
+                mock_sample.side_effect = sample_side_effect
 
                 setup_experiment_diffusion(config)
 
                 # With 10 samples and batch_size=3, expect 4 batches (3+3+3+1)
-                assert mock_sampler_instance.sample.call_count == 4
+                assert mock_sample.call_count == 4
 
     @pytest.mark.unit
     def test_generation_mode_batch_size_larger_than_num_samples(self, tmp_path):
@@ -1145,18 +1104,14 @@ class TestDiffusionGenerationMode:
         # batch_size larger than num_samples
         config["generation"]["sampling"]["batch_size"] = 100
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
-                mock_sampler_instance.sample.return_value = torch.randn(5, 3, 32, 32)
+                mock_sample.return_value = torch.randn(5, 3, 32, 32)
 
                 setup_experiment_diffusion(config)
 
                 # Single batch since batch_size > num_samples
-                mock_sampler_instance.sample.assert_called_once()
+                mock_sample.assert_called_once()
 
     @pytest.mark.unit
     def test_generation_mode_class_labels_all_classes(self, tmp_path):
@@ -1171,26 +1126,19 @@ class TestDiffusionGenerationMode:
         )
         config["generation"]["sampling"]["class_selection"] = None
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
 
-                def sample_side_effect(**kwargs):
+                def sample_side_effect(*args, **kwargs):
                     n = kwargs.get("num_samples", 1)
                     return torch.randn(n, 3, 32, 32)
 
-                mock_sampler_instance.sample.side_effect = sample_side_effect
+                mock_sample.side_effect = sample_side_effect
 
                 setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
-                    [
-                        call.kwargs["class_labels"]
-                        for call in mock_sampler_instance.sample.call_args_list
-                    ]
+                    [call.kwargs["class_labels"] for call in mock_sample.call_args_list]
                 )
                 assert (all_labels == 0).sum().item() == 2
                 assert (all_labels == 1).sum().item() == 2
@@ -1211,26 +1159,19 @@ class TestDiffusionGenerationMode:
             class_selection=[1],
         )
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
 
-                def sample_side_effect(**kwargs):
+                def sample_side_effect(*args, **kwargs):
                     n = kwargs.get("num_samples", 1)
                     return torch.randn(n, 3, 32, 32)
 
-                mock_sampler_instance.sample.side_effect = sample_side_effect
+                mock_sample.side_effect = sample_side_effect
 
                 setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
-                    [
-                        call.kwargs["class_labels"]
-                        for call in mock_sampler_instance.sample.call_args_list
-                    ]
+                    [call.kwargs["class_labels"] for call in mock_sample.call_args_list]
                 )
                 assert all_labels.tolist() == [1] * 4
 
@@ -1250,26 +1191,19 @@ class TestDiffusionGenerationMode:
             class_selection=[0, 1],
         )
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
 
-                def sample_side_effect(**kwargs):
+                def sample_side_effect(*args, **kwargs):
                     n = kwargs.get("num_samples", 1)
                     return torch.randn(n, 3, 32, 32)
 
-                mock_sampler_instance.sample.side_effect = sample_side_effect
+                mock_sample.side_effect = sample_side_effect
 
                 setup_experiment_diffusion(config)
 
                 all_labels = torch.cat(
-                    [
-                        call.kwargs["class_labels"]
-                        for call in mock_sampler_instance.sample.call_args_list
-                    ]
+                    [call.kwargs["class_labels"] for call in mock_sample.call_args_list]
                 )
                 assert (all_labels == 0).sum().item() == 5
                 assert (all_labels == 1).sum().item() == 5
@@ -1292,18 +1226,14 @@ class TestDiffusionGenerationMode:
             class_selection=[0],
         )
 
-        with patch(
-            "src.experiments.diffusion.sampler.DiffusionSampler"
-        ) as mock_sampler:
+        with patch("src.experiments.diffusion.sampler.sample") as mock_sample:
             with patch("src.utils.experiment_logger.ExperimentLogger"):
-                mock_sampler_instance = MagicMock()
-                mock_sampler.return_value = mock_sampler_instance
 
-                def sample_side_effect(**kwargs):
+                def sample_side_effect(*args, **kwargs):
                     n = kwargs.get("num_samples", 1)
                     return torch.randn(n, 3, 32, 32)
 
-                mock_sampler_instance.sample.side_effect = sample_side_effect
+                mock_sample.side_effect = sample_side_effect
 
                 setup_experiment_diffusion(config)
 
@@ -1825,17 +1755,15 @@ class TestGenerationModeEdgeCases:
         config["generation"]["output"]["save_individual"] = True
 
         with (
-            patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
+            patch("src.experiments.diffusion.sampler.sample") as mock_sample,
             patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
-            mock_sampler_instance = MagicMock()
-            mock_sampler.return_value = mock_sampler_instance
 
-            def sample_side_effect(**kwargs):
+            def sample_side_effect(*args, **kwargs):
                 n = kwargs.get("num_samples", 1)
                 return torch.randn(n, 3, 32, 32)
 
-            mock_sampler_instance.sample.side_effect = sample_side_effect
+            mock_sample.side_effect = sample_side_effect
 
             setup_experiment_diffusion(config)
 
@@ -1877,16 +1805,14 @@ class TestGenerationModeEdgeCases:
         )
 
         with (
-            patch("src.experiments.diffusion.sampler.DiffusionSampler") as mock_sampler,
+            patch("src.experiments.diffusion.sampler.sample") as mock_sample,
             patch("src.utils.experiment_logger.ExperimentLogger"),
         ):
-            mock_sampler_instance = MagicMock()
-            mock_sampler.return_value = mock_sampler_instance
-            mock_sampler_instance.sample.return_value = torch.randn(2, 3, 32, 32)
+            mock_sample.return_value = torch.randn(2, 3, 32, 32)
 
             # Should succeed — _orig_mod. prefix is stripped
             setup_experiment_diffusion(config)
-            mock_sampler_instance.sample.assert_called_once()
+            mock_sample.assert_called_once()
 
     @pytest.mark.unit
     def test_generation_mode_num_samples_zero_raises(self, tmp_path):

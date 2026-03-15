@@ -16,8 +16,8 @@ Usage:
     python -m src.main configs/diffusion/generate.yaml
 
 Generation Mode (Diffusion):
-    When mode='generate' in the config, the diffusion experiment uses a
-    lightweight DiffusionSampler for inference instead of the full trainer.
+    When mode='generate' in the config, the diffusion experiment uses
+    lightweight sampler functions for inference instead of the full trainer.
     This eliminates unnecessary dependencies like optimizer and dataloader,
     providing faster initialization and lower memory usage for generation-only
     workflows.
@@ -416,7 +416,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         - Trains the diffusion model and saves checkpoints
 
     Generation Mode (mode='generate'):
-        - Uses lightweight DiffusionSampler for inference
+        - Uses lightweight sampler functions for inference
         - Loads checkpoint and generates samples without training dependencies
         - No optimizer or dataloader needed (class info from config)
         - Handles EMA weights if available in checkpoint
@@ -554,7 +554,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     if mode == "generate":
         # Generation mode: load checkpoint and generate samples
         # Import sampler for inference-only workflow
-        from src.experiments.diffusion.sampler import DiffusionSampler
+        from src.experiments.diffusion.sampler import sample
 
         generation_config = config["generation"]
         checkpoint_path = generation_config.get("checkpoint")
@@ -628,13 +628,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         metrics_logger = ExperimentLogger(log_dir=log_dir)
 
-        # Create sampler (no optimizer or dataloader needed!)
-        sampler = DiffusionSampler(
-            model=model,
-            device=device,
-            ema=ema,
-        )
-
         logger.info("")
         logger.info(f"Generating {num_samples} samples...")
 
@@ -667,11 +660,14 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
                 class_labels[start_idx:end_idx] if class_labels is not None else None
             )
 
-            batch_samples = sampler.sample(
+            batch_samples = sample(
+                model,
+                device,
                 num_samples=end_idx - start_idx,
                 class_labels=batch_labels,
                 guidance_scale=sampling_config["guidance_scale"],
                 use_ema=sampling_config["use_ema"],
+                ema=ema,
             )
             all_samples.append(batch_samples)
 
@@ -698,8 +694,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Save individual samples if configured
         if output_config["save_individual"]:
-            for i, sample in enumerate(samples):
-                save_image(sample, output_dir / f"sample_{i:04d}.png", normalize=True)
+            for i, img in enumerate(samples):
+                save_image(img, output_dir / f"sample_{i:04d}.png", normalize=True)
             logger.info(f"Saved {len(samples)} individual samples to: {output_dir}")
 
         metrics_logger.close()
