@@ -145,7 +145,7 @@ def run_training(
     checkpoint_dir: str,
     save_best: bool,
     checkpoint_frequency: int,
-    save_latest: bool,
+    save_latest_checkpoint: bool,
     validate_frequency: int,
     best_metric: str,
 ) -> None:
@@ -161,7 +161,7 @@ def run_training(
         checkpoint_dir: Directory for saving checkpoints.
         save_best: Whether to save only the best checkpoint.
         checkpoint_frequency: How often to save checkpoints (in epochs).
-        save_latest: Whether to save a latest checkpoint symlink.
+        save_latest_checkpoint: Whether to save a latest checkpoint symlink.
         validate_frequency: How often to run validation (in epochs).
         best_metric: Metric name for best-model selection.
     """
@@ -174,7 +174,7 @@ def run_training(
             checkpoint_dir=checkpoint_dir,
             save_best=save_best,
             checkpoint_frequency=checkpoint_frequency,
-            save_latest_checkpoint=save_latest,
+            save_latest_checkpoint=save_latest_checkpoint,
             validate_frequency=validate_frequency,
             best_metric=best_metric,
         )

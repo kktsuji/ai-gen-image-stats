@@ -211,7 +211,7 @@ class TestRunTraining:
             "checkpoint_dir": "/tmp/checkpoints",
             "save_best": True,
             "checkpoint_frequency": 5,
-            "save_latest": True,
+            "save_latest_checkpoint": True,
             "validate_frequency": 1,
             "best_metric": "loss",
         }
