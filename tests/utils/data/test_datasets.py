@@ -13,7 +13,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from src.data.datasets import (
+from src.utils.data.datasets import (
     BaseDataset,
     ImageFolderDataset,
     SimpleImageDataset,
@@ -21,7 +21,7 @@ from src.data.datasets import (
 )
 
 # Path to mock data
-MOCK_DATA_DIR = Path(__file__).parent.parent / "fixtures" / "mock_data"
+MOCK_DATA_DIR = Path(__file__).parent.parent.parent / "fixtures" / "mock_data"
 TRAIN_DIR = MOCK_DATA_DIR / "train"
 VAL_DIR = MOCK_DATA_DIR / "val"
 

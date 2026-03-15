@@ -7,8 +7,8 @@ for handling imbalanced datasets.
 import pytest
 import torch
 
-from src.data.balancing import downsample_dataset, upsample_dataset
-from src.data.datasets import BaseDataset
+from src.utils.data.balancing import downsample_dataset, upsample_dataset
+from src.utils.data.datasets import BaseDataset
 
 # =============================================================================
 # Helper: Mock Dataset

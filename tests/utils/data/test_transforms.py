@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from src.data.transforms import (
+from src.utils.data.transforms import (
     CIFAR10_MEAN,
     CIFAR10_STD,
     IMAGENET_MEAN,

@@ -9,8 +9,8 @@ Usage Examples
 
 Example 1: Basic Weighted Sampling
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
->>> from src.data.datasets import ImageFolderDataset
->>> from src.data.samplers import get_sampler_from_dataset
+>>> from src.utils.data.datasets import ImageFolderDataset
+>>> from src.utils.data.samplers import get_sampler_from_dataset
 >>> from torch.utils.data import DataLoader
 >>>
 >>> # Load dataset
@@ -30,7 +30,7 @@ Example 2: Balanced Sampling
 
 Example 3: Custom Class Weights
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
->>> from src.data.samplers import create_weighted_sampler, compute_class_weights
+>>> from src.utils.data.samplers import create_weighted_sampler, compute_class_weights
 >>>
 >>> # Compute custom weights (e.g., emphasize minority class more)
 >>> weights = compute_class_weights(dataset.targets, weight_mode="effective_num")
@@ -86,7 +86,7 @@ def create_weighted_sampler(
         WeightedRandomSampler configured with appropriate weights
 
     Example:
-        >>> from src.data.datasets import ImageFolderDataset
+        >>> from src.utils.data.datasets import ImageFolderDataset
         >>> dataset = ImageFolderDataset("path/to/data")
         >>> sampler = create_weighted_sampler(dataset.targets)
         >>> loader = DataLoader(dataset, batch_size=32, sampler=sampler)
@@ -144,7 +144,7 @@ def create_balanced_sampler(
         WeightedRandomSampler with uniform class probabilities
 
     Example:
-        >>> from src.data.datasets import ImageFolderDataset
+        >>> from src.utils.data.datasets import ImageFolderDataset
         >>> dataset = ImageFolderDataset("path/to/data")
         >>> sampler = create_balanced_sampler(dataset.targets)
         >>> loader = DataLoader(dataset, batch_size=32, sampler=sampler)

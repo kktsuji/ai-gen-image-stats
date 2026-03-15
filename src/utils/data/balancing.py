@@ -13,8 +13,8 @@ Usage Examples
 
 Example 1: Downsampling
 ~~~~~~~~~~~~~~~~~~~~~~~~
->>> from src.data.datasets import SplitFileDataset
->>> from src.data.balancing import downsample_dataset
+>>> from src.utils.data.datasets import SplitFileDataset
+>>> from src.utils.data.balancing import downsample_dataset
 >>>
 >>> dataset = SplitFileDataset("outputs/splits/train_val_split.json", split="train")
 >>> balanced = downsample_dataset(dataset, target_ratio=1.0, seed=42)
@@ -22,7 +22,7 @@ Example 1: Downsampling
 
 Example 2: Upsampling
 ~~~~~~~~~~~~~~~~~~~~~
->>> from src.data.balancing import upsample_dataset
+>>> from src.utils.data.balancing import upsample_dataset
 >>>
 >>> balanced = upsample_dataset(dataset, target_ratio=1.0, seed=42)
 >>> print(f"Original: {len(dataset)}, Balanced: {len(balanced)}")
@@ -35,7 +35,7 @@ from typing import Dict, List
 import torch
 from torch.utils.data import Subset
 
-from src.data.datasets import BaseDataset
+from src.utils.data.datasets import BaseDataset
 
 _logger = logging.getLogger(__name__)
 

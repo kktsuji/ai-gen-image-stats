@@ -70,7 +70,7 @@ Merging is done by `src/utils/config.py::merge_configs()` (deep merge for dicts,
 
 Key config sections: `experiment`, `mode` (train/generate), `compute`, `model`, `data`, `output`, `training`, `generation`, `logging`.
 
-### Dataset System (`src/data/`)
+### Dataset System (`src/utils/data/`)
 
 - **`SplitFileDataset`** — primary dataset for all training experiments; loads from a JSON split file produced by `data_preparation`. Used by both classifier and diffusion trainers.
 - **`ImageFolderDataset`** — wraps `torchvision.ImageFolder` for raw class-directory layouts

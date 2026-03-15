@@ -8,7 +8,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from src.data.samplers import (
+from src.utils.data.samplers import (
     compute_class_weights,
     compute_effective_num_weights,
     compute_weights_from_config,
@@ -402,8 +402,8 @@ class TestSamplerWithRealDataset:
 
     def test_sampler_with_image_folder_dataset(self, tmp_path):
         """Test creating sampler from ImageFolderDataset."""
-        from src.data.datasets import ImageFolderDataset
-        from src.data.transforms import get_base_transforms
+        from src.utils.data.datasets import ImageFolderDataset
+        from src.utils.data.transforms import get_base_transforms
 
         # Create a small mock dataset structure
         class_0_dir = tmp_path / "class0"
@@ -446,8 +446,8 @@ class TestSamplerWithRealDataset:
 
     def test_get_sample_weights_integration(self, tmp_path):
         """Test dataset.get_sample_weights() method with samplers."""
-        from src.data.datasets import ImageFolderDataset
-        from src.data.transforms import get_base_transforms
+        from src.utils.data.datasets import ImageFolderDataset
+        from src.utils.data.transforms import get_base_transforms
 
         # Create mock dataset
         class_0_dir = tmp_path / "class0"

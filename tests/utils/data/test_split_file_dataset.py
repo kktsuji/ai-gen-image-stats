@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from src.data.datasets import SplitFileDataset, get_dataset
+from src.utils.data.datasets import SplitFileDataset, get_dataset
 
 # ============================================================================
 # Helper Functions

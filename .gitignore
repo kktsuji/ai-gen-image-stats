@@ -359,9 +359,9 @@ tb_logs/
 experiments_temp/
 tmp/
 
-# Ignore all data folders except for those in src/data/ and tests/data/
-!src/data/
-!tests/data/
+# Ignore all data folders except for those in src/utils/data/ and tests/utils/data/
+!src/utils/data/
+!tests/utils/data/
 
 # Ignore all model folders except for those in src/experiments/classifier/models/ and tests/experiments/classifier/models/
 !src/experiments/classifier/models/
