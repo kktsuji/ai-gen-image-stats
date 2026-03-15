@@ -61,17 +61,19 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
 
     # Regularize covariance matrices for numerical stability
     eps = 1e-6
-    sigma1 += np.eye(sigma1.shape[0]) * eps
-    sigma2 += np.eye(sigma2.shape[0]) * eps
+    n = sigma1.shape[0]
+    sigma1_reg = sigma1 + np.eye(n) * eps
+    sigma2_reg = sigma2 + np.eye(n) * eps
 
     # Calculate matrix square root of product of covariances
-    covmean: np.ndarray = sqrtm(sigma1.dot(sigma2))  # type: ignore[assignment]
+    covmean: np.ndarray = sqrtm(sigma1_reg.dot(sigma2_reg))  # type: ignore[assignment]
 
     # Handle numerical errors (NaN from ill-conditioned matrices)
     if np.isnan(covmean).any():
-        # Retry with additional regularization
+        # Retry with stronger per-matrix regularization
+        stronger_eps = 1e-4
         covmean = sqrtm(  # type: ignore[assignment]
-            sigma1.dot(sigma2) + np.eye(sigma1.shape[0]) * eps
+            (sigma1 + np.eye(n) * stronger_eps).dot(sigma2 + np.eye(n) * stronger_eps)
         )
         if np.isnan(covmean).any():
             raise ValueError("sqrtm produced NaN values in FID computation")
@@ -84,7 +86,8 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
             )
         covmean = covmean.real  # type: ignore[attr-defined]
 
-    # Calculate FID (clamp to 0 since FID is non-negative by definition)
+    # Calculate FID using original (unregularized) covariances for the trace
+    # so regularization bias does not inflate the score
     fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
     return float(max(fid, 0.0))
 

@@ -171,6 +171,24 @@ def test_calculate_inception_score_too_few_samples():
         calculate_inception_score(predictions, splits=10)
 
 
+@pytest.mark.unit
+def test_calculate_inception_score_negative_predictions():
+    """Test IS raises error on negative prediction values."""
+    predictions = np.array([[-0.1, 1.1], [0.5, 0.5]])
+
+    with pytest.raises(ValueError, match="non-negative"):
+        calculate_inception_score(predictions)
+
+
+@pytest.mark.unit
+def test_calculate_inception_score_not_summing_to_one():
+    """Test IS raises error when predictions don't sum to 1."""
+    predictions = np.array([[0.3, 0.3], [0.5, 0.5]])
+
+    with pytest.raises(ValueError, match="sum to 1"):
+        calculate_inception_score(predictions)
+
+
 # ============================================================================
 # Unit Tests: Precision and Recall
 # ============================================================================
