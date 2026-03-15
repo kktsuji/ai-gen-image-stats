@@ -205,6 +205,45 @@ def test_get_class_names_missing_metadata(tmp_path):
         get_class_names(str(split_file))
 
 
+@pytest.mark.unit
+def test_create_train_loader_with_seed_sets_generator(tmp_path):
+    """Test that passing a seed sets generator on the DataLoader."""
+    split_file = _create_split_json(tmp_path)
+    from torchvision import transforms
+
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        seed=42,
+    )
+    assert loader.generator is not None
+    assert loader.worker_init_fn is not None
+
+
+@pytest.mark.unit
+def test_create_train_loader_without_seed_no_generator(tmp_path):
+    """Test that omitting seed leaves generator and worker_init_fn as None."""
+    split_file = _create_split_json(tmp_path)
+    from torchvision import transforms
+
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+    )
+    assert loader.generator is None
+    assert loader.worker_init_fn is None
+
+
 # ==============================================================================
 # Component Tests - Classifier-style transforms
 # ==============================================================================

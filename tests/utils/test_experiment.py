@@ -9,7 +9,7 @@ Tests cover:
 
 from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -129,6 +129,30 @@ class TestSetupExperimentCommon:
         assert len(log_files) == 1
         log_content = log_files[0].read_text()
         assert "Random seed" not in log_content
+
+    @patch("src.utils.experiment.np.random.seed")
+    @patch("src.utils.experiment.random.seed")
+    def test_seed_sets_all_rngs(
+        self, mock_random_seed, mock_np_seed, tmp_path, clean_logging_handlers
+    ):
+        """Test that seed sets random, numpy, and torch RNGs."""
+        config = _make_config(tmp_path, seed=42)
+        setup_experiment_common(config, "TEST STARTED")
+
+        mock_random_seed.assert_called_once_with(42)
+        mock_np_seed.assert_called_once_with(42)
+
+    @patch("src.utils.experiment.np.random.seed")
+    @patch("src.utils.experiment.random.seed")
+    def test_seed_none_skips_all_rngs(
+        self, mock_random_seed, mock_np_seed, tmp_path, clean_logging_handlers
+    ):
+        """Test that None seed skips all RNG seeding."""
+        config = _make_config(tmp_path, seed=None)
+        setup_experiment_common(config, "TEST STARTED")
+
+        mock_random_seed.assert_not_called()
+        mock_np_seed.assert_not_called()
 
     def test_log_dir_matches_config(self, tmp_path, clean_logging_handlers):
         """Test that returned log_dir matches config output path."""
