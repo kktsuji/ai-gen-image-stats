@@ -205,9 +205,9 @@ def test_get_class_names_missing_metadata(tmp_path):
         get_class_names(str(split_file))
 
 
-@pytest.mark.unit
+@pytest.mark.component
 def test_create_train_loader_downsampling_unit(tmp_path):
-    """Unit test: downsampling balancing returns a DataLoader with reduced dataset."""
+    """Component test: downsampling balancing returns a DataLoader with a valid dataset."""
     from torchvision import transforms
 
     split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
@@ -231,9 +231,9 @@ def test_create_train_loader_downsampling_unit(tmp_path):
     assert len(loader.dataset) > 0  # type: ignore[arg-type]
 
 
-@pytest.mark.unit
+@pytest.mark.component
 def test_create_train_loader_upsampling_unit(tmp_path):
-    """Unit test: upsampling balancing returns a DataLoader with expanded dataset."""
+    """Component test: upsampling balancing config is applied and returns a valid DataLoader."""
     from torchvision import transforms
 
     split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)

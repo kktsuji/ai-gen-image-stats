@@ -181,8 +181,9 @@ def test_save_checkpoint_delegates_to_utility(classifier_trainer, tmp_path):
     with patch("src.experiments.classifier.trainer.save_checkpoint") as mock_save:
         classifier_trainer.save_checkpoint(path=checkpoint_path, epoch=5)
         mock_save.assert_called_once()
-        # Verify epoch is passed through
-        assert mock_save.call_args.kwargs.get("epoch") == 5
+        # Verify epoch is passed through (covers both positional and keyword call conventions)
+        args, kwargs = mock_save.call_args
+        assert kwargs.get("epoch") == 5 or 5 in args
 
 
 @pytest.mark.unit

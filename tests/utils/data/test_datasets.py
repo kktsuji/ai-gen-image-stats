@@ -475,8 +475,7 @@ class TestSplitFileDatasetUnit:
 
         dataset = SplitFileDataset(split_file, split="train")
         classes = dataset.get_classes()
-        assert isinstance(classes, list)
-        assert "cat" in classes
+        assert classes == ["cat", "dog"]
 
 
 @pytest.mark.unit

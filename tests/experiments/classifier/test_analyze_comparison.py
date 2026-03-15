@@ -203,21 +203,37 @@ class TestExperimentComparator:
         assert val_acc.comparison_mean > val_acc.baseline_mean
         assert val_acc.is_improvement is True
 
-    def test_zero_baseline_mean_handling(self, baseline_results, comparison_results):
-        """Test handling of zero baseline mean (division by zero)."""
-        # Create a comparator with a metric that could be zero
-        ExperimentComparator(baseline_results, comparison_results)
+    def test_zero_baseline_mean_handling(self):
+        """Test that improvement_percent is 0.0 when baseline mean is zero (avoids division by zero)."""
+        baseline_data = pd.DataFrame(
+            {
+                "epoch": [5, 5, 5],
+                "seed": [0, 1, 2],
+                "experiment": "baseline",
+                "zero_metric": [0.0, 0.0, 0.0],
+            }
+        )
+        comparison_data = pd.DataFrame(
+            {
+                "epoch": [5, 5, 5],
+                "seed": [0, 1, 2],
+                "experiment": "comparison",
+                "zero_metric": [10.0, 10.0, 10.0],
+            }
+        )
+        baseline = ExperimentResults(
+            name="baseline", data=baseline_data, metrics=["zero_metric"]
+        )
+        comparison = ExperimentResults(
+            name="comparison", data=comparison_data, metrics=["zero_metric"]
+        )
 
-        # Manually test the calculation logic
-        baseline_mean = 0.0
-        comparison_mean = 10.0
+        comparator = ExperimentComparator(baseline, comparison)
+        results = comparator.compute_final_epoch_comparison(final_epoch=5)
 
-        if baseline_mean != 0:
-            improvement = ((comparison_mean - baseline_mean) / baseline_mean) * 100
-        else:
-            improvement = 0.0
-
-        assert improvement == 0.0
+        assert len(results) == 1
+        assert results[0].metric_name == "zero_metric"
+        assert results[0].improvement_percent == 0.0
 
     def test_analyze_stability(self, baseline_results, comparison_results):
         """Test stability analysis."""
