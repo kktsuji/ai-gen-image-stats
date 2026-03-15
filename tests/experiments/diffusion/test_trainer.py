@@ -2057,7 +2057,7 @@ class TestDiffusionTrainerLoadCheckpointErrors:
             trainer2, *_ = _make_diffusion_trainer(in_channels=1)
 
             # Non-strict should not raise, but should warn
-            with mock_patch("src.experiments.diffusion.trainer._logger") as mock_logger:
+            with mock_patch("src.utils.checkpoint.logger") as mock_logger:
                 trainer2.load_checkpoint(ckpt_path, strict=False)
                 assert any(
                     "non-strict" in str(c).lower()
@@ -2080,9 +2080,7 @@ class TestDiffusionTrainerLoadCheckpointErrors:
                 "load_state_dict",
                 side_effect=RuntimeError("incompatible optimizer"),
             ):
-                with mock_patch(
-                    "src.experiments.diffusion.trainer._logger"
-                ) as mock_logger:
+                with mock_patch("src.utils.checkpoint.logger") as mock_logger:
                     # Should not raise - warning is logged
                     trainer.load_checkpoint(ckpt_path)
                     assert any(

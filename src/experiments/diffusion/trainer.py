@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from src.experiments.diffusion.model import EMA
 from src.experiments.diffusion.sampler import sample_with_intermediates
-from src.utils.checkpoint import is_best_metric
+from src.utils.checkpoint import is_best_metric, load_checkpoint, save_checkpoint
 
 # Module-level logger
 _logger = logging.getLogger(__name__)
@@ -882,7 +882,8 @@ class DiffusionTrainer:
     ) -> None:
         """Save training checkpoint including EMA and AMP state.
 
-        Extends base checkpoint saving to include EMA and gradient scaler state.
+        Delegates to the shared save_checkpoint utility, adding diffusion-specific
+        state (EMA, scheduler, AMP scaler) via kwargs.
 
         Args:
             path: Path to save checkpoint file
@@ -891,59 +892,27 @@ class DiffusionTrainer:
             metrics: Dictionary of current metrics
             **kwargs: Additional metadata to save
         """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        model = self.get_model()
-        optimizer = self.get_optimizer()
-
-        checkpoint = {
-            "epoch": epoch,
-            "global_step": self._global_step,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "is_best": is_best,
-            "trainer_class": self.__class__.__name__,
-        }
-
-        if metrics is not None:
-            checkpoint["metrics"] = metrics
-
-        if self._best_metric is not None:
-            checkpoint["best_metric"] = self._best_metric
-            checkpoint["best_metric_name"] = self._best_metric_name
-
-        # Save EMA state
+        # Collect diffusion-specific state
         if self.use_ema and self.ema is not None:
-            checkpoint["ema_state_dict"] = self.ema.state_dict()
-
-        # Save scheduler state
+            kwargs["ema_state_dict"] = self.ema.state_dict()
         if self.scheduler is not None:
-            checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
-
-        # Save scaler state for AMP
+            kwargs["scheduler_state_dict"] = self.scheduler.state_dict()
         if self.use_amp and self.scaler is not None:
-            checkpoint["scaler_state_dict"] = self.scaler.state_dict()
+            kwargs["scaler_state_dict"] = self.scaler.state_dict()
 
-        # Add any additional metadata
-        checkpoint.update(kwargs)
-
-        torch.save(checkpoint, path)
-
-        # Enhanced logging
-        if is_best:
-            _logger.info(f"✓ Best model checkpoint saved: {path}")
-        else:
-            _logger.info(f"✓ Checkpoint saved: {path}")
-
-        _logger.info(f"  Epoch: {epoch}, Global step: {self._global_step}")
-
-        if metrics:
-            metrics_str = ", ".join([f"{k}: {v:.6f}" for k, v in metrics.items()])
-            _logger.info(f"  Metrics: {metrics_str}")
-
-        if self._best_metric is not None:
-            _logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
+        save_checkpoint(
+            path=path,
+            model=self.get_model(),
+            optimizer=self.get_optimizer(),
+            epoch=epoch,
+            global_step=self._global_step,
+            is_best=is_best,
+            metrics=metrics,
+            best_metric=self._best_metric,
+            best_metric_name=self._best_metric_name,
+            trainer_class=self.__class__.__name__,
+            **kwargs,
+        )
 
         # Log diffusion-specific state
         if self.use_ema and self.ema is not None:
@@ -953,9 +922,6 @@ class DiffusionTrainer:
         if self.scheduler is not None:
             _logger.debug("  Scheduler state included")
 
-        _logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
-        _logger.debug(f"  File size: {path.stat().st_size / 1024 / 1024:.2f} MB")
-
     def load_checkpoint(
         self,
         path: Union[str, Path],
@@ -964,7 +930,8 @@ class DiffusionTrainer:
     ) -> Dict[str, Any]:
         """Load training checkpoint including EMA and AMP state.
 
-        Extends base checkpoint loading to restore EMA and gradient scaler state.
+        Delegates to the shared load_checkpoint utility for model/optimizer state,
+        then restores diffusion-specific state (EMA, scheduler, AMP scaler).
 
         Args:
             path: Path to checkpoint file
@@ -977,47 +944,15 @@ class DiffusionTrainer:
         Raises:
             FileNotFoundError: If checkpoint file doesn't exist
         """
-        path = Path(path)
-        if not path.exists():
-            _logger.error(f"Checkpoint not found: {path}")
-            raise FileNotFoundError(f"Checkpoint not found: {path}")
-
-        _logger.info(f"Loading checkpoint from {path}")
-
-        try:
-            checkpoint = torch.load(path, map_location="cpu")
-        except Exception as e:
-            _logger.critical(f"Failed to load checkpoint from {path}")
-            _logger.exception(f"Error details: {e}")
-            raise
-
-        _logger.debug(f"  Checkpoint keys: {list(checkpoint.keys())}")
-        _logger.debug(f"  Trainer class: {checkpoint.get('trainer_class', 'unknown')}")
-
-        # Load model state
-        model = self.get_model()
-        try:
-            model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
-        except Exception as e:
-            _logger.error("Failed to load model state dict")
-            _logger.exception(f"Error details: {e}")
-            if strict:
-                raise
-            else:
-                _logger.warning("Continuing with non-strict loading")
+        checkpoint = load_checkpoint(
+            path=path,
+            model=self.get_model(),
+            optimizer=self.get_optimizer() if load_optimizer else None,
+            strict=strict,
+        )
 
         # Ensure model is on correct device after loading
-        model.to(self.device)
-
-        # Load optimizer state
-        if load_optimizer and "optimizer_state_dict" in checkpoint:
-            optimizer = self.get_optimizer()
-            try:
-                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            except Exception as e:
-                _logger.error("Failed to load optimizer state dict")
-                _logger.exception(f"Error details: {e}")
-                _logger.warning("Continuing without optimizer state")
+        self.get_model().to(self.device)
 
         # Load EMA state
         if self.use_ema and self.ema is not None:
@@ -1053,20 +988,6 @@ class DiffusionTrainer:
         self._global_step = checkpoint.get("global_step", 0)
         self._best_metric = checkpoint.get("best_metric", None)
         self._best_metric_name = checkpoint.get("best_metric_name", None)
-
-        _logger.info("✓ Checkpoint loaded successfully")
-        _logger.info(
-            f"  Epoch: {self._current_epoch}, Global step: {self._global_step}"
-        )
-
-        if "metrics" in checkpoint:
-            metrics_str = ", ".join(
-                [f"{k}: {v:.6f}" for k, v in checkpoint["metrics"].items()]
-            )
-            _logger.info(f"  Loaded metrics: {metrics_str}")
-
-        if self._best_metric is not None:
-            _logger.info(f"  Best {self._best_metric_name}: {self._best_metric:.6f}")
 
         return checkpoint
 
