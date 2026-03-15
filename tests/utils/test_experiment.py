@@ -7,7 +7,6 @@ Tests cover:
 - run_training: calls trainer.train, handles KeyboardInterrupt and Exception
 """
 
-import logging
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import MagicMock
@@ -84,14 +83,17 @@ class TestSetupExperimentCommon:
         config_snapshot = log_dir / "config.yaml"
         assert config_snapshot.exists()
 
-    def test_banner_logged(self, tmp_path, clean_logging_handlers, caplog):
-        """Test that the experiment banner is logged."""
+    def test_banner_logged(self, tmp_path, clean_logging_handlers):
+        """Test that the experiment banner is logged to the log file."""
         config = _make_config(tmp_path)
+        setup_experiment_common(config, "MY EXPERIMENT BANNER")
 
-        with caplog.at_level(logging.INFO):
-            setup_experiment_common(config, "MY EXPERIMENT BANNER")
-
-        assert "MY EXPERIMENT BANNER" in caplog.text
+        # Read the log file created by setup_logging (setup_logging clears
+        # root handlers, which removes caplog's handler, so we verify via file)
+        log_files = list((tmp_path / "outputs" / "logs").glob("*.log"))
+        assert len(log_files) == 1
+        log_content = log_files[0].read_text()
+        assert "MY EXPERIMENT BANNER" in log_content
 
     def test_explicit_device_returned(self, tmp_path, clean_logging_handlers):
         """Test that explicit device config is returned as-is."""
@@ -108,23 +110,25 @@ class TestSetupExperimentCommon:
         assert isinstance(device, str)
         assert device in ["cpu", "cuda", "mps"]
 
-    def test_seed_set_when_provided(self, tmp_path, clean_logging_handlers, caplog):
+    def test_seed_set_when_provided(self, tmp_path, clean_logging_handlers):
         """Test that seed is set when provided in config."""
         config = _make_config(tmp_path, seed=42)
+        setup_experiment_common(config, "TEST STARTED")
 
-        with caplog.at_level(logging.INFO):
-            setup_experiment_common(config, "TEST STARTED")
+        log_files = list((tmp_path / "outputs" / "logs").glob("*.log"))
+        assert len(log_files) == 1
+        log_content = log_files[0].read_text()
+        assert "Random seed set to: 42" in log_content
 
-        assert "Random seed set to: 42" in caplog.text
-
-    def test_seed_not_logged_when_none(self, tmp_path, clean_logging_handlers, caplog):
+    def test_seed_not_logged_when_none(self, tmp_path, clean_logging_handlers):
         """Test that seed log message is absent when seed is None."""
         config = _make_config(tmp_path, seed=None)
+        setup_experiment_common(config, "TEST STARTED")
 
-        with caplog.at_level(logging.INFO):
-            setup_experiment_common(config, "TEST STARTED")
-
-        assert "Random seed" not in caplog.text
+        log_files = list((tmp_path / "outputs" / "logs").glob("*.log"))
+        assert len(log_files) == 1
+        log_content = log_files[0].read_text()
+        assert "Random seed" not in log_content
 
     def test_log_dir_matches_config(self, tmp_path, clean_logging_handlers):
         """Test that returned log_dir matches config output path."""
