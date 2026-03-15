@@ -22,9 +22,6 @@ Usage:
 
     # Generate synthetic samples
     trainer.generate(num_samples=1000)
-
-For more information, see the Architecture Specification at:
-docs/standards/architecture.md
 """
 
 from src.experiments.diffusion.dataloader import DiffusionDataLoader

@@ -57,8 +57,6 @@ outputs/              # Training outputs (gitignored)
 
 **Note:** Default configuration files (`default.yaml`) are colocated with their experiment code in `src/experiments/`. The `configs/` directory is for user-provided configurations and experiment-specific overrides.
 
-See [docs/standards/architecture.md](docs/standards/architecture.md) for complete architecture specification.
-
 ## Installation
 
 ### Prerequisites
@@ -803,13 +801,6 @@ This project is undergoing active refactoring according to the plan in [docs/res
 - ✅ Step 2: Base Directory Structure
 - ✅ Step 3: Test Infrastructure Setup
 
-## Documentation
-
-- [Architecture Specification](docs/standards/architecture.md) - Complete architecture design
-- [Refactoring Plan](docs/research/refactor.md) - Step-by-step implementation guide
-- [User Requirements](docs/research/user-requirements.md) - Project goals and requirements
-- [Technical Requirements](docs/research/technical-requirements.md) - Technical specifications
-
 ## Research Workflow
 
 1. **Generate Synthetic Data** (optional): Train diffusion model to generate synthetic images
@@ -834,21 +825,3 @@ docker run --rm -it --gpus all --network=host \
   kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 \
   python3 -m src.main configs/diffusion.yaml
 ```
-
-## Contributing
-
-This is a personal research project, but contributions are welcome. Please:
-
-1. Follow the architecture patterns in [architecture.md](docs/standards/architecture.md)
-2. Add tests for all new code (minimum: unit + component)
-3. Ensure all tests pass: `pytest -m "unit or component"`
-4. Update documentation as needed
-
-## License
-
-[Add your license here]
-
-## Acknowledgments
-
-- PyTorch for deep learning framework
-- Original implementations that inspired this refactored architecture
