@@ -6,7 +6,6 @@ including base classes and specific implementations like ImageFolder.
 """
 
 import json
-import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -15,8 +14,6 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import datasets
-
-_logger = logging.getLogger(__name__)
 
 
 class BaseDataset(Dataset, ABC):
@@ -446,32 +443,15 @@ class SplitFileDataset(BaseDataset):
         else:
             # When allowed_root is not set, validate paths for
             # directory traversal patterns (e.g., ../../../etc/passwd).
-            # - Absolute paths: check for ".." components (path traversal)
-            # - Relative paths: resolve against split_dir and verify
-            #   they stay within it
-            split_dir = Path(split_file).resolve().parent
-            resolved_samples = []
+            # Paths may be relative to the working directory (not the
+            # split file directory), so we only reject ".." components.
             for i, (path, label) in enumerate(self._samples):
-                p = Path(path)
-                if p.is_absolute():
-                    # Block absolute paths with traversal components
-                    if ".." in p.parts:
-                        raise ValueError(
-                            f"Path traversal detected: entry {i} absolute "
-                            f"path '{path}' contains '..' component."
-                        )
-                    resolved_samples.append((path, label))
-                else:
-                    resolved = (split_dir / path).resolve()
-                    if not resolved.is_relative_to(split_dir):
-                        raise ValueError(
-                            f"Path traversal detected: entry {i} relative "
-                            f"path '{path}' escapes split file directory "
-                            f"'{split_dir}'. Set allowed_root explicitly or "
-                            f"use absolute paths."
-                        )
-                    resolved_samples.append((str(resolved), label))
-            self._samples = resolved_samples
+                if ".." in Path(path).parts:
+                    raise ValueError(
+                        f"Path traversal detected: entry {i} path '{path}' "
+                        f"contains '..' component. Use allowed_root for "
+                        f"stricter validation."
+                    )
 
         if len(self._samples) == 0:
             raise ValueError(f"No samples found in '{split}' split of {split_file}")
