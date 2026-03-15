@@ -155,7 +155,7 @@ def create_val_loader(
             transform=transform,
             return_labels=return_labels,
         )
-    except (ValueError, KeyError):
+    except ValueError:
         return None
 
     return DataLoader(

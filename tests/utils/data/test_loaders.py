@@ -134,6 +134,28 @@ def test_create_val_loader_invalid_split_file():
 
 
 @pytest.mark.unit
+def test_create_val_loader_propagates_key_error(tmp_path):
+    """Test that create_val_loader propagates KeyError when val key is missing."""
+    from torchvision import transforms
+
+    split_data = {
+        "metadata": {"classes": {"0.Class0": 0}},
+        "train": [{"path": "img.jpg", "label": 0}],
+    }
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
+    transform = transforms.Compose([transforms.ToTensor()])
+    with pytest.raises(KeyError):
+        create_val_loader(
+            split_file=str(split_file),
+            batch_size=2,
+            transform=transform,
+        )
+
+
+@pytest.mark.unit
 def test_get_num_classes_invalid_file():
     """Test that get_num_classes fails with nonexistent file."""
     with pytest.raises(FileNotFoundError):
