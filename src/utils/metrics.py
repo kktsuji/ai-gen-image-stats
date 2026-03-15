@@ -67,6 +67,15 @@ def calculate_fid(real_features: np.ndarray, fake_features: np.ndarray) -> float
     # Calculate matrix square root of product of covariances
     covmean: np.ndarray = sqrtm(sigma1.dot(sigma2))  # type: ignore[assignment]
 
+    # Handle numerical errors (NaN from ill-conditioned matrices)
+    if np.isnan(covmean).any():
+        # Retry with additional regularization
+        covmean = sqrtm(  # type: ignore[assignment]
+            sigma1.dot(sigma2) + np.eye(sigma1.shape[0]) * eps
+        )
+        if np.isnan(covmean).any():
+            raise ValueError("sqrtm produced NaN values in FID computation")
+
     # Handle numerical errors (complex values)
     if np.iscomplexobj(covmean):
         if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):  # type: ignore[union-attr]

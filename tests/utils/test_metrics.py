@@ -92,6 +92,23 @@ def test_calculate_fid_small_samples(small_features):
     assert fid >= 0
 
 
+@pytest.mark.unit
+def test_calculate_fid_near_singular_covariance():
+    """Test FID handles near-singular covariance matrices without NaN."""
+    np.random.seed(42)
+    # Create features with highly correlated dimensions (near-singular covariance)
+    base = np.random.randn(50, 1)
+    real = np.hstack([base + np.random.randn(50, 1) * 1e-8 for _ in range(10)])
+    fake = np.hstack([base + np.random.randn(50, 1) * 1e-8 for _ in range(10)]) + 0.5
+
+    fid = calculate_fid(real, fake)
+
+    assert isinstance(fid, float), "FID should return a float"
+    assert not np.isnan(fid), "FID should not be NaN for near-singular covariances"
+    assert not np.isinf(fid), "FID should not be infinite"
+    assert fid >= 0, "FID should be non-negative"
+
+
 # ============================================================================
 # Unit Tests: Inception Score
 # ============================================================================
