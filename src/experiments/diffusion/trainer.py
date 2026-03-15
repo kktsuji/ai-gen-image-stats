@@ -1176,6 +1176,11 @@ class DiffusionTrainer:
                     tb_writer=getattr(logger, "tb_writer", None),
                     tb_log_images=getattr(logger, "tb_log_images", True),
                 )
+            else:
+                _logger.warning(
+                    "log_denoising_interval is enabled, but logger.dirs['denoising'] "
+                    "is not configured; denoising artifacts will not be saved"
+                )
 
     def get_model(self) -> Any:
         """Return the model being trained."""

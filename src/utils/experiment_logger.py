@@ -178,7 +178,7 @@ class ExperimentLogger:
         # Store for testing
         self.logged_images.append(
             {
-                "images": images.clone(),
+                "images": images.detach().cpu().clone(),
                 "tag": tag,
                 "step": step,
                 "epoch": epoch,

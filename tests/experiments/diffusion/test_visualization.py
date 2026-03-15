@@ -66,6 +66,18 @@ class TestSaveDenoisingProcess:
         with pytest.raises(ValueError, match="Expected 4D tensor"):
             save_denoising_process(invalid_sequence, "dummy.png")
 
+    def test_raises_on_zero_num_steps(self):
+        """save_denoising_process() raises ValueError when num_steps_to_show is 0."""
+        sequence = torch.randn(8, 3, 32, 32)
+        with pytest.raises(ValueError, match="num_steps_to_show must be positive"):
+            save_denoising_process(sequence, "dummy.png", num_steps_to_show=0)
+
+    def test_raises_on_negative_num_steps(self):
+        """save_denoising_process() raises ValueError when num_steps_to_show is negative."""
+        sequence = torch.randn(8, 3, 32, 32)
+        with pytest.raises(ValueError, match="num_steps_to_show must be positive"):
+            save_denoising_process(sequence, "dummy.png", num_steps_to_show=-1)
+
     def test_grayscale_images(self, temp_dir):
         """save_denoising_process() handles grayscale images."""
         grayscale_seq = torch.randn(8, 1, 32, 32)

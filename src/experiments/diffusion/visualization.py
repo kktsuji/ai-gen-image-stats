@@ -47,6 +47,9 @@ def save_denoising_process(
     """
     save_path = Path(save_path)
 
+    if num_steps_to_show <= 0:
+        raise ValueError("num_steps_to_show must be positive")
+
     # Convert list to tensor if needed
     if isinstance(denoising_sequence, list):
         denoising_sequence = torch.stack(denoising_sequence)

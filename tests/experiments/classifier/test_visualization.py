@@ -104,6 +104,14 @@ class TestSaveAnnotatedPredictions:
         with pytest.raises(ValueError, match="Unexpected number of channels"):
             save_annotated_predictions(images, [0, 1, 0, 1], [0, 1, 1, 1], save_path)
 
+    def test_raises_on_empty_batch(self, temp_dir):
+        """save_annotated_predictions() raises ValueError when images is empty."""
+        images = torch.empty(0, 3, 32, 32)
+        save_path = temp_dir / "empty.png"
+
+        with pytest.raises(ValueError, match="images must contain at least one sample"):
+            save_annotated_predictions(images, [], [], save_path)
+
 
 @pytest.mark.unit
 class TestSaveConfusionMatrix:

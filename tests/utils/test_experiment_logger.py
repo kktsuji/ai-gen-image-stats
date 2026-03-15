@@ -310,6 +310,22 @@ class TestLogImages:
         logger.log_images(images, tag="plain", step=1)
         assert logger.logged_images[0]["class_labels"] is None
 
+    def test_log_images_stored_tensors_are_on_cpu(self, logger):
+        """log_images() stores tensors on CPU regardless of input device."""
+        images = torch.randn(4, 3, 32, 32)
+        logger.log_images(images, tag="samples", step=1)
+        stored = logger.logged_images[0]["images"]
+        assert stored.device.type == "cpu"
+
+    def test_log_images_stored_tensors_have_no_grad(self, logger):
+        """log_images() stored tensors are detached (no grad_fn)."""
+        images = torch.randn(4, 3, 32, 32, requires_grad=True)
+        images = images * 2  # creates a grad_fn
+        logger.log_images(images, tag="samples", step=1)
+        stored = logger.logged_images[0]["images"]
+        assert stored.grad_fn is None
+        assert not stored.requires_grad
+
 
 @pytest.mark.unit
 class TestLogHyperparams:

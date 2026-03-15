@@ -42,6 +42,9 @@ def save_annotated_predictions(
     save_path = Path(save_path)
     class_names = class_names or []
 
+    if images.size(0) == 0:
+        raise ValueError("images must contain at least one sample")
+
     n_images = min(images.size(0), 16)  # Limit to 16 images
     n_cols = 4
     n_rows = (n_images + n_cols - 1) // n_cols
