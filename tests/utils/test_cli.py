@@ -355,26 +355,6 @@ class TestParseArgs:
         with pytest.raises(FileNotFoundError):
             parse_args(["nonexistent_config.yaml"])
 
-    def test_parse_args_missing_experiment_field(self, tmp_path):
-        """Test that config without experiment field raises error."""
-        config_data = {"training": {"epochs": 10}}
-        config_file = tmp_path / "no_experiment.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False)
-
-        with pytest.raises(ValueError, match="Missing required 'experiment' field"):
-            parse_args([str(config_file)])
-
-    def test_parse_args_invalid_experiment_type(self, tmp_path):
-        """Test that invalid experiment type raises error."""
-        config_data = {"experiment": "invalid_type"}
-        config_file = tmp_path / "invalid_exp.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False)
-
-        with pytest.raises(ValueError, match="Invalid experiment type"):
-            parse_args([str(config_file)])
-
     def test_parse_args_reads_experiment_from_config(self, tmp_path):
         """Test that experiment type is read from config, not CLI."""
         config_data = {
@@ -605,7 +585,7 @@ class TestValidateConfig:
 
     def test_validate_valid_experiment_types(self):
         """Test that all valid experiment types pass validation."""
-        for exp_type in ["classifier", "diffusion", "gan"]:
+        for exp_type in ["classifier", "diffusion", "gan", "data_preparation"]:
             config = {"experiment": exp_type}
             validate_config(config)  # Should not raise
 

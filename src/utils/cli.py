@@ -265,7 +265,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If specified config file doesn't exist
         yaml.YAMLError: If config file is invalid YAML
-        ValueError: If experiment type is invalid, missing, or overrides malformed
+        ValueError: If overrides are malformed
 
     Example:
         >>> config = parse_args(['config.yaml', '--model.architecture.image_size', '60'])
@@ -290,21 +290,6 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         cli_overrides = parse_override_args(remaining)
         validate_override_keys(config, cli_overrides)
         config = merge_configs(config, cli_overrides)
-
-    # Verify experiment field exists
-    if "experiment" not in config:
-        raise ValueError(
-            "Missing required 'experiment' field in config file. "
-            "Must be one of: classifier, diffusion, gan, data_preparation"
-        )
-
-    # Validate experiment type
-    valid_experiments = ["classifier", "diffusion", "gan", "data_preparation"]
-    if config["experiment"] not in valid_experiments:
-        raise ValueError(
-            f"Invalid experiment type: {config['experiment']}. "
-            f"Must be one of: {valid_experiments}"
-        )
 
     # Add verbose flag to config if needed
     config["verbose"] = parsed_args.verbose

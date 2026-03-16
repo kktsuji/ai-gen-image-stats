@@ -246,9 +246,15 @@ class TestMainEntryPoint:
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
-        # Non-dot-notation overrides should be rejected with ValueError
-        with pytest.raises(ValueError, match="dot-notation"):
+        # Non-dot-notation overrides should be rejected and exit cleanly
+        with pytest.raises(SystemExit):
             main([str(config_file), "--epochs", "5"])
+
+    @pytest.mark.integration
+    def test_main_nonexistent_config_exits_cleanly(self):
+        """Test that nonexistent config file exits cleanly instead of traceback."""
+        with pytest.raises(SystemExit):
+            main(["nonexistent_config.yaml"])
 
 
 class TestMainNotifications:

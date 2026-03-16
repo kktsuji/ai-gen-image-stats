@@ -780,7 +780,11 @@ def main(args: Optional[list] = None) -> None:
     load_dotenv()
 
     # Parse arguments and load configuration
-    config = parse_args(args)
+    try:
+        config = parse_args(args)
+    except (ValueError, FileNotFoundError) as e:
+        logger.error(str(e))
+        sys.exit(1)
 
     # Validate basic config structure
     validate_cli_config(config)
