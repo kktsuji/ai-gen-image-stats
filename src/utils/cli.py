@@ -5,6 +5,7 @@ dot-notation parameter overrides.
 """
 
 import argparse
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -67,7 +68,10 @@ def infer_type(value: str) -> Any:
 
     # Float
     try:
-        return float(value)
+        f = float(value)
+        if not math.isfinite(f):
+            return value  # treat inf/nan as strings
+        return f
     except ValueError:
         pass
 
@@ -127,6 +131,11 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
         arg = remaining[i]
 
         if not arg.startswith("--"):
+            if arg.startswith("-") and "." in arg:
+                raise ValueError(
+                    f"Invalid override: '{arg}'. "
+                    f"Use double dashes (e.g., --{arg.lstrip('-')})"
+                )
             raise ValueError(
                 f"Unexpected argument: '{arg}'. "
                 f"Override keys must start with '--' and use dot-notation "

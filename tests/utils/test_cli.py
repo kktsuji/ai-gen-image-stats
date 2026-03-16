@@ -143,6 +143,22 @@ class TestInferType:
         """A single quote character is not treated as quoting."""
         assert infer_type("'") == "'"
 
+    def test_infer_type_inf_treated_as_string(self):
+        """inf/Inf/INF should remain as strings, not become float('inf')."""
+        assert infer_type("inf") == "inf"
+        assert isinstance(infer_type("inf"), str)
+        assert infer_type("Inf") == "Inf"
+        assert infer_type("INF") == "INF"
+        assert infer_type("-inf") == "-inf"
+        assert isinstance(infer_type("-inf"), str)
+
+    def test_infer_type_nan_treated_as_string(self):
+        """nan/NaN/NAN should remain as strings, not become float('nan')."""
+        assert infer_type("nan") == "nan"
+        assert isinstance(infer_type("nan"), str)
+        assert infer_type("NaN") == "NaN"
+        assert infer_type("NAN") == "NAN"
+
     def test_infer_type_empty_string(self):
         assert infer_type("") == ""
         assert isinstance(infer_type(""), str)
@@ -225,6 +241,11 @@ class TestParseOverrideArgs:
     def test_no_leading_dashes_raises_error(self):
         with pytest.raises(ValueError, match="Unexpected argument"):
             parse_override_args(["model.image_size", "64"])
+
+    def test_single_dash_dot_notation_raises_error(self):
+        """Single-dash with dot-notation should suggest double dashes."""
+        with pytest.raises(ValueError, match="Use double dashes"):
+            parse_override_args(["-model.image_size", "64"])
 
     def test_overlapping_keys_deep_merged(self):
         result = parse_override_args(["--model.a", "1", "--model.b", "2"])
