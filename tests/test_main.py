@@ -37,13 +37,14 @@ class TestMainEntryPoint:
 
     @pytest.mark.integration
     def test_main_invalid_experiment_type(self, tmp_path):
-        """Test that invalid experiment type raises ValueError."""
+        """Test that invalid experiment type exits cleanly instead of traceback."""
         config_file = tmp_path / "invalid.yaml"
         with open(config_file, "w") as f:
             yaml.dump({"experiment": "invalid_experiment"}, f, default_flow_style=False)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(SystemExit) as exc_info:
             main([str(config_file)])
+        assert exc_info.value.code == 1
 
     @pytest.mark.integration
     def test_main_dispatcher_classifier(self, tmp_path):
@@ -193,9 +194,8 @@ class TestMainEntryPoint:
             assert config["training"]["epochs"] == 5
 
     @pytest.mark.integration
-    def test_main_cli_overrides_config_file(self, tmp_path):
-        """Test that CLI overrides are NOT supported in config-only mode."""
-        # Create a temporary config file
+    def test_main_cli_overrides_reject_non_dot_notation(self, tmp_path):
+        """Test that non-dot-notation CLI overrides are rejected."""
         config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
@@ -247,9 +247,23 @@ class TestMainEntryPoint:
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
-        # Attempting to add CLI overrides should fail
+        # Non-dot-notation overrides should be rejected and exit cleanly
         with pytest.raises(SystemExit):
             main([str(config_file), "--epochs", "5"])
+
+    @pytest.mark.integration
+    def test_main_nonexistent_config_exits_cleanly(self):
+        """Test that nonexistent config file exits cleanly instead of traceback."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["nonexistent_config.yaml"])
+        assert exc_info.value.code == 1
+
+    @pytest.mark.integration
+    def test_main_directory_as_config_exits_cleanly(self, tmp_path):
+        """Test that passing a directory as config file exits cleanly."""
+        with pytest.raises(SystemExit) as exc_info:
+            main([str(tmp_path)])
+        assert exc_info.value.code == 1
 
 
 class TestMainNotifications:

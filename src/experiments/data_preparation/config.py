@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 def get_default_config() -> Dict[str, Any]:
     """Get default configuration by loading default.yaml.
 
+    .. deprecated::
+        This function is deprecated and will be removed in a future release.
+
     Returns:
         Dictionary containing default configuration values from YAML file
 

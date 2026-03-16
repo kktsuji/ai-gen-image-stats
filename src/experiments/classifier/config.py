@@ -25,6 +25,9 @@ from src.utils.config import (
 def get_default_config() -> Dict[str, Any]:
     """Get default configuration by loading default.yaml.
 
+    .. deprecated::
+        This function is deprecated and will be removed in a future release.
+
     The default.yaml file is colocated with this module in the same directory,
     following the principle of keeping related files together. YAML serves as
     the single source of truth for default configuration values.
