@@ -14,7 +14,11 @@ from src.utils.config import load_config, merge_configs
 def infer_type(value: str) -> Any:
     """Convert a CLI string value to the appropriate Python type.
 
-    Conversion order: bool > None > int > float > str.
+    Conversion order: quoted string > bool > None > int > float > str.
+
+    Values wrapped in matching quotes (single or double) are always treated
+    as strings with the quotes stripped. This allows forcing string type for
+    values that would otherwise be inferred as another type.
 
     Args:
         value: String value from CLI argument
@@ -33,7 +37,18 @@ def infer_type(value: str) -> Any:
         None
         >>> infer_type("hello")
         'hello'
+        >>> infer_type("'42'")
+        '42'
+        >>> infer_type('"true"')
+        'true'
     """
+    # Quoted string — strip quotes and return as-is
+    if len(value) >= 2 and (
+        (value.startswith("'") and value.endswith("'"))
+        or (value.startswith('"') and value.endswith('"'))
+    ):
+        return value[1:-1]
+
     # Boolean
     if value.lower() == "true":
         return True
@@ -146,6 +161,35 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
     return overrides
 
 
+def validate_override_keys(
+    config: Dict[str, Any], overrides: Dict[str, Any], prefix: str = ""
+) -> None:
+    """Validate that all override keys exist in the base config.
+
+    Catches typos like ``--model.architectur.image_size`` (missing 'e') that
+    would silently create a new key instead of overriding the intended one.
+
+    Args:
+        config: Base configuration dictionary to validate against
+        overrides: Nested dictionary of override values
+        prefix: Dot-separated path for error messages (used in recursion)
+
+    Raises:
+        ValueError: If an override key does not exist in the base config
+    """
+    for key, value in overrides.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+        if key not in config:
+            raise ValueError(
+                f"Unknown config key: '{full_key}'. "
+                f"Check for typos. "
+                f"Available keys at '{prefix or '<root>'}': "
+                f"{sorted(config.keys())}"
+            )
+        if isinstance(value, dict) and isinstance(config.get(key), dict):
+            validate_override_keys(config[key], value, full_key)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser for the project.
 
@@ -235,6 +279,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     # Apply dot-notation overrides from CLI
     if remaining:
         cli_overrides = parse_override_args(remaining)
+        validate_override_keys(config, cli_overrides)
         config = merge_configs(config, cli_overrides)
 
     # Verify experiment field exists
