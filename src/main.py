@@ -448,17 +448,31 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         batch_size = sampling_config.get("batch_size", num_samples)
         num_batches = (num_samples + batch_size - 1) // batch_size
         all_samples = []
-        # Read the configured console log level so we can restore it after
-        # logging_redirect_tqdm replaces the console handler (it defaults
-        # the replacement handler to NOTSET, which leaks DEBUG messages).
-        console_level = config.get("logging", {}).get("console_level", "INFO")
+        # Capture actual console handler levels before logging_redirect_tqdm
+        # replaces them. tqdm's replacement handlers default to NOTSET, which
+        # leaks DEBUG messages. We restore the original levels inside the
+        # context manager.
+        # Note: console_level in config is guaranteed to exist (strict config
+        # validation), so it always matches what setup_logging() applied.
+        original_handler_levels = [
+            h.level
+            for h in logging.root.handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        default_console_level = (
+            original_handler_levels[0] if original_handler_levels else logging.INFO
+        )
 
         with logging_redirect_tqdm():
             # Restore the original console handler level on the tqdm
-            # replacement handler(s) that default to NOTSET.
+            # _TqdmLoggingHandler replacement(s) that default to NOTSET.
             for h in logging.root.handlers:
-                if isinstance(h, logging.StreamHandler) and h.level == logging.NOTSET:
-                    h.setLevel(getattr(logging, console_level.upper()))
+                if (
+                    type(h).__name__ == "_TqdmLoggingHandler"
+                    and h.level == logging.NOTSET
+                ):
+                    h.setLevel(default_console_level)
 
             for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
                 end_idx = min(start_idx + batch_size, num_samples)
