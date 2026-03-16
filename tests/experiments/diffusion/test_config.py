@@ -1,7 +1,6 @@
 """Tests for Diffusion Configuration
 
 This module tests the diffusion model configuration management, including:
-- Default configuration generation
 - Configuration validation
 - Resolution-specific configuration overrides
 """
@@ -12,7 +11,6 @@ import pytest
 import yaml
 
 from src.experiments.diffusion.config import (
-    get_default_config,
     get_resolution_config,
     validate_config,
 )
@@ -24,212 +22,156 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # ============================================================================
 
 
-@pytest.mark.unit
-class TestGetDefaultConfig:
-    """Test default configuration generation."""
-
-    def test_returns_dict(self):
-        """Test that get_default_config returns a dictionary."""
-        config = get_default_config()
-        assert isinstance(config, dict)
-
-    def test_has_required_keys(self):
-        """Test that default config has all required top-level keys (V2)."""
-        config = get_default_config()
-        required_keys = [
-            "experiment",
-            "compute",
-            "model",
-            "data",
-            "training",
-            "output",
-            "generation",
-        ]
-        for key in required_keys:
-            assert key in config, f"Missing required key: {key}"
-
-    def test_experiment_type(self):
-        """Test that experiment type is 'diffusion'."""
-        config = get_default_config()
-        assert config["experiment"] == "diffusion"
-
-    def test_device_in_compute_section(self):
-        """Test that device is in compute section (V2)."""
-        config = get_default_config()
-        assert "compute" in config
-        assert "device" in config["compute"]
-        assert isinstance(config["compute"]["device"], str)
-
-    def test_seed_in_compute_section(self):
-        """Test that seed is in compute section (V2)."""
-        config = get_default_config()
-        assert "compute" in config
-        assert "seed" in config["compute"]
-        # seed can be None or int
-
-    def test_model_defaults(self):
-        """Test model configuration defaults (V2)."""
-        config = get_default_config()
-        model = config["model"]
-
-        assert isinstance(model, dict)
-        assert "architecture" in model
-        assert "diffusion" in model
-        assert "conditioning" in model
-
-        # Check architecture subsection
-        arch = model["architecture"]
-        assert "image_size" in arch
-        assert "in_channels" in arch
-        assert "model_channels" in arch
-        assert "channel_multipliers" in arch
-        assert isinstance(arch["image_size"], int)
-        assert isinstance(arch["in_channels"], int)
-        assert isinstance(arch["model_channels"], int)
-        assert isinstance(arch["channel_multipliers"], list)
-
-        # Check diffusion subsection
-        diff = model["diffusion"]
-        assert "num_timesteps" in diff
-        assert "beta_schedule" in diff
-        assert isinstance(diff["num_timesteps"], int)
-        assert isinstance(diff["beta_schedule"], str)
-
-        # Check conditioning subsection
-        cond = model["conditioning"]
-        assert "type" in cond
-        assert "num_classes" in cond
-
-    def test_data_defaults(self):
-        """Test data configuration defaults (V2)."""
-        config = get_default_config()
-        data = config["data"]
-
-        assert isinstance(data, dict)
-        assert "split_file" in data
-        assert "loading" in data
-        assert "augmentation" in data
-
-        # Check split_file
-        assert isinstance(data["split_file"], str)
-        assert data["split_file"]
-
-        # Check loading subsection
-        loading = data["loading"]
-        assert "batch_size" in loading
-        assert "num_workers" in loading
-
-        # Check types and valid ranges
-        assert isinstance(loading["batch_size"], int)
-        assert loading["batch_size"] > 0
-        assert isinstance(loading["num_workers"], int)
-        assert loading["num_workers"] >= 0
-
-    def test_training_defaults(self):
-        """Test training configuration defaults (V2)."""
-        config = get_default_config()
-        training = config["training"]
-
-        assert isinstance(training, dict)
-        assert "epochs" in training
-        assert "optimizer" in training
-        assert "ema" in training
-        assert "checkpointing" in training
-        assert "validation" in training
-        assert "visualization" in training
-
-        # Check optimizer subsection
-        optimizer = training["optimizer"]
-        assert "type" in optimizer
-        assert "learning_rate" in optimizer
-        assert isinstance(optimizer["learning_rate"], (int, float))
-        assert optimizer["learning_rate"] > 0
-
-        # Check ema subsection
-        ema = training["ema"]
-        assert "enabled" in ema
-        assert "decay" in ema
-        assert isinstance(ema["enabled"], bool)
-
-        # Check types and valid ranges
-        assert isinstance(training["epochs"], int)
-        assert training["epochs"] > 0
-
-    def test_training_nested_validation(self):
-        """Test that validation is nested under training."""
-        config = get_default_config()
-        assert "validation" in config["training"]
-        validation = config["training"]["validation"]
-        assert "frequency" in validation
-        assert "metric" in validation
-        assert isinstance(validation["frequency"], int)
-        assert isinstance(validation["metric"], str)
-
-    def test_training_nested_visualization(self):
-        """Test that visualization is nested under training (V2)."""
-        config = get_default_config()
-        assert "visualization" in config["training"]
-        visualization = config["training"]["visualization"]
-        assert "enabled" in visualization
-        assert "log_images_interval" in visualization
-        assert "log_denoising_interval" in visualization
-        assert "num_samples" in visualization
-        assert "guidance_scale" in visualization
-        assert isinstance(visualization["enabled"], bool)
-        assert isinstance(visualization["log_images_interval"], int)
-        assert isinstance(visualization["num_samples"], int)
-        assert isinstance(visualization["guidance_scale"], (int, float))
-
-    def test_generation_defaults(self):
-        """Test generation configuration defaults (V2)."""
-        config = get_default_config()
-        generation = config["generation"]
-
-        assert isinstance(generation, dict)
-        assert "checkpoint" in generation
-        assert "sampling" in generation
-        assert "output" in generation
-
-        # Check sampling subsection
-        sampling = generation["sampling"]
-        assert "num_samples" in sampling
-        assert "batch_size" in sampling
-        assert "guidance_scale" in sampling
-        assert "use_ema" in sampling
-        assert "ema_decay" in sampling
-        assert isinstance(sampling["num_samples"], int)
-        assert isinstance(sampling["batch_size"], int)
-        assert isinstance(sampling["guidance_scale"], (int, float))
-        assert isinstance(sampling["use_ema"], bool)
-        assert isinstance(sampling["ema_decay"], (int, float))
-
-        # Check output subsection
-        output = generation["output"]
-        assert "save_individual" in output
-        assert "save_grid" in output
-
-    def test_output_defaults(self):
-        """Test output configuration defaults (V2)."""
-        config = get_default_config()
-        output = config["output"]
-
-        assert isinstance(output, dict)
-        assert "base_dir" in output
-        assert "subdirs" in output
-
-        subdirs = output["subdirs"]
-        assert "logs" in subdirs
-        assert "checkpoints" in subdirs
-        assert "samples" in subdirs
-        assert "generated" in subdirs
-
-    def test_image_size_consistency(self):
-        """Test that image_size is only in model.architecture (V2)."""
-        config = get_default_config()
-        # V2: image_size only in model.architecture, derived for data
-        assert "image_size" in config["model"]["architecture"]
-        assert "image_size" not in config["data"]
-        assert "image_size" not in config["data"].get("loading", {})
+def _make_valid_config():
+    """Return a valid diffusion configuration dict for testing."""
+    return {
+        "experiment": "diffusion",
+        "mode": "train",
+        "compute": {"device": "cuda", "seed": 0},
+        "logging": {
+            "console_level": "INFO",
+            "file_level": "DEBUG",
+            "format": "%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+            "date_format": "%Y-%m-%d %H:%M:%S",
+            "timezone": "local",
+            "metrics": {
+                "csv": {"enabled": True},
+                "tensorboard": {
+                    "enabled": True,
+                    "flush_secs": 30,
+                    "log_images": True,
+                    "log_histograms": True,
+                    "log_graph": True,
+                },
+            },
+        },
+        "model": {
+            "architecture": {
+                "image_size": 40,
+                "in_channels": 3,
+                "model_channels": 64,
+                "channel_multipliers": [1, 2, 4],
+                "use_attention": [False, False, True],
+            },
+            "diffusion": {
+                "num_timesteps": 1000,
+                "beta_schedule": "cosine",
+                "beta_start": 0.0001,
+                "beta_end": 0.02,
+            },
+            "conditioning": {
+                "type": "class",
+                "num_classes": 2,
+                "class_dropout_prob": 0.1,
+            },
+        },
+        "data": {
+            "split_file": "outputs/splits/train_val_split.json",
+            "loading": {
+                "batch_size": 8,
+                "num_workers": 4,
+                "pin_memory": True,
+                "shuffle_train": True,
+                "drop_last": False,
+            },
+            "balancing": {
+                "weighted_sampler": {
+                    "enabled": False,
+                    "method": "inverse_frequency",
+                    "beta": 0.999,
+                    "manual_weights": None,
+                    "replacement": True,
+                    "num_samples": None,
+                },
+                "downsampling": {"enabled": False, "target_ratio": 1.0},
+                "upsampling": {"enabled": False, "target_ratio": 1.0},
+                "class_weights": {
+                    "enabled": False,
+                    "method": "inverse_frequency",
+                    "beta": 0.999,
+                    "manual_weights": None,
+                    "normalize": True,
+                },
+            },
+            "augmentation": {
+                "horizontal_flip": True,
+                "rotation_degrees": 15,
+                "color_jitter": {"enabled": False, "strength": 0.1},
+            },
+        },
+        "output": {
+            "base_dir": "outputs/diffusion",
+            "subdirs": {
+                "logs": "logs",
+                "checkpoints": "checkpoints",
+                "samples": "samples",
+                "generated": "generated",
+                "tensorboard": "tensorboard",
+            },
+        },
+        "training": {
+            "epochs": 500,
+            "optimizer": {
+                "type": "adam",
+                "learning_rate": 0.0001,
+                "weight_decay": 0.0,
+                "betas": [0.9, 0.999],
+                "gradient_clip_norm": None,
+            },
+            "scheduler": {
+                "type": "cosine",
+                "T_max": "auto",
+                "eta_min": 1.0e-6,
+            },
+            "ema": {"enabled": True, "decay": 0.9999},
+            "checkpointing": {
+                "save_frequency": 50,
+                "save_optimizer": True,
+                "save_best_only": False,
+                "save_latest": False,
+            },
+            "validation": {
+                "enabled": True,
+                "frequency": 50,
+                "metric": "loss",
+            },
+            "visualization": {
+                "enabled": True,
+                "num_samples": 8,
+                "guidance_scale": 3.0,
+                "log_images_interval": 50,
+                "log_denoising_interval": 50,
+            },
+            "performance": {
+                "use_amp": True,
+                "use_tf32": True,
+                "cudnn_benchmark": True,
+                "compile_model": True,
+            },
+            "resume": {
+                "enabled": False,
+                "checkpoint": None,
+                "reset_optimizer": False,
+                "reset_scheduler": False,
+            },
+        },
+        "generation": {
+            "checkpoint": None,
+            "sampling": {
+                "num_samples": 100,
+                "batch_size": 50,
+                "guidance_scale": 3.0,
+                "use_ema": True,
+                "ema_decay": 0.9999,
+                "class_selection": None,
+            },
+            "output": {
+                "save_individual": True,
+                "save_grid": True,
+                "grid_nrow": 10,
+            },
+        },
+    }
 
 
 @pytest.mark.unit
@@ -238,13 +180,13 @@ class TestValidateConfig:
 
     def test_valid_default_config(self):
         """Test that default config passes validation."""
-        config = get_default_config()
+        config = _make_valid_config()
         # Should not raise any exception
         validate_config(config)
 
     def test_missing_top_level_key(self):
         """Test validation fails with missing top-level key."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]
 
         with pytest.raises(KeyError, match="Missing required config key: model"):
@@ -252,7 +194,7 @@ class TestValidateConfig:
 
     def test_invalid_experiment_type(self):
         """Test validation fails with wrong experiment type."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["experiment"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid experiment type"):
@@ -260,7 +202,7 @@ class TestValidateConfig:
 
     def test_invalid_image_size(self):
         """Test validation fails with invalid image_size (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative value
         config["model"]["architecture"]["image_size"] = -1
@@ -268,14 +210,14 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test zero
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["image_size"] = 0
         with pytest.raises(ValueError, match="image_size must be a positive integer"):
             validate_config(config)
 
     def test_invalid_in_channels(self):
         """Test validation fails with invalid in_channels (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["in_channels"] = 0
 
         with pytest.raises(ValueError, match="in_channels must be a positive integer"):
@@ -283,7 +225,7 @@ class TestValidateConfig:
 
     def test_invalid_model_channels(self):
         """Test validation fails with invalid model_channels (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["model_channels"] = -1
 
         with pytest.raises(
@@ -293,7 +235,7 @@ class TestValidateConfig:
 
     def test_invalid_channel_multipliers_type(self):
         """Test validation fails with non-list channel_multipliers (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["channel_multipliers"] = (
             1,
             2,
@@ -305,7 +247,7 @@ class TestValidateConfig:
 
     def test_invalid_channel_multipliers_values(self):
         """Test validation fails with invalid channel_multiplier values (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["channel_multipliers"] = [1, 2, -1]
 
         with pytest.raises(
@@ -315,7 +257,7 @@ class TestValidateConfig:
 
     def test_invalid_channel_multipliers_first_not_one(self):
         """Test validation fails when channel_multipliers[0] != 1."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["channel_multipliers"] = [2, 4, 8]
         config["model"]["architecture"]["use_attention"] = [False, False, False]
 
@@ -324,7 +266,7 @@ class TestValidateConfig:
 
     def test_valid_channel_multipliers_first_is_one(self):
         """Test validation passes when channel_multipliers[0] == 1."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["channel_multipliers"] = [1, 2, 4]
         config["model"]["architecture"]["use_attention"] = [False, False, False]
 
@@ -333,7 +275,7 @@ class TestValidateConfig:
 
     def test_invalid_num_classes(self):
         """Test validation fails with invalid num_classes (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative value (when not None)
         config["model"]["conditioning"]["num_classes"] = -1
@@ -343,7 +285,7 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test zero
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["conditioning"]["num_classes"] = 0
         with pytest.raises(
             ValueError, match="num_classes must be a positive integer or None"
@@ -352,7 +294,7 @@ class TestValidateConfig:
 
     def test_valid_num_classes_none(self):
         """Test validation succeeds with num_classes=None (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["conditioning"]["type"] = None
         config["model"]["conditioning"]["num_classes"] = None
 
@@ -361,7 +303,7 @@ class TestValidateConfig:
 
     def test_invalid_num_timesteps(self):
         """Test validation fails with invalid num_timesteps (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["num_timesteps"] = 0
 
         with pytest.raises(
@@ -371,7 +313,7 @@ class TestValidateConfig:
 
     def test_invalid_beta_schedule(self):
         """Test validation fails with invalid beta_schedule (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["beta_schedule"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid beta_schedule"):
@@ -379,7 +321,7 @@ class TestValidateConfig:
 
     def test_valid_beta_schedules(self):
         """Test validation succeeds with all valid beta schedules (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         valid_schedules = ["linear", "cosine", "quadratic", "sigmoid"]
 
         for schedule in valid_schedules:
@@ -388,7 +330,7 @@ class TestValidateConfig:
 
     def test_invalid_beta_start(self):
         """Test validation fails with invalid beta_start (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative
         config["model"]["diffusion"]["beta_start"] = -0.1
@@ -398,7 +340,7 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test >= 1
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["beta_start"] = 1.0
         with pytest.raises(
             ValueError, match="beta_start must be a number between 0 and 1"
@@ -407,7 +349,7 @@ class TestValidateConfig:
 
     def test_invalid_beta_end(self):
         """Test validation fails with invalid beta_end (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative
         config["model"]["diffusion"]["beta_end"] = -0.1
@@ -417,7 +359,7 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test >= 1
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["beta_end"] = 1.5
         with pytest.raises(
             ValueError, match="beta_end must be a number between 0 and 1"
@@ -426,7 +368,7 @@ class TestValidateConfig:
 
     def test_beta_start_greater_than_beta_end(self):
         """Test validation fails when beta_start >= beta_end (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["beta_start"] = 0.02
         config["model"]["diffusion"]["beta_end"] = 0.01
 
@@ -435,7 +377,7 @@ class TestValidateConfig:
 
     def test_invalid_class_dropout_prob(self):
         """Test validation fails with invalid class_dropout_prob (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative
         config["model"]["conditioning"]["class_dropout_prob"] = -0.1
@@ -445,7 +387,7 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test > 1
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["conditioning"]["class_dropout_prob"] = 1.5
         with pytest.raises(
             ValueError, match="class_dropout_prob must be a number between 0 and 1"
@@ -454,7 +396,7 @@ class TestValidateConfig:
 
     def test_invalid_use_attention_type(self):
         """Test validation fails with non-list use_attention (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["use_attention"] = (
             False,
             False,
@@ -466,7 +408,7 @@ class TestValidateConfig:
 
     def test_invalid_use_attention_values(self):
         """Test validation fails with non-boolean use_attention values (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["use_attention"] = [False, 1, True]
 
         with pytest.raises(
@@ -476,7 +418,7 @@ class TestValidateConfig:
 
     def test_use_attention_length_mismatch(self):
         """Test validation fails when use_attention length doesn't match channel_multipliers (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["channel_multipliers"] = [1, 2, 4]
         config["model"]["architecture"]["use_attention"] = [False, True]  # Wrong length
 
@@ -488,7 +430,7 @@ class TestValidateConfig:
 
     def test_invalid_batch_size(self):
         """Test validation fails with invalid batch_size (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test zero
         config["data"]["loading"]["batch_size"] = 0
@@ -496,14 +438,14 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test negative
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["loading"]["batch_size"] = -1
         with pytest.raises(ValueError, match="batch_size must be a positive integer"):
             validate_config(config)
 
     def test_invalid_num_workers(self):
         """Test validation fails with negative num_workers (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["loading"]["num_workers"] = -1
 
         with pytest.raises(
@@ -513,7 +455,7 @@ class TestValidateConfig:
 
     def test_invalid_rotation_degrees(self):
         """Test validation fails with negative rotation_degrees (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["augmentation"]["rotation_degrees"] = -10
 
         with pytest.raises(
@@ -523,7 +465,7 @@ class TestValidateConfig:
 
     def test_conditional_requires_labels(self):
         """Test validation for conditional generation (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         # In V2, return_labels is derived from conditioning.type
         # Set conditioning type to "class" requires num_classes
         config["model"]["conditioning"]["type"] = "class"
@@ -537,7 +479,7 @@ class TestValidateConfig:
 
     def test_valid_conditional_config(self):
         """Test validation succeeds with proper conditional configuration (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["conditioning"]["type"] = "class"
         config["model"]["conditioning"]["num_classes"] = 2
 
@@ -546,7 +488,7 @@ class TestValidateConfig:
 
     def test_invalid_epochs(self):
         """Test validation fails with invalid epochs."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["epochs"] = 0
 
         with pytest.raises(ValueError, match="epochs must be a positive integer"):
@@ -554,7 +496,7 @@ class TestValidateConfig:
 
     def test_invalid_learning_rate(self):
         """Test validation fails with invalid learning_rate (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test zero
         config["training"]["optimizer"]["learning_rate"] = 0
@@ -562,14 +504,14 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test negative
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["optimizer"]["learning_rate"] = -0.001
         with pytest.raises(ValueError, match="learning_rate must be a positive number"):
             validate_config(config)
 
     def test_invalid_optimizer(self):
         """Test validation fails with invalid optimizer (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["optimizer"]["type"] = "sgd"
 
         with pytest.raises(ValueError, match="Invalid optimizer"):
@@ -577,7 +519,7 @@ class TestValidateConfig:
 
     def test_valid_optimizers(self):
         """Test validation succeeds with all valid optimizers (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         valid_optimizers = ["adam", "adamw"]
 
         for optimizer in valid_optimizers:
@@ -586,7 +528,7 @@ class TestValidateConfig:
 
     def test_invalid_scheduler(self):
         """Test validation fails with invalid scheduler (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["scheduler"]["type"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid scheduler"):
@@ -594,7 +536,7 @@ class TestValidateConfig:
 
     def test_valid_schedulers(self):
         """Test validation succeeds with all valid schedulers (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         valid_schedulers = ["cosine", "step", "plateau", None]
 
         for scheduler in valid_schedulers:
@@ -603,7 +545,7 @@ class TestValidateConfig:
 
     def test_invalid_device(self):
         """Test validation fails with invalid device (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["compute"]["device"] = "tpu"  # Device is now in compute section
 
         with pytest.raises(ValueError, match="Invalid device"):
@@ -611,7 +553,7 @@ class TestValidateConfig:
 
     def test_invalid_use_ema(self):
         """Test validation fails with non-boolean use_ema (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["ema"]["enabled"] = "true"
 
         with pytest.raises(ValueError, match="enabled must be a boolean"):
@@ -619,7 +561,7 @@ class TestValidateConfig:
 
     def test_invalid_ema_decay(self):
         """Test validation fails with invalid ema_decay (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test negative
         config["training"]["ema"]["decay"] = -0.1
@@ -627,14 +569,14 @@ class TestValidateConfig:
             validate_config(config)
 
         # Test >= 1
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["ema"]["decay"] = 1.0
         with pytest.raises(ValueError, match="decay must be a number between 0 and 1"):
             validate_config(config)
 
     def test_invalid_use_amp(self):
         """Test validation fails with non-boolean use_amp (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["performance"]["use_amp"] = "false"
 
         with pytest.raises(ValueError, match="use_amp must be a boolean"):
@@ -642,7 +584,7 @@ class TestValidateConfig:
 
     def test_invalid_gradient_clip_norm(self):
         """Test validation fails with invalid gradient_clip_norm (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["optimizer"]["gradient_clip_norm"] = -1.0
 
         with pytest.raises(
@@ -652,7 +594,7 @@ class TestValidateConfig:
 
     def test_valid_gradient_clip_norm_none(self):
         """Test validation succeeds with gradient_clip_norm=None (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["optimizer"]["gradient_clip_norm"] = None
 
         # Should not raise
@@ -660,7 +602,7 @@ class TestValidateConfig:
 
     def test_invalid_sample_images(self):
         """Test validation fails with non-boolean enabled in visualization (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["enabled"] = "true"
 
         with pytest.raises(ValueError, match="enabled must be a boolean"):
@@ -668,7 +610,7 @@ class TestValidateConfig:
 
     def test_invalid_sample_interval(self):
         """Test validation fails with invalid log_images_interval in visualization (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["log_images_interval"] = 0
 
         with pytest.raises(
@@ -678,7 +620,7 @@ class TestValidateConfig:
 
     def test_invalid_samples_per_class(self):
         """Test validation fails with invalid num_samples (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["num_samples"] = -1
 
         with pytest.raises(ValueError, match="num_samples must be a positive integer"):
@@ -686,7 +628,7 @@ class TestValidateConfig:
 
     def test_invalid_guidance_scale(self):
         """Test validation fails with invalid guidance_scale."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["guidance_scale"] = -1.0
 
         with pytest.raises(
@@ -696,21 +638,21 @@ class TestValidateConfig:
 
     def test_valid_guidance_scale_zero(self):
         """Test that guidance_scale: 0.0 (disable guidance) is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["guidance_scale"] = 0.0
         # Should not raise
         validate_config(config)
 
     def test_valid_guidance_scale_less_than_one(self):
         """Test that guidance_scale: 0.5 (weak guidance) is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["guidance_scale"] = 0.5
         # Should not raise
         validate_config(config)
 
     def test_invalid_generation_guidance_scale(self):
         """Test validation fails with invalid generation.sampling.guidance_scale."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["guidance_scale"] = -1.0
@@ -722,7 +664,7 @@ class TestValidateConfig:
 
     def test_missing_output_dirs(self):
         """Test validation for required output config (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
 
         # Test missing output section
         del config["output"]
@@ -730,7 +672,7 @@ class TestValidateConfig:
             validate_config(config)
 
         # Reset and test missing subdirs
-        config = get_default_config()
+        config = _make_valid_config()
         del config["output"]["subdirs"]
         with pytest.raises(KeyError, match="output.subdirs"):
             validate_config(config)
@@ -742,7 +684,7 @@ class TestModeAwareValidation:
 
     def test_train_mode_requires_checkpoint_dir(self):
         """Test that train mode requires training.checkpointing section (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "train"
         del config["training"]["checkpointing"]
 
@@ -751,7 +693,7 @@ class TestModeAwareValidation:
 
     def test_generate_mode_requires_checkpoint(self):
         """Test that generate mode requires generation.checkpoint."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = None
 
@@ -760,7 +702,7 @@ class TestModeAwareValidation:
 
     def test_generate_mode_with_valid_checkpoint(self):
         """Test that generate mode validates with checkpoint set."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
 
@@ -769,7 +711,7 @@ class TestModeAwareValidation:
 
     def test_invalid_mode(self):
         """Test validation fails with invalid mode."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "invalid"
 
         with pytest.raises(ValueError, match="Invalid mode"):
@@ -777,7 +719,7 @@ class TestModeAwareValidation:
 
     def test_training_validation_nested(self):
         """Test that training.validation section is properly validated."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["validation"]["frequency"] = -1
 
         with pytest.raises(ValueError, match="training.validation.frequency"):
@@ -785,7 +727,7 @@ class TestModeAwareValidation:
 
     def test_training_visualization_nested(self):
         """Test that training.visualization section is properly validated (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["log_images_interval"] = 0
 
         with pytest.raises(
@@ -795,7 +737,7 @@ class TestModeAwareValidation:
 
     def test_generation_use_ema(self):
         """Test that generation.sampling.use_ema is validated (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["use_ema"] = "true"  # Should be boolean
@@ -805,7 +747,7 @@ class TestModeAwareValidation:
 
     def test_generation_num_samples(self):
         """Test that generation.sampling.num_samples is validated (V2)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["num_samples"] = 0
@@ -815,7 +757,7 @@ class TestModeAwareValidation:
 
     def test_generation_ema_decay_valid(self):
         """Test that generation.sampling.ema_decay passes validation with valid value."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["ema_decay"] = 0.9999
@@ -825,7 +767,7 @@ class TestModeAwareValidation:
 
     def test_generation_ema_decay_invalid(self):
         """Test that generation.sampling.ema_decay fails with out-of-range value."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["ema_decay"] = 1.5
@@ -837,13 +779,13 @@ class TestModeAwareValidation:
 
     def test_generation_ema_decay_default(self):
         """Test that default config has ema_decay in generation.sampling."""
-        config = get_default_config()
+        config = _make_valid_config()
         assert "ema_decay" in config["generation"]["sampling"]
         assert config["generation"]["sampling"]["ema_decay"] == 0.9999
 
     def test_generation_batch_size_valid(self):
         """Test that generation.sampling.batch_size passes validation with valid value."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["batch_size"] = 50
@@ -853,7 +795,7 @@ class TestModeAwareValidation:
 
     def test_generation_batch_size_invalid(self):
         """Test that generation.sampling.batch_size fails with negative value."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["batch_size"] = -1
@@ -863,18 +805,18 @@ class TestModeAwareValidation:
 
     def test_generation_batch_size_default(self):
         """Test that default config has batch_size in generation.sampling."""
-        config = get_default_config()
+        config = _make_valid_config()
         assert "batch_size" in config["generation"]["sampling"]
         assert config["generation"]["sampling"]["batch_size"] == 50
 
     def test_generation_class_selection_default(self):
         """Test that default config has class_selection as null."""
-        config = get_default_config()
+        config = _make_valid_config()
         assert config["generation"]["sampling"]["class_selection"] is None
 
     def test_generation_class_selection_null_passes(self):
         """Test that class_selection=null is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = None
@@ -882,7 +824,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_valid_single(self):
         """Test that class_selection=[0] is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [0]
@@ -890,7 +832,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_valid_subset(self):
         """Test that class_selection=[0, 1] is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [0, 1]
@@ -898,7 +840,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_empty_list_raises(self):
         """Test that class_selection=[] raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = []
@@ -907,7 +849,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_non_integer_raises(self):
         """Test that class_selection=[0, 'a'] raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [0, "a"]
@@ -916,7 +858,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_negative_raises(self):
         """Test that class_selection=[-1] raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [-1]
@@ -925,7 +867,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_duplicates_raises(self):
         """Test that class_selection=[0, 0] raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["sampling"]["class_selection"] = [0, 0]
@@ -936,7 +878,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_out_of_range_raises(self):
         """Test that class_selection=[99] with num_classes=2 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["model"]["conditioning"]["num_classes"] = 2
@@ -1021,25 +963,25 @@ class TestSaveLatestValidation:
 
     def test_save_latest_valid_true(self):
         """save_latest: true is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["checkpointing"]["save_latest"] = True
         validate_config(config)  # should not raise
 
     def test_save_latest_valid_false(self):
         """save_latest: false is accepted."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["checkpointing"]["save_latest"] = False
         validate_config(config)  # should not raise
 
     def test_save_latest_missing_defaults_to_true(self):
         """save_latest absent from config is accepted (defaults to True)."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["checkpointing"].pop("save_latest", None)
         validate_config(config)  # should not raise
 
     def test_save_latest_invalid_type(self):
         """save_latest with non-bool raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["checkpointing"]["save_latest"] = "yes"
         with pytest.raises(ValueError, match="save_latest must be a boolean"):
             validate_config(config)
@@ -1050,11 +992,11 @@ class TestConfigFileValidation:
     """Test validation of actual config files."""
 
     def test_default_config_file(self):
-        """Test that default.yaml is valid."""
-        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
+        """Test that diffusion-example.yaml is valid."""
+        config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
         if not config_path.exists():
-            pytest.skip("default.yaml not found")
+            pytest.skip("configs/diffusion-example.yaml not found")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -1063,11 +1005,11 @@ class TestConfigFileValidation:
         validate_config(config)
 
     def test_default_config_structure(self):
-        """Test default config has expected structure (V2)."""
-        config_path = _PROJECT_ROOT / "src/experiments/diffusion/default.yaml"
+        """Test diffusion-example config has expected structure (V2)."""
+        config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
         if not config_path.exists():
-            pytest.skip("default.yaml not found")
+            pytest.skip("configs/diffusion-example.yaml not found")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -1103,7 +1045,7 @@ class TestValidateConfigErrorPaths:
 
     def test_architecture_field_none(self):
         """architecture field set to None raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["architecture"]["image_size"] = None
         with pytest.raises(
             ValueError, match="model.architecture.image_size cannot be None"
@@ -1112,7 +1054,7 @@ class TestValidateConfigErrorPaths:
 
     def test_diffusion_section_missing(self):
         """No model.diffusion raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]["diffusion"]
         with pytest.raises(
             KeyError, match="Missing required config key: model.diffusion"
@@ -1121,7 +1063,7 @@ class TestValidateConfigErrorPaths:
 
     def test_diffusion_field_none(self):
         """diffusion field set to None raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["diffusion"]["num_timesteps"] = None
         with pytest.raises(
             ValueError, match="model.diffusion.num_timesteps cannot be None"
@@ -1130,7 +1072,7 @@ class TestValidateConfigErrorPaths:
 
     def test_conditioning_section_missing(self):
         """No model.conditioning raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]["conditioning"]
         with pytest.raises(
             KeyError, match="Missing required config key: model.conditioning"
@@ -1139,7 +1081,7 @@ class TestValidateConfigErrorPaths:
 
     def test_conditioning_field_missing(self):
         """Missing required conditioning field raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]["conditioning"]["type"]
         with pytest.raises(
             KeyError, match="Missing required field: model.conditioning.type"
@@ -1148,21 +1090,21 @@ class TestValidateConfigErrorPaths:
 
     def test_invalid_conditioning_type(self):
         """conditioning.type = 'vae' raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["model"]["conditioning"]["type"] = "vae"
         with pytest.raises(ValueError, match="Invalid conditioning.type"):
             validate_config(config)
 
     def test_data_section_missing(self):
         """No data key raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["data"]
         with pytest.raises(KeyError, match="Missing required config key: data"):
             validate_config(config)
 
     def test_split_file_empty(self):
         """split_file = '' raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["split_file"] = ""
         with pytest.raises(
             ValueError, match="data.split_file must be a non-empty string"
@@ -1171,7 +1113,7 @@ class TestValidateConfigErrorPaths:
 
     def test_augmentation_missing(self):
         """No data.augmentation raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["data"]["augmentation"]
         with pytest.raises(
             KeyError, match="Missing required config key: data.augmentation"
@@ -1180,7 +1122,7 @@ class TestValidateConfigErrorPaths:
 
     def test_ema_enabled_missing_decay(self):
         """ema.enabled: true without decay raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["ema"]["enabled"] = True
         del config["training"]["ema"]["decay"]
         with pytest.raises(
@@ -1190,7 +1132,7 @@ class TestValidateConfigErrorPaths:
 
     def test_ema_decay_out_of_range_zero(self):
         """ema.decay: 0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["ema"]["enabled"] = True
         config["training"]["ema"]["decay"] = 0
         with pytest.raises(
@@ -1200,7 +1142,7 @@ class TestValidateConfigErrorPaths:
 
     def test_ema_decay_out_of_range_one(self):
         """ema.decay: 1.0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["ema"]["enabled"] = True
         config["training"]["ema"]["decay"] = 1.0
         with pytest.raises(
@@ -1210,7 +1152,7 @@ class TestValidateConfigErrorPaths:
 
     def test_resume_enabled_without_checkpoint(self):
         """resume.enabled: true, checkpoint: null raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["resume"] = {"enabled": True, "checkpoint": None}
         with pytest.raises(
             ValueError,
@@ -1220,14 +1162,14 @@ class TestValidateConfigErrorPaths:
 
     def test_performance_field_not_bool(self):
         """use_amp: 'yes' raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["performance"]["use_amp"] = "yes"
         with pytest.raises(ValueError, match="use_amp must be a boolean"):
             validate_config(config)
 
     def test_visualization_invalid_interval(self):
         """log_images_interval: -1 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["training"]["visualization"]["log_images_interval"] = -1
         with pytest.raises(
             ValueError, match="interval must be.*positive integer or null"
@@ -1236,7 +1178,7 @@ class TestValidateConfigErrorPaths:
 
     def test_diffusion_field_missing(self):
         """Missing required diffusion field raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]["diffusion"]["num_timesteps"]
         with pytest.raises(
             KeyError, match="Missing required field: model.diffusion.num_timesteps"
@@ -1245,7 +1187,7 @@ class TestValidateConfigErrorPaths:
 
     def test_architecture_field_missing(self):
         """Missing required architecture field raises KeyError."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["model"]["architecture"]["image_size"]
         with pytest.raises(
             KeyError, match="Missing required field: model.architecture.image_size"
@@ -1254,7 +1196,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_grid_nrow_invalid(self):
         """generation.output.grid_nrow = 0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["output"]["grid_nrow"] = 0
@@ -1265,7 +1207,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_save_individual_not_bool(self):
         """generation.output.save_individual = 'yes' raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["output"]["save_individual"] = "yes"
@@ -1276,7 +1218,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_save_grid_not_bool(self):
         """generation.output.save_grid = 'yes' raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["mode"] = "generate"
         config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
         config["generation"]["output"]["save_grid"] = "yes"
@@ -1297,21 +1239,21 @@ class TestBalancingConfigValidation:
 
     def test_valid_default_balancing_config(self):
         """Test that default config with balancing passes validation."""
-        config = get_default_config()
+        config = _make_valid_config()
         # Default config should have balancing section and pass validation
         assert "balancing" in config["data"]
         validate_config(config)
 
     def test_missing_balancing_key_is_ok(self):
         """Test backwards compatibility: missing balancing key is OK."""
-        config = get_default_config()
+        config = _make_valid_config()
         del config["data"]["balancing"]
         # Should not raise
         validate_config(config)
 
     def test_invalid_weighted_sampler_method(self):
         """Test that invalid method raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["method"] = "invalid_method"
 
         with pytest.raises(ValueError, match="method must be one of"):
@@ -1319,7 +1261,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_class_weights_method(self):
         """Test that invalid class_weights method raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["class_weights"]["method"] = "bad_method"
 
         with pytest.raises(ValueError, match="method must be one of"):
@@ -1327,7 +1269,7 @@ class TestBalancingConfigValidation:
 
     def test_manual_method_without_weights_raises(self):
         """Test that manual method without manual_weights raises error."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
         config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = None
 
@@ -1336,7 +1278,7 @@ class TestBalancingConfigValidation:
 
     def test_manual_method_with_empty_weights_raises(self):
         """Test that manual method with empty weights raises error."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
         config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = []
 
@@ -1345,7 +1287,7 @@ class TestBalancingConfigValidation:
 
     def test_manual_method_with_negative_weights_raises(self):
         """Test that manual method with negative weights raises error."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
         config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = [1.0, -0.5]
 
@@ -1354,14 +1296,14 @@ class TestBalancingConfigValidation:
 
     def test_manual_method_with_valid_weights(self):
         """Test that manual method with valid weights passes."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["method"] = "manual"
         config["data"]["balancing"]["weighted_sampler"]["manual_weights"] = [1.0, 5.0]
         validate_config(config)
 
     def test_invalid_beta_zero(self):
         """Test that beta=0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["beta"] = 0
 
         with pytest.raises(ValueError, match="beta must be between 0 and 1"):
@@ -1369,7 +1311,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_beta_one(self):
         """Test that beta=1 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["beta"] = 1
 
         with pytest.raises(ValueError, match="beta must be between 0 and 1"):
@@ -1377,7 +1319,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_target_ratio_zero(self):
         """Test that target_ratio=0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["downsampling"]["target_ratio"] = 0
 
         with pytest.raises(ValueError, match="target_ratio must be a positive float"):
@@ -1385,7 +1327,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_target_ratio_above_one(self):
         """Test that target_ratio > 1.0 raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["downsampling"]["target_ratio"] = 1.5
 
         with pytest.raises(ValueError, match="target_ratio must be a positive float"):
@@ -1393,13 +1335,13 @@ class TestBalancingConfigValidation:
 
     def test_valid_target_ratio(self):
         """Test that valid target_ratio passes."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["downsampling"]["target_ratio"] = 0.5
         validate_config(config)
 
     def test_invalid_replacement_type(self):
         """Test that non-boolean replacement raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["replacement"] = "yes"
 
         with pytest.raises(ValueError, match="replacement must be a boolean"):
@@ -1407,7 +1349,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_num_samples(self):
         """Test that non-positive num_samples raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["num_samples"] = -1
 
         with pytest.raises(ValueError, match="num_samples must be a positive"):
@@ -1415,7 +1357,7 @@ class TestBalancingConfigValidation:
 
     def test_invalid_normalize_type(self):
         """Test that non-boolean normalize raises ValueError."""
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["class_weights"]["normalize"] = "yes"
 
         with pytest.raises(ValueError, match="normalize must be a boolean"):
@@ -1425,7 +1367,7 @@ class TestBalancingConfigValidation:
         """Test that multiple strategies enabled logs a warning."""
         import logging
 
-        config = get_default_config()
+        config = _make_valid_config()
         config["data"]["balancing"]["weighted_sampler"]["enabled"] = True
         config["data"]["balancing"]["downsampling"]["enabled"] = True
 

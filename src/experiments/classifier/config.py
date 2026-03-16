@@ -1,15 +1,12 @@
 """Classifier Configuration
 
-This module provides default configuration values for classifier experiments.
-It defines sensible defaults for training, data loading, model selection, and logging.
-
-Default values are loaded from YAML as the single source of truth.
+This module provides configuration validation for classifier experiments.
+Strict validation: all parameters must be explicitly specified in the config file.
 """
 
 from typing import Any, Dict
 
 from src.utils.config import (
-    get_default_config_from_module,
     validate_checkpointing_section,
     validate_compute_section,
     validate_data_loading_section,
@@ -20,32 +17,6 @@ from src.utils.config import (
     validate_split_file,
     validate_training_epochs,
 )
-
-
-def get_default_config() -> Dict[str, Any]:
-    """Get default configuration by loading default.yaml.
-
-    .. deprecated::
-        This function is deprecated and will be removed in a future release.
-
-    The default.yaml file is colocated with this module in the same directory,
-    following the principle of keeping related files together. YAML serves as
-    the single source of truth for default configuration values.
-
-    Returns:
-        Dictionary containing default configuration values from YAML file
-
-    Raises:
-        FileNotFoundError: If default.yaml is not found
-        yaml.YAMLError: If YAML is invalid
-
-    Example:
-        >>> config = get_default_config()
-        >>> print(config["training"]["epochs"])
-        100
-    """
-    return get_default_config_from_module(__file__)
-
 
 # Note: validate_config() is defined later in this file.
 

@@ -1,21 +1,19 @@
 """Diffusion Configuration
 
-This module provides default configuration values for diffusion model experiments.
-Provides logical organization and eliminates parameter duplication.
+This module provides configuration validation for diffusion model experiments.
 
 Key features:
 - Logical grouping of related parameters
 - Single source of truth (no duplicate parameters)
 - Mode-specific sections properly scoped
 - Derived parameters (image_size, return_labels)
-- Default values loaded from YAML for maintainability
+- Strict validation: all parameters must be explicitly specified in the config file
 """
 
 import logging
 from typing import Any, Dict
 
 from src.utils.config import (
-    get_default_config_from_module,
     validate_checkpointing_section,
     validate_compute_section,
     validate_data_loading_section,
@@ -29,41 +27,6 @@ from src.utils.config import (
 )
 
 _logger = logging.getLogger(__name__)
-
-
-def get_default_config() -> Dict[str, Any]:
-    """Get default configuration by loading default.yaml.
-
-    .. deprecated::
-        This function is deprecated and will be removed in a future release.
-
-    The default.yaml file is colocated with this module in the same directory,
-    following the principle of keeping related files together. YAML serves as
-    the single source of truth for default configuration values.
-
-    Configuration Structure:
-    - compute: Device and seed settings
-    - model: Architecture, diffusion, and conditioning subsections
-    - data: Paths, loading, and augmentation subsections
-    - output: Base directory and subdirectories
-    - training: All training-related parameters
-    - generation: All generation-related parameters
-
-    Returns:
-        Dictionary containing default configuration values from YAML file
-
-    Raises:
-        FileNotFoundError: If default.yaml is not found
-        yaml.YAMLError: If YAML is invalid
-
-    Example:
-        >>> config = get_default_config()
-        >>> print(config["training"]["epochs"])
-        200
-        >>> print(config["model"]["architecture"]["image_size"])
-        40
-    """
-    return get_default_config_from_module(__file__)
 
 
 def validate_config(config: Dict[str, Any]) -> None:
@@ -80,7 +43,6 @@ def validate_config(config: Dict[str, Any]) -> None:
         KeyError: If required fields are missing
 
     Example:
-        >>> config = get_default_config()
         >>> validate_config(config)  # Should not raise
         >>> config["model"]["architecture"]["image_size"] = -1
         >>> validate_config(config)  # Raises ValueError

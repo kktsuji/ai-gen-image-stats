@@ -5,54 +5,11 @@ This module tests the data preparation configuration validation.
 
 import pytest
 
-from src.experiments.data_preparation.config import get_default_config, validate_config
+from src.experiments.data_preparation.config import validate_config
 
 # ============================================================================
 # Unit Tests - Fast, Pure Logic
 # ============================================================================
-
-
-@pytest.mark.unit
-class TestGetDefaultConfig:
-    """Test default configuration generation."""
-
-    def test_returns_dict(self):
-        """Test that get_default_config returns a dictionary."""
-        config = get_default_config()
-        assert isinstance(config, dict)
-
-    def test_has_required_keys(self):
-        """Test that default config has all required top-level keys."""
-        config = get_default_config()
-        required_keys = ["experiment", "classes", "split"]
-        for key in required_keys:
-            assert key in config, f"Missing required key: {key}"
-
-    def test_experiment_type(self):
-        """Test that experiment type is 'data_preparation'."""
-        config = get_default_config()
-        assert config["experiment"] == "data_preparation"
-
-    def test_classes_defaults(self):
-        """Test classes configuration defaults."""
-        config = get_default_config()
-        classes = config["classes"]
-        assert isinstance(classes, dict)
-        assert len(classes) > 0
-        assert "normal" in classes
-        assert "abnormal" in classes
-
-    def test_split_defaults(self):
-        """Test split configuration defaults."""
-        config = get_default_config()
-        split = config["split"]
-        assert isinstance(split, dict)
-        assert "seed" in split
-        assert "train_ratio" in split
-        assert "save_dir" in split
-        assert "split_file" in split
-        assert split["train_ratio"] == 0.8
-        assert split["split_file"].endswith(".json")
 
 
 @pytest.mark.unit

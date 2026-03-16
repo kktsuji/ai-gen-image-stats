@@ -58,19 +58,18 @@ The project uses a **Vertical Slice** pattern. Each experiment type is fully sel
 
 Each experiment under `src/experiments/<type>/` contains:
 
-- `config.py` — loads `default.yaml` (colocated) and validates the merged config (strict mode, no code defaults)
+- `config.py` — validates the config strictly (all parameters must be explicitly specified, no implicit defaults)
 - `trainer.py` — standalone trainer class (owns its training loop, checkpoint logic)
 - `dataloader.py` — standalone dataloader class (duck typing)
 - `logger.py` — standalone logger class, uses `MetricsWriter` for CSV + optional TensorBoard
-- `default.yaml` — **canonical source of defaults** for that experiment
 
 ### Configuration System
 
 All parameters must be in the YAML config file. Individual values can be overridden via CLI using dot-notation (e.g., `--model.architecture.image_size 60`). Override keys must contain at least one dot and must match existing keys in the config (typos are rejected). Values are auto-inferred (bool/None/int/float/str); wrap in quotes to force string (e.g., `--data.label "'0'"`).
 
-Config priority: `CLI overrides > config_file > default.yaml`
+Config priority: `CLI overrides > config_file`
 
-Merging is done by `src/utils/config.py::merge_configs()` (deep merge for dicts, replacement for scalars/lists). Each experiment's `config.py` calls `get_default_config_from_module(__file__)` to load its sibling `default.yaml`, then validates the user config strictly.
+Example configs are in `configs/*-example.yaml`. Merging is done by `src/utils/config.py::merge_configs()` (deep merge for dicts, replacement for scalars/lists). Each experiment's `config.py` validates the user config strictly — there are no implicit defaults.
 
 Key config sections: `experiment`, `mode` (train/generate), `compute`, `model`, `data`, `output`, `training`, `generation`, `logging`.
 
