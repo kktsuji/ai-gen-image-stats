@@ -193,9 +193,8 @@ class TestMainEntryPoint:
             assert config["training"]["epochs"] == 5
 
     @pytest.mark.integration
-    def test_main_cli_overrides_config_file(self, tmp_path):
-        """Test that CLI overrides are NOT supported in config-only mode."""
-        # Create a temporary config file
+    def test_main_cli_overrides_reject_non_dot_notation(self, tmp_path):
+        """Test that non-dot-notation CLI overrides are rejected."""
         config_file = tmp_path / "test_config.yaml"
         config_data = {
             "experiment": "classifier",
@@ -247,8 +246,8 @@ class TestMainEntryPoint:
         with open(config_file, "w") as f:
             yaml.dump(config_data, f, default_flow_style=False)
 
-        # Attempting to add CLI overrides should fail
-        with pytest.raises(SystemExit):
+        # Non-dot-notation overrides should be rejected with ValueError
+        with pytest.raises(ValueError, match="dot-notation"):
             main([str(config_file), "--epochs", "5"])
 
 

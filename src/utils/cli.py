@@ -1,33 +1,178 @@
 """Command-line interface utilities.
 
-This module provides CLI argument parsing with config-only mode.
-All configuration must be provided via JSON config file.
+This module provides CLI argument parsing with config file and optional
+dot-notation parameter overrides.
 """
 
 import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.config import load_config
+from src.utils.config import load_config, merge_configs
+
+
+def infer_type(value: str) -> Any:
+    """Convert a CLI string value to the appropriate Python type.
+
+    Conversion order: bool > None > int > float > str.
+
+    Args:
+        value: String value from CLI argument
+
+    Returns:
+        Converted value with inferred type
+
+    Example:
+        >>> infer_type("42")
+        42
+        >>> infer_type("3.14")
+        3.14
+        >>> infer_type("true")
+        True
+        >>> infer_type("none")
+        None
+        >>> infer_type("hello")
+        'hello'
+    """
+    # Boolean
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+
+    # None
+    if value.lower() in ("null", "none"):
+        return None
+
+    # Integer
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    # Float
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    # String (default)
+    return value
+
+
+def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
+    """Convert a dot-notation key and value into a nested dictionary.
+
+    Args:
+        key: Dot-separated key (e.g., "model.architecture.image_size")
+        value: Value to set at the leaf
+
+    Returns:
+        Nested dictionary
+
+    Example:
+        >>> dot_notation_to_dict("model.architecture.image_size", 60)
+        {'model': {'architecture': {'image_size': 60}}}
+    """
+    parts = key.split(".")
+    result: Dict[str, Any] = {}
+    current = result
+    for part in parts[:-1]:
+        current[part] = {}
+        current = current[part]
+    current[parts[-1]] = value
+    return result
+
+
+def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
+    """Parse remaining CLI arguments as dot-notation config overrides.
+
+    Each override must be a ``--dot.notation value`` pair where the key
+    contains at least one dot to distinguish overrides from regular flags.
+
+    Args:
+        remaining: List of unrecognized CLI arguments from parse_known_args
+
+    Returns:
+        Nested dictionary of override values
+
+    Raises:
+        ValueError: If arguments are malformed (missing value, no dot in key)
+
+    Example:
+        >>> parse_override_args(["--model.architecture.image_size", "60"])
+        {'model': {'architecture': {'image_size': 60}}}
+    """
+    if not remaining:
+        return {}
+
+    overrides: Dict[str, Any] = {}
+    i = 0
+    while i < len(remaining):
+        arg = remaining[i]
+
+        if not arg.startswith("--"):
+            raise ValueError(
+                f"Unexpected argument: '{arg}'. "
+                f"Override keys must start with '--' and use dot-notation "
+                f"(e.g., --model.architecture.image_size 60)"
+            )
+
+        key = arg[2:]  # Strip leading --
+
+        if "." not in key:
+            raise ValueError(
+                f"Invalid override key: '{arg}'. "
+                f"Override keys must use dot-notation with at least one dot "
+                f"(e.g., --model.architecture.image_size 60). "
+                f"Top-level keys should be set in the config file."
+            )
+
+        # Check that a value follows
+        if i + 1 >= len(remaining) or remaining[i + 1].startswith("--"):
+            raise ValueError(
+                f"Missing value for override key: '{arg}'. "
+                f"Each override must have a value "
+                f"(e.g., --model.architecture.image_size 60)"
+            )
+
+        raw_value = remaining[i + 1]
+        typed_value = infer_type(raw_value)
+        override_dict = dot_notation_to_dict(key, typed_value)
+        overrides = merge_configs(overrides, override_dict)
+
+        i += 2
+
+    return overrides
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser for the project.
 
-    Config-only mode: accepts only a config file path as positional argument.
+    Accepts a config file path as positional argument, an optional --verbose
+    flag, and any dot-notation overrides (parsed separately).
 
     Returns:
         Configured ArgumentParser instance
 
     Example:
         >>> parser = create_parser()
-        >>> args = parser.parse_args(['configs/classifier/baseline.yaml'])
+        >>> args, _ = parser.parse_known_args(
+        ...     ['configs/diffusion.yaml', '--model.architecture.image_size', '60']
+        ... )
         >>> args.config_path
-        'configs/classifier/baseline.yaml'
+        'configs/diffusion.yaml'
     """
     parser = argparse.ArgumentParser(
         description="AI Image Generation and Statistics Training Framework",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Config overrides (dot-notation):\n"
+            "  python -m src.main configs/diffusion.yaml "
+            "--model.architecture.image_size 60\n"
+            "  python -m src.main configs/diffusion.yaml "
+            "--training.epochs 50 --data.loading.batch_size 16\n"
+        ),
     )
 
     # Required positional argument: config file path
@@ -49,31 +194,33 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Parse command-line arguments and load configuration from file.
+    """Parse command-line arguments, load config, and apply overrides.
 
     This is the main entry point for CLI processing. It:
-    1. Parses CLI arguments (config file path)
-    2. Loads and validates the config file
-    3. Returns the configuration dictionary
+    1. Parses known CLI arguments (config file path, --verbose)
+    2. Loads the config file
+    3. Parses remaining arguments as dot-notation config overrides
+    4. Deep-merges overrides on top of the loaded config
+    5. Returns the final configuration dictionary
 
     Args:
         args: List of argument strings (default: sys.argv)
 
     Returns:
-        Configuration dictionary loaded from file
+        Configuration dictionary with CLI overrides applied
 
     Raises:
         FileNotFoundError: If specified config file doesn't exist
         yaml.YAMLError: If config file is invalid YAML
-        ValueError: If experiment type is invalid or missing
+        ValueError: If experiment type is invalid, missing, or overrides malformed
 
     Example:
-        >>> config = parse_args(['configs/classifier/baseline.yaml'])
-        >>> config['experiment']
-        'classifier'
+        >>> config = parse_args(['config.yaml', '--model.architecture.image_size', '60'])
+        >>> config['model']['architecture']['image_size']
+        60
     """
     parser = create_parser()
-    parsed_args = parser.parse_args(args)
+    parsed_args, remaining = parser.parse_known_args(args)
 
     # Get config file path from positional argument
     config_path = parsed_args.config_path
@@ -84,6 +231,11 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
 
     # Load config file
     config = load_config(config_path)
+
+    # Apply dot-notation overrides from CLI
+    if remaining:
+        cli_overrides = parse_override_args(remaining)
+        config = merge_configs(config, cli_overrides)
 
     # Verify experiment field exists
     if "experiment" not in config:

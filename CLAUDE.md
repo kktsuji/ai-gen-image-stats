@@ -5,13 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run all experiments (config-only CLI — no parameter overrides)
+# Run experiments
 python -m src.main configs/<experiment>.yaml
 
 # Example workflows
 python -m src.main configs/data_preparation.yaml     # prepare train/val split
 python -m src.main configs/diffusion.yaml            # train diffusion model
 python -m src.main configs/diffusion-ws-gen.yaml     # generate images (mode: generate)
+
+# Override config values with dot-notation
+python -m src.main configs/diffusion.yaml --model.architecture.image_size 60
+python -m src.main configs/diffusion.yaml --training.epochs 50 --data.loading.batch_size 16
 
 # Testing (four-tier strategy)
 pytest -m unit                        # fast, CPU-only (< 100ms each) — run on every commit
@@ -62,9 +66,9 @@ Each experiment under `src/experiments/<type>/` contains:
 
 ### Configuration System
 
-All parameters must be in the YAML config file. The CLI accepts **only** a config path — no override flags.
+All parameters must be in the YAML config file. Individual values can be overridden via CLI using dot-notation (e.g., `--model.architecture.image_size 60`). Override keys must contain at least one dot.
 
-Config priority: `overrides > config_file > default.yaml`
+Config priority: `CLI overrides > config_file > default.yaml`
 
 Merging is done by `src/utils/config.py::merge_configs()` (deep merge for dicts, replacement for scalars/lists). Each experiment's `config.py` calls `get_default_config_from_module(__file__)` to load its sibling `default.yaml`, then validates the user config strictly.
 

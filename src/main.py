@@ -15,6 +15,10 @@ Usage:
     # Generate synthetic data (for diffusion experiments)
     python -m src.main configs/diffusion/generate.yaml
 
+    # Override config values with dot-notation
+    python -m src.main configs/diffusion/default.yaml --model.architecture.image_size 60
+    python -m src.main configs/diffusion/default.yaml --training.epochs 50 --data.loading.batch_size 16
+
 Generation Mode (Diffusion):
     When mode='generate' in the config, the diffusion experiment uses
     lightweight sampler functions for inference instead of the full trainer.
@@ -29,8 +33,8 @@ Generation Mode (Diffusion):
     - generation.output: Output configuration (save_grid, save_individual, etc.)
 
 Note:
-    All parameters must be specified in the YAML config file.
-    CLI parameter overrides are not supported.
+    Parameters are specified in the YAML config file. Individual values
+    can be overridden via CLI using dot-notation (e.g., --model.architecture.image_size 60).
 """
 
 import logging
