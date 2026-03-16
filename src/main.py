@@ -782,12 +782,11 @@ def main(args: Optional[list] = None) -> None:
     # Parse arguments and load configuration
     try:
         config = parse_args(args)
+        # Validate basic config structure
+        validate_cli_config(config)
     except (ValueError, FileNotFoundError) as e:
         logger.error(str(e))
         sys.exit(1)
-
-    # Validate basic config structure
-    validate_cli_config(config)
 
     # Get experiment type
     experiment = config["experiment"]

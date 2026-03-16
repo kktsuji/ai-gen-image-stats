@@ -118,6 +118,11 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
     Raises:
         ValueError: If arguments are malformed (missing value, no dot in key)
 
+    Note:
+        Values starting with ``--`` are treated as the next override key, not
+        as a value. For example, ``--output.prefix "--exp"`` will raise a
+        "Missing value" error because ``"--exp"`` is interpreted as a new key.
+
     Example:
         >>> parse_override_args(["--model.architecture.image_size", "60"])
         {'model': {'architecture': {'image_size': 60}}}
@@ -185,6 +190,10 @@ def validate_override_keys(
 
     Raises:
         ValueError: If an override key does not exist in the base config
+
+    Note:
+        This function validates key existence only, not value types. Type
+        validation is delegated to experiment-level config validators.
     """
     for key, value in overrides.items():
         full_key = f"{prefix}.{key}" if prefix else key
@@ -278,8 +287,8 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     # Get config file path from positional argument
     config_path = parsed_args.config_path
 
-    # Verify config file exists
-    if not Path(config_path).exists():
+    # Verify config path points to an existing regular file
+    if not Path(config_path).is_file():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     # Load config file

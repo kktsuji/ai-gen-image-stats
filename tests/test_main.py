@@ -37,13 +37,14 @@ class TestMainEntryPoint:
 
     @pytest.mark.integration
     def test_main_invalid_experiment_type(self, tmp_path):
-        """Test that invalid experiment type raises ValueError."""
+        """Test that invalid experiment type exits cleanly instead of traceback."""
         config_file = tmp_path / "invalid.yaml"
         with open(config_file, "w") as f:
             yaml.dump({"experiment": "invalid_experiment"}, f, default_flow_style=False)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(SystemExit) as exc_info:
             main([str(config_file)])
+        assert exc_info.value.code == 1
 
     @pytest.mark.integration
     def test_main_dispatcher_classifier(self, tmp_path):
@@ -253,8 +254,16 @@ class TestMainEntryPoint:
     @pytest.mark.integration
     def test_main_nonexistent_config_exits_cleanly(self):
         """Test that nonexistent config file exits cleanly instead of traceback."""
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as exc_info:
             main(["nonexistent_config.yaml"])
+        assert exc_info.value.code == 1
+
+    @pytest.mark.integration
+    def test_main_directory_as_config_exits_cleanly(self, tmp_path):
+        """Test that passing a directory as config file exits cleanly."""
+        with pytest.raises(SystemExit) as exc_info:
+            main([str(tmp_path)])
+        assert exc_info.value.code == 1
 
 
 class TestMainNotifications:
