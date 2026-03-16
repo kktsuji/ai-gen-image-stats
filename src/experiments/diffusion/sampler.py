@@ -27,6 +27,8 @@ def sample(
     guidance_scale: float = 0.0,
     use_ema: bool = True,
     ema: Optional[EMA] = None,
+    show_progress: bool = False,
+    progress_desc: str = "Denoising",
 ) -> torch.Tensor:
     """Generate samples from the diffusion model.
 
@@ -47,6 +49,8 @@ def sample(
         use_ema: Whether to use EMA weights for generation
             Recommended: True for better sample quality
         ema: Optional EMA instance for enhanced sample quality
+        show_progress: Whether to show a tqdm progress bar during denoising
+        progress_desc: Description text for the progress bar
 
     Returns:
         Generated samples tensor
@@ -104,6 +108,8 @@ def sample(
                 batch_size=num_samples,
                 class_labels=class_labels,
                 guidance_scale=guidance_scale,
+                show_progress=show_progress,
+                progress_desc=progress_desc,
             )
 
         logger.debug(f"Sample generation completed: {samples.shape}")

@@ -1845,3 +1845,94 @@ class TestGenerationModeEdgeCases:
             match="generation.sampling.num_samples must be a positive integer",
         ):
             setup_experiment_diffusion(config)
+
+
+class TestLoggingRedirectTqdmHandlerLevel:
+    """Test that logging_redirect_tqdm handler levels are preserved."""
+
+    @pytest.mark.unit
+    def test_tqdm_redirect_handler_level_restored(self):
+        """logging_redirect_tqdm replaces the console StreamHandler with a
+        _TqdmLoggingHandler that defaults to NOTSET (level 0). The generation
+        code in main.py captures the original handler level before entering the
+        context and restores it on _TqdmLoggingHandler instances. This test
+        verifies that pattern works.
+        """
+        import logging as _logging
+
+        from tqdm.contrib.logging import logging_redirect_tqdm
+
+        # Set up a root handler at WARNING to simulate setup_logging()
+        root = _logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+        try:
+            handler = _logging.StreamHandler()
+            handler.setLevel(_logging.WARNING)
+            root.handlers = [handler]
+            root.setLevel(_logging.DEBUG)
+
+            # Capture original handler levels (mirrors main.py logic)
+            original_handler_levels = [
+                h.level
+                for h in root.handlers
+                if isinstance(h, _logging.StreamHandler)
+                and not isinstance(h, _logging.FileHandler)
+            ]
+            default_console_level = (
+                original_handler_levels[0] if original_handler_levels else _logging.INFO
+            )
+
+            with logging_redirect_tqdm():
+                # Restore levels on _TqdmLoggingHandler (mirrors main.py logic)
+                for h in _logging.root.handlers:
+                    if (
+                        type(h).__name__ == "_TqdmLoggingHandler"
+                        and h.level == _logging.NOTSET
+                    ):
+                        h.setLevel(default_console_level)
+
+                # Verify the handler now has the correct level
+                for h in _logging.root.handlers:
+                    if isinstance(h, _logging.StreamHandler):
+                        assert h.level >= _logging.WARNING, (
+                            f"Handler level should be >= WARNING, "
+                            f"got {_logging.getLevelName(h.level)}"
+                        )
+        finally:
+            root.handlers = original_handlers
+            root.level = original_level
+
+    @pytest.mark.unit
+    def test_tqdm_redirect_handler_defaults_to_notset(self):
+        """Confirm that logging_redirect_tqdm sets NOTSET on replacement handler.
+
+        This documents the upstream behavior that necessitates the fix.
+        """
+        import logging as _logging
+
+        from tqdm.contrib.logging import logging_redirect_tqdm
+
+        root = _logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+        try:
+            handler = _logging.StreamHandler()
+            handler.setLevel(_logging.INFO)
+            root.handlers = [handler]
+            root.setLevel(_logging.DEBUG)
+
+            with logging_redirect_tqdm():
+                # The tqdm replacement _TqdmLoggingHandler should default to NOTSET
+                has_notset_tqdm_handler = any(
+                    type(h).__name__ == "_TqdmLoggingHandler"
+                    and h.level == _logging.NOTSET
+                    for h in _logging.root.handlers
+                )
+                assert has_notset_tqdm_handler, (
+                    "Expected logging_redirect_tqdm to create a "
+                    "_TqdmLoggingHandler with NOTSET level"
+                )
+        finally:
+            root.handlers = original_handlers
+            root.level = original_level

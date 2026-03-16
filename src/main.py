@@ -346,6 +346,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     if mode == "generate":
         # Generation mode: load checkpoint and generate samples
         # Import sampler for inference-only workflow
+        from tqdm.contrib.logging import logging_redirect_tqdm
+
         from src.experiments.diffusion.sampler import sample
 
         generation_config = config["generation"]
@@ -444,23 +446,54 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
 
         # Generate samples using sampler
         batch_size = sampling_config.get("batch_size", num_samples)
+        num_batches = (num_samples + batch_size - 1) // batch_size
         all_samples = []
-        for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
-            end_idx = min(start_idx + batch_size, num_samples)
-            batch_labels = (
-                class_labels[start_idx:end_idx] if class_labels is not None else None
-            )
+        # Capture actual console handler levels before logging_redirect_tqdm
+        # replaces them. tqdm's replacement handlers default to NOTSET, which
+        # leaks DEBUG messages. We restore the original levels inside the
+        # context manager.
+        # Note: console_level in config is guaranteed to exist (strict config
+        # validation), so it always matches what setup_logging() applied.
+        original_handler_levels = [
+            h.level
+            for h in logging.root.handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        default_console_level = (
+            original_handler_levels[0] if original_handler_levels else logging.INFO
+        )
 
-            batch_samples = sample(
-                model,
-                device,
-                num_samples=end_idx - start_idx,
-                class_labels=batch_labels,
-                guidance_scale=sampling_config["guidance_scale"],
-                use_ema=use_ema,
-                ema=ema,
-            )
-            all_samples.append(batch_samples)
+        with logging_redirect_tqdm():
+            # Restore the original console handler level on the tqdm
+            # _TqdmLoggingHandler replacement(s) that default to NOTSET.
+            for h in logging.root.handlers:
+                if (
+                    type(h).__name__ == "_TqdmLoggingHandler"
+                    and h.level == logging.NOTSET
+                ):
+                    h.setLevel(default_console_level)
+
+            for batch_idx, start_idx in enumerate(range(0, num_samples, batch_size), 1):
+                end_idx = min(start_idx + batch_size, num_samples)
+                batch_labels = (
+                    class_labels[start_idx:end_idx]
+                    if class_labels is not None
+                    else None
+                )
+
+                batch_samples = sample(
+                    model,
+                    device,
+                    num_samples=end_idx - start_idx,
+                    class_labels=batch_labels,
+                    guidance_scale=sampling_config["guidance_scale"],
+                    use_ema=use_ema,
+                    ema=ema,
+                    show_progress=True,
+                    progress_desc=f"Denoising batch {batch_idx}/{num_batches}",
+                )
+                all_samples.append(batch_samples)
 
         samples = torch.cat(all_samples, dim=0)
 

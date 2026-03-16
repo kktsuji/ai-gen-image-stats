@@ -564,16 +564,39 @@ class TestSampleWithIntermediatesValidation:
 
 
 @pytest.mark.unit
-class TestSampleRejectsShowProgress:
-    """Test that show_progress is no longer accepted by sample functions."""
+class TestSampleShowProgress:
+    """Test show_progress and progress_desc forwarding to model.sample()."""
 
-    def test_sample_rejects_show_progress_kwarg(self, unconditional_model, device):
-        """sample() raises TypeError when show_progress is passed."""
-        with pytest.raises(TypeError):
+    def test_show_progress_forwarded_to_model(self, unconditional_model, device):
+        """sample() forwards show_progress and progress_desc to model.sample()."""
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(
+            unconditional_model, "sample", return_value=fake_samples
+        ) as m:
             sample(
                 unconditional_model,
                 device,
-                num_samples=1,
+                num_samples=2,
                 use_ema=False,
-                show_progress=True,  # type: ignore[call-arg]  # pyright: ignore[reportCallIssue]
+                show_progress=True,
+                progress_desc="Test progress",
             )
+        m.assert_called_once()
+        call_kwargs = m.call_args[1]
+        assert call_kwargs["show_progress"] is True
+        assert call_kwargs["progress_desc"] == "Test progress"
+
+    def test_show_progress_defaults_to_false(self, unconditional_model, device):
+        """show_progress defaults to False when not passed."""
+        fake_samples = torch.zeros(2, 3, 32, 32, device=device)
+        with patch.object(
+            unconditional_model, "sample", return_value=fake_samples
+        ) as m:
+            sample(
+                unconditional_model,
+                device,
+                num_samples=2,
+                use_ema=False,
+            )
+        call_kwargs = m.call_args[1]
+        assert call_kwargs["show_progress"] is False
