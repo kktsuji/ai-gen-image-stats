@@ -132,7 +132,7 @@ After generating synthetic images, filter out low-quality samples by comparing t
 
 ```bash
 # Select best generated samples (one class per run)
-python -m src.main configs/sample-selection.yaml
+python -m src.main configs/sample-selection-example.yaml
 ```
 
 This extracts features from both real and generated images using a pretrained backbone (InceptionV3/ResNet), scores each generated sample by its k-NN distance to the real data manifold, and outputs:

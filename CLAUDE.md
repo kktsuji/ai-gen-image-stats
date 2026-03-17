@@ -12,7 +12,7 @@ python -m src.main configs/<experiment>.yaml
 python -m src.main configs/data_preparation.yaml     # prepare train/val split
 python -m src.main configs/diffusion.yaml            # train diffusion model
 python -m src.main configs/diffusion-ws-gen.yaml     # generate images (mode: generate)
-python -m src.main configs/sample-selection.yaml     # select high-quality generated samples
+python -m src.main configs/sample-selection-example.yaml     # select high-quality generated samples
 
 # Override config values with dot-notation
 python -m src.main configs/diffusion.yaml --model.architecture.image_size 60

@@ -15,15 +15,18 @@ from src.experiments.sample_selection.config import validate_config
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
+_config_path = _PROJECT_ROOT / "configs/sample-selection-example.yaml"
+with open(_config_path) as _f:
+    _BASE_CONFIG = yaml.safe_load(_f)
+
+
 def _make_valid_config():
     """Create a valid config for testing.
 
-    Loads from configs/sample-selection-example.yaml to stay in sync with the
-    canonical example config (single source of truth).
+    Returns a deep copy of the cached example config so each test gets
+    an isolated copy (single source of truth).
     """
-    config_path = _PROJECT_ROOT / "configs/sample-selection-example.yaml"
-    with open(config_path) as f:
-        return copy.deepcopy(yaml.safe_load(f))
+    return copy.deepcopy(_BASE_CONFIG)
 
 
 # ============================================================================
@@ -403,6 +406,20 @@ class TestValidateConfig:
         config = _make_valid_config()
         del config["logging"]["file_level"]
         with pytest.raises(KeyError, match="file_level"):
+            validate_config(config)
+
+    def test_invalid_console_level_raises(self):
+        """Test that invalid logging.console_level raises ValueError."""
+        config = _make_valid_config()
+        config["logging"]["console_level"] = "VERBOSE"
+        with pytest.raises(ValueError, match="console_level"):
+            validate_config(config)
+
+    def test_invalid_file_level_raises(self):
+        """Test that invalid logging.file_level raises ValueError."""
+        config = _make_valid_config()
+        config["logging"]["file_level"] = "TRACE"
+        with pytest.raises(ValueError, match="file_level"):
             validate_config(config)
 
     # -- output section --

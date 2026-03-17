@@ -308,7 +308,19 @@ def _validate_logging_section(config: Dict[str, Any]) -> None:
 
     log = config["logging"]
 
+    valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
     if "console_level" not in log:
         raise KeyError("Missing required field: logging.console_level")
+    if log["console_level"] not in valid_log_levels:
+        raise ValueError(
+            f"Invalid logging.console_level: '{log['console_level']}'. "
+            f"Must be one of {valid_log_levels}"
+        )
     if "file_level" not in log:
         raise KeyError("Missing required field: logging.file_level")
+    if log["file_level"] not in valid_log_levels:
+        raise ValueError(
+            f"Invalid logging.file_level: '{log['file_level']}'. "
+            f"Must be one of {valid_log_levels}"
+        )
