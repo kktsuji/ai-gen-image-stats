@@ -1,0 +1,56 @@
+# ------------------------------------------------------------------------------
+# SAMPLE SELECTION CONFIGURATION
+# ------------------------------------------------------------------------------
+experiment: sample_selection # Name of the experiment to run
+mode: select # Only mode supported for this experiment
+
+# Compute settings
+compute:
+  device: cuda # Device to use (cuda, cpu, auto)
+  seed: 42 # Random seed for reproducibility (null for no seed)
+
+# Feature extraction settings
+feature_extraction:
+  model: inceptionv3 # Feature extractor (inceptionv3, resnet50, resnet101, resnet152)
+  batch_size: 32 # Batch size for feature extraction
+  image_size: 299 # Image resize/crop size (299 for inceptionv3, 224 for resnet50/101/152)
+  num_workers: 4 # Number of data loading workers
+
+# Data sources (single class per run)
+data:
+  real:
+    source: split_file # How to load real images (split_file or directory)
+    split_file: "outputs/splits/train_val_split.json" # Path to split JSON file
+    split: train # Which split to use (train or val)
+    class_label: 0 # Filter to this class label (null to use all)
+  generated:
+    directory: "outputs/diffusion/generated" # Directory containing generated images
+  label: 0 # Integer class label for output metadata
+  class_name: "abnormal" # String class name for output metadata
+
+# Scoring configuration
+scoring:
+  k: 5 # Number of nearest neighbors for k-NN scoring
+  require_realism: false # Whether to hard-filter by manifold membership
+
+# Selection configuration (mutually exclusive modes)
+selection:
+  mode: percentile # Selection mode (top_k, percentile, threshold)
+  value: 80 # Mode-specific value: N for top_k, % for percentile, distance for threshold
+
+# Dataset-level metrics
+dataset_metrics:
+  enabled: true # Whether to compute FID, precision, recall between real and generated
+
+# Output directories
+output:
+  base_dir: outputs/sample_selection # Base output directory
+  subdirs:
+    logs: logs # Log files and config snapshot
+    reports: reports # CSV quality report, accepted samples JSON, summary
+    selected: selected # Copies of selected sample images
+
+# Logging configuration
+logging:
+  console_level: INFO # Console log level
+  file_level: INFO # File log level
