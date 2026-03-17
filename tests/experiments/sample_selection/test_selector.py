@@ -412,10 +412,41 @@ class TestCopySelectedSamples:
 
 @pytest.mark.unit
 class TestEmptyDatasetValidation:
-    """Test that empty datasets raise clear errors."""
+    """Test that dataset construction errors propagate with context."""
 
-    def test_empty_real_dataset_raises(self):
-        """Empty real dataset should raise ValueError."""
+    def test_empty_real_directory_raises_valueerror(self, tmp_path):
+        """SimpleImageDataset raises ValueError for empty directory."""
+        from src.utils.data.datasets import SimpleImageDataset
+
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        with pytest.raises(ValueError, match="No valid images found"):
+            SimpleImageDataset(root=str(empty_dir))
+
+    def test_missing_real_directory_raises_filenotfounderror(self):
+        """SimpleImageDataset raises FileNotFoundError for missing directory."""
+        from src.utils.data.datasets import SimpleImageDataset
+
+        with pytest.raises(FileNotFoundError, match="not found"):
+            SimpleImageDataset(root="/nonexistent_dir")
+
+    def test_load_real_dataset_missing_split_file_raises(self):
+        """_load_real_dataset propagates FileNotFoundError from SplitFileDataset."""
+        from src.experiments.sample_selection.selector import _load_real_dataset
+
+        data_config = {
+            "real": {
+                "source": "split_file",
+                "split_file": "/nonexistent.json",
+                "split": "train",
+                "class_label": 0,
+            },
+        }
+        with pytest.raises(FileNotFoundError, match="not found"):
+            _load_real_dataset(data_config, transform=None)
+
+    def test_run_selection_wraps_real_dataset_error(self):
+        """run_sample_selection wraps real dataset errors with context."""
         from src.experiments.sample_selection.selector import run_sample_selection
 
         config = {
@@ -437,23 +468,15 @@ class TestEmptyDatasetValidation:
             "output": {"base_dir": "/tmp/test"},
         }
 
-        mock_real = MagicMock()
-        mock_real.__len__ = MagicMock(return_value=0)
-
-        with (
-            patch(
-                "src.experiments.sample_selection.selector._load_real_dataset",
-                return_value=mock_real,
-            ),
-            patch(
-                "src.experiments.sample_selection.selector.SimpleImageDataset",
-            ),
+        with patch(
+            "src.experiments.sample_selection.selector._load_real_dataset",
+            side_effect=ValueError("No valid images found in /fake"),
         ):
-            with pytest.raises(ValueError, match="No real images found"):
+            with pytest.raises(ValueError, match="Failed to load real dataset"):
                 run_sample_selection(config, "cpu", MagicMock())
 
-    def test_empty_generated_dataset_raises(self):
-        """Empty generated dataset should raise ValueError."""
+    def test_run_selection_wraps_generated_dataset_error(self):
+        """run_sample_selection wraps generated dataset errors with context."""
         from src.experiments.sample_selection.selector import run_sample_selection
 
         config = {
@@ -475,23 +498,19 @@ class TestEmptyDatasetValidation:
             "output": {"base_dir": "/tmp/test"},
         }
 
-        mock_real = MagicMock()
-        mock_real.__len__ = MagicMock(return_value=10)
-
-        mock_gen = MagicMock()
-        mock_gen.__len__ = MagicMock(return_value=0)
-
         with (
             patch(
                 "src.experiments.sample_selection.selector._load_real_dataset",
-                return_value=mock_real,
+                return_value=MagicMock(),
             ),
             patch(
                 "src.experiments.sample_selection.selector.SimpleImageDataset",
-                return_value=mock_gen,
+                side_effect=FileNotFoundError("Dataset root directory not found"),
             ),
         ):
-            with pytest.raises(ValueError, match="No generated images found"):
+            with pytest.raises(
+                FileNotFoundError, match="Failed to load generated dataset"
+            ):
                 run_sample_selection(config, "cpu", MagicMock())
 
 

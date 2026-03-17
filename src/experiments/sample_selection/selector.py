@@ -54,21 +54,22 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
     )
 
     # Load datasets
-    real_dataset = _load_real_dataset(data_config, transform)
-    gen_dataset = SimpleImageDataset(
-        root=data_config["generated"]["directory"],
-        transform=transform,
-    )
-
-    if len(real_dataset) == 0:
-        raise ValueError(
-            "No real images found. Check data.real configuration "
-            f"(source={data_config['real']['source']})."
+    try:
+        real_dataset = _load_real_dataset(data_config, transform)
+    except (ValueError, FileNotFoundError) as e:
+        raise type(e)(
+            f"Failed to load real dataset (source={data_config['real']['source']}): {e}"
+        ) from e
+    try:
+        gen_dataset = SimpleImageDataset(
+            root=data_config["generated"]["directory"],
+            transform=transform,
         )
-    if len(gen_dataset) == 0:
-        raise ValueError(
-            f"No generated images found in: {data_config['generated']['directory']}"
-        )
+    except (ValueError, FileNotFoundError) as e:
+        raise type(e)(
+            f"Failed to load generated dataset "
+            f"(directory={data_config['generated']['directory']}): {e}"
+        ) from e
 
     logger.info(f"Real images: {len(real_dataset)}")
     logger.info(f"Generated images: {len(gen_dataset)}")
@@ -234,6 +235,8 @@ def _load_real_dataset(
     source = real_config["source"]
 
     if source == "split_file":
+        # return_labels=False controls __getitem__ output only; .samples
+        # (used by _filter_split_dataset_by_class) is always populated.
         dataset = SplitFileDataset(
             split_file=real_config["split_file"],
             split=real_config["split"],
@@ -422,7 +425,7 @@ def compute_knn_scores(
     Returns:
         Array of scores, shape (M,). Lower is better.
     """
-    # Clamp k to the number of real samples
+    # k can equal N (all real samples are valid neighbors for generated queries)
     effective_k = min(k, real_features.shape[0])
     if k > real_features.shape[0]:
         logger.warning(
@@ -457,6 +460,7 @@ def compute_realism_flags(
     Returns:
         Boolean array of shape (M,). True = within real manifold.
     """
+    # k uses N-1 because kneighbors includes the point itself (index 0 is self-match)
     effective_k = min(k, real_features.shape[0] - 1)
     if k > real_features.shape[0] - 1:
         logger.warning(

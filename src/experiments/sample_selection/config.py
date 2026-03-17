@@ -155,6 +155,18 @@ def _validate_data_section(config: Dict[str, Any]) -> None:
                 "Missing required field: data.real.class_label "
                 "(required when source='split_file')"
             )
+        class_label = real["class_label"]
+        if class_label is not None:
+            if not isinstance(class_label, int) or isinstance(class_label, bool):
+                raise ValueError(
+                    f"data.real.class_label must be null or a non-negative integer, "
+                    f"got {type(class_label).__name__}: {class_label!r}"
+                )
+            if class_label < 0:
+                raise ValueError(
+                    f"data.real.class_label must be null or a non-negative integer, "
+                    f"got {class_label}"
+                )
 
     elif real["source"] == "directory":
         if "directory" not in real:

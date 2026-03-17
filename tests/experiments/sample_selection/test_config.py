@@ -158,6 +158,36 @@ class TestValidateConfig:
         with pytest.raises(KeyError, match="class_label"):
             validate_config(config)
 
+    def test_class_label_string_raises(self):
+        """Test that string class_label raises ValueError."""
+        config = _make_valid_config()
+        config["data"]["real"]["class_label"] = "zero"
+        with pytest.raises(
+            ValueError, match="class_label must be null or a non-negative"
+        ):
+            validate_config(config)
+
+    def test_class_label_negative_raises(self):
+        """Test that negative class_label raises ValueError."""
+        config = _make_valid_config()
+        config["data"]["real"]["class_label"] = -1
+        with pytest.raises(
+            ValueError, match="class_label must be null or a non-negative"
+        ):
+            validate_config(config)
+
+    def test_class_label_null_valid(self):
+        """Test that null class_label passes validation."""
+        config = _make_valid_config()
+        config["data"]["real"]["class_label"] = None
+        validate_config(config)  # Should not raise
+
+    def test_class_label_valid_int(self):
+        """Test that valid non-negative integer class_label passes validation."""
+        config = _make_valid_config()
+        config["data"]["real"]["class_label"] = 0
+        validate_config(config)  # Should not raise
+
     def test_directory_source_missing_directory_raises(self):
         """Test directory source requires directory field."""
         config = _make_valid_config()
