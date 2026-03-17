@@ -60,6 +60,16 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
         transform=transform,
     )
 
+    if len(real_dataset) == 0:
+        raise ValueError(
+            "No real images found. Check data.real configuration "
+            f"(source={data_config['real']['source']})."
+        )
+    if len(gen_dataset) == 0:
+        raise ValueError(
+            f"No generated images found in: {data_config['generated']['directory']}"
+        )
+
     logger.info(f"Real images: {len(real_dataset)}")
     logger.info(f"Generated images: {len(gen_dataset)}")
 
@@ -414,6 +424,11 @@ def compute_knn_scores(
     """
     # Clamp k to the number of real samples
     effective_k = min(k, real_features.shape[0])
+    if k > real_features.shape[0]:
+        logger.warning(
+            f"scoring.k={k} exceeds number of real samples "
+            f"({real_features.shape[0]}). Using k={effective_k}."
+        )
 
     nbrs = NearestNeighbors(n_neighbors=effective_k).fit(real_features)
     distances, _ = nbrs.kneighbors(gen_features)
@@ -443,6 +458,11 @@ def compute_realism_flags(
         Boolean array of shape (M,). True = within real manifold.
     """
     effective_k = min(k, real_features.shape[0] - 1)
+    if k > real_features.shape[0] - 1:
+        logger.warning(
+            f"scoring.k={k} exceeds number of real samples "
+            f"({real_features.shape[0]}). Using k={effective_k}."
+        )
     if effective_k < 1:
         # Not enough real samples to compute manifold
         return np.ones(gen_features.shape[0], dtype=bool)
@@ -525,11 +545,20 @@ def select_samples(
 def _copy_selected_samples(selected_paths: List[str], output_dir: Path) -> None:
     """Copy selected sample files to the output directory.
 
+    Handles filename collisions by appending a numeric suffix.
+
     Args:
         selected_paths: List of source file paths.
         output_dir: Destination directory.
     """
+    seen_names: Dict[str, int] = {}
     for path_str in selected_paths:
         src = Path(path_str)
-        dst = output_dir / src.name
+        name = src.name
+        if name in seen_names:
+            seen_names[name] += 1
+            name = f"{src.stem}_{seen_names[name]}{src.suffix}"
+        else:
+            seen_names[name] = 0
+        dst = output_dir / name
         shutil.copy2(str(src), str(dst))

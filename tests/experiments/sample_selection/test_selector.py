@@ -4,7 +4,8 @@ Unit tests for scoring, realism, and selection functions.
 Component test for feature extraction with a mock model.
 """
 
-from unittest.mock import MagicMock
+import logging
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -362,3 +363,191 @@ class TestCopySelectedSamples:
         out_dir.mkdir()
         _copy_selected_samples([], out_dir)
         assert list(out_dir.iterdir()) == []
+
+    def test_filename_collision_appends_suffix(self, tmp_path):
+        """Files with the same name from different directories get unique names."""
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        (dir_a / "img.png").write_text("content_a")
+        (dir_b / "img.png").write_text("content_b")
+
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        paths = [str(dir_a / "img.png"), str(dir_b / "img.png")]
+        _copy_selected_samples(paths, out_dir)
+
+        # First file keeps original name, second gets suffix
+        assert (out_dir / "img.png").exists()
+        assert (out_dir / "img.png").read_text() == "content_a"
+        assert (out_dir / "img_1.png").exists()
+        assert (out_dir / "img_1.png").read_text() == "content_b"
+
+    def test_multiple_filename_collisions(self, tmp_path):
+        """Multiple files with the same name get incrementing suffixes."""
+        dirs = []
+        for i in range(3):
+            d = tmp_path / f"dir_{i}"
+            d.mkdir()
+            (d / "img.png").write_text(f"content_{i}")
+            dirs.append(d)
+
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        paths = [str(d / "img.png") for d in dirs]
+        _copy_selected_samples(paths, out_dir)
+
+        assert (out_dir / "img.png").read_text() == "content_0"
+        assert (out_dir / "img_1.png").read_text() == "content_1"
+        assert (out_dir / "img_2.png").read_text() == "content_2"
+
+
+# ============================================================================
+# Unit Tests - Empty dataset validation
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestEmptyDatasetValidation:
+    """Test that empty datasets raise clear errors."""
+
+    def test_empty_real_dataset_raises(self):
+        """Empty real dataset should raise ValueError."""
+        from src.experiments.sample_selection.selector import run_sample_selection
+
+        config = {
+            "feature_extraction": {
+                "image_size": 32,
+                "batch_size": 4,
+                "num_workers": 0,
+                "model": "resnet50",
+            },
+            "scoring": {"k": 5, "require_realism": False},
+            "selection": {"mode": "top_k", "value": 10},
+            "data": {
+                "real": {"source": "directory", "directory": "/fake"},
+                "generated": {"directory": "/fake_gen"},
+                "label": 0,
+                "class_name": "test",
+            },
+            "dataset_metrics": {"enabled": False},
+            "output": {"base_dir": "/tmp/test"},
+        }
+
+        mock_real = MagicMock()
+        mock_real.__len__ = MagicMock(return_value=0)
+
+        with (
+            patch(
+                "src.experiments.sample_selection.selector._load_real_dataset",
+                return_value=mock_real,
+            ),
+            patch(
+                "src.experiments.sample_selection.selector.SimpleImageDataset",
+            ),
+        ):
+            with pytest.raises(ValueError, match="No real images found"):
+                run_sample_selection(config, "cpu", MagicMock())
+
+    def test_empty_generated_dataset_raises(self):
+        """Empty generated dataset should raise ValueError."""
+        from src.experiments.sample_selection.selector import run_sample_selection
+
+        config = {
+            "feature_extraction": {
+                "image_size": 32,
+                "batch_size": 4,
+                "num_workers": 0,
+                "model": "resnet50",
+            },
+            "scoring": {"k": 5, "require_realism": False},
+            "selection": {"mode": "top_k", "value": 10},
+            "data": {
+                "real": {"source": "directory", "directory": "/fake"},
+                "generated": {"directory": "/fake_gen"},
+                "label": 0,
+                "class_name": "test",
+            },
+            "dataset_metrics": {"enabled": False},
+            "output": {"base_dir": "/tmp/test"},
+        }
+
+        mock_real = MagicMock()
+        mock_real.__len__ = MagicMock(return_value=10)
+
+        mock_gen = MagicMock()
+        mock_gen.__len__ = MagicMock(return_value=0)
+
+        with (
+            patch(
+                "src.experiments.sample_selection.selector._load_real_dataset",
+                return_value=mock_real,
+            ),
+            patch(
+                "src.experiments.sample_selection.selector.SimpleImageDataset",
+                return_value=mock_gen,
+            ),
+        ):
+            with pytest.raises(ValueError, match="No generated images found"):
+                run_sample_selection(config, "cpu", MagicMock())
+
+
+# ============================================================================
+# Unit Tests - k clamping warnings
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestKClampingWarnings:
+    """Test that warnings are logged when k is clamped."""
+
+    def test_knn_scores_warns_on_k_clamp(self, caplog):
+        """compute_knn_scores should warn when k exceeds real sample count."""
+        real = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        gen = np.array([[1.0, 2.0]], dtype=np.float32)
+
+        with caplog.at_level(
+            logging.WARNING, logger="src.experiments.sample_selection.selector"
+        ):
+            compute_knn_scores(real, gen, k=10)
+
+        assert any("scoring.k=10 exceeds" in msg for msg in caplog.messages)
+
+    def test_knn_scores_no_warning_when_k_fits(self, caplog):
+        """compute_knn_scores should not warn when k <= real sample count."""
+        real = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32)
+        gen = np.array([[1.0, 2.0]], dtype=np.float32)
+
+        with caplog.at_level(
+            logging.WARNING, logger="src.experiments.sample_selection.selector"
+        ):
+            compute_knn_scores(real, gen, k=2)
+
+        assert not any("exceeds" in msg for msg in caplog.messages)
+
+    def test_realism_flags_warns_on_k_clamp(self, caplog):
+        """compute_realism_flags should warn when k exceeds real samples - 1."""
+        real = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        gen = np.array([[1.0, 2.0]], dtype=np.float32)
+
+        with caplog.at_level(
+            logging.WARNING, logger="src.experiments.sample_selection.selector"
+        ):
+            compute_realism_flags(real, gen, k=5)
+
+        assert any("scoring.k=5 exceeds" in msg for msg in caplog.messages)
+
+    def test_realism_flags_no_warning_when_k_fits(self, caplog):
+        """compute_realism_flags should not warn when k <= real samples - 1."""
+        real = np.random.rand(10, 4).astype(np.float32)
+        gen = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+
+        with caplog.at_level(
+            logging.WARNING, logger="src.experiments.sample_selection.selector"
+        ):
+            compute_realism_flags(real, gen, k=3)
+
+        assert not any("exceeds" in msg for msg in caplog.messages)
