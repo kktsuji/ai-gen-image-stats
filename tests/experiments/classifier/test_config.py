@@ -338,8 +338,8 @@ class TestValidateConfig:
         config["training"]["checkpointing"]["save_latest"] = False
         validate_config(config)  # should not raise
 
-    def test_save_latest_missing_defaults_to_true(self):
-        """save_latest absent from config is accepted (defaults to True)."""
+    def test_save_latest_missing_is_optional(self):
+        """save_latest absent from config is accepted (optional field)."""
         config = get_v2_default_config()
         config["training"]["checkpointing"].pop("save_latest", None)
         validate_config(config)  # should not raise
@@ -482,7 +482,7 @@ class TestValidateConfigErrorPaths:
 class TestConfigFiles:
     """Test actual config files (classifier-example.yaml)."""
 
-    def test_default_config_file(self):
+    def test_example_config_file(self):
         """Test that classifier-example.yaml is valid."""
         config_path = _PROJECT_ROOT / "configs/classifier-example.yaml"
 

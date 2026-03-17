@@ -99,7 +99,7 @@ To receive Slack notifications when experiments complete or fail:
 
 ```bash
 # Prepare reproducible train/val split
-python -m src.main configs/data_preparation/default.yaml
+python -m src.main configs/data_preparation.yaml
 ```
 
 This scans the class directories, shuffles with a fixed seed, and writes a JSON split file used by all downstream experiments.
@@ -118,7 +118,7 @@ python -m src.main configs/classifier/inceptionv3.yaml
 
 ```bash
 # Train diffusion model
-python -m src.main configs/diffusion/default.yaml
+python -m src.main configs/diffusion.yaml
 ```
 
 ### Inference and Sample Generation

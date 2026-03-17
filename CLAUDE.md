@@ -17,14 +17,14 @@ python -m src.main configs/diffusion-ws-gen.yaml     # generate images (mode: ge
 python -m src.main configs/diffusion.yaml --model.architecture.image_size 60
 python -m src.main configs/diffusion.yaml --training.epochs 50 --data.loading.batch_size 16
 
-# Testing (four-tier strategy)
-pytest -m unit                        # fast, CPU-only (< 100ms each) — run on every commit
-pytest -m "unit or component"         # pre-push validation (< 1 min)
-pytest -m "not smoke"                 # CI pipeline (< 5 min)
-pytest -m smoke                       # GPU smoke tests — manual/weekly
-pytest tests/experiments/diffusion/   # run tests for a single module
-pytest -k "test_model"                # run tests matching a pattern
-pytest --cov=src --cov-report=html    # with coverage
+# Testing (four-tier strategy) — always use venv/bin/pytest, not bare pytest
+venv/bin/pytest -m unit                        # fast, CPU-only (< 100ms each) — run on every commit
+venv/bin/pytest -m "unit or component"         # pre-push validation (< 1 min)
+venv/bin/pytest -m "not smoke"                 # CI pipeline (< 5 min)
+venv/bin/pytest -m smoke                       # GPU smoke tests — manual/weekly
+venv/bin/pytest tests/experiments/diffusion/   # run tests for a single module
+venv/bin/pytest -k "test_model"                # run tests matching a pattern
+venv/bin/pytest --cov=src --cov-report=html    # with coverage
 
 # Install dependencies
 pip install -r requirements.txt
@@ -127,5 +127,5 @@ After modifying any project files, always run the following checks in order and 
 
 1. `bash .husky/pre-commit` — **Pre-commit hooks**: Verify all Husky pre-commit hooks pass by running the same script Git uses. This runs: `ruff check` (lint), `ruff format --check` (format), `pyright` (type check), and `prettier --check "**/*.md"` (Markdown format).
 2. `python tests/fixtures/mock_data/create_mock_images.py` — **Generate test fixtures**: Run the script to create mock images needed for tests.
-3. `pytest --cov=src -m unit` — **Run unit tests & check coverage**: Run unit tests and confirm that unit-test coverage remains above 80%.
-4. `pytest -m "component or integration"` — **Run component & integration tests**: Run remaining non-smoke tests.
+3. `venv/bin/pytest --cov=src -m unit` — **Run unit tests & check coverage**: Run unit tests and confirm that unit-test coverage remains above 80%.
+4. `venv/bin/pytest -m "component or integration"` — **Run component & integration tests**: Run remaining non-smoke tests.

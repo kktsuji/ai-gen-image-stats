@@ -23,163 +23,24 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _make_valid_config():
-    """Return a valid diffusion configuration dict for testing."""
-    return {
-        "experiment": "diffusion",
-        "mode": "train",
-        "compute": {"device": "cuda", "seed": 0},
-        "logging": {
-            "console_level": "INFO",
-            "file_level": "DEBUG",
-            "format": "%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-            "date_format": "%Y-%m-%d %H:%M:%S",
-            "timezone": "local",
-            "metrics": {
-                "csv": {"enabled": True},
-                "tensorboard": {
-                    "enabled": True,
-                    "flush_secs": 30,
-                    "log_images": True,
-                    "log_histograms": True,
-                    "log_graph": True,
-                },
-            },
-        },
-        "model": {
-            "architecture": {
-                "image_size": 40,
-                "in_channels": 3,
-                "model_channels": 64,
-                "channel_multipliers": [1, 2, 4],
-                "use_attention": [False, False, True],
-            },
-            "diffusion": {
-                "num_timesteps": 1000,
-                "beta_schedule": "cosine",
-                "beta_start": 0.0001,
-                "beta_end": 0.02,
-            },
-            "conditioning": {
-                "type": "class",
-                "num_classes": 2,
-                "class_dropout_prob": 0.1,
-            },
-        },
-        "data": {
-            "split_file": "outputs/splits/train_val_split.json",
-            "loading": {
-                "batch_size": 8,
-                "num_workers": 4,
-                "pin_memory": True,
-                "shuffle_train": True,
-                "drop_last": False,
-            },
-            "balancing": {
-                "weighted_sampler": {
-                    "enabled": False,
-                    "method": "inverse_frequency",
-                    "beta": 0.999,
-                    "manual_weights": None,
-                    "replacement": True,
-                    "num_samples": None,
-                },
-                "downsampling": {"enabled": False, "target_ratio": 1.0},
-                "upsampling": {"enabled": False, "target_ratio": 1.0},
-                "class_weights": {
-                    "enabled": False,
-                    "method": "inverse_frequency",
-                    "beta": 0.999,
-                    "manual_weights": None,
-                    "normalize": True,
-                },
-            },
-            "augmentation": {
-                "horizontal_flip": True,
-                "rotation_degrees": 15,
-                "color_jitter": {"enabled": False, "strength": 0.1},
-            },
-        },
-        "output": {
-            "base_dir": "outputs/diffusion",
-            "subdirs": {
-                "logs": "logs",
-                "checkpoints": "checkpoints",
-                "samples": "samples",
-                "generated": "generated",
-                "tensorboard": "tensorboard",
-            },
-        },
-        "training": {
-            "epochs": 500,
-            "optimizer": {
-                "type": "adam",
-                "learning_rate": 0.0001,
-                "weight_decay": 0.0,
-                "betas": [0.9, 0.999],
-                "gradient_clip_norm": None,
-            },
-            "scheduler": {
-                "type": "cosine",
-                "T_max": "auto",
-                "eta_min": 1.0e-6,
-            },
-            "ema": {"enabled": True, "decay": 0.9999},
-            "checkpointing": {
-                "save_frequency": 50,
-                "save_optimizer": True,
-                "save_best_only": False,
-                "save_latest": False,
-            },
-            "validation": {
-                "enabled": True,
-                "frequency": 50,
-                "metric": "loss",
-            },
-            "visualization": {
-                "enabled": True,
-                "num_samples": 8,
-                "guidance_scale": 3.0,
-                "log_images_interval": 50,
-                "log_denoising_interval": 50,
-            },
-            "performance": {
-                "use_amp": True,
-                "use_tf32": True,
-                "cudnn_benchmark": True,
-                "compile_model": True,
-            },
-            "resume": {
-                "enabled": False,
-                "checkpoint": None,
-                "reset_optimizer": False,
-                "reset_scheduler": False,
-            },
-        },
-        "generation": {
-            "checkpoint": None,
-            "sampling": {
-                "num_samples": 100,
-                "batch_size": 50,
-                "guidance_scale": 3.0,
-                "use_ema": True,
-                "ema_decay": 0.9999,
-                "class_selection": None,
-            },
-            "output": {
-                "save_individual": True,
-                "save_grid": True,
-                "grid_nrow": 10,
-            },
-        },
-    }
+    """Return a valid diffusion configuration dict for testing.
+
+    Loads from configs/diffusion-example.yaml to stay in sync with the
+    canonical example config (single source of truth).
+    """
+    import copy
+
+    config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
+    with open(config_path) as f:
+        return copy.deepcopy(yaml.safe_load(f))
 
 
 @pytest.mark.unit
 class TestValidateConfig:
     """Test configuration validation."""
 
-    def test_valid_default_config(self):
-        """Test that default config passes validation."""
+    def test_valid_example_config(self):
+        """Test that example config passes validation."""
         config = _make_valid_config()
         # Should not raise any exception
         validate_config(config)
@@ -777,8 +638,8 @@ class TestModeAwareValidation:
         ):
             validate_config(config)
 
-    def test_generation_ema_decay_default(self):
-        """Test that default config has ema_decay in generation.sampling."""
+    def test_generation_ema_decay_present(self):
+        """Test that example config has ema_decay in generation.sampling."""
         config = _make_valid_config()
         assert "ema_decay" in config["generation"]["sampling"]
         assert config["generation"]["sampling"]["ema_decay"] == 0.9999
@@ -803,14 +664,14 @@ class TestModeAwareValidation:
         with pytest.raises(ValueError, match="batch_size must be a positive integer"):
             validate_config(config)
 
-    def test_generation_batch_size_default(self):
-        """Test that default config has batch_size in generation.sampling."""
+    def test_generation_batch_size_present(self):
+        """Test that example config has batch_size in generation.sampling."""
         config = _make_valid_config()
         assert "batch_size" in config["generation"]["sampling"]
         assert config["generation"]["sampling"]["batch_size"] == 50
 
-    def test_generation_class_selection_default(self):
-        """Test that default config has class_selection as null."""
+    def test_generation_class_selection_present(self):
+        """Test that example config has class_selection as null."""
         config = _make_valid_config()
         assert config["generation"]["sampling"]["class_selection"] is None
 
@@ -973,8 +834,8 @@ class TestSaveLatestValidation:
         config["training"]["checkpointing"]["save_latest"] = False
         validate_config(config)  # should not raise
 
-    def test_save_latest_missing_defaults_to_true(self):
-        """save_latest absent from config is accepted (defaults to True)."""
+    def test_save_latest_missing_is_optional(self):
+        """save_latest absent from config is accepted (optional field)."""
         config = _make_valid_config()
         config["training"]["checkpointing"].pop("save_latest", None)
         validate_config(config)  # should not raise
@@ -991,7 +852,7 @@ class TestSaveLatestValidation:
 class TestConfigFileValidation:
     """Test validation of actual config files."""
 
-    def test_default_config_file(self):
+    def test_example_config_file(self):
         """Test that diffusion-example.yaml is valid."""
         config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
@@ -1004,7 +865,7 @@ class TestConfigFileValidation:
         # Should not raise
         validate_config(config)
 
-    def test_default_config_structure(self):
+    def test_example_config_structure(self):
         """Test diffusion-example config has expected structure (V2)."""
         config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
@@ -1237,10 +1098,10 @@ class TestValidateConfigErrorPaths:
 class TestBalancingConfigValidation:
     """Test data.balancing configuration validation."""
 
-    def test_valid_default_balancing_config(self):
-        """Test that default config with balancing passes validation."""
+    def test_valid_example_balancing_config(self):
+        """Test that example config with balancing passes validation."""
         config = _make_valid_config()
-        # Default config should have balancing section and pass validation
+        # Example config should have balancing section and pass validation
         assert "balancing" in config["data"]
         validate_config(config)
 
