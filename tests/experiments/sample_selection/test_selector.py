@@ -199,6 +199,18 @@ class TestSelectSamples:
         )
         assert mask.sum() == 0
 
+    def test_require_realism_without_flags_raises(self):
+        """require_realism=True with realism_flags=None should raise ValueError."""
+        scores = np.array([1.0, 2.0, 3.0])
+        with pytest.raises(ValueError, match="require_realism"):
+            select_samples(
+                scores,
+                mode="top_k",
+                value=2,
+                realism_flags=None,
+                require_realism=True,
+            )
+
     def test_output_is_boolean_array(self):
         """Output should be a boolean numpy array."""
         scores = np.array([1.0, 2.0, 3.0])
@@ -403,6 +415,32 @@ class TestCopySelectedSamples:
         assert (out_dir / "img.png").read_text() == "content_0"
         assert (out_dir / "img_1.png").read_text() == "content_1"
         assert (out_dir / "img_2.png").read_text() == "content_2"
+
+    def test_collision_with_naturally_named_file(self, tmp_path):
+        """A renamed collision file must not be overwritten by a naturally-named file."""
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_c = tmp_path / "c"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        dir_c.mkdir()
+        (dir_a / "img.png").write_text("content_a")
+        (dir_b / "img.png").write_text("content_b")
+        (dir_c / "img_1.png").write_text("content_c")
+
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        paths = [
+            str(dir_a / "img.png"),
+            str(dir_b / "img.png"),
+            str(dir_c / "img_1.png"),
+        ]
+        _copy_selected_samples(paths, out_dir)
+
+        assert (out_dir / "img.png").read_text() == "content_a"
+        assert (out_dir / "img_1.png").read_text() == "content_b"
+        assert (out_dir / "img_1_1.png").read_text() == "content_c"
 
 
 # ============================================================================

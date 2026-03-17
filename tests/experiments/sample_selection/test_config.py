@@ -242,6 +242,13 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="data.label"):
             validate_config(config)
 
+    def test_boolean_label_raises(self):
+        """Test that boolean data.label raises ValueError."""
+        config = _make_valid_config()
+        config["data"]["label"] = True
+        with pytest.raises(ValueError, match="data.label"):
+            validate_config(config)
+
     def test_missing_class_name_raises(self):
         """Test that missing data.class_name raises KeyError."""
         config = _make_valid_config()

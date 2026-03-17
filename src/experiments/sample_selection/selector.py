@@ -375,6 +375,9 @@ def extract_features_from_loader(
             features = model.extract_features(images)  # type: ignore[operator]
             all_features.append(features.cpu().numpy())
 
+    if not all_features:
+        raise ValueError("No features extracted: the data loader yielded no batches")
+
     features_array = np.concatenate(all_features, axis=0)
 
     # Get file paths from the dataset
@@ -515,6 +518,8 @@ def select_samples(
     selected = np.zeros(n, dtype=bool)
 
     # Apply realism filter first if required
+    if require_realism and realism_flags is None:
+        raise ValueError("require_realism=True but realism_flags was not provided")
     if require_realism and realism_flags is not None:
         candidates = realism_flags.copy()
     else:
@@ -555,14 +560,15 @@ def _copy_selected_samples(selected_paths: List[str], output_dir: Path) -> None:
         selected_paths: List of source file paths.
         output_dir: Destination directory.
     """
-    seen_names: Dict[str, int] = {}
+    used_names: set[str] = set()
     for path_str in selected_paths:
         src = Path(path_str)
         name = src.name
-        if name in seen_names:
-            seen_names[name] += 1
-            name = f"{src.stem}_{seen_names[name]}{src.suffix}"
-        else:
-            seen_names[name] = 0
+        if name in used_names:
+            counter = 1
+            while f"{src.stem}_{counter}{src.suffix}" in used_names:
+                counter += 1
+            name = f"{src.stem}_{counter}{src.suffix}"
+        used_names.add(name)
         dst = output_dir / name
         shutil.copy2(str(src), str(dst))

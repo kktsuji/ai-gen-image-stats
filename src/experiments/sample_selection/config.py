@@ -5,7 +5,6 @@ Validates feature extraction, data sources, scoring, selection, and output setti
 Strict validation: all parameters must be explicitly specified in the config file.
 """
 
-import logging
 from typing import Any, Dict
 
 from src.utils.config import (
@@ -13,8 +12,6 @@ from src.utils.config import (
     validate_experiment_section,
     validate_output_section,
 )
-
-logger = logging.getLogger(__name__)
 
 VALID_FEATURE_MODELS = ["inceptionv3", "resnet50", "resnet101", "resnet152"]
 VALID_REAL_SOURCES = ["split_file", "directory"]
@@ -191,7 +188,11 @@ def _validate_data_section(config: Dict[str, Any]) -> None:
     # Validate label and class_name for output metadata
     if "label" not in data:
         raise KeyError("Missing required field: data.label")
-    if not isinstance(data["label"], int) or data["label"] < 0:
+    if (
+        isinstance(data["label"], bool)
+        or not isinstance(data["label"], int)
+        or data["label"] < 0
+    ):
         raise ValueError("data.label must be a non-negative integer")
 
     if "class_name" not in data:
