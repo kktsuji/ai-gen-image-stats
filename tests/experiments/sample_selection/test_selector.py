@@ -90,6 +90,7 @@ class TestComputeRealismFlags:
         flags = compute_realism_flags(real, gen, k=2)
         assert flags.shape == (1,)
         assert flags.dtype == bool
+        assert flags[0]
 
     def test_distant_sample_is_not_realistic(self):
         """A sample far from the real manifold should not be realistic."""
@@ -217,6 +218,12 @@ class TestSelectSamples:
         mask = select_samples(scores, mode="top_k", value=1)
         assert mask.dtype == bool
         assert isinstance(mask, np.ndarray)
+
+    def test_unknown_mode_raises(self):
+        """Unknown selection mode should raise ValueError."""
+        scores = np.array([1.0, 2.0, 3.0])
+        with pytest.raises(ValueError, match="Unknown selection mode"):
+            select_samples(scores, mode="invalid_mode", value=1)
 
 
 # ============================================================================
@@ -441,6 +448,24 @@ class TestCopySelectedSamples:
         assert (out_dir / "img.png").read_text() == "content_a"
         assert (out_dir / "img_1.png").read_text() == "content_b"
         assert (out_dir / "img_1_1.png").read_text() == "content_c"
+
+    def test_no_overwrite_existing_files_in_output_dir(self, tmp_path):
+        """Files already in output_dir must not be overwritten."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        (src_dir / "img.png").write_text("new_content")
+
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+        # Pre-existing file in output_dir
+        (out_dir / "img.png").write_text("existing_content")
+
+        _copy_selected_samples([str(src_dir / "img.png")], out_dir)
+
+        # Existing file should be untouched
+        assert (out_dir / "img.png").read_text() == "existing_content"
+        # New file gets a suffixed name
+        assert (out_dir / "img_1.png").read_text() == "new_content"
 
 
 # ============================================================================

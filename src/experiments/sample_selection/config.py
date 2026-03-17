@@ -83,17 +83,29 @@ def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
 
     if "batch_size" not in fe:
         raise KeyError("Missing required field: feature_extraction.batch_size")
-    if not isinstance(fe["batch_size"], int) or fe["batch_size"] < 1:
+    if (
+        isinstance(fe["batch_size"], bool)
+        or not isinstance(fe["batch_size"], int)
+        or fe["batch_size"] < 1
+    ):
         raise ValueError("feature_extraction.batch_size must be a positive integer")
 
     if "image_size" not in fe:
         raise KeyError("Missing required field: feature_extraction.image_size")
-    if not isinstance(fe["image_size"], int) or fe["image_size"] < 1:
+    if (
+        isinstance(fe["image_size"], bool)
+        or not isinstance(fe["image_size"], int)
+        or fe["image_size"] < 1
+    ):
         raise ValueError("feature_extraction.image_size must be a positive integer")
 
     if "num_workers" not in fe:
         raise KeyError("Missing required field: feature_extraction.num_workers")
-    if not isinstance(fe["num_workers"], int) or fe["num_workers"] < 0:
+    if (
+        isinstance(fe["num_workers"], bool)
+        or not isinstance(fe["num_workers"], int)
+        or fe["num_workers"] < 0
+    ):
         raise ValueError(
             "feature_extraction.num_workers must be a non-negative integer"
         )
@@ -218,7 +230,11 @@ def _validate_scoring_section(config: Dict[str, Any]) -> None:
 
     if "k" not in scoring:
         raise KeyError("Missing required field: scoring.k")
-    if not isinstance(scoring["k"], int) or scoring["k"] < 1:
+    if (
+        isinstance(scoring["k"], bool)
+        or not isinstance(scoring["k"], int)
+        or scoring["k"] < 1
+    ):
         raise ValueError("scoring.k must be a positive integer")
 
     if "require_realism" not in scoring:
@@ -257,17 +273,22 @@ def _validate_selection_section(config: Dict[str, Any]) -> None:
     mode = selection["mode"]
 
     if mode == "top_k":
-        if not isinstance(value, int) or value < 1:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(
                 "selection.value must be a positive integer for top_k mode"
             )
     elif mode == "percentile":
-        if not isinstance(value, (int, float)) or value <= 0 or value > 100:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or value <= 0
+            or value > 100
+        ):
             raise ValueError(
                 "selection.value must be a number in (0, 100] for percentile mode"
             )
     elif mode == "threshold":
-        if not isinstance(value, (int, float)) or value <= 0:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(
                 "selection.value must be a positive number for threshold mode"
             )

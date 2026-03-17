@@ -548,6 +548,9 @@ def select_samples(
         below_threshold = candidate_scores <= value
         selected[candidate_indices[below_threshold]] = True
 
+    else:
+        raise ValueError(f"Unknown selection mode: {mode!r}")
+
     return selected
 
 
@@ -560,15 +563,14 @@ def _copy_selected_samples(selected_paths: List[str], output_dir: Path) -> None:
         selected_paths: List of source file paths.
         output_dir: Destination directory.
     """
-    used_names: set[str] = set()
+    used_names: set[str] = {p.name for p in output_dir.iterdir() if p.is_file()}
     for path_str in selected_paths:
         src = Path(path_str)
         name = src.name
-        if name in used_names:
-            counter = 1
-            while f"{src.stem}_{counter}{src.suffix}" in used_names:
-                counter += 1
+        counter = 1
+        while name in used_names:
             name = f"{src.stem}_{counter}{src.suffix}"
+            counter += 1
         used_names.add(name)
         dst = output_dir / name
         shutil.copy2(str(src), str(dst))

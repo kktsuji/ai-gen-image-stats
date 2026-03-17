@@ -87,11 +87,25 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="batch_size"):
             validate_config(config)
 
+    def test_boolean_feature_batch_size_raises(self):
+        """Test that boolean batch_size raises ValueError."""
+        config = _make_valid_config()
+        config["feature_extraction"]["batch_size"] = True
+        with pytest.raises(ValueError, match="batch_size"):
+            validate_config(config)
+
     def test_missing_feature_image_size_raises(self):
         """Test that missing image_size raises KeyError."""
         config = _make_valid_config()
         del config["feature_extraction"]["image_size"]
         with pytest.raises(KeyError, match="image_size"):
+            validate_config(config)
+
+    def test_boolean_feature_image_size_raises(self):
+        """Test that boolean image_size raises ValueError."""
+        config = _make_valid_config()
+        config["feature_extraction"]["image_size"] = True
+        with pytest.raises(ValueError, match="image_size"):
             validate_config(config)
 
     def test_missing_feature_num_workers_raises(self):
@@ -105,6 +119,13 @@ class TestValidateConfig:
         """Test that negative num_workers raises ValueError."""
         config = _make_valid_config()
         config["feature_extraction"]["num_workers"] = -1
+        with pytest.raises(ValueError, match="num_workers"):
+            validate_config(config)
+
+    def test_boolean_num_workers_raises(self):
+        """Test that boolean num_workers raises ValueError."""
+        config = _make_valid_config()
+        config["feature_extraction"]["num_workers"] = False
         with pytest.raises(ValueError, match="num_workers"):
             validate_config(config)
 
@@ -286,6 +307,13 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="scoring.k"):
             validate_config(config)
 
+    def test_boolean_scoring_k_raises(self):
+        """Test that boolean scoring.k raises ValueError."""
+        config = _make_valid_config()
+        config["scoring"]["k"] = True
+        with pytest.raises(ValueError, match="scoring.k"):
+            validate_config(config)
+
     def test_missing_require_realism_raises(self):
         """Test that missing scoring.require_realism raises KeyError."""
         config = _make_valid_config()
@@ -329,6 +357,30 @@ class TestValidateConfig:
         config["selection"]["mode"] = "top_k"
         config["selection"]["value"] = 0
         with pytest.raises(ValueError, match="positive integer"):
+            validate_config(config)
+
+    def test_top_k_boolean_value_raises(self):
+        """Test that top_k mode with boolean value raises ValueError."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "top_k"
+        config["selection"]["value"] = True
+        with pytest.raises(ValueError, match="positive integer"):
+            validate_config(config)
+
+    def test_percentile_boolean_value_raises(self):
+        """Test that percentile mode with boolean value raises ValueError."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "percentile"
+        config["selection"]["value"] = True
+        with pytest.raises(ValueError, match="percentile"):
+            validate_config(config)
+
+    def test_threshold_boolean_value_raises(self):
+        """Test that threshold mode with boolean value raises ValueError."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "threshold"
+        config["selection"]["value"] = True
+        with pytest.raises(ValueError, match="threshold"):
             validate_config(config)
 
     def test_top_k_valid(self):
