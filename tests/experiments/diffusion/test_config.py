@@ -857,7 +857,7 @@ class TestConfigFileValidation:
         config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
         if not config_path.exists():
-            pytest.skip("configs/diffusion-example.yaml not found")
+            pytest.fail("Required file missing: configs/diffusion-example.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -870,7 +870,7 @@ class TestConfigFileValidation:
         config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
 
         if not config_path.exists():
-            pytest.skip("configs/diffusion-example.yaml not found")
+            pytest.fail("Required file missing: configs/diffusion-example.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

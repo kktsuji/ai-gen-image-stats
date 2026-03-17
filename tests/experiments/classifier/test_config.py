@@ -92,84 +92,16 @@ class TestGetModelSpecificConfig:
 
 
 def get_v2_default_config():
-    """Helper function to get a valid V2 config for testing."""
-    return {
-        "experiment": "classifier",
-        "mode": "train",
-        "compute": {"device": "cuda", "seed": None},
-        "model": {
-            "architecture": {"name": "resnet50", "num_classes": 2},
-            "initialization": {
-                "pretrained": True,
-                "freeze_backbone": False,
-                "trainable_layers": None,
-            },
-            "regularization": {"dropout": 0.5},
-        },
-        "data": {
-            "split_file": "outputs/splits/train_val_split.json",
-            "loading": {
-                "batch_size": 32,
-                "num_workers": 4,
-                "pin_memory": True,
-                "shuffle_train": True,
-                "drop_last": False,
-            },
-            "preprocessing": {
-                "image_size": 256,
-                "crop_size": 224,
-                "normalize": "imagenet",
-            },
-            "augmentation": {
-                "horizontal_flip": True,
-                "rotation_degrees": 0,
-                "color_jitter": {
-                    "enabled": False,
-                    "brightness": 0.2,
-                    "contrast": 0.2,
-                    "saturation": 0.2,
-                    "hue": 0.1,
-                },
-            },
-        },
-        "output": {
-            "base_dir": "outputs",
-            "subdirs": {"logs": "logs", "checkpoints": "checkpoints"},
-        },
-        "training": {
-            "epochs": 100,
-            "optimizer": {
-                "type": "adam",
-                "learning_rate": 0.001,
-                "weight_decay": 0.0001,
-                "gradient_clip_norm": None,
-            },
-            "scheduler": {"type": "cosine", "T_max": "auto", "eta_min": 1.0e-6},
-            "checkpointing": {
-                "save_frequency": 10,
-                "save_best_only": True,
-                "save_optimizer": True,
-            },
-            "validation": {
-                "enabled": True,
-                "frequency": 1,
-                "metric": "accuracy",
-                "early_stopping_patience": None,
-            },
-            "performance": {
-                "use_amp": False,
-                "use_tf32": True,
-                "cudnn_benchmark": True,
-                "compile_model": False,
-            },
-            "resume": {
-                "enabled": False,
-                "checkpoint": None,
-                "reset_optimizer": False,
-                "reset_scheduler": False,
-            },
-        },
-    }
+    """Helper function to get a valid V2 config for testing.
+
+    Loads from configs/classifier-example.yaml to stay in sync with the
+    canonical example config (single source of truth).
+    """
+    import copy
+
+    config_path = _PROJECT_ROOT / "configs/classifier-example.yaml"
+    with open(config_path) as f:
+        return copy.deepcopy(yaml.safe_load(f))
 
 
 @pytest.mark.unit
@@ -487,7 +419,7 @@ class TestConfigFiles:
         config_path = _PROJECT_ROOT / "configs/classifier-example.yaml"
 
         if not config_path.exists():
-            pytest.skip("configs/classifier-example.yaml not found")
+            pytest.fail("Required file missing: configs/classifier-example.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

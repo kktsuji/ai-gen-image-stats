@@ -6,8 +6,7 @@ appropriate experiment implementation based on the configuration.
 
 Usage:
     # Train classifier
-    python -m src.main configs/classifier/baseline.yaml
-    python -m src.main configs/classifier/inceptionv3.yaml
+    python -m src.main configs/classifier-example.yaml
 
     # Train diffusion model
     python -m src.main configs/diffusion.yaml
