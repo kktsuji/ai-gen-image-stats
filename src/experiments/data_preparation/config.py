@@ -2,30 +2,13 @@
 
 This module provides configuration validation for the data preparation experiment.
 Validates class directories, split parameters, and output settings.
+Strict validation: all parameters must be explicitly specified in the config file.
 """
 
 import logging
 from typing import Any, Dict
 
-from src.utils.config import get_default_config_from_module
-
 logger = logging.getLogger(__name__)
-
-
-def get_default_config() -> Dict[str, Any]:
-    """Get default configuration by loading default.yaml.
-
-    .. deprecated::
-        This function is deprecated and will be removed in a future release.
-
-    Returns:
-        Dictionary containing default configuration values from YAML file
-
-    Raises:
-        FileNotFoundError: If default.yaml is not found
-        yaml.YAMLError: If YAML is invalid
-    """
-    return get_default_config_from_module(__file__)
 
 
 def validate_config(config: Dict[str, Any]) -> None:

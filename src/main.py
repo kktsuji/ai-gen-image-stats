@@ -6,18 +6,17 @@ appropriate experiment implementation based on the configuration.
 
 Usage:
     # Train classifier
-    python -m src.main configs/classifier/baseline.yaml
-    python -m src.main configs/classifier/inceptionv3.yaml
+    python -m src.main configs/classifier-example.yaml
 
     # Train diffusion model
-    python -m src.main configs/diffusion/default.yaml
+    python -m src.main configs/diffusion.yaml
 
     # Generate synthetic data (for diffusion experiments)
-    python -m src.main configs/diffusion/generate.yaml
+    python -m src.main configs/diffusion-generate.yaml
 
     # Override config values with dot-notation
-    python -m src.main configs/diffusion/default.yaml --model.architecture.image_size 60
-    python -m src.main configs/diffusion/default.yaml --training.epochs 50 --data.loading.batch_size 16
+    python -m src.main configs/diffusion.yaml --model.architecture.image_size 60
+    python -m src.main configs/diffusion.yaml --training.epochs 50 --data.loading.batch_size 16
 
 Generation Mode (Diffusion):
     When mode='generate' in the config, the diffusion experiment uses
@@ -311,7 +310,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     validate_diffusion_config(config)
 
     # Get mode (train or generate)
-    mode = config.get("mode", "train")
+    mode = config["mode"]
 
     # Run shared experiment setup (logging, device, seed, config snapshot)
     device, log_dir = setup_experiment_common(

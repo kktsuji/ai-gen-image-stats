@@ -34,16 +34,13 @@ src/
 ├── base/              # Base classes for trainers, models, data loaders
 ├── experiments/       # Self-contained experiment implementations
 │   ├── data_preparation/  # Dataset splitting and preparation
-│   │   ├── config.py       # Config loading and validation
-│   │   ├── default.yaml    # Default configuration values
+│   │   ├── config.py       # Config validation
 │   │   └── prepare.py      # Scanning and splitting logic
 │   ├── classifier/    # Classification models and training
-│   │   ├── config.py       # Config loading and validation
-│   │   ├── default.yaml    # Default configuration values
+│   │   ├── config.py       # Config validation
 │   │   └── train.py        # Training logic
 │   ├── diffusion/     # Diffusion models (DDPM)
-│   │   ├── config.py       # Config loading and validation
-│   │   ├── default.yaml    # Default configuration values
+│   │   ├── config.py       # Config validation
 │   │   ├── train.py        # Training logic
 │   │   └── generate.py     # Generation logic
 │   └── gan/          # GAN models (planned)
@@ -55,7 +52,7 @@ configs/              # User experiment configurations (YAML)
 outputs/              # Training outputs (gitignored)
 ```
 
-**Note:** Default configuration files (`default.yaml`) are colocated with their experiment code in `src/experiments/`. The `configs/` directory is for user-provided configurations and experiment-specific overrides.
+**Note:** Example configuration files (`*-example.yaml`) are provided in the `configs/` directory. The system uses **strict mode** — all parameters must be explicitly specified in your config file; there are no implicit defaults.
 
 ## Installation
 
@@ -102,7 +99,7 @@ To receive Slack notifications when experiments complete or fail:
 
 ```bash
 # Prepare reproducible train/val split
-python -m src.main configs/data_preparation/default.yaml
+python -m src.main configs/data_preparation.yaml
 ```
 
 This scans the class directories, shuffles with a fixed seed, and writes a JSON split file used by all downstream experiments.
@@ -121,7 +118,7 @@ python -m src.main configs/classifier/inceptionv3.yaml
 
 ```bash
 # Train diffusion model
-python -m src.main configs/diffusion/default.yaml
+python -m src.main configs/diffusion.yaml
 ```
 
 ### Inference and Sample Generation
@@ -132,7 +129,7 @@ The diffusion module provides two ways to generate samples from trained models:
 
 ```bash
 # Generate samples using config file (recommended for CLI)
-python -m src.main configs/diffusion/generate.yaml
+python -m src.main configs/diffusion-generate.yaml
 ```
 
 #### Using Docker
@@ -201,7 +198,7 @@ samples, labels = sample_by_class(
 )
 ```
 
-**Note:** All parameters must be specified in the configuration file. The CLI accepts only the config file path as a positional argument. CLI parameter overrides are not supported.
+**Note:** All parameters must be specified in the configuration file. Individual values can be overridden via CLI using dot-notation (e.g., `--model.architecture.image_size 60`). See [Configuration](#configuration) for details.
 
 ## Configuration
 
@@ -234,7 +231,11 @@ The configuration is organized into logical sections:
   - `sampling`: Sampling parameters
   - `output`: Generation output settings
 
-See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete example.
+See [configs/diffusion-example.yaml](configs/diffusion-example.yaml) for a complete example.
+
+### Strict Mode
+
+The configuration system operates in **strict mode**: all parameters must be explicitly specified in your config file. There are no implicit defaults — the system validates config structure but does not fill in missing values. If a required parameter is missing, validation will raise an error.
 
 ### Diffusion Model Configuration
 
@@ -408,7 +409,7 @@ generation:
 
 #### Complete Example
 
-See [src/experiments/diffusion/default.yaml](src/experiments/diffusion/default.yaml) for a complete, documented example configuration.
+See [configs/diffusion-example.yaml](configs/diffusion-example.yaml) for a complete, documented example configuration.
 
 ## Logging
 

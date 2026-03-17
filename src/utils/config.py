@@ -1,7 +1,8 @@
 """Configuration management utilities.
 
 This module provides utilities for loading and merging configuration files.
-Priority order: CLI arguments > Config file > Code defaults
+All parameters must be explicitly specified in the config file (strict mode).
+Priority order: CLI overrides > Config file
 """
 
 from pathlib import Path
@@ -87,9 +88,13 @@ def load_and_merge_configs(
 
     Priority order: overrides > config_file > defaults
 
+    Note: The ``defaults`` parameter exists for test convenience only.
+    Production code should always pass a fully-specified config file
+    (strict mode — no implicit defaults).
+
     Args:
         config_path: Optional path to YAML configuration file
-        defaults: Optional dictionary of default values
+        defaults: Optional dictionary of default values (test-only)
         overrides: Optional dictionary of override values (highest priority)
 
     Returns:
@@ -252,47 +257,6 @@ def derive_return_labels_from_model(config: Dict[str, Any]) -> bool:
 
 
 # ==============================================================================
-# Common Configuration Loading Functions
-# ==============================================================================
-
-
-def get_default_config_from_module(module_file: str) -> Dict[str, Any]:
-    """Get default configuration by loading default.yaml from module directory.
-
-    This is a generic implementation used by experiment modules to load their
-    default configuration from a colocated default.yaml file. Following the
-    principle of keeping related files together, each module has its own
-    default.yaml in the same directory.
-
-    Args:
-        module_file: The __file__ attribute of the calling module
-
-    Returns:
-        Dictionary containing default configuration values from YAML file
-
-    Raises:
-        FileNotFoundError: If default.yaml is not found
-        yaml.YAMLError: If YAML is invalid
-
-    Example:
-        >>> # In a config module at src/experiments/myexp/config.py:
-        >>> def get_default_config():
-        ...     return get_default_config_from_module(__file__)
-    """
-    # Resolve path to default.yaml in the same directory as the module
-    default_yaml = Path(module_file).parent / "default.yaml"
-
-    if not default_yaml.exists():
-        module_dir = Path(module_file).parent
-        raise FileNotFoundError(
-            f"Default config not found: {default_yaml}\n"
-            f"Expected location: {module_dir}/default.yaml"
-        )
-
-    return load_config(str(default_yaml))
-
-
-# ==============================================================================
 # Common Configuration Validation Functions
 # ==============================================================================
 
@@ -319,7 +283,7 @@ def validate_compute_section(
     if valid_devices is None:
         valid_devices = ["cuda", "cpu", "auto"]
 
-    device = compute.get("device", "cuda")
+    device = compute["device"]
     if device not in valid_devices:
         raise ValueError(f"Invalid device: {device}. Must be one of {valid_devices}")
 

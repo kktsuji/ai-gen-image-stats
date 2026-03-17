@@ -15,7 +15,6 @@ import pytest
 import yaml
 
 from src.utils.config import (
-    get_default_config_from_module,
     load_and_merge_configs,
     load_config,
     merge_configs,
@@ -470,74 +469,6 @@ class TestConfigIntegration:
         # Step 7: Verify saved config can be reloaded
         reloaded = load_config(str(output_file))
         assert reloaded == final_config
-
-
-@pytest.mark.unit
-class TestGetDefaultConfigFromModule:
-    """Test get_default_config_from_module function."""
-
-    def test_load_from_module_with_default_yaml(self, tmp_path):
-        """Test loading default.yaml from module directory."""
-        # Create a mock module directory with default.yaml
-        module_dir = tmp_path / "mock_module"
-        module_dir.mkdir()
-
-        default_yaml = module_dir / "default.yaml"
-        config_data = {
-            "experiment": "test",
-            "epochs": 100,
-            "model": {"name": "test_model"},
-        }
-        with open(default_yaml, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False)
-
-        # Create a mock module file
-        module_file = module_dir / "config.py"
-        module_file.write_text("# Mock module file")
-
-        # Load config
-        result = get_default_config_from_module(str(module_file))
-
-        assert result == config_data
-        assert result["experiment"] == "test"
-        assert result["epochs"] == 100
-
-    def test_load_from_module_file_not_found(self, tmp_path):
-        """Test error when default.yaml is missing."""
-        # Create a module directory without default.yaml
-        module_dir = tmp_path / "mock_module"
-        module_dir.mkdir()
-
-        module_file = module_dir / "config.py"
-        module_file.write_text("# Mock module file")
-
-        # Should raise FileNotFoundError
-        with pytest.raises(FileNotFoundError, match="Default config not found"):
-            get_default_config_from_module(str(module_file))
-
-    def test_load_from_real_diffusion_module(self):
-        """Test loading from actual diffusion module."""
-        from src.experiments.diffusion import config
-
-        result = get_default_config_from_module(config.__file__)
-
-        # Verify it has expected structure
-        assert "experiment" in result
-        assert result["experiment"] == "diffusion"
-        assert "model" in result
-        assert "training" in result
-
-    def test_load_from_real_classifier_module(self):
-        """Test loading from actual classifier module."""
-        from src.experiments.classifier import config
-
-        result = get_default_config_from_module(config.__file__)
-
-        # Verify it has expected structure
-        assert "experiment" in result
-        assert result["experiment"] == "classifier"
-        assert "model" in result
-        assert "training" in result
 
 
 @pytest.mark.unit
