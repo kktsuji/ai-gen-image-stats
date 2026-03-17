@@ -740,6 +740,38 @@ def setup_experiment_gan(config: Dict[str, Any]) -> None:
     )
 
 
+def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
+    """Setup and run sample selection experiment.
+
+    This experiment compares generated images against real training images in
+    feature space, scores each generated sample by its distance to the real
+    data manifold, and selects the highest-quality samples.
+
+    Args:
+        config: Configuration dictionary with feature_extraction, data, scoring,
+                selection, and output sections.
+
+    Raises:
+        ValueError: If configuration is invalid
+        FileNotFoundError: If data directories or files don't exist
+    """
+    from src.experiments.sample_selection.config import (
+        validate_config as validate_sample_selection_config,
+    )
+    from src.experiments.sample_selection.selector import run_sample_selection
+
+    validate_sample_selection_config(config)
+
+    device, log_dir = setup_experiment_common(
+        config, "SAMPLE SELECTION EXPERIMENT STARTED"
+    )
+
+    run_sample_selection(config, device, log_dir)
+
+    logger.info("")
+    logger.info("Sample selection completed successfully!")
+
+
 def setup_experiment_data_preparation(config: Dict[str, Any]) -> None:
     """Setup and run data preparation experiment.
 
@@ -801,12 +833,15 @@ def main(args: Optional[list] = None) -> None:
             setup_experiment_diffusion(config)
         elif experiment == "gan":
             setup_experiment_gan(config)
+        elif experiment == "sample_selection":
+            setup_experiment_sample_selection(config)
         elif experiment == "data_preparation":
             setup_experiment_data_preparation(config)
         else:
             raise ValueError(
                 f"Unknown experiment type: {experiment}. "
-                f"Supported experiments: classifier, diffusion, gan, data_preparation"
+                f"Supported experiments: classifier, diffusion, gan, "
+                f"sample_selection, data_preparation"
             )
 
         # Notify on success

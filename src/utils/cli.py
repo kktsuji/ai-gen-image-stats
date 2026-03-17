@@ -322,7 +322,13 @@ def validate_config(config: Dict[str, Any]) -> None:
     if "experiment" not in config:
         raise ValueError("'experiment' field is required in config")
 
-    valid_experiments = ["classifier", "diffusion", "gan", "data_preparation"]
+    valid_experiments = [
+        "classifier",
+        "diffusion",
+        "gan",
+        "data_preparation",
+        "sample_selection",
+    ]
     if config["experiment"] not in valid_experiments:
         raise ValueError(
             f"Invalid experiment type: {config['experiment']}. "

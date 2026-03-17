@@ -16,6 +16,7 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
 - **Multiple Experiment Types**:
   - **Data Preparation**: Reproducible train/val splitting with JSON split files
   - **Diffusion Models**: DDPM for synthetic image generation
+  - **Sample Selection**: Quality-based filtering of generated samples using k-NN distance in feature space
   - **Classifiers**: InceptionV3, ResNet (50/101), WRN for classification tasks
   - **GANs**: (Planned) Adversarial training for image generation
 
@@ -43,6 +44,10 @@ src/
 │   │   ├── config.py       # Config validation
 │   │   ├── train.py        # Training logic
 │   │   └── generate.py     # Generation logic
+│   ├── sample_selection/  # Quality-based sample filtering
+│   │   ├── config.py       # Config validation
+│   │   ├── selector.py     # Scoring and selection pipeline
+│   │   └── report.py       # CSV/JSON report generation
 │   └── gan/          # GAN models (planned)
 ├── utils/            # CLI, config, device management, metrics
 └── data/             # Dataset implementations and transforms
@@ -120,6 +125,24 @@ python -m src.main configs/classifier/inceptionv3.yaml
 # Train diffusion model
 python -m src.main configs/diffusion.yaml
 ```
+
+### Selecting High-Quality Generated Samples
+
+After generating synthetic images, filter out low-quality samples by comparing them to real training data in feature space:
+
+```bash
+# Select best generated samples (one class per run)
+python -m src.main configs/sample-selection-example.yaml
+```
+
+This extracts features from both real and generated images using a pretrained backbone (InceptionV3/ResNet), scores each generated sample by its k-NN distance to the real data manifold, and outputs:
+
+- **Selected samples** copied to the output directory
+- **Quality report** (CSV) with per-sample scores and selection status
+- **Accepted samples JSON** compatible with `SplitFileDataset` for downstream training
+- **Summary** (JSON) with dataset-level metrics (FID, precision, recall)
+
+Selection modes (configured in YAML): `top_k` (best N), `percentile` (top X%), or `threshold` (below distance cutoff). See [configs/sample-selection-example.yaml](configs/sample-selection-example.yaml) for a complete example.
 
 ### Inference and Sample Generation
 
@@ -717,6 +740,7 @@ tests/
 ├── experiments/             # Tests for src/experiments/
 │   ├── classifier/
 │   ├── diffusion/
+│   ├── sample_selection/
 │   └── gan/
 └── utils/                   # Tests for src/utils/
     └── data/                # Tests for src/utils/data/
@@ -806,9 +830,10 @@ This project is undergoing active refactoring according to the plan in [docs/res
 ## Research Workflow
 
 1. **Generate Synthetic Data** (optional): Train diffusion model to generate synthetic images
-2. **Train Baseline Classifier**: Train on real data only
-3. **Train with Synthetic Augmentation**: Train on real + synthetic data
-4. **Compare Results**: Analyze performance differences using built-in tools
+2. **Select Quality Samples** (optional): Filter generated images using sample selection to keep only realistic samples
+3. **Train Baseline Classifier**: Train on real data only
+4. **Train with Synthetic Augmentation**: Train on real + selected synthetic data
+5. **Compare Results**: Analyze performance differences using built-in tools
 
 ## Docker Usage
 
