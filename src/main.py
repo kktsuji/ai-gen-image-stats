@@ -310,7 +310,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     validate_diffusion_config(config)
 
     # Get mode (train or generate)
-    mode = config.get("mode", "train")
+    mode = config["mode"]
 
     # Run shared experiment setup (logging, device, seed, config snapshot)
     device, log_dir = setup_experiment_common(

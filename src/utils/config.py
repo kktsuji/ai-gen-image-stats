@@ -88,9 +88,13 @@ def load_and_merge_configs(
 
     Priority order: overrides > config_file > defaults
 
+    Note: The ``defaults`` parameter exists for test convenience only.
+    Production code should always pass a fully-specified config file
+    (strict mode — no implicit defaults).
+
     Args:
         config_path: Optional path to YAML configuration file
-        defaults: Optional dictionary of default values
+        defaults: Optional dictionary of default values (test-only)
         overrides: Optional dictionary of override values (highest priority)
 
     Returns:
@@ -279,7 +283,7 @@ def validate_compute_section(
     if valid_devices is None:
         valid_devices = ["cuda", "cpu", "auto"]
 
-    device = compute.get("device", "cuda")
+    device = compute["device"]
     if device not in valid_devices:
         raise ValueError(f"Invalid device: {device}. Must be one of {valid_devices}")
 

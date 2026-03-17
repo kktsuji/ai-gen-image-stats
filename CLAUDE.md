@@ -126,6 +126,6 @@ When modifying source code (`src/`), always update or add related tests (`tests/
 After modifying any project files, always run the following checks in order and fix any errors before finishing:
 
 1. `bash .husky/pre-commit` — **Pre-commit hooks**: Verify all Husky pre-commit hooks pass by running the same script Git uses. This runs: `ruff check` (lint), `ruff format --check` (format), `pyright` (type check), and `prettier --check "**/*.md"` (Markdown format).
-2. `python tests/fixtures/mock_data/create_mock_images.py` — **Generate test fixtures**: Run the script to create mock images needed for tests.
+2. `venv/bin/python tests/fixtures/mock_data/create_mock_images.py` — **Generate test fixtures**: Run the script to create mock images needed for tests.
 3. `venv/bin/pytest --cov=src -m unit` — **Run unit tests & check coverage**: Run unit tests and confirm that unit-test coverage remains above 80%.
 4. `venv/bin/pytest -m "component or integration"` — **Run component & integration tests**: Run remaining non-smoke tests.

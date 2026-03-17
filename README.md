@@ -129,7 +129,7 @@ The diffusion module provides two ways to generate samples from trained models:
 
 ```bash
 # Generate samples using config file (recommended for CLI)
-python -m src.main configs/diffusion/generate.yaml
+python -m src.main configs/diffusion-generate.yaml
 ```
 
 #### Using Docker

@@ -35,6 +35,18 @@ def _make_valid_config():
         return copy.deepcopy(yaml.safe_load(f))
 
 
+def _make_generate_config():
+    """Return a valid generate-mode diffusion config for testing.
+
+    Convenience wrapper around ``_make_valid_config()`` that sets
+    ``mode`` to ``"generate"`` and provides a checkpoint path.
+    """
+    config = _make_valid_config()
+    config["mode"] = "generate"
+    config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+    return config
+
+
 @pytest.mark.unit
 class TestValidateConfig:
     """Test configuration validation."""
@@ -513,9 +525,7 @@ class TestValidateConfig:
 
     def test_invalid_generation_guidance_scale(self):
         """Test validation fails with invalid generation.sampling.guidance_scale."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["guidance_scale"] = -1.0
 
         with pytest.raises(
@@ -554,8 +564,7 @@ class TestModeAwareValidation:
 
     def test_generate_mode_requires_checkpoint(self):
         """Test that generate mode requires generation.checkpoint."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
+        config = _make_generate_config()
         config["generation"]["checkpoint"] = None
 
         with pytest.raises(ValueError, match="generation.checkpoint is required"):
@@ -563,9 +572,7 @@ class TestModeAwareValidation:
 
     def test_generate_mode_with_valid_checkpoint(self):
         """Test that generate mode validates with checkpoint set."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
 
         # Should not raise
         validate_config(config)
@@ -598,9 +605,7 @@ class TestModeAwareValidation:
 
     def test_generation_use_ema(self):
         """Test that generation.sampling.use_ema is validated (V2)."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["use_ema"] = "true"  # Should be boolean
 
         with pytest.raises(ValueError, match="use_ema must be a boolean"):
@@ -608,9 +613,7 @@ class TestModeAwareValidation:
 
     def test_generation_num_samples(self):
         """Test that generation.sampling.num_samples is validated (V2)."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["num_samples"] = 0
 
         with pytest.raises(ValueError, match="num_samples must be a positive"):
@@ -618,9 +621,7 @@ class TestModeAwareValidation:
 
     def test_generation_ema_decay_valid(self):
         """Test that generation.sampling.ema_decay passes validation with valid value."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["ema_decay"] = 0.9999
 
         # Should not raise
@@ -628,9 +629,7 @@ class TestModeAwareValidation:
 
     def test_generation_ema_decay_invalid(self):
         """Test that generation.sampling.ema_decay fails with out-of-range value."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["ema_decay"] = 1.5
 
         with pytest.raises(
@@ -646,9 +645,7 @@ class TestModeAwareValidation:
 
     def test_generation_batch_size_valid(self):
         """Test that generation.sampling.batch_size passes validation with valid value."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["batch_size"] = 50
 
         # Should not raise
@@ -656,9 +653,7 @@ class TestModeAwareValidation:
 
     def test_generation_batch_size_invalid(self):
         """Test that generation.sampling.batch_size fails with negative value."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["batch_size"] = -1
 
         with pytest.raises(ValueError, match="batch_size must be a positive integer"):
@@ -677,60 +672,46 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_null_passes(self):
         """Test that class_selection=null is accepted."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = None
         validate_config(config)
 
     def test_generation_class_selection_valid_single(self):
         """Test that class_selection=[0] is accepted."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = [0]
         validate_config(config)
 
     def test_generation_class_selection_valid_subset(self):
         """Test that class_selection=[0, 1] is accepted."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = [0, 1]
         validate_config(config)
 
     def test_generation_class_selection_empty_list_raises(self):
         """Test that class_selection=[] raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = []
         with pytest.raises(ValueError, match="must be a non-empty list or null"):
             validate_config(config)
 
     def test_generation_class_selection_non_integer_raises(self):
         """Test that class_selection=[0, 'a'] raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = [0, "a"]
         with pytest.raises(ValueError, match="must contain non-negative integers"):
             validate_config(config)
 
     def test_generation_class_selection_negative_raises(self):
         """Test that class_selection=[-1] raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = [-1]
         with pytest.raises(ValueError, match="must contain non-negative integers"):
             validate_config(config)
 
     def test_generation_class_selection_duplicates_raises(self):
         """Test that class_selection=[0, 0] raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["sampling"]["class_selection"] = [0, 0]
         with pytest.raises(
             ValueError, match="must not contain duplicate class indices"
@@ -739,9 +720,7 @@ class TestModeAwareValidation:
 
     def test_generation_class_selection_out_of_range_raises(self):
         """Test that class_selection=[99] with num_classes=2 raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["model"]["conditioning"]["num_classes"] = 2
         config["generation"]["sampling"]["class_selection"] = [99]
         with pytest.raises(ValueError, match="contains indices"):
@@ -1057,9 +1036,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_grid_nrow_invalid(self):
         """generation.output.grid_nrow = 0 raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["output"]["grid_nrow"] = 0
         with pytest.raises(
             ValueError, match="generation.output.grid_nrow must be a positive integer"
@@ -1068,9 +1045,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_save_individual_not_bool(self):
         """generation.output.save_individual = 'yes' raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["output"]["save_individual"] = "yes"
         with pytest.raises(
             ValueError, match="generation.output.save_individual must be a boolean"
@@ -1079,9 +1054,7 @@ class TestValidateConfigErrorPaths:
 
     def test_generation_output_save_grid_not_bool(self):
         """generation.output.save_grid = 'yes' raises ValueError."""
-        config = _make_valid_config()
-        config["mode"] = "generate"
-        config["generation"]["checkpoint"] = "path/to/checkpoint.pth"
+        config = _make_generate_config()
         config["generation"]["output"]["save_grid"] = "yes"
         with pytest.raises(
             ValueError, match="generation.output.save_grid must be a boolean"
