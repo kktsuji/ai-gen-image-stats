@@ -5,7 +5,7 @@ Tests cover:
 - CLI argument parsing with config file
 - Config validation
 - Error handling for missing/invalid configs
-- Dot-notation config overrides (type inference, parsing, merging)
+- Config overrides (top-level and dot-notation: type inference, parsing, merging)
 """
 
 import pytest
@@ -186,7 +186,7 @@ class TestDotNotationToDict:
 
 @pytest.mark.unit
 class TestParseOverrideArgs:
-    """Test parsing of dot-notation CLI override arguments."""
+    """Test parsing of CLI override arguments (top-level and dot-notation)."""
 
     def test_single_override(self):
         result = parse_override_args(["--model.image_size", "64"])
@@ -234,9 +234,13 @@ class TestParseOverrideArgs:
         with pytest.raises(ValueError, match="Missing value"):
             parse_override_args(["--model.image_size", "--training.epochs", "10"])
 
-    def test_non_dot_notation_raises_error(self):
-        with pytest.raises(ValueError, match="dot-notation"):
-            parse_override_args(["--epochs", "10"])
+    def test_top_level_override(self):
+        result = parse_override_args(["--mode", "generate"])
+        assert result == {"mode": "generate"}
+
+    def test_top_level_override_with_type_inference(self):
+        result = parse_override_args(["--epochs", "10"])
+        assert result == {"epochs": 10}
 
     def test_no_leading_dashes_raises_error(self):
         with pytest.raises(ValueError, match="Unexpected argument"):
@@ -292,12 +296,19 @@ class TestValidateOverrideKeys:
         overrides = {"model": {"image_size": 64}, "training": {"epochs": 50}}
         validate_override_keys(config, overrides)  # Should not raise
 
-    def test_override_non_dict_with_dict_skips_recursion(self):
-        """Override a scalar with a dict — validation only checks key existence."""
+    def test_override_non_dict_with_dict_raises_error(self):
+        """Override a scalar with a dict raises ValueError."""
         config = {"model": {"image_size": 32}}
         overrides = {"model": {"image_size": {"width": 64}}}
-        # Key exists, so validation passes (type mismatch is a downstream concern)
-        validate_override_keys(config, overrides)
+        with pytest.raises(ValueError, match="not a nested object"):
+            validate_override_keys(config, overrides)
+
+    def test_override_scalar_with_nested_key_raises_error(self):
+        """Override like --mode.foo bar when mode is a scalar raises ValueError."""
+        config = {"mode": "train", "model": {"image_size": 32}}
+        overrides = {"mode": {"foo": "bar"}}
+        with pytest.raises(ValueError, match="'mode'.*not a nested object"):
+            validate_override_keys(config, overrides)
 
     def test_override_dict_with_scalar_skips_recursion(self):
         """Override a dict with a scalar — validation only checks key existence."""
@@ -549,9 +560,16 @@ class TestParseArgsWithOverrides:
         assert config["data"]["label"] == "0"
         assert isinstance(config["data"]["label"], str)
 
-    def test_invalid_override_no_dot_raises_error(self, tmp_path):
+    def test_top_level_override_in_parse_args(self, tmp_path):
+        path = self._write_config(
+            tmp_path, {"experiment": "classifier", "mode": "train"}
+        )
+        config = parse_args([path, "--mode", "generate"])
+        assert config["mode"] == "generate"
+
+    def test_top_level_override_unknown_key_raises_error(self, tmp_path):
         path = self._write_config(tmp_path, {"experiment": "classifier"})
-        with pytest.raises(ValueError, match="dot-notation"):
+        with pytest.raises(ValueError, match="Unknown config key"):
             parse_args([path, "--epochs", "10"])
 
 

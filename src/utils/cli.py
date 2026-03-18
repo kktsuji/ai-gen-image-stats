@@ -1,7 +1,7 @@
 """Command-line interface utilities.
 
 This module provides CLI argument parsing with config file and optional
-dot-notation parameter overrides.
+parameter overrides (top-level or dot-notation).
 """
 
 import argparse
@@ -83,13 +83,16 @@ def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
     """Convert a dot-notation key and value into a nested dictionary.
 
     Args:
-        key: Dot-separated key (e.g., "model.architecture.image_size")
+        key: Key string, either a single segment (e.g., "mode") or
+            dot-separated for nested access (e.g., "model.architecture.image_size")
         value: Value to set at the leaf
 
     Returns:
         Nested dictionary
 
     Example:
+        >>> dot_notation_to_dict("mode", "generate")
+        {'mode': 'generate'}
         >>> dot_notation_to_dict("model.architecture.image_size", 60)
         {'model': {'architecture': {'image_size': 60}}}
     """
@@ -104,10 +107,11 @@ def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
 
 
 def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
-    """Parse remaining CLI arguments as dot-notation config overrides.
+    """Parse remaining CLI arguments as config overrides.
 
-    Each override must be a ``--dot.notation value`` pair where the key
-    contains at least one dot to distinguish overrides from regular flags.
+    Each override must be a ``--key value`` pair. Keys may use dot-notation
+    for nested values (e.g., ``--model.architecture.image_size 60``) or be
+    top-level keys (e.g., ``--mode generate``).
 
     Args:
         remaining: List of unrecognized CLI arguments from parse_known_args
@@ -116,7 +120,7 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
         Nested dictionary of override values
 
     Raises:
-        ValueError: If arguments are malformed (missing value, no dot in key)
+        ValueError: If arguments are malformed (missing value)
 
     Note:
         Values starting with ``--`` are treated as the next override key, not
@@ -124,6 +128,8 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
         "Missing value" error because ``"--exp"`` is interpreted as a new key.
 
     Example:
+        >>> parse_override_args(["--mode", "generate"])
+        {'mode': 'generate'}
         >>> parse_override_args(["--model.architecture.image_size", "60"])
         {'model': {'architecture': {'image_size': 60}}}
     """
@@ -143,19 +149,11 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
                 )
             raise ValueError(
                 f"Unexpected argument: '{arg}'. "
-                f"Override keys must start with '--' and use dot-notation "
-                f"(e.g., --model.architecture.image_size 60)"
+                f"Override keys must start with '--' "
+                f"(e.g., --mode generate or --model.architecture.image_size 60)"
             )
 
         key = arg[2:]  # Strip leading --
-
-        if "." not in key:
-            raise ValueError(
-                f"Invalid override key: '{arg}'. "
-                f"Override keys must use dot-notation with at least one dot "
-                f"(e.g., --model.architecture.image_size 60). "
-                f"Top-level keys should be set in the config file."
-            )
 
         # Check that a value follows
         if i + 1 >= len(remaining) or remaining[i + 1].startswith("--"):
@@ -204,7 +202,12 @@ def validate_override_keys(
                 f"Available keys at '{prefix or '<root>'}': "
                 f"{sorted(config.keys())}"
             )
-        if isinstance(value, dict) and isinstance(config.get(key), dict):
+        if isinstance(value, dict):
+            if not isinstance(config.get(key), dict):
+                raise ValueError(
+                    f"Unknown config key: '{full_key}'. "
+                    f"'{full_key}' is not a nested object in base config."
+                )
             validate_override_keys(config[key], value, full_key)
 
 
@@ -212,7 +215,7 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser for the project.
 
     Accepts a config file path as positional argument, an optional --verbose
-    flag, and any dot-notation overrides (parsed separately).
+    flag, and any config overrides (parsed separately).
 
     Returns:
         Configured ArgumentParser instance
@@ -229,7 +232,9 @@ def create_parser() -> argparse.ArgumentParser:
         description="AI Image Generation and Statistics Training Framework",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Config overrides (dot-notation):\n"
+            "Config overrides:\n"
+            "  python -m src.main configs/diffusion.yaml "
+            "--mode generate\n"
             "  python -m src.main configs/diffusion.yaml "
             "--model.architecture.image_size 60\n"
             "  python -m src.main configs/diffusion.yaml "
@@ -261,7 +266,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     This is the main entry point for CLI processing. It:
     1. Parses known CLI arguments (config file path, --verbose)
     2. Loads the config file
-    3. Parses remaining arguments as dot-notation config overrides
+    3. Parses remaining arguments as config overrides
     4. Deep-merges overrides on top of the loaded config
     5. Returns the final configuration dictionary
 
@@ -277,6 +282,9 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         ValueError: If overrides are malformed
 
     Example:
+        >>> config = parse_args(['config.yaml', '--mode', 'generate'])
+        >>> config['mode']
+        'generate'
         >>> config = parse_args(['config.yaml', '--model.architecture.image_size', '60'])
         >>> config['model']['architecture']['image_size']
         60
@@ -294,7 +302,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     # Load config file
     config = load_config(config_path)
 
-    # Apply dot-notation overrides from CLI
+    # Apply overrides from CLI
     if remaining:
         cli_overrides = parse_override_args(remaining)
         validate_override_keys(config, cli_overrides)
