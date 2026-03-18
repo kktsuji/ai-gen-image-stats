@@ -25,12 +25,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 def _make_valid_config():
     """Return a valid diffusion configuration dict for testing.
 
-    Loads from configs/diffusion-example.yaml to stay in sync with the
+    Loads from configs/examples/diffusion.yaml to stay in sync with the
     canonical example config (single source of truth).
     """
     import copy
 
-    config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
+    config_path = _PROJECT_ROOT / "configs/examples/diffusion.yaml"
     with open(config_path) as f:
         return copy.deepcopy(yaml.safe_load(f))
 
@@ -832,11 +832,11 @@ class TestConfigFileValidation:
     """Test validation of actual config files."""
 
     def test_example_config_file(self):
-        """Test that diffusion-example.yaml is valid."""
-        config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
+        """Test that configs/examples/diffusion.yaml is valid."""
+        config_path = _PROJECT_ROOT / "configs/examples/diffusion.yaml"
 
         if not config_path.exists():
-            pytest.fail("Required file missing: configs/diffusion-example.yaml")
+            pytest.fail("Required file missing: configs/examples/diffusion.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -845,11 +845,11 @@ class TestConfigFileValidation:
         validate_config(config)
 
     def test_example_config_structure(self):
-        """Test diffusion-example config has expected structure (V2)."""
-        config_path = _PROJECT_ROOT / "configs/diffusion-example.yaml"
+        """Test diffusion example config has expected structure (V2)."""
+        config_path = _PROJECT_ROOT / "configs/examples/diffusion.yaml"
 
         if not config_path.exists():
-            pytest.fail("Required file missing: configs/diffusion-example.yaml")
+            pytest.fail("Required file missing: configs/examples/diffusion.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

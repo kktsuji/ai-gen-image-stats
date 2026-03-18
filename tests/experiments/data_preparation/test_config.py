@@ -18,10 +18,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 def _make_valid_config():
     """Create a valid config for testing.
 
-    Loads from configs/data-preparation-example.yaml to stay in sync with the
+    Loads from configs/examples/data-preparation.yaml to stay in sync with the
     canonical example config (single source of truth).
     """
-    config_path = _PROJECT_ROOT / "configs/data-preparation-example.yaml"
+    config_path = _PROJECT_ROOT / "configs/examples/data-preparation.yaml"
     with open(config_path) as f:
         return copy.deepcopy(yaml.safe_load(f))
 

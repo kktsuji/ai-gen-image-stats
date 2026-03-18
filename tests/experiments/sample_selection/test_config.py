@@ -15,7 +15,7 @@ from src.experiments.sample_selection.config import validate_config
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-_config_path = _PROJECT_ROOT / "configs/sample-selection-example.yaml"
+_config_path = _PROJECT_ROOT / "configs/examples/sample-selection.yaml"
 with open(_config_path) as _f:
     _BASE_CONFIG = yaml.safe_load(_f)
 
