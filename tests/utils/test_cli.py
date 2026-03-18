@@ -296,12 +296,19 @@ class TestValidateOverrideKeys:
         overrides = {"model": {"image_size": 64}, "training": {"epochs": 50}}
         validate_override_keys(config, overrides)  # Should not raise
 
-    def test_override_non_dict_with_dict_skips_recursion(self):
-        """Override a scalar with a dict — validation only checks key existence."""
+    def test_override_non_dict_with_dict_raises_error(self):
+        """Override a scalar with a dict raises ValueError."""
         config = {"model": {"image_size": 32}}
         overrides = {"model": {"image_size": {"width": 64}}}
-        # Key exists, so validation passes (type mismatch is a downstream concern)
-        validate_override_keys(config, overrides)
+        with pytest.raises(ValueError, match="not a nested object"):
+            validate_override_keys(config, overrides)
+
+    def test_override_scalar_with_nested_key_raises_error(self):
+        """Override like --mode.foo bar when mode is a scalar raises ValueError."""
+        config = {"mode": "train", "model": {"image_size": 32}}
+        overrides = {"mode": {"foo": "bar"}}
+        with pytest.raises(ValueError, match="'mode'.*not a nested object"):
+            validate_override_keys(config, overrides)
 
     def test_override_dict_with_scalar_skips_recursion(self):
         """Override a dict with a scalar — validation only checks key existence."""

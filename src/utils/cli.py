@@ -202,7 +202,12 @@ def validate_override_keys(
                 f"Available keys at '{prefix or '<root>'}': "
                 f"{sorted(config.keys())}"
             )
-        if isinstance(value, dict) and isinstance(config.get(key), dict):
+        if isinstance(value, dict):
+            if not isinstance(config.get(key), dict):
+                raise ValueError(
+                    f"Unknown config key: '{full_key}'. "
+                    f"'{full_key}' is not a nested object in base config."
+                )
             validate_override_keys(config[key], value, full_key)
 
 
