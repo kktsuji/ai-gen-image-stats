@@ -104,10 +104,11 @@ def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
 
 
 def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
-    """Parse remaining CLI arguments as dot-notation config overrides.
+    """Parse remaining CLI arguments as config overrides.
 
-    Each override must be a ``--dot.notation value`` pair where the key
-    contains at least one dot to distinguish overrides from regular flags.
+    Each override must be a ``--key value`` pair. Keys may use dot-notation
+    for nested values (e.g., ``--model.architecture.image_size 60``) or be
+    top-level keys (e.g., ``--mode generate``).
 
     Args:
         remaining: List of unrecognized CLI arguments from parse_known_args
@@ -116,7 +117,7 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
         Nested dictionary of override values
 
     Raises:
-        ValueError: If arguments are malformed (missing value, no dot in key)
+        ValueError: If arguments are malformed (missing value)
 
     Note:
         Values starting with ``--`` are treated as the next override key, not
@@ -126,6 +127,8 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
     Example:
         >>> parse_override_args(["--model.architecture.image_size", "60"])
         {'model': {'architecture': {'image_size': 60}}}
+        >>> parse_override_args(["--mode", "generate"])
+        {'mode': 'generate'}
     """
     if not remaining:
         return {}
@@ -148,14 +151,6 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
             )
 
         key = arg[2:]  # Strip leading --
-
-        if "." not in key:
-            raise ValueError(
-                f"Invalid override key: '{arg}'. "
-                f"Override keys must use dot-notation with at least one dot "
-                f"(e.g., --model.architecture.image_size 60). "
-                f"Top-level keys should be set in the config file."
-            )
 
         # Check that a value follows
         if i + 1 >= len(remaining) or remaining[i + 1].startswith("--"):
