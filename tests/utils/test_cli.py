@@ -5,7 +5,7 @@ Tests cover:
 - CLI argument parsing with config file
 - Config validation
 - Error handling for missing/invalid configs
-- Dot-notation config overrides (type inference, parsing, merging)
+- Config overrides (top-level and dot-notation: type inference, parsing, merging)
 """
 
 import pytest
@@ -186,7 +186,7 @@ class TestDotNotationToDict:
 
 @pytest.mark.unit
 class TestParseOverrideArgs:
-    """Test parsing of dot-notation CLI override arguments."""
+    """Test parsing of CLI override arguments (top-level and dot-notation)."""
 
     def test_single_override(self):
         result = parse_override_args(["--model.image_size", "64"])

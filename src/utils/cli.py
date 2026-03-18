@@ -282,6 +282,9 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         ValueError: If overrides are malformed
 
     Example:
+        >>> config = parse_args(['config.yaml', '--mode', 'generate'])
+        >>> config['mode']
+        'generate'
         >>> config = parse_args(['config.yaml', '--model.architecture.image_size', '60'])
         >>> config['model']['architecture']['image_size']
         60
