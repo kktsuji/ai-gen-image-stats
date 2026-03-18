@@ -43,7 +43,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         KeyError: If required fields are missing
 
     Example:
-        >>> config = load_config("configs/diffusion-example.yaml")
+        >>> config = load_config("configs/examples/diffusion.yaml")
         >>> validate_config(config)  # Should not raise
         >>> config["model"]["architecture"]["image_size"] = -1
         >>> validate_config(config)  # Raises ValueError

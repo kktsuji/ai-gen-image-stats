@@ -94,12 +94,12 @@ class TestGetModelSpecificConfig:
 def get_v2_default_config():
     """Helper function to get a valid V2 config for testing.
 
-    Loads from configs/classifier-example.yaml to stay in sync with the
+    Loads from configs/examples/classifier.yaml to stay in sync with the
     canonical example config (single source of truth).
     """
     import copy
 
-    config_path = _PROJECT_ROOT / "configs/classifier-example.yaml"
+    config_path = _PROJECT_ROOT / "configs/examples/classifier.yaml"
     with open(config_path) as f:
         return copy.deepcopy(yaml.safe_load(f))
 
@@ -412,14 +412,14 @@ class TestValidateConfigErrorPaths:
 
 @pytest.mark.component
 class TestConfigFiles:
-    """Test actual config files (classifier-example.yaml)."""
+    """Test actual config files (configs/examples/classifier.yaml)."""
 
     def test_example_config_file(self):
-        """Test that classifier-example.yaml is valid."""
-        config_path = _PROJECT_ROOT / "configs/classifier-example.yaml"
+        """Test that configs/examples/classifier.yaml is valid."""
+        config_path = _PROJECT_ROOT / "configs/examples/classifier.yaml"
 
         if not config_path.exists():
-            pytest.fail("Required file missing: configs/classifier-example.yaml")
+            pytest.fail("Required file missing: configs/examples/classifier.yaml")
 
         with open(config_path) as f:
             config = yaml.safe_load(f)

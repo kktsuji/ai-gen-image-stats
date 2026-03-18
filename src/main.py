@@ -6,7 +6,7 @@ appropriate experiment implementation based on the configuration.
 
 Usage:
     # Train classifier
-    python -m src.main configs/classifier-example.yaml
+    python -m src.main configs/examples/classifier.yaml
 
     # Train diffusion model
     python -m src.main configs/diffusion.yaml

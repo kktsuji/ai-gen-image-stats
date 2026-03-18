@@ -57,7 +57,7 @@ configs/              # User experiment configurations (YAML)
 outputs/              # Training outputs (gitignored)
 ```
 
-**Note:** Example configuration files (`*-example.yaml`) are provided in the `configs/` directory. The system uses **strict mode** — all parameters must be explicitly specified in your config file; there are no implicit defaults.
+**Note:** Example configuration files are provided in the `configs/examples/` directory. The system uses **strict mode** — all parameters must be explicitly specified in your config file; there are no implicit defaults.
 
 ## Installation
 
@@ -132,7 +132,7 @@ After generating synthetic images, filter out low-quality samples by comparing t
 
 ```bash
 # Select best generated samples (one class per run)
-python -m src.main configs/sample-selection-example.yaml
+python -m src.main configs/examples/sample-selection.yaml
 ```
 
 This extracts features from both real and generated images using a pretrained backbone (InceptionV3/ResNet), scores each generated sample by its k-NN distance to the real data manifold, and outputs:
@@ -142,7 +142,7 @@ This extracts features from both real and generated images using a pretrained ba
 - **Accepted samples JSON** compatible with `SplitFileDataset` for downstream training
 - **Summary** (JSON) with dataset-level metrics (FID, precision, recall)
 
-Selection modes (configured in YAML): `top_k` (best N), `percentile` (top X%), or `threshold` (below distance cutoff). See [configs/sample-selection-example.yaml](configs/sample-selection-example.yaml) for a complete example.
+Selection modes (configured in YAML): `top_k` (best N), `percentile` (top X%), or `threshold` (below distance cutoff). See [configs/examples/sample-selection.yaml](configs/examples/sample-selection.yaml) for a complete example.
 
 ### Inference and Sample Generation
 
@@ -254,7 +254,7 @@ The configuration is organized into logical sections:
   - `sampling`: Sampling parameters
   - `output`: Generation output settings
 
-See [configs/diffusion-example.yaml](configs/diffusion-example.yaml) for a complete example.
+See [configs/examples/diffusion.yaml](configs/examples/diffusion.yaml) for a complete example.
 
 ### Strict Mode
 
@@ -432,7 +432,7 @@ generation:
 
 #### Complete Example
 
-See [configs/diffusion-example.yaml](configs/diffusion-example.yaml) for a complete, documented example configuration.
+See [configs/examples/diffusion.yaml](configs/examples/diffusion.yaml) for a complete, documented example configuration.
 
 ## Logging
 

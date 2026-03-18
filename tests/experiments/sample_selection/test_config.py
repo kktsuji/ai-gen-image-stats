@@ -15,18 +15,15 @@ from src.experiments.sample_selection.config import validate_config
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-_config_path = _PROJECT_ROOT / "configs/sample-selection-example.yaml"
-with open(_config_path) as _f:
-    _BASE_CONFIG = yaml.safe_load(_f)
-
-
 def _make_valid_config():
     """Create a valid config for testing.
 
-    Returns a deep copy of the cached example config so each test gets
-    an isolated copy (single source of truth).
+    Loads from configs/examples/sample-selection.yaml to stay in sync with the
+    canonical example config (single source of truth).
     """
-    return copy.deepcopy(_BASE_CONFIG)
+    config_path = _PROJECT_ROOT / "configs/examples/sample-selection.yaml"
+    with open(config_path) as f:
+        return copy.deepcopy(yaml.safe_load(f))
 
 
 # ============================================================================

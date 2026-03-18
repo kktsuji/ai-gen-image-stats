@@ -345,7 +345,8 @@ models/
 
 # Experiment configuration files (if they contain sensitive info or are generated)
 configs/*
-!configs/*-example.yaml
+!configs/examples/
+!configs/examples/*.yaml
 
 # PyTorch specific
 *.pt
