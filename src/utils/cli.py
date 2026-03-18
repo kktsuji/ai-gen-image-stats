@@ -83,13 +83,16 @@ def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
     """Convert a dot-notation key and value into a nested dictionary.
 
     Args:
-        key: Dot-separated key (e.g., "model.architecture.image_size")
+        key: Key string, either a single segment (e.g., "mode") or
+            dot-separated for nested access (e.g., "model.architecture.image_size")
         value: Value to set at the leaf
 
     Returns:
         Nested dictionary
 
     Example:
+        >>> dot_notation_to_dict("mode", "generate")
+        {'mode': 'generate'}
         >>> dot_notation_to_dict("model.architecture.image_size", 60)
         {'model': {'architecture': {'image_size': 60}}}
     """
@@ -125,10 +128,10 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
         "Missing value" error because ``"--exp"`` is interpreted as a new key.
 
     Example:
-        >>> parse_override_args(["--model.architecture.image_size", "60"])
-        {'model': {'architecture': {'image_size': 60}}}
         >>> parse_override_args(["--mode", "generate"])
         {'mode': 'generate'}
+        >>> parse_override_args(["--model.architecture.image_size", "60"])
+        {'model': {'architecture': {'image_size': 60}}}
     """
     if not remaining:
         return {}
