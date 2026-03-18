@@ -66,7 +66,7 @@ Each experiment under `src/experiments/<type>/` contains:
 
 ### Configuration System
 
-All parameters must be in the YAML config file. Individual values can be overridden via CLI using dot-notation (e.g., `--model.architecture.image_size 60`). Override keys must contain at least one dot and must match existing keys in the config (typos are rejected). Values are auto-inferred (bool/None/int/float/str); wrap in quotes to force string (e.g., `--data.label "'0'"`).
+All parameters must be in the YAML config file. Individual values can be overridden via CLI (e.g., `--mode generate` or `--model.architecture.image_size 60`). Override keys must match existing keys in the config (typos are rejected). Values are auto-inferred (bool/None/int/float/str); wrap in quotes to force string (e.g., `--data.label "'0'"`).
 
 Config priority: `CLI overrides > config_file`
 

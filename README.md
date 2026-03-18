@@ -221,7 +221,7 @@ samples, labels = sample_by_class(
 )
 ```
 
-**Note:** All parameters must be specified in the configuration file. Individual values can be overridden via CLI using dot-notation (e.g., `--model.architecture.image_size 60`). See [Configuration](#configuration) for details.
+**Note:** All parameters must be specified in the configuration file. Individual values can be overridden via CLI (e.g., `--mode generate` or `--model.architecture.image_size 60`). See [Configuration](#configuration) for details.
 
 ## Configuration
 

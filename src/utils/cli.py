@@ -1,7 +1,7 @@
 """Command-line interface utilities.
 
 This module provides CLI argument parsing with config file and optional
-dot-notation parameter overrides.
+parameter overrides (top-level or dot-notation).
 """
 
 import argparse
@@ -146,8 +146,8 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
                 )
             raise ValueError(
                 f"Unexpected argument: '{arg}'. "
-                f"Override keys must start with '--' and use dot-notation "
-                f"(e.g., --model.architecture.image_size 60)"
+                f"Override keys must start with '--' "
+                f"(e.g., --mode generate or --model.architecture.image_size 60)"
             )
 
         key = arg[2:]  # Strip leading --
@@ -207,7 +207,7 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser for the project.
 
     Accepts a config file path as positional argument, an optional --verbose
-    flag, and any dot-notation overrides (parsed separately).
+    flag, and any config overrides (parsed separately).
 
     Returns:
         Configured ArgumentParser instance
@@ -224,7 +224,9 @@ def create_parser() -> argparse.ArgumentParser:
         description="AI Image Generation and Statistics Training Framework",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Config overrides (dot-notation):\n"
+            "Config overrides:\n"
+            "  python -m src.main configs/diffusion.yaml "
+            "--mode generate\n"
             "  python -m src.main configs/diffusion.yaml "
             "--model.architecture.image_size 60\n"
             "  python -m src.main configs/diffusion.yaml "
@@ -256,7 +258,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     This is the main entry point for CLI processing. It:
     1. Parses known CLI arguments (config file path, --verbose)
     2. Loads the config file
-    3. Parses remaining arguments as dot-notation config overrides
+    3. Parses remaining arguments as config overrides
     4. Deep-merges overrides on top of the loaded config
     5. Returns the final configuration dictionary
 
@@ -289,7 +291,7 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     # Load config file
     config = load_config(config_path)
 
-    # Apply dot-notation overrides from CLI
+    # Apply overrides from CLI
     if remaining:
         cli_overrides = parse_override_args(remaining)
         validate_override_keys(config, cli_overrides)
