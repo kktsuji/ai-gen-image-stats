@@ -227,7 +227,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
         logger.info(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(
+            checkpoint_path, map_location=device, weights_only=False
+        )
 
         # Load model weights
         if "model_state_dict" in checkpoint:
@@ -270,7 +272,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             logger.info(f"  {key}: {value:.4f}")
 
         # Save results to reports directory
-        reports_dir = Path(config["output"]["base_dir"]) / "reports"
+        reports_dir = resolve_output_path(config, "reports")
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_path = reports_dir / "evaluation.json"
         with open(report_path, "w") as f:
@@ -283,6 +285,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
         logger.info("Evaluation completed successfully!")
         return
+
+    elif mode != "train":
+        raise ValueError(f"Invalid mode: {mode}. Must be 'train' or 'evaluate'")
 
     # Training mode
     # Initialize optimizer

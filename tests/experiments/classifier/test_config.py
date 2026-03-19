@@ -258,6 +258,27 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
+    def test_evaluate_mode_requires_reports_subdir(self):
+        """Test validation fails in evaluate mode without reports subdir."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        config["evaluation"] = {
+            "checkpoint": "path/to/checkpoint.pth",
+            "data": {"test_path": "data/test", "batch_size": 32},
+            "output": {
+                "save_predictions": True,
+                "save_confusion_matrix": True,
+                "save_metrics": True,
+            },
+        }
+        # Remove reports subdir
+        config["output"]["subdirs"].pop("reports", None)
+
+        with pytest.raises(
+            ValueError, match="output.subdirs.reports is required for evaluate mode"
+        ):
+            validate_config(config)
+
     def test_save_latest_valid_true(self):
         """save_latest: true is accepted."""
         config = get_v2_default_config()

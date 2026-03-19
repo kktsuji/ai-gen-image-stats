@@ -115,6 +115,7 @@ output:
     logs: logs # Training logs and metrics
     checkpoints: checkpoints # Model checkpoint files (.pth)
     tensorboard: tensorboard # TensorBoard event logs
+    reports: reports # Evaluation reports (JSON)
 
 # ------------------------------------------------------------------------------
 # TRAINING CONFIGURATION
