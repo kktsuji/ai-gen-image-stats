@@ -79,6 +79,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     from src.experiments.classifier.trainer import ClassifierTrainer
     from src.utils.config import resolve_output_path
     from src.utils.data.loaders import (
+        create_augmented_train_loader,
         create_train_loader,
         create_val_loader,
     )
@@ -164,52 +165,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Apply synthetic augmentation if configured
     syn_aug_config = data_config.get("synthetic_augmentation", {})
     if syn_aug_config.get("enabled"):
-        import random as _random
-
-        import numpy as np
-        from torch.utils.data import ConcatDataset, DataLoader
-
-        from src.utils.data.loaders import create_synthetic_augmentation_dataset
-
-        limit_config = syn_aug_config.get("limit", {})
-        gen_dataset = create_synthetic_augmentation_dataset(
-            split_file=syn_aug_config["split_file"],
+        train_loader = create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_aug_config,
             transform=train_transform,
-            limit_mode=limit_config.get("mode"),
-            max_ratio=limit_config.get("max_ratio"),
-            max_samples=limit_config.get("max_samples"),
-            real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
-            seed=seed,
-        )
-        combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
-
-        generator = None
-        worker_init_fn = None
-        if seed is not None:
-            generator = torch.Generator()
-            generator.manual_seed(seed)
-
-            def _worker_init_fn(worker_id: int) -> None:
-                worker_seed = seed + worker_id  # type: ignore[operator]
-                _random.seed(worker_seed)
-                np.random.seed(worker_seed)
-                torch.manual_seed(worker_seed)
-
-            worker_init_fn = _worker_init_fn
-
-        train_loader = DataLoader(
-            combined_dataset,
-            batch_size=batch_size,
             shuffle=shuffle_train,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            drop_last=drop_last,
-            generator=generator,
-            worker_init_fn=worker_init_fn,
-        )
-        logger.info(
-            f"Synthetic augmentation: added {len(gen_dataset)} generated images "
-            f"to {len(combined_dataset) - len(gen_dataset)} real images"
+            seed=seed,
         )
 
     # Get class names from split file

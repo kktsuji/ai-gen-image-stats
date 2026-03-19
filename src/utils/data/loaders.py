@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
 
 from src.utils.data.balancing import downsample_dataset, upsample_dataset
@@ -199,13 +199,13 @@ def create_synthetic_augmentation_dataset(
         _logger.warning(
             "Synthetic augmentation limit resolved to 0 samples "
             "(limit_mode=%s, max_ratio=%s, max_samples=%s, real_train_size=%d). "
-            "Using full synthetic dataset instead.",
+            "Returning empty dataset.",
             limit_mode,
             max_ratio,
             max_samples,
             real_train_size,
         )
-        return dataset
+        return Subset(dataset, [])
 
     if max_n >= len(dataset):
         return dataset
@@ -213,6 +213,77 @@ def create_synthetic_augmentation_dataset(
     rng = random.Random(seed)
     indices = rng.sample(range(len(dataset)), max_n)
     return Subset(dataset, indices)
+
+
+def create_augmented_train_loader(
+    train_loader: DataLoader,
+    synthetic_augmentation_config: Dict[str, Any],
+    transform: transforms.Compose,
+    shuffle: bool = True,
+    seed: Optional[int] = None,
+) -> DataLoader:
+    """Combine an existing training DataLoader with synthetic augmentation data.
+
+    Creates a synthetic dataset from the augmentation config, concatenates it
+    with the original training dataset, and returns a new DataLoader with the
+    same parameters as the original.
+
+    Args:
+        train_loader: Original training DataLoader (parameters are preserved)
+        synthetic_augmentation_config: Config dict with keys: split_file, limit
+        transform: Transform to apply to synthetic images
+        shuffle: Whether to shuffle the combined dataset
+        seed: Random seed for reproducibility
+
+    Returns:
+        New DataLoader over the combined (real + synthetic) dataset
+    """
+    limit_config = synthetic_augmentation_config.get("limit", {})
+    gen_dataset = create_synthetic_augmentation_dataset(
+        split_file=synthetic_augmentation_config["split_file"],
+        transform=transform,
+        limit_mode=limit_config.get("mode"),
+        max_ratio=limit_config.get("max_ratio"),
+        max_samples=limit_config.get("max_samples"),
+        real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
+        seed=seed,
+    )
+    combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
+
+    # Reuse the same seeding logic as create_train_loader
+    generator = None
+    worker_init_fn = None
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+
+        def _worker_init_fn(worker_id: int) -> None:
+            worker_seed = seed + worker_id  # type: ignore[operator]
+            random.seed(worker_seed)
+            np.random.seed(worker_seed)
+            torch.manual_seed(worker_seed)
+
+        worker_init_fn = _worker_init_fn
+
+    new_loader = DataLoader(
+        combined_dataset,
+        batch_size=train_loader.batch_size,  # type: ignore[arg-type]
+        shuffle=shuffle,
+        num_workers=train_loader.num_workers,
+        pin_memory=train_loader.pin_memory,
+        drop_last=train_loader.drop_last,
+        generator=generator,
+        worker_init_fn=worker_init_fn,
+    )
+
+    real_size = len(combined_dataset) - len(gen_dataset)
+    _logger.info(
+        "Synthetic augmentation: added %d generated images to %d real images",
+        len(gen_dataset),
+        real_size,
+    )
+
+    return new_loader
 
 
 def create_val_loader(
