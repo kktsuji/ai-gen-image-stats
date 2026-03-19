@@ -10,7 +10,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -22,6 +22,18 @@ from src.utils.data.datasets import SplitFileDataset
 from src.utils.data.samplers import compute_weights_from_config, create_weighted_sampler
 
 _logger = logging.getLogger(__name__)
+
+
+def _make_worker_init_fn(seed: int) -> Callable[[int], None]:
+    """Create a worker_init_fn that seeds each DataLoader worker deterministically."""
+
+    def _worker_init_fn(worker_id: int) -> None:
+        worker_seed = seed + worker_id
+        random.seed(worker_seed)
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
+
+    return _worker_init_fn
 
 
 def create_train_loader(
@@ -120,13 +132,7 @@ def create_train_loader(
         generator = torch.Generator()
         generator.manual_seed(seed)
 
-        def _worker_init_fn(worker_id: int) -> None:
-            worker_seed = seed + worker_id  # type: ignore[operator]
-            random.seed(worker_seed)
-            np.random.seed(worker_seed)
-            torch.manual_seed(worker_seed)
-
-        worker_init_fn = _worker_init_fn
+        worker_init_fn = _make_worker_init_fn(seed)
 
     return DataLoader(
         dataset_to_use,
@@ -193,6 +199,13 @@ def create_synthetic_augmentation_dataset(
     elif limit_mode == "max_samples" and max_samples is not None:
         max_n = max_samples
     else:
+        _logger.warning(
+            "limit_mode=%r is set but the corresponding value is None "
+            "(max_ratio=%r, max_samples=%r). Returning full dataset.",
+            limit_mode,
+            max_ratio,
+            max_samples,
+        )
         return dataset
 
     if max_n <= 0:
@@ -245,6 +258,8 @@ def create_augmented_train_loader(
         limit_mode=limit_config.get("mode"),
         max_ratio=limit_config.get("max_ratio"),
         max_samples=limit_config.get("max_samples"),
+        # Note: mutual exclusion of balancing + synthetic_augmentation is
+        # enforced by config validation, so this reflects original real data size.
         real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
         seed=seed,
     )
@@ -257,13 +272,7 @@ def create_augmented_train_loader(
         generator = torch.Generator()
         generator.manual_seed(seed)
 
-        def _worker_init_fn(worker_id: int) -> None:
-            worker_seed = seed + worker_id  # type: ignore[operator]
-            random.seed(worker_seed)
-            np.random.seed(worker_seed)
-            torch.manual_seed(worker_seed)
-
-        worker_init_fn = _worker_init_fn
+        worker_init_fn = _make_worker_init_fn(seed)
 
     new_loader = DataLoader(
         combined_dataset,
