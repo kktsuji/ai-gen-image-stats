@@ -539,6 +539,51 @@ class TestValidateSyntheticAugmentation:
         with pytest.raises(ValueError, match="max_samples must be a positive integer"):
             validate_config(config)
 
+    def test_max_ratio_bool_rejected(self):
+        """limit.mode = max_ratio with bool value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio", "max_ratio": True},
+        }
+        with pytest.raises(ValueError, match="max_ratio must be a positive number"):
+            validate_config(config)
+
+    def test_max_samples_bool_rejected(self):
+        """limit.mode = max_samples with bool value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples", "max_samples": True},
+        }
+        with pytest.raises(ValueError, match="max_samples must be a positive integer"):
+            validate_config(config)
+
+    def test_not_validated_in_evaluate_mode(self):
+        """synthetic_augmentation is not validated in evaluate mode."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        config["evaluation"] = {
+            "checkpoint": "path/to/checkpoint.pth",
+            "data": {"test_path": "data/test", "batch_size": 32},
+        }
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": None,  # would fail in train mode
+            "limit": {"mode": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_evaluate_mode_not_broken_by_augmentation_section(self):
+        """evaluate mode validation still works with synthetic_augmentation present."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        # Don't add evaluation section — should raise KeyError
+        with pytest.raises(KeyError, match="Missing required section: evaluation"):
+            validate_config(config)
+
 
 @pytest.mark.component
 class TestConfigFiles:

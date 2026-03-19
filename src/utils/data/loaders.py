@@ -185,6 +185,10 @@ def create_synthetic_augmentation_dataset(
         return dataset
 
     if limit_mode == "max_ratio" and max_ratio is not None:
+        if real_train_size <= 0:
+            raise ValueError(
+                "real_train_size must be positive when using max_ratio limit mode"
+            )
         max_n = int(real_train_size * max_ratio)
     elif limit_mode == "max_samples" and max_samples is not None:
         max_n = max_samples

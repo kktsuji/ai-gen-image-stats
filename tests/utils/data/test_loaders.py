@@ -909,3 +909,23 @@ def test_synthetic_aug_limit_larger_than_dataset(tmp_path):
     )
     # Should return full dataset (not Subset) since limit > dataset size
     assert len(dataset) == 6  # 3 per class * 2 classes
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_ratio_zero_real_train_size(tmp_path):
+    """Test that max_ratio with real_train_size=0 raises ValueError."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=3, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    with pytest.raises(ValueError, match="real_train_size must be positive"):
+        create_synthetic_augmentation_dataset(
+            split_file=split_file,
+            transform=transform,
+            limit_mode="max_ratio",
+            max_ratio=0.5,
+            real_train_size=0,
+            seed=42,
+        )

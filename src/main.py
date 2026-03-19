@@ -162,15 +162,27 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     )
 
     # Apply synthetic augmentation if configured
-    gen_aug_config = data_config.get("synthetic_augmentation", {})
-    if gen_aug_config.get("enabled"):
+    syn_aug_config = data_config.get("synthetic_augmentation", {})
+    if syn_aug_config.get("enabled"):
+        import random as _random
+
+        import numpy as np
         from torch.utils.data import ConcatDataset, DataLoader
 
         from src.utils.data.loaders import create_synthetic_augmentation_dataset
 
-        limit_config = gen_aug_config.get("limit", {})
+        if balancing_config and any(
+            balancing_config.get(k, {}).get("enabled")
+            for k in ("weighted_sampler", "downsampling", "upsampling")
+        ):
+            raise ValueError(
+                "Cannot use both data.balancing and data.synthetic_augmentation. "
+                "Disable one of them or apply balancing after augmentation manually."
+            )
+
+        limit_config = syn_aug_config.get("limit", {})
         gen_dataset = create_synthetic_augmentation_dataset(
-            split_file=gen_aug_config["split_file"],
+            split_file=syn_aug_config["split_file"],
             transform=train_transform,
             limit_mode=limit_config.get("mode"),
             max_ratio=limit_config.get("max_ratio"),
@@ -179,6 +191,21 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             seed=seed,
         )
         combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
+
+        generator = None
+        worker_init_fn = None
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+
+            def _worker_init_fn(worker_id: int) -> None:
+                worker_seed = seed + worker_id  # type: ignore[operator]
+                _random.seed(worker_seed)
+                np.random.seed(worker_seed)
+                torch.manual_seed(worker_seed)
+
+            worker_init_fn = _worker_init_fn
+
         train_loader = DataLoader(
             combined_dataset,
             batch_size=batch_size,
@@ -186,6 +213,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             num_workers=num_workers,
             pin_memory=pin_memory,
             drop_last=drop_last,
+            generator=generator,
+            worker_init_fn=worker_init_fn,
         )
         logger.info(
             f"Synthetic augmentation: added {len(gen_dataset)} generated images "
