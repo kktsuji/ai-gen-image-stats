@@ -7,9 +7,17 @@ training and validation logic.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
+import numpy as np
 import torch
+from sklearn.metrics import (
+    average_precision_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+    roc_auc_score,
+)
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -417,16 +425,89 @@ class ClassifierTrainer:
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 
+    def _compute_classification_metrics(
+        self,
+        all_targets: List[int],
+        all_predictions: List[int],
+        all_probs: np.ndarray,
+        num_classes: int,
+        prefix: str = "val_",
+    ) -> Dict[str, float]:
+        """Compute per-class classification metrics.
+
+        Args:
+            all_targets: List of ground truth labels.
+            all_predictions: List of predicted labels.
+            all_probs: Array of predicted probabilities, shape (N, num_classes).
+            num_classes: Number of classes.
+            prefix: Metric key prefix (e.g., 'val_' or '').
+
+        Returns:
+            Dictionary of classification metrics.
+        """
+        targets_arr = np.array(all_targets)
+        preds_arr = np.array(all_predictions)
+
+        metrics: Dict[str, float] = {}
+
+        # Balanced accuracy
+        metrics[f"{prefix}balanced_accuracy"] = float(
+            balanced_accuracy_score(targets_arr, preds_arr)
+        )
+
+        # Per-class precision, recall, F1
+        prec_arr, rec_arr, f1_arr, _ = precision_recall_fscore_support(
+            targets_arr,
+            preds_arr,
+            labels=list(range(num_classes)),
+            zero_division=0.0,  # type: ignore[arg-type]
+        )
+        for cls_idx in range(num_classes):
+            metrics[f"{prefix}precision_{cls_idx}"] = float(prec_arr[cls_idx])  # type: ignore[index]
+            metrics[f"{prefix}recall_{cls_idx}"] = float(rec_arr[cls_idx])  # type: ignore[index]
+            metrics[f"{prefix}f1_{cls_idx}"] = float(f1_arr[cls_idx])  # type: ignore[index]
+
+        # ROC-AUC and PR-AUC (binary: use class 1 probability; multiclass: weighted OVR)
+        try:
+            if num_classes == 2:
+                metrics[f"{prefix}roc_auc"] = float(
+                    roc_auc_score(targets_arr, all_probs[:, 1])
+                )
+                metrics[f"{prefix}pr_auc"] = float(
+                    average_precision_score(targets_arr, all_probs[:, 1])
+                )
+            else:
+                metrics[f"{prefix}roc_auc"] = float(
+                    roc_auc_score(
+                        targets_arr, all_probs, multi_class="ovr", average="weighted"
+                    )
+                )
+        except ValueError:
+            # Can happen if only one class is present in targets
+            _logger.warning("Could not compute AUC metrics (single class in targets)")
+
+        # Confusion matrix (flattened as cm_i_j)
+        cm = confusion_matrix(targets_arr, preds_arr, labels=list(range(num_classes)))
+        for i in range(num_classes):
+            for j in range(num_classes):
+                metrics[f"{prefix}cm_{i}_{j}"] = float(cm[i, j])
+
+        return metrics
+
     def validate_epoch(self) -> Optional[Dict[str, float]]:
         """Execute one validation epoch.
 
         Evaluates the model on the validation dataset without updating parameters.
-        Computes validation metrics including loss and accuracy.
+        Computes validation metrics including loss, accuracy, and per-class metrics.
 
         Returns:
             Dictionary containing validation metrics, or None if no validation data:
             - 'val_loss': Average validation loss
             - 'val_accuracy': Validation accuracy
+            - 'val_balanced_accuracy': Balanced accuracy
+            - 'val_precision_N', 'val_recall_N', 'val_f1_N': Per-class metrics
+            - 'val_roc_auc', 'val_pr_auc': AUC metrics (when computable)
+            - 'val_cm_I_J': Confusion matrix entries
 
         Example:
             >>> metrics = trainer.validate_epoch()
@@ -442,6 +523,9 @@ class ClassifierTrainer:
         correct = 0
         total = 0
         num_batches = 0
+        all_targets: List[int] = []
+        all_predictions: List[int] = []
+        all_probs_list: List[np.ndarray] = []
 
         # Create progress bar if enabled
         iterator = (
@@ -470,6 +554,12 @@ class ClassifierTrainer:
                 total += target.size(0)
                 correct += (predicted == target).sum().item()
 
+                # Accumulate for per-class metrics
+                all_targets.extend(target.cpu().tolist())
+                all_predictions.extend(predicted.cpu().tolist())
+                probs = torch.softmax(predictions, dim=1).cpu().numpy()
+                all_probs_list.append(probs)
+
                 # Update progress bar
                 if self.show_progress:
                     iterator.set_postfix(  # type: ignore[attr-defined]
@@ -489,10 +579,27 @@ class ClassifierTrainer:
         )
         _logger.debug(f"Validation batches: {num_batches}, Total samples: {total}")
 
-        return {
+        result: Dict[str, float] = {
             "val_loss": avg_loss,
             "val_accuracy": accuracy,
         }
+
+        # Compute per-class metrics
+        if total > 0:
+            all_probs = np.concatenate(all_probs_list, axis=0)
+            num_classes = all_probs.shape[1]
+            classification_metrics = self._compute_classification_metrics(
+                all_targets, all_predictions, all_probs, num_classes, prefix="val_"
+            )
+            result.update(classification_metrics)
+
+            _logger.info(
+                f"Epoch {self._current_epoch} [Val] - "
+                f"Balanced Acc: {result.get('val_balanced_accuracy', 0.0):.4f}, "
+                f"ROC-AUC: {result.get('val_roc_auc', 0.0):.4f}"
+            )
+
+        return result
 
     def get_model(self) -> Any:
         """Return the classification model."""
@@ -584,6 +691,7 @@ class ClassifierTrainer:
             Dictionary containing evaluation metrics:
             - 'loss': Average loss
             - 'accuracy': Classification accuracy
+            - Per-class precision, recall, F1, AUC metrics, confusion matrix
 
         Example:
             >>> test_loader = DataLoader(test_dataset, batch_size=32)
@@ -602,6 +710,9 @@ class ClassifierTrainer:
         correct = 0
         total = 0
         num_batches = 0
+        all_targets: List[int] = []
+        all_predictions: List[int] = []
+        all_probs_list: List[np.ndarray] = []
 
         with torch.no_grad():
             for data, target in dataloader:
@@ -623,11 +734,28 @@ class ClassifierTrainer:
                 total += target.size(0)
                 correct += (predicted == target).sum().item()
 
+                # Accumulate for per-class metrics
+                all_targets.extend(target.cpu().tolist())
+                all_predictions.extend(predicted.cpu().tolist())
+                probs = torch.softmax(predictions, dim=1).cpu().numpy()
+                all_probs_list.append(probs)
+
         # Compute metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         accuracy = 100.0 * correct / total if total > 0 else 0.0
 
-        return {
+        result: Dict[str, float] = {
             "loss": avg_loss,
             "accuracy": accuracy,
         }
+
+        # Compute per-class metrics
+        if total > 0:
+            all_probs = np.concatenate(all_probs_list, axis=0)
+            num_classes = all_probs.shape[1]
+            classification_metrics = self._compute_classification_metrics(
+                all_targets, all_predictions, all_probs, num_classes, prefix=""
+            )
+            result.update(classification_metrics)
+
+        return result

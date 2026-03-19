@@ -36,6 +36,7 @@ Note:
     can be overridden via CLI using dot-notation (e.g., --model.architecture.image_size 60).
 """
 
+import json
 import logging
 import sys
 import time
@@ -214,6 +215,76 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     logger.info(f"Pretrained: {pretrained}")
     logger.info(f"Freeze backbone: {freeze_backbone}")
 
+    # Check mode
+    mode = config.get("mode", "train")
+
+    if mode == "evaluate":
+        # Evaluate mode: load checkpoint and evaluate with enriched metrics
+        evaluation_config = config["evaluation"]
+        checkpoint_path = Path(evaluation_config["checkpoint"])
+
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        logger.info(f"Loading checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+
+        # Load model weights
+        if "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+            if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
+                state_dict = {
+                    k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
+                }
+            model.load_state_dict(state_dict)
+        else:
+            raise ValueError(
+                f"Checkpoint does not contain 'model_state_dict'. "
+                f"Available keys: {list(checkpoint.keys())}"
+            )
+
+        # Create a dummy optimizer (not used, but required by trainer)
+        dummy_optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+
+        # Initialize metrics logger
+        metrics_logger = create_experiment_logger(config, log_dir)
+
+        # Initialize trainer for evaluation only
+        # train_loader is not used in evaluate mode but is required by the constructor
+        trainer = ClassifierTrainer(
+            model=model,
+            train_loader=val_loader,  # type: ignore[arg-type]
+            optimizer=dummy_optimizer,
+            logger=metrics_logger,
+            val_loader=val_loader,
+            device=device,
+            show_progress=True,
+            config=config,
+        )
+
+        # Run evaluation
+        eval_metrics = trainer.evaluate(val_loader)
+
+        logger.info("Evaluation results:")
+        for key, value in sorted(eval_metrics.items()):
+            logger.info(f"  {key}: {value:.4f}")
+
+        # Save results to reports directory
+        reports_dir = Path(config["output"]["base_dir"]) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_path = reports_dir / "evaluation.json"
+        with open(report_path, "w") as f:
+            json.dump(eval_metrics, f, indent=2)
+        logger.info(f"Evaluation report saved to: {report_path}")
+
+        # Log metrics to CSV
+        metrics_logger.log_metrics(eval_metrics, step=0, epoch=0)
+        metrics_logger.close()
+
+        logger.info("Evaluation completed successfully!")
+        return
+
+    # Training mode
     # Initialize optimizer
     training_config = config["training"]
     optimizer_config = training_config["optimizer"]

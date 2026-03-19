@@ -300,6 +300,19 @@ def test_validate_epoch_returns_metrics(classifier_trainer):
     assert isinstance(metrics["val_loss"], float)
     assert isinstance(metrics["val_accuracy"], float)
 
+    # Per-class metrics (binary: classes 0 and 1)
+    assert "val_balanced_accuracy" in metrics
+    for cls in [0, 1]:
+        assert f"val_precision_{cls}" in metrics
+        assert f"val_recall_{cls}" in metrics
+        assert f"val_f1_{cls}" in metrics
+    assert "val_roc_auc" in metrics
+    assert "val_pr_auc" in metrics
+    # Confusion matrix entries
+    for i in [0, 1]:
+        for j in [0, 1]:
+            assert f"val_cm_{i}_{j}" in metrics
+
 
 @pytest.mark.component
 def test_validate_epoch_no_gradient_updates(classifier_trainer):
@@ -344,6 +357,19 @@ def test_evaluate_method(classifier_trainer):
     assert "accuracy" in metrics
     assert isinstance(metrics["loss"], float)
     assert isinstance(metrics["accuracy"], float)
+
+    # Per-class metrics (binary: classes 0 and 1)
+    assert "balanced_accuracy" in metrics
+    for cls in [0, 1]:
+        assert f"precision_{cls}" in metrics
+        assert f"recall_{cls}" in metrics
+        assert f"f1_{cls}" in metrics
+    assert "roc_auc" in metrics
+    assert "pr_auc" in metrics
+    # Confusion matrix entries
+    for i in [0, 1]:
+        for j in [0, 1]:
+            assert f"cm_{i}_{j}" in metrics
 
 
 @pytest.mark.component
@@ -667,3 +693,62 @@ def test_classifier_trainer_logs_best_model_updates(
 
         # Check that logging occurred during training
         assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.integration
+def test_evaluate_loads_checkpoint_and_produces_metrics(simple_logger):
+    """Test that evaluate works after saving and loading a checkpoint."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    train_loader = _make_train_loader(num_samples=20, batch_size=4)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    trainer = ClassifierTrainer(
+        model=model,
+        train_loader=train_loader,
+        optimizer=optimizer,
+        logger=simple_logger,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Train for 1 epoch and save checkpoint
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            save_best=False,
+        )
+
+        # Create a fresh model and trainer
+        fresh_model = SimpleClassifierModel(input_dim=10, num_classes=2)
+        fresh_optimizer = torch.optim.SGD(fresh_model.parameters(), lr=0.01)
+        fresh_trainer = ClassifierTrainer(
+            model=fresh_model,
+            train_loader=train_loader,
+            optimizer=fresh_optimizer,
+            logger=simple_logger,
+            val_loader=val_loader,
+            device="cpu",
+            show_progress=False,
+        )
+
+        # Load checkpoint
+        checkpoint_path = checkpoint_dir / "final_model.pth"
+        fresh_trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
+
+        # Evaluate
+        eval_metrics = fresh_trainer.evaluate(val_loader)
+
+        assert "loss" in eval_metrics
+        assert "accuracy" in eval_metrics
+        assert "balanced_accuracy" in eval_metrics
+        assert "roc_auc" in eval_metrics
+        assert "pr_auc" in eval_metrics
+        for cls in [0, 1]:
+            assert f"precision_{cls}" in eval_metrics
+            assert f"recall_{cls}" in eval_metrics
+            assert f"f1_{cls}" in eval_metrics
