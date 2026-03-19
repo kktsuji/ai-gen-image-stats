@@ -485,6 +485,17 @@ class TestValidateSyntheticAugmentation:
         }
         validate_config(config)  # should not raise
 
+    def test_max_ratio_missing_key(self):
+        """limit.mode = max_ratio without max_ratio key raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio"},
+        }
+        with pytest.raises(ValueError, match="max_ratio is required"):
+            validate_config(config)
+
     def test_max_ratio_not_positive(self):
         """limit.mode = max_ratio with non-positive value raises ValueError."""
         config = get_v2_default_config()
@@ -516,6 +527,17 @@ class TestValidateSyntheticAugmentation:
             "limit": {"mode": "max_samples", "max_ratio": None, "max_samples": 100},
         }
         validate_config(config)  # should not raise
+
+    def test_max_samples_missing_key(self):
+        """limit.mode = max_samples without max_samples key raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples"},
+        }
+        with pytest.raises(ValueError, match="max_samples is required"):
+            validate_config(config)
 
     def test_max_samples_not_positive(self):
         """limit.mode = max_samples with non-positive value raises ValueError."""

@@ -245,7 +245,12 @@ def validate_config(config: Dict[str, Any]) -> None:
                 )
 
             if limit_mode == "max_ratio":
-                max_ratio = limit.get("max_ratio")
+                if "max_ratio" not in limit:
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_ratio is required "
+                        "when limit.mode is 'max_ratio'"
+                    )
+                max_ratio = limit["max_ratio"]
                 if (
                     isinstance(max_ratio, bool)
                     or not isinstance(max_ratio, (int, float))
@@ -256,7 +261,12 @@ def validate_config(config: Dict[str, Any]) -> None:
                     )
 
             if limit_mode == "max_samples":
-                max_samples = limit.get("max_samples")
+                if "max_samples" not in limit:
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_samples is required "
+                        "when limit.mode is 'max_samples'"
+                    )
+                max_samples = limit["max_samples"]
                 if (
                     isinstance(max_samples, bool)
                     or not isinstance(max_samples, int)
