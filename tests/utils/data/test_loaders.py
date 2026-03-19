@@ -929,3 +929,24 @@ def test_synthetic_aug_max_ratio_zero_real_train_size(tmp_path):
             real_train_size=0,
             seed=42,
         )
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_ratio_resolves_to_zero(tmp_path):
+    """Test that very small max_ratio resolving to 0 returns full dataset with warning."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=3, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_ratio",
+        max_ratio=0.01,
+        real_train_size=10,  # int(10 * 0.01) = 0
+        seed=42,
+    )
+    # Should return full dataset (not empty Subset) when max_n resolves to 0
+    assert len(dataset) == 6  # 3 per class * 2 classes

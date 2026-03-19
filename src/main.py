@@ -171,15 +171,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
         from src.utils.data.loaders import create_synthetic_augmentation_dataset
 
-        if balancing_config and any(
-            balancing_config.get(k, {}).get("enabled")
-            for k in ("weighted_sampler", "downsampling", "upsampling")
-        ):
-            raise ValueError(
-                "Cannot use both data.balancing and data.synthetic_augmentation. "
-                "Disable one of them or apply balancing after augmentation manually."
-            )
-
         limit_config = syn_aug_config.get("limit", {})
         gen_dataset = create_synthetic_augmentation_dataset(
             split_file=syn_aug_config["split_file"],

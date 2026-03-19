@@ -561,6 +561,37 @@ class TestValidateSyntheticAugmentation:
         with pytest.raises(ValueError, match="max_samples must be a positive integer"):
             validate_config(config)
 
+    def test_balancing_and_augmentation_mutual_exclusion(self):
+        """enabled augmentation + enabled balancing raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        config["data"]["balancing"] = {
+            "weighted_sampler": {"enabled": True, "method": "inverse"},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+        with pytest.raises(ValueError, match="Cannot use both data.balancing and"):
+            validate_config(config)
+
+    def test_balancing_disabled_with_augmentation_passes(self):
+        """enabled augmentation + all balancing disabled passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        config["data"]["balancing"] = {
+            "weighted_sampler": {"enabled": False},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+        validate_config(config)  # should not raise
+
     def test_not_validated_in_evaluate_mode(self):
         """synthetic_augmentation is not validated in evaluate mode."""
         config = get_v2_default_config()

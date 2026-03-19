@@ -223,6 +223,18 @@ def validate_config(config: Dict[str, Any]) -> None:
                     "when synthetic_augmentation is enabled"
                 )
 
+            # Mutual exclusion: balancing and synthetic_augmentation
+            balancing = data.get("balancing", {})
+            if any(
+                balancing.get(k, {}).get("enabled")
+                for k in ("weighted_sampler", "downsampling", "upsampling")
+            ):
+                raise ValueError(
+                    "Cannot use both data.balancing and "
+                    "data.synthetic_augmentation. "
+                    "Disable one of them."
+                )
+
             limit = syn_aug.get("limit", {})
             limit_mode = limit.get("mode")
             valid_limit_modes = [None, "max_ratio", "max_samples"]

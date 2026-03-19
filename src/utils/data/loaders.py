@@ -195,6 +195,18 @@ def create_synthetic_augmentation_dataset(
     else:
         return dataset
 
+    if max_n <= 0:
+        _logger.warning(
+            "Synthetic augmentation limit resolved to 0 samples "
+            "(limit_mode=%s, max_ratio=%s, max_samples=%s, real_train_size=%d). "
+            "Using full synthetic dataset instead.",
+            limit_mode,
+            max_ratio,
+            max_samples,
+            real_train_size,
+        )
+        return dataset
+
     if max_n >= len(dataset):
         return dataset
 
