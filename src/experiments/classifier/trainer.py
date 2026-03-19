@@ -64,9 +64,9 @@ class ClassifierTrainer:
     def __init__(
         self,
         model: Any,
-        train_loader: DataLoader,
-        optimizer: torch.optim.Optimizer,
-        logger: Any,
+        train_loader: Optional[DataLoader] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        logger: Any = None,
         val_loader: Optional[DataLoader] = None,
         device: str = "cpu",
         show_progress: bool = True,
@@ -83,8 +83,8 @@ class ClassifierTrainer:
 
         Args:
             model: The classification model to train
-            train_loader: DataLoader for training data
-            optimizer: Optimizer for updating model parameters
+            train_loader: DataLoader for training data (required for training)
+            optimizer: Optimizer for updating model parameters (required for training)
             logger: Logger for recording metrics and checkpoints
             val_loader: Optional DataLoader for validation data
             device: Device to run training on ('cpu' or 'cuda')
@@ -156,6 +156,11 @@ class ClassifierTrainer:
             >>> metrics = trainer.train_epoch()
             >>> print(f"Loss: {metrics['loss']:.4f}, Acc: {metrics['accuracy']:.4f}")
         """
+        if self.train_loader is None:
+            raise RuntimeError("train_loader is required for training")
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required for training")
+
         self.model.train()
         train_loader = self.train_loader
 
@@ -282,6 +287,12 @@ class ClassifierTrainer:
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
         """
+        if self.train_loader is None:
+            raise RuntimeError("train_loader is required for training")
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required for training")
+        optimizer = self.optimizer
+
         if checkpoint_dir is not None:
             checkpoint_dir = Path(checkpoint_dir)
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -301,9 +312,9 @@ class ClassifierTrainer:
 
             # Step the scheduler if provided
             if self.scheduler is not None:
-                old_lr = self.optimizer.param_groups[0]["lr"]
+                old_lr = optimizer.param_groups[0]["lr"]
                 self.scheduler.step()  # type: ignore[call-arg]
-                new_lr = self.optimizer.param_groups[0]["lr"]
+                new_lr = optimizer.param_groups[0]["lr"]
 
                 # Warning for very low learning rate
                 if new_lr < 1e-7:
@@ -352,7 +363,7 @@ class ClassifierTrainer:
                             save_checkpoint(
                                 best_path,
                                 model=self.model,
-                                optimizer=self.optimizer,
+                                optimizer=optimizer,
                                 epoch=self._current_epoch,
                                 global_step=self._global_step,
                                 is_best=True,
@@ -374,7 +385,7 @@ class ClassifierTrainer:
                     save_checkpoint(
                         checkpoint_path,
                         model=self.model,
-                        optimizer=self.optimizer,
+                        optimizer=optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -392,7 +403,7 @@ class ClassifierTrainer:
                     save_checkpoint(
                         latest_path,
                         model=self.model,
-                        optimizer=self.optimizer,
+                        optimizer=optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -411,7 +422,7 @@ class ClassifierTrainer:
             save_checkpoint(
                 final_path,
                 model=self.model,
-                optimizer=self.optimizer,
+                optimizer=optimizer,
                 epoch=self._current_epoch,
                 global_step=self._global_step,
                 is_best=False,
@@ -605,7 +616,7 @@ class ClassifierTrainer:
         """Return the classification model."""
         return self.model
 
-    def get_train_loader(self) -> DataLoader:
+    def get_train_loader(self) -> Optional[DataLoader]:
         """Return the training DataLoader."""
         return self.train_loader
 
@@ -613,7 +624,7 @@ class ClassifierTrainer:
         """Return the validation DataLoader."""
         return self.val_loader
 
-    def get_optimizer(self) -> torch.optim.Optimizer:
+    def get_optimizer(self) -> Optional[torch.optim.Optimizer]:
         """Return the optimizer."""
         return self.optimizer
 
@@ -630,6 +641,8 @@ class ClassifierTrainer:
         **kwargs: Any,
     ) -> None:
         """Save training checkpoint."""
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required to save a checkpoint")
         save_checkpoint(
             path=path,
             model=self.model,

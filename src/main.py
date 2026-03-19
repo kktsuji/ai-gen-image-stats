@@ -124,37 +124,17 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         else color_jitter_config
     )
 
-    # Build transforms
+    # Build val transforms (needed for both train and evaluate modes)
     normalize_str = normalize if normalize not in ["none", None] else None
-    train_transform = get_train_transforms(
-        image_size=image_size,
-        crop_size=crop_size,
-        horizontal_flip=horizontal_flip,
-        color_jitter=color_jitter,
-        rotation_degrees=rotation_degrees,
-        normalize=normalize_str,
-    )
     val_transform = get_val_transforms(
         image_size=image_size,
         crop_size=crop_size,
         normalize=normalize_str,
     )
 
-    # Create data loaders
+    # Create val loader (needed for both train and evaluate modes)
     compute_config = config.get("compute", {})
     seed = compute_config.get("seed")
-    balancing_config = data_config.get("balancing")
-    train_loader = create_train_loader(
-        split_file=split_file,
-        batch_size=batch_size,
-        transform=train_transform,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        drop_last=drop_last,
-        shuffle=shuffle_train,
-        balancing_config=balancing_config,
-        seed=seed,
-    )
     val_loader = create_val_loader(
         split_file=split_file,
         batch_size=batch_size,
@@ -162,17 +142,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
-
-    # Apply synthetic augmentation if configured
-    syn_aug_config = data_config.get("synthetic_augmentation", {})
-    if syn_aug_config.get("enabled"):
-        train_loader = create_augmented_train_loader(
-            train_loader=train_loader,
-            synthetic_augmentation_config=syn_aug_config,
-            transform=train_transform,
-            shuffle=shuffle_train,
-            seed=seed,
-        )
 
     # Get class names from split file
     class_names = _get_class_names(split_file)
@@ -227,9 +196,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
         logger.info(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(
-            checkpoint_path, map_location=device, weights_only=False
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
         # Load model weights
         if "model_state_dict" in checkpoint:
@@ -245,18 +212,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
                 f"Available keys: {list(checkpoint.keys())}"
             )
 
-        # Create a dummy optimizer (not used, but required by trainer)
-        dummy_optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
-
         # Initialize metrics logger
         metrics_logger = create_experiment_logger(config, log_dir)
 
-        # Initialize trainer for evaluation only
-        # train_loader is not used in evaluate mode but is required by the constructor
+        # Initialize trainer for evaluation only (no train_loader/optimizer needed)
         trainer = ClassifierTrainer(
             model=model,
-            train_loader=val_loader,  # type: ignore[arg-type]
-            optimizer=dummy_optimizer,
             logger=metrics_logger,
             val_loader=val_loader,
             device=device,
@@ -286,10 +247,40 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         logger.info("Evaluation completed successfully!")
         return
 
-    elif mode != "train":
-        raise ValueError(f"Invalid mode: {mode}. Must be 'train' or 'evaluate'")
-
     # Training mode
+    # Create train loader and transforms (only needed for training)
+    train_transform = get_train_transforms(
+        image_size=image_size,
+        crop_size=crop_size,
+        horizontal_flip=horizontal_flip,
+        color_jitter=color_jitter,
+        rotation_degrees=rotation_degrees,
+        normalize=normalize_str,
+    )
+    balancing_config = data_config.get("balancing")
+    train_loader = create_train_loader(
+        split_file=split_file,
+        batch_size=batch_size,
+        transform=train_transform,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=drop_last,
+        shuffle=shuffle_train,
+        balancing_config=balancing_config,
+        seed=seed,
+    )
+
+    # Apply synthetic augmentation if configured
+    syn_aug_config = data_config.get("synthetic_augmentation", {})
+    if syn_aug_config.get("enabled"):
+        train_loader = create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_aug_config,
+            transform=train_transform,
+            shuffle=shuffle_train,
+            seed=seed,
+        )
+
     # Initialize optimizer
     training_config = config["training"]
     optimizer_config = training_config["optimizer"]
