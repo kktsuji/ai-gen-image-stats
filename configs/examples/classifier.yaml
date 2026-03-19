@@ -95,6 +95,15 @@ data:
       saturation: 0.2 # Saturation adjustment range ±20%
       hue: 0.1 # Hue shift range ±0.1 (fraction of hue circle)
 
+  # Synthetic augmentation: use sample-selection output as additional training data
+  synthetic_augmentation:
+    enabled: false
+    split_file: null # path to sample selection output JSON (SplitFileDataset format)
+    limit:
+      mode: null # null (use all), "max_ratio", or "max_samples"
+      max_ratio: null # max generated images as ratio of real training samples (e.g., 0.5)
+      max_samples: null # max absolute number of generated images (e.g., 1000)
+
 # ------------------------------------------------------------------------------
 # OUTPUT CONFIGURATION
 # ------------------------------------------------------------------------------

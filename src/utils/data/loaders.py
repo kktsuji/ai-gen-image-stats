@@ -10,11 +10,11 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
 
 from src.utils.data.balancing import downsample_dataset, upsample_dataset
@@ -139,6 +139,64 @@ def create_train_loader(
         generator=generator,
         worker_init_fn=worker_init_fn,
     )
+
+
+def create_synthetic_augmentation_dataset(
+    split_file: str,
+    transform: transforms.Compose,
+    return_labels: bool = True,
+    limit_mode: Optional[str] = None,
+    max_ratio: Optional[float] = None,
+    max_samples: Optional[int] = None,
+    real_train_size: int = 0,
+    seed: Optional[int] = None,
+) -> Union[SplitFileDataset, Subset]:
+    """Create a dataset of synthetic (generated) images for augmentation.
+
+    Loads generated images from a sample-selection output JSON file and
+    optionally limits the number of samples via ratio or absolute cap.
+
+    Args:
+        split_file: Path to sample selection output JSON (SplitFileDataset format)
+        transform: Transform to apply to images
+        return_labels: Whether to return class labels
+        limit_mode: Limiting strategy: None (use all), "max_ratio", or "max_samples"
+        max_ratio: Max generated images as ratio of real training samples
+        max_samples: Max absolute number of generated images
+        real_train_size: Number of real training samples (used with max_ratio)
+        seed: Random seed for reproducible subsampling
+
+    Returns:
+        Full dataset or a Subset if limiting is applied
+    """
+    if not Path(split_file).exists():
+        raise FileNotFoundError(
+            f"Synthetic augmentation split file not found: {split_file}"
+        )
+
+    dataset = SplitFileDataset(
+        split_file=str(split_file),
+        split="train",
+        transform=transform,
+        return_labels=return_labels,
+    )
+
+    if limit_mode is None or len(dataset) == 0:
+        return dataset
+
+    if limit_mode == "max_ratio" and max_ratio is not None:
+        max_n = int(real_train_size * max_ratio)
+    elif limit_mode == "max_samples" and max_samples is not None:
+        max_n = max_samples
+    else:
+        return dataset
+
+    if max_n >= len(dataset):
+        return dataset
+
+    rng = random.Random(seed)
+    indices = rng.sample(range(len(dataset)), max_n)
+    return Subset(dataset, indices)
 
 
 def create_val_loader(

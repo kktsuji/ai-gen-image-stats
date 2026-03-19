@@ -161,6 +161,37 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         pin_memory=pin_memory,
     )
 
+    # Apply synthetic augmentation if configured
+    gen_aug_config = data_config.get("synthetic_augmentation", {})
+    if gen_aug_config.get("enabled"):
+        from torch.utils.data import ConcatDataset, DataLoader
+
+        from src.utils.data.loaders import create_synthetic_augmentation_dataset
+
+        limit_config = gen_aug_config.get("limit", {})
+        gen_dataset = create_synthetic_augmentation_dataset(
+            split_file=gen_aug_config["split_file"],
+            transform=train_transform,
+            limit_mode=limit_config.get("mode"),
+            max_ratio=limit_config.get("max_ratio"),
+            max_samples=limit_config.get("max_samples"),
+            real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
+            seed=seed,
+        )
+        combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
+        train_loader = DataLoader(
+            combined_dataset,
+            batch_size=batch_size,
+            shuffle=shuffle_train,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            drop_last=drop_last,
+        )
+        logger.info(
+            f"Synthetic augmentation: added {len(gen_dataset)} generated images "
+            f"to {len(combined_dataset) - len(gen_dataset)} real images"
+        )
+
     # Get class names from split file
     class_names = _get_class_names(split_file)
 

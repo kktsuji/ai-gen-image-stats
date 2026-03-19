@@ -211,6 +211,38 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "checkpointing" in training:
             validate_checkpointing_section(training["checkpointing"])
 
+    # Validate synthetic_augmentation (optional section)
+    syn_aug = data.get("synthetic_augmentation", {})
+    if syn_aug.get("enabled"):
+        if not isinstance(syn_aug.get("split_file"), str) or not syn_aug["split_file"]:
+            raise ValueError(
+                "data.synthetic_augmentation.split_file must be a non-empty string "
+                "when synthetic_augmentation is enabled"
+            )
+
+        limit = syn_aug.get("limit", {})
+        limit_mode = limit.get("mode")
+        valid_limit_modes = [None, "max_ratio", "max_samples"]
+        if limit_mode not in valid_limit_modes:
+            raise ValueError(
+                f"Invalid synthetic_augmentation limit.mode: {limit_mode}. "
+                f"Must be one of {valid_limit_modes}"
+            )
+
+        if limit_mode == "max_ratio":
+            max_ratio = limit.get("max_ratio")
+            if not isinstance(max_ratio, (int, float)) or max_ratio <= 0:
+                raise ValueError(
+                    "synthetic_augmentation limit.max_ratio must be a positive number"
+                )
+
+        if limit_mode == "max_samples":
+            max_samples = limit.get("max_samples")
+            if not isinstance(max_samples, int) or max_samples <= 0:
+                raise ValueError(
+                    "synthetic_augmentation limit.max_samples must be a positive integer"
+                )
+
     elif config["mode"] == "evaluate":
         if "evaluation" not in config:
             raise KeyError(
