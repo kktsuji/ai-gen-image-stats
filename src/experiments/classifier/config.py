@@ -211,6 +211,71 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "checkpointing" in training:
             validate_checkpointing_section(training["checkpointing"])
 
+        # Validate synthetic_augmentation (optional, train-mode only)
+        syn_aug = data.get("synthetic_augmentation", {})
+        if syn_aug.get("enabled"):
+            if (
+                not isinstance(syn_aug.get("split_file"), str)
+                or not syn_aug["split_file"]
+            ):
+                raise ValueError(
+                    "data.synthetic_augmentation.split_file must be a non-empty string "
+                    "when synthetic_augmentation is enabled"
+                )
+
+            # Mutual exclusion: balancing and synthetic_augmentation
+            balancing = data.get("balancing", {})
+            if any(
+                balancing.get(k, {}).get("enabled")
+                for k in ("weighted_sampler", "downsampling", "upsampling")
+            ):
+                raise ValueError(
+                    "Cannot use both data.balancing and "
+                    "data.synthetic_augmentation. "
+                    "Disable one of them."
+                )
+
+            limit = syn_aug.get("limit", {})
+            limit_mode = limit.get("mode")
+            valid_limit_modes = [None, "max_ratio", "max_samples"]
+            if limit_mode not in valid_limit_modes:
+                raise ValueError(
+                    f"Invalid synthetic_augmentation limit.mode: {limit_mode}. "
+                    f"Must be one of {valid_limit_modes}"
+                )
+
+            if limit_mode == "max_ratio":
+                if "max_ratio" not in limit:
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_ratio is required "
+                        "when limit.mode is 'max_ratio'"
+                    )
+                max_ratio = limit["max_ratio"]
+                if (
+                    isinstance(max_ratio, bool)
+                    or not isinstance(max_ratio, (int, float))
+                    or max_ratio <= 0
+                ):
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_ratio must be a positive number"
+                    )
+
+            if limit_mode == "max_samples":
+                if "max_samples" not in limit:
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_samples is required "
+                        "when limit.mode is 'max_samples'"
+                    )
+                max_samples = limit["max_samples"]
+                if (
+                    isinstance(max_samples, bool)
+                    or not isinstance(max_samples, int)
+                    or max_samples <= 0
+                ):
+                    raise ValueError(
+                        "synthetic_augmentation limit.max_samples must be a positive integer"
+                    )
+
     elif config["mode"] == "evaluate":
         if "evaluation" not in config:
             raise KeyError(

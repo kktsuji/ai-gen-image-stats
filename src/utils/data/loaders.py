@@ -10,11 +10,11 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
 
 from src.utils.data.balancing import downsample_dataset, upsample_dataset
@@ -22,6 +22,18 @@ from src.utils.data.datasets import SplitFileDataset
 from src.utils.data.samplers import compute_weights_from_config, create_weighted_sampler
 
 _logger = logging.getLogger(__name__)
+
+
+def _make_worker_init_fn(seed: int) -> Callable[[int], None]:
+    """Create a worker_init_fn that seeds each DataLoader worker deterministically."""
+
+    def _worker_init_fn(worker_id: int) -> None:
+        worker_seed = seed + worker_id
+        random.seed(worker_seed)
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
+
+    return _worker_init_fn
 
 
 def create_train_loader(
@@ -120,13 +132,7 @@ def create_train_loader(
         generator = torch.Generator()
         generator.manual_seed(seed)
 
-        def _worker_init_fn(worker_id: int) -> None:
-            worker_seed = seed + worker_id  # type: ignore[operator]
-            random.seed(worker_seed)
-            np.random.seed(worker_seed)
-            torch.manual_seed(worker_seed)
-
-        worker_init_fn = _worker_init_fn
+        worker_init_fn = _make_worker_init_fn(seed)
 
     return DataLoader(
         dataset_to_use,
@@ -139,6 +145,154 @@ def create_train_loader(
         generator=generator,
         worker_init_fn=worker_init_fn,
     )
+
+
+def create_synthetic_augmentation_dataset(
+    split_file: str,
+    transform: transforms.Compose,
+    return_labels: bool = True,
+    limit_mode: Optional[str] = None,
+    max_ratio: Optional[float] = None,
+    max_samples: Optional[int] = None,
+    real_train_size: int = 0,
+    seed: Optional[int] = None,
+) -> Union[SplitFileDataset, Subset]:
+    """Create a dataset of synthetic (generated) images for augmentation.
+
+    Loads generated images from a sample-selection output JSON file and
+    optionally limits the number of samples via ratio or absolute cap.
+
+    Args:
+        split_file: Path to sample selection output JSON (SplitFileDataset format)
+        transform: Transform to apply to images
+        return_labels: Whether to return class labels
+        limit_mode: Limiting strategy: None (use all), "max_ratio", or "max_samples"
+        max_ratio: Max generated images as ratio of real training samples
+        max_samples: Max absolute number of generated images
+        real_train_size: Number of real training samples (used with max_ratio)
+        seed: Random seed for reproducible subsampling
+
+    Returns:
+        Full dataset or a Subset if limiting is applied
+    """
+    if not Path(split_file).exists():
+        raise FileNotFoundError(
+            f"Synthetic augmentation split file not found: {split_file}"
+        )
+
+    dataset = SplitFileDataset(
+        split_file=str(split_file),
+        split="train",
+        transform=transform,
+        return_labels=return_labels,
+    )
+
+    if limit_mode is None or len(dataset) == 0:
+        return dataset
+
+    if limit_mode == "max_ratio" and max_ratio is not None:
+        if real_train_size <= 0:
+            raise ValueError(
+                "real_train_size must be positive when using max_ratio limit mode"
+            )
+        max_n = int(real_train_size * max_ratio)
+    elif limit_mode == "max_samples" and max_samples is not None:
+        max_n = max_samples
+    else:
+        _logger.warning(
+            "limit_mode=%r is set but the corresponding value is None "
+            "(max_ratio=%r, max_samples=%r). Returning full dataset.",
+            limit_mode,
+            max_ratio,
+            max_samples,
+        )
+        return dataset
+
+    if max_n <= 0:
+        _logger.warning(
+            "Synthetic augmentation limit resolved to 0 samples "
+            "(limit_mode=%s, max_ratio=%s, max_samples=%s, real_train_size=%d). "
+            "Returning empty dataset.",
+            limit_mode,
+            max_ratio,
+            max_samples,
+            real_train_size,
+        )
+        return Subset(dataset, [])
+
+    if max_n >= len(dataset):
+        return dataset
+
+    rng = random.Random(seed)
+    indices = rng.sample(range(len(dataset)), max_n)
+    return Subset(dataset, indices)
+
+
+def create_augmented_train_loader(
+    train_loader: DataLoader,
+    synthetic_augmentation_config: Dict[str, Any],
+    transform: transforms.Compose,
+    shuffle: bool = True,
+    seed: Optional[int] = None,
+) -> DataLoader:
+    """Combine an existing training DataLoader with synthetic augmentation data.
+
+    Creates a synthetic dataset from the augmentation config, concatenates it
+    with the original training dataset, and returns a new DataLoader with the
+    same parameters as the original.
+
+    Args:
+        train_loader: Original training DataLoader (parameters are preserved)
+        synthetic_augmentation_config: Config dict with keys: split_file, limit
+        transform: Transform to apply to synthetic images
+        shuffle: Whether to shuffle the combined dataset
+        seed: Random seed for reproducibility
+
+    Returns:
+        New DataLoader over the combined (real + synthetic) dataset
+    """
+    limit_config = synthetic_augmentation_config.get("limit", {})
+    gen_dataset = create_synthetic_augmentation_dataset(
+        split_file=synthetic_augmentation_config["split_file"],
+        transform=transform,
+        limit_mode=limit_config.get("mode"),
+        max_ratio=limit_config.get("max_ratio"),
+        max_samples=limit_config.get("max_samples"),
+        # Note: mutual exclusion of balancing + synthetic_augmentation is
+        # enforced by config validation, so this reflects original real data size.
+        real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
+        seed=seed,
+    )
+    combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
+
+    # Reuse the same seeding logic as create_train_loader
+    generator = None
+    worker_init_fn = None
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+
+        worker_init_fn = _make_worker_init_fn(seed)
+
+    new_loader = DataLoader(
+        combined_dataset,
+        batch_size=train_loader.batch_size,  # type: ignore[arg-type]
+        shuffle=shuffle,
+        num_workers=train_loader.num_workers,
+        pin_memory=train_loader.pin_memory,
+        drop_last=train_loader.drop_last,
+        generator=generator,
+        worker_init_fn=worker_init_fn,
+    )
+
+    real_size = len(combined_dataset) - len(gen_dataset)
+    _logger.info(
+        "Synthetic augmentation: added %d generated images to %d real images",
+        len(gen_dataset),
+        real_size,
+    )
+
+    return new_loader
 
 
 def create_val_loader(

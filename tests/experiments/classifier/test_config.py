@@ -410,6 +410,234 @@ class TestValidateConfigErrorPaths:
             validate_config(config)
 
 
+@pytest.mark.unit
+class TestValidateSyntheticAugmentation:
+    """Test synthetic_augmentation config validation."""
+
+    def test_missing_section_passes(self):
+        """synthetic_augmentation absent from config is accepted (optional)."""
+        config = get_v2_default_config()
+        config["data"].pop("synthetic_augmentation", None)
+        validate_config(config)  # should not raise
+
+    def test_disabled_passes(self):
+        """synthetic_augmentation with enabled: false passes validation."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": False,
+            "split_file": None,
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_enabled_with_valid_split_file(self):
+        """enabled: true with valid split_file passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_enabled_missing_split_file(self):
+        """enabled: true with missing split_file raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": None,
+            "limit": {"mode": None},
+        }
+        with pytest.raises(ValueError, match="split_file must be a non-empty string"):
+            validate_config(config)
+
+    def test_enabled_empty_split_file(self):
+        """enabled: true with empty string split_file raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "",
+            "limit": {"mode": None},
+        }
+        with pytest.raises(ValueError, match="split_file must be a non-empty string"):
+            validate_config(config)
+
+    def test_invalid_limit_mode(self):
+        """Invalid limit.mode raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "invalid"},
+        }
+        with pytest.raises(
+            ValueError, match="Invalid synthetic_augmentation limit.mode"
+        ):
+            validate_config(config)
+
+    def test_max_ratio_valid(self):
+        """limit.mode = max_ratio with positive float passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio", "max_ratio": 0.5, "max_samples": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_max_ratio_missing_key(self):
+        """limit.mode = max_ratio without max_ratio key raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio"},
+        }
+        with pytest.raises(ValueError, match="max_ratio is required"):
+            validate_config(config)
+
+    def test_max_ratio_not_positive(self):
+        """limit.mode = max_ratio with non-positive value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio", "max_ratio": 0},
+        }
+        with pytest.raises(ValueError, match="max_ratio must be a positive number"):
+            validate_config(config)
+
+    def test_max_ratio_none(self):
+        """limit.mode = max_ratio with None raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio", "max_ratio": None},
+        }
+        with pytest.raises(ValueError, match="max_ratio must be a positive number"):
+            validate_config(config)
+
+    def test_max_samples_valid(self):
+        """limit.mode = max_samples with positive int passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples", "max_ratio": None, "max_samples": 100},
+        }
+        validate_config(config)  # should not raise
+
+    def test_max_samples_missing_key(self):
+        """limit.mode = max_samples without max_samples key raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples"},
+        }
+        with pytest.raises(ValueError, match="max_samples is required"):
+            validate_config(config)
+
+    def test_max_samples_not_positive(self):
+        """limit.mode = max_samples with non-positive value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples", "max_samples": 0},
+        }
+        with pytest.raises(ValueError, match="max_samples must be a positive integer"):
+            validate_config(config)
+
+    def test_max_samples_not_int(self):
+        """limit.mode = max_samples with float raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples", "max_samples": 10.5},
+        }
+        with pytest.raises(ValueError, match="max_samples must be a positive integer"):
+            validate_config(config)
+
+    def test_max_ratio_bool_rejected(self):
+        """limit.mode = max_ratio with bool value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_ratio", "max_ratio": True},
+        }
+        with pytest.raises(ValueError, match="max_ratio must be a positive number"):
+            validate_config(config)
+
+    def test_max_samples_bool_rejected(self):
+        """limit.mode = max_samples with bool value raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": "max_samples", "max_samples": True},
+        }
+        with pytest.raises(ValueError, match="max_samples must be a positive integer"):
+            validate_config(config)
+
+    def test_balancing_and_augmentation_mutual_exclusion(self):
+        """enabled augmentation + enabled balancing raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        config["data"]["balancing"] = {
+            "weighted_sampler": {"enabled": True, "method": "inverse"},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+        with pytest.raises(ValueError, match="Cannot use both data.balancing and"):
+            validate_config(config)
+
+    def test_balancing_disabled_with_augmentation_passes(self):
+        """enabled augmentation + all balancing disabled passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        config["data"]["balancing"] = {
+            "weighted_sampler": {"enabled": False},
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+        validate_config(config)  # should not raise
+
+    def test_not_validated_in_evaluate_mode(self):
+        """synthetic_augmentation is not validated in evaluate mode."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        config["evaluation"] = {
+            "checkpoint": "path/to/checkpoint.pth",
+            "data": {"test_path": "data/test", "batch_size": 32},
+        }
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": None,  # would fail in train mode
+            "limit": {"mode": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_evaluate_mode_not_broken_by_augmentation_section(self):
+        """evaluate mode validation still works with synthetic_augmentation present."""
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        # Don't add evaluation section — should raise KeyError
+        with pytest.raises(KeyError, match="Missing required section: evaluation"):
+            validate_config(config)
+
+
 @pytest.mark.component
 class TestConfigFiles:
     """Test actual config files (configs/examples/classifier.yaml)."""

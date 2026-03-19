@@ -79,6 +79,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     from src.experiments.classifier.trainer import ClassifierTrainer
     from src.utils.config import resolve_output_path
     from src.utils.data.loaders import (
+        create_augmented_train_loader,
         create_train_loader,
         create_val_loader,
     )
@@ -160,6 +161,17 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
+
+    # Apply synthetic augmentation if configured
+    syn_aug_config = data_config.get("synthetic_augmentation", {})
+    if syn_aug_config.get("enabled"):
+        train_loader = create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_aug_config,
+            transform=train_transform,
+            shuffle=shuffle_train,
+            seed=seed,
+        )
 
     # Get class names from split file
     class_names = _get_class_names(split_file)

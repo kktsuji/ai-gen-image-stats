@@ -10,9 +10,11 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from src.utils.data.loaders import (
+    create_augmented_train_loader,
+    create_synthetic_augmentation_dataset,
     create_train_loader,
     create_val_loader,
     get_class_names,
@@ -784,3 +786,249 @@ def test_unconditional_diffusion_workflow(tmp_path):
         assert isinstance(images, torch.Tensor)
         assert images.shape[1:] == (3, 32, 32)
         break
+
+
+# ==============================================================================
+# Unit Tests - Synthetic Augmentation Dataset
+# ==============================================================================
+
+
+@pytest.mark.unit
+def test_synthetic_aug_invalid_split_file():
+    """Test that create_synthetic_augmentation_dataset fails with nonexistent file."""
+    from torchvision import transforms
+
+    transform = transforms.Compose([transforms.ToTensor()])
+    with pytest.raises(FileNotFoundError, match="Synthetic augmentation split file"):
+        create_synthetic_augmentation_dataset(
+            split_file="/nonexistent/split.json",
+            transform=transform,
+        )
+
+
+@pytest.mark.unit
+def test_synthetic_aug_no_limit(tmp_path):
+    """Test loading full dataset when no limit is applied."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=5, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode=None,
+    )
+    assert len(dataset) == 10  # 5 per class * 2 classes
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_ratio(tmp_path):
+    """Test max_ratio limits correctly (e.g., 100 real, max_ratio=0.5 -> 50 gen)."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=50, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_ratio",
+        max_ratio=0.5,
+        real_train_size=100,
+        seed=42,
+    )
+    assert isinstance(dataset, Subset)
+    assert len(dataset) == 50
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_samples(tmp_path):
+    """Test max_samples limits correctly."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=10, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_samples",
+        max_samples=5,
+        seed=42,
+    )
+    assert isinstance(dataset, Subset)
+    assert len(dataset) == 5
+
+
+@pytest.mark.unit
+def test_synthetic_aug_seeded_reproducible(tmp_path):
+    """Test that subsampling is seeded and reproducible."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=10, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    ds1 = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_samples",
+        max_samples=5,
+        seed=42,
+    )
+    ds2 = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_samples",
+        max_samples=5,
+        seed=42,
+    )
+    assert isinstance(ds1, Subset)
+    assert isinstance(ds2, Subset)
+    assert ds1.indices == ds2.indices
+
+
+@pytest.mark.unit
+def test_synthetic_aug_limit_larger_than_dataset(tmp_path):
+    """Test that limit larger than dataset returns all samples."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=3, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_samples",
+        max_samples=1000,
+        seed=42,
+    )
+    # Should return full dataset (not Subset) since limit > dataset size
+    assert len(dataset) == 6  # 3 per class * 2 classes
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_ratio_zero_real_train_size(tmp_path):
+    """Test that max_ratio with real_train_size=0 raises ValueError."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=3, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    with pytest.raises(ValueError, match="real_train_size must be positive"):
+        create_synthetic_augmentation_dataset(
+            split_file=split_file,
+            transform=transform,
+            limit_mode="max_ratio",
+            max_ratio=0.5,
+            real_train_size=0,
+            seed=42,
+        )
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_ratio_resolves_to_zero(tmp_path):
+    """Test that very small max_ratio resolving to 0 returns empty Subset."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=3, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_ratio",
+        max_ratio=0.01,
+        real_train_size=10,  # int(10 * 0.01) = 0
+        seed=42,
+    )
+    assert isinstance(dataset, Subset)
+    assert len(dataset) == 0
+
+
+# ==============================================================================
+# Component Tests - Augmented Train Loader
+# ==============================================================================
+
+
+@pytest.mark.component
+def test_augmented_train_loader_combines_datasets(tmp_path):
+    """Test that create_augmented_train_loader combines real and synthetic datasets."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=2, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    assert len(train_loader.dataset) == 8  # type: ignore[arg-type]  # 4 per class * 2
+
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+    )
+    # 8 real + 6 synthetic = 14
+    assert len(combined_loader.dataset) == 14  # type: ignore[arg-type]
+    assert combined_loader.batch_size == 2
+
+
+@pytest.mark.component
+def test_augmented_train_loader_with_limit(tmp_path):
+    """Test that create_augmented_train_loader respects max_samples limit."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=2, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=10, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=4,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": "max_samples", "max_ratio": None, "max_samples": 5},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+    )
+    # 8 real + 5 synthetic (limited) = 13
+    assert len(combined_loader.dataset) == 13  # type: ignore[arg-type]
