@@ -195,23 +195,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        logger.info(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-
-        # Load model weights
-        if "model_state_dict" in checkpoint:
-            state_dict = checkpoint["model_state_dict"]
-            if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
-                state_dict = {
-                    k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
-                }
-            model.load_state_dict(state_dict)
-        else:
-            raise ValueError(
-                f"Checkpoint does not contain 'model_state_dict'. "
-                f"Available keys: {list(checkpoint.keys())}"
-            )
-
         # Initialize metrics logger
         metrics_logger = create_experiment_logger(config, log_dir)
 
@@ -224,6 +207,10 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             show_progress=True,
             config=config,
         )
+
+        # Load checkpoint using trainer's own method (handles _orig_mod. prefix, etc.)
+        logger.info(f"Loading checkpoint: {checkpoint_path}")
+        trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
 
         # Run evaluation
         eval_metrics = trainer.evaluate(val_loader)

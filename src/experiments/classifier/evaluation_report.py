@@ -171,7 +171,7 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
         else:
             best_idx = df[metric].idxmax()
 
-        if best_idx is not None:
+        if best_idx is not None and best_idx == best_idx:  # NaN != NaN
             best_row = df.loc[best_idx]
             rows.append(
                 {
@@ -265,10 +265,14 @@ def generate_report(
             if metric not in df.columns:
                 continue
 
-            best_baseline_val = float(baselines[metric].max())
-            best_synthetic_val = float(synthetics[metric].max())
-            bl_best_idx = int(baselines[metric].idxmax())  # type: ignore[arg-type]
-            syn_best_idx = int(synthetics[metric].idxmax())  # type: ignore[arg-type]
+            bl_best_idx = baselines[metric].idxmax()  # type: ignore[union-attr]
+            syn_best_idx = synthetics[metric].idxmax()  # type: ignore[union-attr]
+            # Skip if either index is NaN (all-NaN column); NaN != NaN
+            if bl_best_idx != bl_best_idx or syn_best_idx != syn_best_idx:
+                continue
+
+            best_baseline_val = float(baselines.loc[bl_best_idx, metric])
+            best_synthetic_val = float(synthetics.loc[syn_best_idx, metric])
             best_baseline_name = baselines.loc[bl_best_idx, "experiment"]
             best_synthetic_name = synthetics.loc[syn_best_idx, "experiment"]
             delta = best_synthetic_val - best_baseline_val

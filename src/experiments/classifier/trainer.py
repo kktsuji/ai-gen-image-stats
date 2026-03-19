@@ -478,8 +478,9 @@ class ClassifierTrainer:
             metrics[f"{prefix}recall_{cls_idx}"] = float(rec_arr[cls_idx])  # type: ignore[index]
             metrics[f"{prefix}f1_{cls_idx}"] = float(f1_arr[cls_idx])  # type: ignore[index]
 
-        # ROC-AUC and PR-AUC (binary: use class 1 probability; multiclass: weighted OVR)
-        try:
+        # ROC-AUC and PR-AUC (require at least 2 classes present in targets)
+        unique_classes = np.unique(targets_arr)
+        if len(unique_classes) >= 2:
             if num_classes == 2:
                 metrics[f"{prefix}roc_auc"] = float(
                     roc_auc_score(targets_arr, all_probs[:, 1])
@@ -493,9 +494,11 @@ class ClassifierTrainer:
                         targets_arr, all_probs, multi_class="ovr", average="weighted"
                     )
                 )
-        except ValueError:
-            # Can happen if only one class is present in targets
-            _logger.warning("Could not compute AUC metrics (single class in targets)")
+                metrics[f"{prefix}pr_auc"] = float(
+                    average_precision_score(targets_arr, all_probs, average="weighted")
+                )
+        else:
+            _logger.warning("Skipping AUC metrics: only one class in targets")
 
         # Confusion matrix (flattened as cm_i_j)
         cm = confusion_matrix(targets_arr, preds_arr, labels=list(range(num_classes)))
