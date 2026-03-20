@@ -48,7 +48,8 @@ src/
 │   ├── sample_selection/  # Quality-based sample filtering
 │   │   ├── config.py       # Config validation
 │   │   ├── selector.py     # Scoring and selection pipeline
-│   │   └── report.py       # CSV/JSON report generation
+│   │   ├── report.py       # CSV/JSON report generation
+│   │   └── evaluation_report.py  # Cross-experiment selection-eval reports
 │   └── gan/          # GAN models (planned)
 ├── utils/            # CLI, config, device management, metrics
 └── data/             # Dataset implementations and transforms
@@ -845,11 +846,15 @@ This project is undergoing active refactoring according to the plan in [docs/res
 3. **Train Baseline Classifier**: Train on real data only
 4. **Train with Synthetic Augmentation**: Train on real + selected synthetic data
 5. **Evaluate Models**: Run evaluate mode to generate per-class metrics and comparison reports
-6. **Compare Results**: Analyze performance differences using built-in tools
+6. **Summarize Results**: Aggregate evaluation reports across experiments into comparison tables
+7. **Compare Results**: Analyze performance differences using built-in tools
 
 ```bash
 # Run the full synthetic augmentation research pipeline
 python scripts/run_pipeline.py
+
+# Aggregate selection-eval reports across experiments
+python -m src.experiments.sample_selection.evaluation_report
 ```
 
 ## Docker Usage
