@@ -43,6 +43,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import torch
 from dotenv import load_dotenv
 
@@ -250,7 +251,66 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             "Evaluating on the validation split. For unbiased comparison, "
             "consider using a held-out test set."
         )
-        eval_metrics = trainer.evaluate(val_loader)
+        eval_metrics, inference = trainer.evaluate_with_predictions(val_loader)
+
+        # Save predictions and compute bootstrap CIs
+        reports_dir = resolve_output_path(config, "reports")
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        bootstrap_config = evaluation_config.get("bootstrap", {})
+        bootstrap_enabled = bootstrap_config.get("enabled", False)
+        save_predictions = bootstrap_config.get("save_predictions", False)
+
+        if save_predictions and inference["total"] > 0:
+            predictions_path = reports_dir / "predictions.npz"
+            np.savez_compressed(
+                predictions_path,
+                targets=np.array(inference["all_targets"]),
+                predictions=np.array(inference["all_predictions"]),
+                probs=inference["all_probs"],
+            )
+            logger.info(f"Predictions saved to: {predictions_path}")
+
+        if bootstrap_enabled and inference["total"] > 0:
+            from src.utils.bootstrap import bootstrap_classification_metrics
+
+            n_bootstrap = bootstrap_config["n_bootstrap"]
+            confidence_level = bootstrap_config["confidence_level"]
+            bootstrap_seed = compute_config.get("seed")
+
+            targets_arr = np.array(inference["all_targets"])
+            predictions_arr = np.array(inference["all_predictions"])
+            probs_arr = inference["all_probs"]
+            num_classes_eval = probs_arr.shape[1]
+
+            # Determine which metrics to bootstrap (exclude cm_* entries)
+            metric_names = [
+                k
+                for k in eval_metrics
+                if not k.startswith("cm_") and k not in ("loss", "accuracy")
+            ]
+            metric_names.extend(["loss", "accuracy"])
+
+            logger.info(
+                f"Computing bootstrap CIs (n={n_bootstrap}, "
+                f"confidence={confidence_level})..."
+            )
+            ci_results = bootstrap_classification_metrics(
+                targets=targets_arr,
+                predictions=predictions_arr,
+                probs=probs_arr,
+                num_classes=num_classes_eval,
+                metric_names=metric_names,
+                n_bootstrap=n_bootstrap,
+                confidence_level=confidence_level,
+                seed=bootstrap_seed,
+            )
+
+            for metric, (lo, hi) in ci_results.items():
+                eval_metrics[f"{metric}_ci_lower"] = lo
+                eval_metrics[f"{metric}_ci_upper"] = hi
+            eval_metrics["bootstrap_n"] = n_bootstrap
+            eval_metrics["bootstrap_confidence_level"] = confidence_level
 
         # Separate scalar metrics for logging from full payload for JSON
         scalar_eval_metrics = {}
@@ -265,8 +325,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             logger.info(f"  {key}: {value:.4f}")
 
         # Save full results (including non-scalars) to reports directory
-        reports_dir = resolve_output_path(config, "reports")
-        reports_dir.mkdir(parents=True, exist_ok=True)
         report_path = reports_dir / "evaluation.json"
         with open(report_path, "w") as f:
             json.dump(eval_metrics, f, indent=2)

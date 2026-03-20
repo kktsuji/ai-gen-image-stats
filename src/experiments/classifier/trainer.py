@@ -7,7 +7,7 @@ training and validation logic.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -789,6 +789,58 @@ class ClassifierTrainer:
     def best_metric(self) -> Optional[float]:
         """Get the best metric value achieved so far."""
         return self._best_metric
+
+    def evaluate_with_predictions(
+        self, dataloader: Optional[DataLoader] = None
+    ) -> Tuple[Dict[str, float], Dict[str, Any]]:
+        """Evaluate and return both metrics and per-sample predictions.
+
+        Like evaluate(), but also returns the raw inference outputs
+        (targets, predictions, probabilities) for downstream use
+        such as bootstrap confidence interval computation.
+
+        Args:
+            dataloader: DataLoader to evaluate on. If None, uses validation loader.
+
+        Returns:
+            Tuple of (metrics_dict, inference_dict).
+            inference_dict has keys: avg_loss, accuracy, total, num_batches,
+            all_targets, all_predictions, all_probs.
+        """
+        if dataloader is None:
+            dataloader = self.val_loader
+
+        if dataloader is None:
+            return {"loss": 0.0, "accuracy": 0.0}, {
+                "avg_loss": 0.0,
+                "accuracy": 0.0,
+                "total": 0,
+                "num_batches": 0,
+                "all_targets": [],
+                "all_predictions": [],
+                "all_probs": np.array([]),
+            }
+
+        inference = self._run_inference(dataloader, desc="Evaluate")
+
+        result: Dict[str, float] = {
+            "loss": inference["avg_loss"],
+            "accuracy": inference["accuracy"],
+        }
+
+        if inference["total"] > 0:
+            all_probs = inference["all_probs"]
+            num_classes = all_probs.shape[1]
+            classification_metrics = self._compute_classification_metrics(
+                inference["all_targets"],
+                inference["all_predictions"],
+                all_probs,
+                num_classes,
+                prefix="",
+            )
+            result.update(classification_metrics)
+
+        return result, inference
 
     def evaluate(self, dataloader: Optional[DataLoader] = None) -> Dict[str, float]:
         """Evaluate the model on a specific dataloader.

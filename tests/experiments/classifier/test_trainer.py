@@ -837,3 +837,62 @@ def test_evaluate_warns_on_softmax_output(caplog):
         trainer.evaluate(val_loader)
 
     assert any("look like probabilities" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
+def test_evaluate_with_predictions_no_val_loader(
+    simple_model, simple_train_loader, simple_optimizer, simple_logger
+):
+    """evaluate_with_predictions returns defaults when val_loader is None."""
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        train_loader=simple_train_loader,
+        optimizer=simple_optimizer,
+        logger=simple_logger,
+        val_loader=None,
+        device="cpu",
+        show_progress=False,
+    )
+    metrics, inference = trainer.evaluate_with_predictions()
+    assert metrics == {"loss": 0.0, "accuracy": 0.0}
+    assert inference["total"] == 0
+    assert inference["all_targets"] == []
+    assert inference["all_predictions"] == []
+
+
+@pytest.mark.component
+def test_evaluate_with_predictions_returns_both(classifier_trainer):
+    """evaluate_with_predictions returns metrics dict and inference dict."""
+    metrics, inference = classifier_trainer.evaluate_with_predictions()
+
+    # Metrics should have standard keys
+    assert "loss" in metrics
+    assert "accuracy" in metrics
+    assert "balanced_accuracy" in metrics
+
+    # Inference should have per-sample data
+    assert isinstance(inference["all_targets"], list)
+    assert isinstance(inference["all_predictions"], list)
+    assert len(inference["all_targets"]) == inference["total"]
+    assert len(inference["all_predictions"]) == inference["total"]
+    assert inference["all_probs"].shape[0] == inference["total"]
+    assert inference["all_probs"].shape[1] == 2  # binary classification
+
+
+@pytest.mark.component
+def test_evaluate_with_predictions_matches_evaluate(classifier_trainer):
+    """evaluate_with_predictions metrics should match evaluate() metrics."""
+    import numpy as np
+
+    # Use same seed for both calls to get same results
+    torch.manual_seed(42)
+    eval_metrics = classifier_trainer.evaluate()
+
+    torch.manual_seed(42)
+    pred_metrics, _ = classifier_trainer.evaluate_with_predictions()
+
+    for key in eval_metrics:
+        assert key in pred_metrics
+        assert np.isclose(eval_metrics[key], pred_metrics[key], atol=1e-6), (
+            f"Mismatch for {key}: {eval_metrics[key]} != {pred_metrics[key]}"
+        )
