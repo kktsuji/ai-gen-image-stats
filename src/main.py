@@ -160,6 +160,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         normalize=normalize_str,
     )
 
+    # Validate split file has val data before reading it
+    # (gives a clear error instead of a confusing loader/JSON failure)
+    mode = config.get("mode", "train")
+    if mode == "evaluate":
+        _validate_split_file_has_val(split_file)
+
     # Create val loader (needed for both train and evaluate modes)
     compute_config = config.get("compute", {})
     seed = compute_config.get("seed")
@@ -212,14 +218,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     logger.info(f"Pretrained: {pretrained}")
     logger.info(f"Freeze backbone: {freeze_backbone}")
 
-    # Check mode
-    mode = config.get("mode", "train")
-
     if mode == "evaluate":
         # Evaluate mode: load checkpoint and evaluate with enriched metrics
-
-        # Validate that split_file contains a val split
-        _validate_split_file_has_val(split_file)
 
         evaluation_config = config["evaluation"]
         checkpoint_path = Path(evaluation_config["checkpoint"])

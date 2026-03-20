@@ -333,6 +333,10 @@ class ClassifierTrainer:
         if self.config:
             logger.log_hyperparams(self.config)
 
+        # Initialize metrics before loop so they're defined even when num_epochs=0
+        train_metrics: Dict[str, float] = {}
+        val_metrics: Optional[Dict[str, float]] = None
+
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
 

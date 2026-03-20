@@ -145,8 +145,9 @@ def test_load_evaluation_results(tmp_path):
 
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 2
-    assert results[0]["experiment"] == "baseline_vanilla"
-    assert results[0]["accuracy"] == 80.0
+    baseline = [r for r in results if r["experiment"] == "baseline_vanilla"]
+    assert len(baseline) == 1
+    assert baseline[0]["accuracy"] == 80.0
 
 
 @pytest.mark.component

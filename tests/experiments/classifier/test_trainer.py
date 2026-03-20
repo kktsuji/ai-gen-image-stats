@@ -498,6 +498,24 @@ def test_training_with_best_model_saving(classifier_trainer):
         assert (checkpoint_dir / "best_model.pth").exists()
 
 
+@pytest.mark.unit
+def test_train_zero_epochs_no_error(classifier_trainer):
+    """Train with num_epochs=0 must not raise NameError on final checkpoint."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Should not raise NameError for undefined train_metrics / val_metrics
+        classifier_trainer.train(
+            num_epochs=0,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=1,
+            save_best=False,
+        )
+
+        # Final checkpoint should still be saved
+        assert (checkpoint_dir / "final_model.pth").exists()
+
+
 @pytest.mark.integration
 def test_checkpoint_loading_and_resuming(classifier_trainer):
     """Test checkpoint loading and training resumption."""
