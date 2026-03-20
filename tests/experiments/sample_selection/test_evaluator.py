@@ -110,7 +110,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"gen_{i}.png" for i in range(30)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         report_path = reports_dir / "evaluation.json"
         assert report_path.exists()
@@ -170,7 +170,7 @@ class TestRunSampleSelectionEvaluate:
             (sel_feats, [f"sel_{i}.png" for i in range(15)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         report_path = reports_dir / "evaluation.json"
         with open(report_path) as f:
@@ -218,7 +218,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"gen_{i}.png" for i in range(30)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         with open(reports_dir / "evaluation.json") as f:
             report = json.load(f)
@@ -264,7 +264,7 @@ class TestRunSampleSelectionEvaluate:
             (_make_mock_features(10, seed=2), [f"g_{i}.png" for i in range(10)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         expected = Path(config["output"]["base_dir"]) / "reports" / "evaluation.json"
         assert expected.exists()
@@ -307,7 +307,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"g_{i}.png" for i in range(50)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         with open(reports_dir / "evaluation.json") as f:
             report = json.load(f)
@@ -343,7 +343,7 @@ class TestRunSampleSelectionEvaluate:
         mock_simple_ds.return_value = mock_gen_ds
 
         with pytest.raises(ValueError, match="Real dataset is empty"):
-            run_sample_selection_evaluate(config, "cpu")
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
@@ -375,7 +375,7 @@ class TestRunSampleSelectionEvaluate:
         mock_split_ds.return_value = mock_sel_ds
 
         with pytest.raises(ValueError, match="Selected dataset is empty"):
-            run_sample_selection_evaluate(config, "cpu")
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
@@ -402,7 +402,7 @@ class TestRunSampleSelectionEvaluate:
         mock_simple_ds.return_value = mock_gen_ds
 
         with pytest.raises(ValueError, match="evaluation.k"):
-            run_sample_selection_evaluate(config, "cpu")
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
     @patch("src.experiments.sample_selection.evaluator.evaluate_generative_model")
     @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
@@ -443,7 +443,7 @@ class TestRunSampleSelectionEvaluate:
         # Simulate AUC computation failure (e.g. stratified split issue)
         mock_eval_gen.side_effect = ValueError("too few samples for stratify")
 
-        reports_dir = run_sample_selection_evaluate(config, "cpu")
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
         with open(reports_dir / "evaluation.json") as f:
             report = json.load(f)
@@ -479,4 +479,4 @@ class TestRunSampleSelectionEvaluate:
         mock_simple_ds.return_value = mock_gen_ds
 
         with pytest.raises(ValueError, match="Generated dataset is empty"):
-            run_sample_selection_evaluate(config, "cpu")
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)

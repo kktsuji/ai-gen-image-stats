@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 _MIN_SAMPLES_FOR_AUC = 7
 
 
-def run_sample_selection_evaluate(config: Dict[str, Any], device: str) -> Path:
+def run_sample_selection_evaluate(
+    config: Dict[str, Any], device: str, log_dir: Path
+) -> Path:
     """Evaluate distribution-level quality of generated and selected images.
 
     Compares real vs generated (always), and if data.selected is present,
@@ -47,6 +49,7 @@ def run_sample_selection_evaluate(config: Dict[str, Any], device: str) -> Path:
     Args:
         config: Full experiment configuration dictionary.
         device: Device string (e.g. "cpu" or "cuda").
+        log_dir: Directory for log files (created by setup_experiment_common).
 
     Returns:
         Path to the output reports directory.
@@ -220,11 +223,6 @@ def _compute_pair_metrics(
         Dictionary of metric name to value.
     """
     min_set_size = min(len(features_a), len(features_b))
-    if k >= min_set_size:
-        raise ValueError(
-            f"evaluation.k ({k}) must be less than the smaller dataset size "
-            f"({min_set_size}) for {pair_name}"
-        )
 
     if min_set_size < _MIN_SAMPLES_FOR_AUC:
         logger.warning(

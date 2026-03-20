@@ -25,9 +25,10 @@ data:
     class_label: 0 # Filter to this class label (null to use all)
   generated:
     directory: "outputs/diffusion/generated" # Directory containing generated images
+  # Optional: include selected samples for real-vs-selected and generated-vs-selected comparisons
   selected:
     split_file: "outputs/sample_selection/reports/accepted_samples.json" # Path to accepted samples JSON
-    split: train # Must be 'train'
+    split: train # Must be 'train' (matches write_accepted_samples_json output key)
 
 # Evaluation settings
 evaluation:
