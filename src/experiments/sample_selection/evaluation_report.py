@@ -58,10 +58,10 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
     """
     path = Path(json_path)
 
-    # Path parts: .../diffusion-{train}/selection-eval/{gen}_{sel}/reports/evaluation.json
+    # Path parts: .../diffusion-{train}/selection-eval/{gen}__{sel}/reports/evaluation.json
     try:
         reports_dir = path.parent  # reports/
-        combo_dir = reports_dir.parent  # {gen}_{sel}/
+        combo_dir = reports_dir.parent  # {gen}__{sel}/
         selection_eval_dir = combo_dir.parent  # selection-eval/
         diffusion_dir = selection_eval_dir.parent  # diffusion-{train}/
 
@@ -74,7 +74,7 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
 
         # Extract gen and sel from "{gen}__{sel}"
         combo = combo_dir.name
-        parts = combo.rsplit("__", 1)
+        parts = combo.split("__", 1)
         if len(parts) == 2:
             gen_config = parts[0]
             selection = parts[1]

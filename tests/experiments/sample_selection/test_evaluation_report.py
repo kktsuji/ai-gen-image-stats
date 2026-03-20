@@ -320,7 +320,7 @@ def test_load_selection_eval_results_skips_reserved_keys(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_parse_selection_eval_path_underscore_in_gen_config():
-    """Test that gen_config with underscores is parsed correctly via rsplit."""
+    """Test that gen_config with underscores is parsed correctly."""
     path = "outputs/diffusion-ws/selection-eval/n100_gs3__topk/reports/evaluation.json"
     result = _parse_selection_eval_path(path)
     assert result["diffusion_variant"] == "ws"
