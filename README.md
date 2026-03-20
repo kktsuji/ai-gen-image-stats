@@ -17,7 +17,7 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
   - **Data Preparation**: Reproducible train/val splitting with JSON split files
   - **Diffusion Models**: DDPM for synthetic image generation
   - **Sample Selection**: Quality-based filtering of generated samples using k-NN distance in feature space
-  - **Classifiers**: InceptionV3, ResNet (50/101), WRN for classification tasks with per-class evaluation metrics
+  - **Classifiers**: InceptionV3, ResNet (50/101/152) for classification tasks with per-class evaluation metrics
   - **GANs**: (Planned) Adversarial training for image generation
 
 - **Comprehensive Testing**: Four-tier strategy from fast unit tests to GPU smoke tests

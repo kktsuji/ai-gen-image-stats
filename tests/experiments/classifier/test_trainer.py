@@ -61,7 +61,8 @@ def _make_val_loader(
     if num_samples == 0:
         return None
     X = torch.randn(num_samples, input_dim)
-    y = torch.randint(0, num_classes, (num_samples,))
+    # Ensure all classes are represented by cycling labels deterministically
+    y = torch.tensor([i % num_classes for i in range(num_samples)])
     dataset = TensorDataset(X, y)
     return DataLoader(dataset, batch_size=batch_size, shuffle=False)
 

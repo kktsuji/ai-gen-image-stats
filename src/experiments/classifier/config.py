@@ -289,7 +289,8 @@ def validate_config(config: Dict[str, Any]) -> None:
             )
 
         evaluation = config["evaluation"]
-        if "checkpoint" not in evaluation or evaluation["checkpoint"] is None:
+        checkpoint = evaluation.get("checkpoint")
+        if not isinstance(checkpoint, str) or not checkpoint.strip():
             raise ValueError("evaluation.checkpoint is required for evaluate mode")
 
         # Validate reports subdir for evaluate mode

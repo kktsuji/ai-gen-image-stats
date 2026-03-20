@@ -517,7 +517,7 @@ class ClassifierTrainer:
                 metrics[f"{prefix}pr_auc"] = float(
                     average_precision_score(targets_arr, all_probs[:, 1])
                 )
-            else:
+            elif len(unique_classes) == num_classes:
                 metrics[f"{prefix}roc_auc"] = float(
                     roc_auc_score(
                         targets_arr, all_probs, multi_class="ovr", average="weighted"
@@ -525,6 +525,11 @@ class ClassifierTrainer:
                 )
                 metrics[f"{prefix}pr_auc"] = float(
                     average_precision_score(targets_arr, all_probs, average="weighted")
+                )
+            else:
+                _logger.warning(
+                    "Skipping multiclass AUC metrics: "
+                    "not all classes are present in targets"
                 )
         else:
             _logger.warning("Skipping AUC metrics: only one class in targets")

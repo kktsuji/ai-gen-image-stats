@@ -100,6 +100,13 @@ def load_evaluation_results(
         except (json.JSONDecodeError, OSError) as e:
             _logger.warning(f"Skipping malformed file {json_path}: {e}")
             continue
+        if not isinstance(metrics, dict):
+            _logger.warning(
+                "Skipping malformed file %s: expected a JSON object, got %s",
+                json_path,
+                type(metrics).__name__,
+            )
+            continue
 
         entry: Dict[str, Any] = {"experiment": exp_name}
         entry.update(_parse_experiment_name(exp_name))
@@ -247,6 +254,13 @@ def generate_report(
                     summary = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 _logger.warning(f"Skipping malformed file {json_path}: {e}")
+                continue
+            if not isinstance(summary, dict):
+                _logger.warning(
+                    "Skipping malformed file %s: expected a JSON object, got %s",
+                    json_path,
+                    type(summary).__name__,
+                )
                 continue
 
             entry: Dict[str, Any] = {"path": str(path)}

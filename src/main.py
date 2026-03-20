@@ -252,11 +252,19 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         )
         eval_metrics = trainer.evaluate(val_loader)
 
+        # Separate scalar metrics for logging from full payload for JSON
+        scalar_eval_metrics = {}
+        for key, value in eval_metrics.items():
+            try:
+                scalar_eval_metrics[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
         logger.info("Evaluation results:")
-        for key, value in sorted(eval_metrics.items()):
+        for key, value in sorted(scalar_eval_metrics.items()):
             logger.info(f"  {key}: {value:.4f}")
 
-        # Save results to reports directory
+        # Save full results (including non-scalars) to reports directory
         reports_dir = resolve_output_path(config, "reports")
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_path = reports_dir / "evaluation.json"
@@ -264,8 +272,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             json.dump(eval_metrics, f, indent=2)
         logger.info(f"Evaluation report saved to: {report_path}")
 
-        # Log metrics to CSV
-        metrics_logger.log_metrics(eval_metrics, step=0, epoch=0)
+        # Log scalar metrics to CSV
+        metrics_logger.log_metrics(scalar_eval_metrics, step=0, epoch=0)
         metrics_logger.close()
 
         logger.info("Evaluation completed successfully!")
