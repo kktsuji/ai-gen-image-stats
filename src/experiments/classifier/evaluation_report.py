@@ -33,18 +33,18 @@ KEY_METRICS = [
 def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     """Parse experiment name into dimension components.
 
-    Dimensions are separated by "_" (single underscore). Hyphens may appear
-    within a dimension value (e.g., "n100-gs3"). See configs/exec.py for the
-    naming convention.
+    Dimensions are separated by "__" (double underscore). Hyphens and single
+    underscores may appear within a dimension value (e.g., "n100-gs3").
+    See scripts/run_pipeline.py for the naming convention.
 
     Expected formats:
-        - Synthetic: {train}_{gen}_{sel}_{cls}  e.g. "ws_n100-gs3_topk_all"
-        - Baseline:  baseline_{strategy}        e.g. "baseline_vanilla"
+        - Synthetic: {train}__{gen}__{sel}__{cls}  e.g. "ws__n100-gs3__topk__all"
+        - Baseline:  baseline__{strategy}          e.g. "baseline__vanilla"
 
     Returns:
         Dictionary with keys: type, diffusion_variant, gen_config, selection, aug_limit
     """
-    parts = exp_name.split("_")
+    parts = exp_name.split("__")
 
     if parts[0] == "baseline" and len(parts) == 2:
         return {

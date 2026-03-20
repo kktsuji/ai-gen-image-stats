@@ -7,12 +7,11 @@ SELECTION_EVALUATE_CONFIG = "configs/sample-selection-evaluate.yaml"
 CLASSIFIER_CONFIG = "configs/classifier.yaml"
 
 # Naming convention:
-#   Dimension separator: "_" (single underscore)
-#   Within-dimension separator: "-" (hyphen)
-#   Variant names must NOT contain "_" to keep parsing unambiguous.
+#   Dimension separator: "__" (double underscore)
+#   Within-dimension separator: "-" (hyphen) or "_" (single underscore)
 #
-#   Synthetic:  {train}_{gen}_{sel}_{cls}   e.g. ws_n100-gs3_topk_all
-#   Baseline:   baseline_{strategy}         e.g. baseline_vanilla
+#   Synthetic:  {train}__{gen}__{sel}__{cls}   e.g. ws__n100-gs3__topk__all
+#   Baseline:   baseline__{strategy}           e.g. baseline__vanilla
 
 # ON/OFF switches for each experiment phase
 RUN_TRAINING = False
@@ -103,14 +102,14 @@ CLASSIFIER_VARIANTS = [
 # Baseline classifier variants: real data only, with different balancing strategies
 BASELINE_VARIANTS = [
     (
-        "baseline_vanilla",
+        "baseline__vanilla",
         [
             "--data.synthetic_augmentation.enabled",
             "false",
         ],
     ),
     (
-        "baseline_ws",
+        "baseline__ws",
         [
             "--data.synthetic_augmentation.enabled",
             "false",
@@ -119,7 +118,7 @@ BASELINE_VARIANTS = [
         ],
     ),
     (
-        "baseline_us",
+        "baseline__us",
         [
             "--data.synthetic_augmentation.enabled",
             "false",
@@ -235,7 +234,7 @@ def main() -> None:
                 for sel_name, sel_overrides in SELECTION_VARIANTS:
                     overrides = [
                         "--output.base_dir",
-                        f"outputs/diffusion-{train_name}/selection/{gen_name}_{sel_name}",
+                        f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}",
                         "--data.generated.directory",
                         f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
                         *sel_overrides,
@@ -256,11 +255,11 @@ def main() -> None:
                 for sel_name, _ in SELECTION_VARIANTS:
                     overrides = [
                         "--output.base_dir",
-                        f"outputs/diffusion-{train_name}/selection-eval/{gen_name}_{sel_name}",
+                        f"outputs/diffusion-{train_name}/selection-eval/{gen_name}__{sel_name}",
                         "--data.generated.directory",
                         f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
                         "--data.selected.split_file",
-                        f"outputs/diffusion-{train_name}/selection/{gen_name}_{sel_name}/reports/accepted_samples.json",
+                        f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}/reports/accepted_samples.json",
                     ]
                     print(
                         f"[SEL-EVAL] {train_name}/{gen_name}/{sel_name}: "
@@ -280,11 +279,11 @@ def main() -> None:
                     for cls_name, cls_overrides in CLASSIFIER_VARIANTS:
                         sel_split = (
                             f"outputs/diffusion-{train_name}/selection"
-                            f"/{gen_name}_{sel_name}/reports/accepted_samples.json"
+                            f"/{gen_name}__{sel_name}/reports/accepted_samples.json"
                         )
                         out_dir = (
                             f"outputs/classifier"
-                            f"/{train_name}_{gen_name}_{sel_name}_{cls_name}"
+                            f"/{train_name}__{gen_name}__{sel_name}__{cls_name}"
                         )
                         overrides = [
                             "--output.base_dir",
