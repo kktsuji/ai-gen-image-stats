@@ -36,6 +36,7 @@ Note:
     can be overridden via CLI using dot-notation (e.g., --model.architecture.image_size 60).
 """
 
+import json
 import logging
 import sys
 import time
@@ -57,6 +58,34 @@ from src.utils.training import create_optimizer, create_scheduler
 
 # Module-level logger
 logger = logging.getLogger(__name__)
+
+
+def _validate_split_file_has_val(split_file: str) -> None:
+    """Validate that a split file exists on disk and contains a non-empty val split.
+
+    Args:
+        split_file: Path to the JSON split file.
+
+    Raises:
+        FileNotFoundError: If the split file does not exist.
+        ValueError: If the file is not valid JSON or has no val entries.
+    """
+    split_path = Path(split_file)
+    if not split_path.exists():
+        raise FileNotFoundError(
+            f"split_file '{split_file}' not found. "
+            "A valid split file is required for evaluate mode."
+        )
+    try:
+        with open(split_path) as f:
+            split_data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"split_file '{split_file}' is not valid JSON: {e}") from e
+    if "val" not in split_data or not split_data["val"]:
+        raise ValueError(
+            f"split_file '{split_file}' has no 'val' entries. "
+            "A non-empty val split is required for evaluate mode."
+        )
 
 
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
@@ -123,37 +152,23 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         else color_jitter_config
     )
 
-    # Build transforms
+    # Build val transforms (needed for both train and evaluate modes)
     normalize_str = normalize if normalize not in ["none", None] else None
-    train_transform = get_train_transforms(
-        image_size=image_size,
-        crop_size=crop_size,
-        horizontal_flip=horizontal_flip,
-        color_jitter=color_jitter,
-        rotation_degrees=rotation_degrees,
-        normalize=normalize_str,
-    )
     val_transform = get_val_transforms(
         image_size=image_size,
         crop_size=crop_size,
         normalize=normalize_str,
     )
 
-    # Create data loaders
+    # Validate split file has val data before reading it
+    # (gives a clear error instead of a confusing loader/JSON failure)
+    mode = config.get("mode", "train")
+    if mode == "evaluate":
+        _validate_split_file_has_val(split_file)
+
+    # Create val loader (needed for both train and evaluate modes)
     compute_config = config.get("compute", {})
     seed = compute_config.get("seed")
-    balancing_config = data_config.get("balancing")
-    train_loader = create_train_loader(
-        split_file=split_file,
-        batch_size=batch_size,
-        transform=train_transform,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        drop_last=drop_last,
-        shuffle=shuffle_train,
-        balancing_config=balancing_config,
-        seed=seed,
-    )
     val_loader = create_val_loader(
         split_file=split_file,
         batch_size=batch_size,
@@ -161,17 +176,6 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
-
-    # Apply synthetic augmentation if configured
-    syn_aug_config = data_config.get("synthetic_augmentation", {})
-    if syn_aug_config.get("enabled"):
-        train_loader = create_augmented_train_loader(
-            train_loader=train_loader,
-            synthetic_augmentation_config=syn_aug_config,
-            transform=train_transform,
-            shuffle=shuffle_train,
-            seed=seed,
-        )
 
     # Get class names from split file
     class_names = _get_class_names(split_file)
@@ -213,6 +217,101 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     logger.info(f"Model: {model_name}")
     logger.info(f"Pretrained: {pretrained}")
     logger.info(f"Freeze backbone: {freeze_backbone}")
+
+    if mode == "evaluate":
+        # Evaluate mode: load checkpoint and evaluate with enriched metrics
+
+        evaluation_config = config["evaluation"]
+        checkpoint_path = Path(evaluation_config["checkpoint"])
+
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        # Initialize metrics logger
+        metrics_logger = create_experiment_logger(config, log_dir)
+
+        # Initialize trainer for evaluation only (no train_loader/optimizer needed)
+        if val_loader is None:
+            raise ValueError("val_loader is required for evaluate mode")
+        trainer = ClassifierTrainer.for_evaluation(
+            model=model,
+            val_loader=val_loader,
+            device=device,
+            show_progress=True,
+            config=config,
+        )
+
+        # Load checkpoint using trainer's own method (handles _orig_mod. prefix, etc.)
+        logger.info(f"Loading checkpoint: {checkpoint_path}")
+        trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
+
+        # Run evaluation
+        logger.warning(
+            "Evaluating on the validation split. For unbiased comparison, "
+            "consider using a held-out test set."
+        )
+        eval_metrics = trainer.evaluate(val_loader)
+
+        # Separate scalar metrics for logging from full payload for JSON
+        scalar_eval_metrics = {}
+        for key, value in eval_metrics.items():
+            try:
+                scalar_eval_metrics[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        logger.info("Evaluation results:")
+        for key, value in sorted(scalar_eval_metrics.items()):
+            logger.info(f"  {key}: {value:.4f}")
+
+        # Save full results (including non-scalars) to reports directory
+        reports_dir = resolve_output_path(config, "reports")
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_path = reports_dir / "evaluation.json"
+        with open(report_path, "w") as f:
+            json.dump(eval_metrics, f, indent=2)
+        logger.info(f"Evaluation report saved to: {report_path}")
+
+        # Log scalar metrics to CSV
+        metrics_logger.log_metrics(scalar_eval_metrics, step=0, epoch=0)
+        metrics_logger.close()
+
+        logger.info("Evaluation completed successfully!")
+        return
+
+    # Training mode
+    # Create train loader and transforms (only needed for training)
+    train_transform = get_train_transforms(
+        image_size=image_size,
+        crop_size=crop_size,
+        horizontal_flip=horizontal_flip,
+        color_jitter=color_jitter,
+        rotation_degrees=rotation_degrees,
+        normalize=normalize_str,
+    )
+    balancing_config = data_config.get("balancing")
+    train_loader = create_train_loader(
+        split_file=split_file,
+        batch_size=batch_size,
+        transform=train_transform,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=drop_last,
+        shuffle=shuffle_train,
+        balancing_config=balancing_config,
+        seed=seed,
+    )
+
+    # Apply synthetic augmentation if configured
+    syn_aug_config = data_config.get("synthetic_augmentation", {})
+    if syn_aug_config.get("enabled"):
+        train_loader = create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_aug_config,
+            transform=train_transform,
+            shuffle=shuffle_train,
+            seed=seed,
+        )
 
     # Initialize optimizer
     training_config = config["training"]

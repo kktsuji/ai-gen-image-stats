@@ -7,9 +7,17 @@ training and validation logic.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
+import numpy as np
 import torch
+from sklearn.metrics import (
+    average_precision_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+    roc_auc_score,
+)
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -56,9 +64,9 @@ class ClassifierTrainer:
     def __init__(
         self,
         model: Any,
-        train_loader: DataLoader,
-        optimizer: torch.optim.Optimizer,
-        logger: Any,
+        train_loader: Optional[DataLoader] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        logger: Any = None,
         val_loader: Optional[DataLoader] = None,
         device: str = "cpu",
         show_progress: bool = True,
@@ -75,8 +83,8 @@ class ClassifierTrainer:
 
         Args:
             model: The classification model to train
-            train_loader: DataLoader for training data
-            optimizer: Optimizer for updating model parameters
+            train_loader: DataLoader for training data (required for training)
+            optimizer: Optimizer for updating model parameters (required for training)
             logger: Logger for recording metrics and checkpoints
             val_loader: Optional DataLoader for validation data
             device: Device to run training on ('cpu' or 'cuda')
@@ -133,6 +141,35 @@ class ClassifierTrainer:
             except Exception as e:
                 _logger.warning(f"Failed to log model graph to TensorBoard: {e}")
 
+    @classmethod
+    def for_evaluation(
+        cls,
+        model: Any,
+        val_loader: DataLoader,
+        device: str = "cpu",
+        show_progress: bool = True,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> "ClassifierTrainer":
+        """Create a trainer configured for evaluation only (no training components).
+
+        Args:
+            model: The classification model to evaluate.
+            val_loader: DataLoader for evaluation data.
+            device: Device to run evaluation on ('cpu' or 'cuda').
+            show_progress: Whether to show progress bars.
+            config: Full experiment configuration dictionary.
+
+        Returns:
+            ClassifierTrainer instance without train_loader or optimizer.
+        """
+        return cls(
+            model=model,
+            val_loader=val_loader,
+            device=device,
+            show_progress=show_progress,
+            config=config,
+        )
+
     def train_epoch(self) -> Dict[str, float]:
         """Execute one training epoch.
 
@@ -148,6 +185,11 @@ class ClassifierTrainer:
             >>> metrics = trainer.train_epoch()
             >>> print(f"Loss: {metrics['loss']:.4f}, Acc: {metrics['accuracy']:.4f}")
         """
+        if self.train_loader is None:
+            raise RuntimeError("train_loader is required for training")
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required for training")
+
         self.model.train()
         train_loader = self.train_loader
 
@@ -274,6 +316,12 @@ class ClassifierTrainer:
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
         """
+        if self.train_loader is None:
+            raise RuntimeError("train_loader is required for training")
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required for training")
+        optimizer = self.optimizer
+
         if checkpoint_dir is not None:
             checkpoint_dir = Path(checkpoint_dir)
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -285,6 +333,10 @@ class ClassifierTrainer:
         if self.config:
             logger.log_hyperparams(self.config)
 
+        # Initialize metrics before loop so they're defined even when num_epochs=0
+        train_metrics: Dict[str, float] = {}
+        val_metrics: Optional[Dict[str, float]] = None
+
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
 
@@ -293,9 +345,9 @@ class ClassifierTrainer:
 
             # Step the scheduler if provided
             if self.scheduler is not None:
-                old_lr = self.optimizer.param_groups[0]["lr"]
+                old_lr = optimizer.param_groups[0]["lr"]
                 self.scheduler.step()  # type: ignore[call-arg]
-                new_lr = self.optimizer.param_groups[0]["lr"]
+                new_lr = optimizer.param_groups[0]["lr"]
 
                 # Warning for very low learning rate
                 if new_lr < 1e-7:
@@ -344,7 +396,7 @@ class ClassifierTrainer:
                             save_checkpoint(
                                 best_path,
                                 model=self.model,
-                                optimizer=self.optimizer,
+                                optimizer=optimizer,
                                 epoch=self._current_epoch,
                                 global_step=self._global_step,
                                 is_best=True,
@@ -366,7 +418,7 @@ class ClassifierTrainer:
                     save_checkpoint(
                         checkpoint_path,
                         model=self.model,
-                        optimizer=self.optimizer,
+                        optimizer=optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -384,7 +436,7 @@ class ClassifierTrainer:
                     save_checkpoint(
                         latest_path,
                         model=self.model,
-                        optimizer=self.optimizer,
+                        optimizer=optimizer,
                         epoch=self._current_epoch,
                         global_step=self._global_step,
                         is_best=False,
@@ -403,7 +455,7 @@ class ClassifierTrainer:
             save_checkpoint(
                 final_path,
                 model=self.model,
-                optimizer=self.optimizer,
+                optimizer=optimizer,
                 epoch=self._current_epoch,
                 global_step=self._global_step,
                 is_best=False,
@@ -417,37 +469,118 @@ class ClassifierTrainer:
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 
-    def validate_epoch(self) -> Optional[Dict[str, float]]:
-        """Execute one validation epoch.
+    def _compute_classification_metrics(
+        self,
+        all_targets: List[int],
+        all_predictions: List[int],
+        all_probs: np.ndarray,
+        num_classes: int,
+        prefix: str = "val_",
+    ) -> Dict[str, float]:
+        """Compute per-class classification metrics.
 
-        Evaluates the model on the validation dataset without updating parameters.
-        Computes validation metrics including loss and accuracy.
+        Args:
+            all_targets: List of ground truth labels.
+            all_predictions: List of predicted labels.
+            all_probs: Array of predicted probabilities, shape (N, num_classes).
+            num_classes: Number of classes.
+            prefix: Metric key prefix (e.g., 'val_' or '').
 
         Returns:
-            Dictionary containing validation metrics, or None if no validation data:
-            - 'val_loss': Average validation loss
-            - 'val_accuracy': Validation accuracy
-
-        Example:
-            >>> metrics = trainer.validate_epoch()
-            >>> if metrics:
-            ...     print(f"Val Loss: {metrics['val_loss']:.4f}")
+            Dictionary of classification metrics.
         """
-        if self.val_loader is None:
-            return None
+        targets_arr = np.array(all_targets)
+        preds_arr = np.array(all_predictions)
 
+        metrics: Dict[str, float] = {}
+
+        # Balanced accuracy
+        metrics[f"{prefix}balanced_accuracy"] = float(
+            balanced_accuracy_score(targets_arr, preds_arr)
+        )
+
+        # Per-class precision, recall, F1
+        prec_arr, rec_arr, f1_arr, _ = precision_recall_fscore_support(
+            targets_arr,
+            preds_arr,
+            labels=list(range(num_classes)),
+            zero_division=0.0,  # type: ignore[arg-type]
+        )
+        for cls_idx in range(num_classes):
+            metrics[f"{prefix}precision_{cls_idx}"] = float(prec_arr[cls_idx])  # type: ignore[index]
+            metrics[f"{prefix}recall_{cls_idx}"] = float(rec_arr[cls_idx])  # type: ignore[index]
+            metrics[f"{prefix}f1_{cls_idx}"] = float(f1_arr[cls_idx])  # type: ignore[index]
+
+        # ROC-AUC and PR-AUC (require at least 2 classes present in targets)
+        unique_classes = np.unique(targets_arr)
+        if len(unique_classes) >= 2:
+            if num_classes == 2:
+                metrics[f"{prefix}roc_auc"] = float(
+                    roc_auc_score(targets_arr, all_probs[:, 1])
+                )
+                metrics[f"{prefix}pr_auc"] = float(
+                    average_precision_score(targets_arr, all_probs[:, 1])
+                )
+            elif len(unique_classes) == num_classes:
+                metrics[f"{prefix}roc_auc"] = float(
+                    roc_auc_score(
+                        targets_arr, all_probs, multi_class="ovr", average="weighted"
+                    )
+                )
+                metrics[f"{prefix}pr_auc"] = float(
+                    average_precision_score(targets_arr, all_probs, average="weighted")
+                )
+            else:
+                _logger.warning(
+                    "Skipping multiclass AUC metrics: "
+                    "not all classes are present in targets"
+                )
+        else:
+            _logger.warning("Skipping AUC metrics: only one class in targets")
+
+        # Confusion matrix (flattened as cm_i_j)
+        cm = confusion_matrix(targets_arr, preds_arr, labels=list(range(num_classes)))
+        for i in range(num_classes):
+            for j in range(num_classes):
+                metrics[f"{prefix}cm_{i}_{j}"] = float(cm[i, j])
+
+        return metrics
+
+    def _run_inference(
+        self,
+        dataloader: DataLoader,
+        desc: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run inference on a dataloader and collect predictions.
+
+        Shared implementation for validate_epoch and evaluate.
+        Assumes the model returns raw logits (pre-softmax), as used with
+        CrossEntropyLoss. Softmax is applied here to obtain probabilities
+        for AUC and per-class metrics.
+
+        Args:
+            dataloader: DataLoader to run inference on.
+            desc: Description for the progress bar (None to use default).
+
+        Returns:
+            Dictionary with keys: avg_loss, accuracy, total, num_batches,
+            all_targets, all_predictions, all_probs.
+        """
         self.model.eval()
 
         total_loss = 0.0
         correct = 0
         total = 0
         num_batches = 0
+        all_targets: List[int] = []
+        all_predictions: List[int] = []
+        all_probs_list: List[np.ndarray] = []
 
         # Create progress bar if enabled
         iterator = (
-            tqdm(self.val_loader, desc=f"Epoch {self._current_epoch} [Val]")
+            tqdm(dataloader, desc=desc or "Inference")
             if self.show_progress
-            else self.val_loader
+            else dataloader
         )
 
         with torch.no_grad():
@@ -470,6 +603,23 @@ class ClassifierTrainer:
                 total += target.size(0)
                 correct += (predicted == target).sum().item()
 
+                # Accumulate for per-class metrics
+                all_targets.extend(target.cpu().tolist())
+                all_predictions.extend(predicted.cpu().tolist())
+                # Model must return raw logits (pre-softmax).
+                # Guard: if outputs look like probabilities already, warn.
+                if num_batches == 1:
+                    row_sums = predictions.sum(dim=1)
+                    all_non_negative = predictions.min().item() >= 0
+                    all_sum_to_one = (row_sums - 1.0).abs().max().item() < 1e-3
+                    if all_non_negative and all_sum_to_one:
+                        _logger.warning(
+                            "Model outputs look like probabilities (non-negative, "
+                            "sum≈1). Expected raw logits. AUC metrics may be wrong."
+                        )
+                probs = torch.softmax(predictions, dim=1).cpu().numpy()
+                all_probs_list.append(probs)
+
                 # Update progress bar
                 if self.show_progress:
                     iterator.set_postfix(  # type: ignore[attr-defined]
@@ -479,26 +629,93 @@ class ClassifierTrainer:
                         }
                     )
 
-        # Compute epoch metrics
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         accuracy = 100.0 * correct / total if total > 0 else 0.0
+        all_probs = (
+            np.concatenate(all_probs_list, axis=0) if all_probs_list else np.array([])
+        )
+
+        return {
+            "avg_loss": avg_loss,
+            "accuracy": accuracy,
+            "total": total,
+            "num_batches": num_batches,
+            "all_targets": all_targets,
+            "all_predictions": all_predictions,
+            "all_probs": all_probs,
+        }
+
+    def validate_epoch(self) -> Optional[Dict[str, float]]:
+        """Execute one validation epoch.
+
+        Evaluates the model on the validation dataset without updating parameters.
+        Computes validation metrics including loss, accuracy, and per-class metrics.
+
+        Returns:
+            Dictionary containing validation metrics, or None if no validation data:
+            - 'val_loss': Average validation loss
+            - 'val_accuracy': Validation accuracy
+            - 'val_balanced_accuracy': Balanced accuracy
+            - 'val_precision_N', 'val_recall_N', 'val_f1_N': Per-class metrics
+            - 'val_roc_auc', 'val_pr_auc': AUC metrics (when computable)
+            - 'val_cm_I_J': Confusion matrix entries
+
+        Example:
+            >>> metrics = trainer.validate_epoch()
+            >>> if metrics:
+            ...     print(f"Val Loss: {metrics['val_loss']:.4f}")
+        """
+        if self.val_loader is None:
+            return None
+
+        inference = self._run_inference(
+            self.val_loader,
+            desc=f"Epoch {self._current_epoch} [Val]",
+        )
+
+        avg_loss = inference["avg_loss"]
+        accuracy = inference["accuracy"]
+        total = inference["total"]
 
         _logger.info(
             f"Epoch {self._current_epoch} [Val] - "
             f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%"
         )
-        _logger.debug(f"Validation batches: {num_batches}, Total samples: {total}")
+        _logger.debug(
+            f"Validation batches: {inference['num_batches']}, Total samples: {total}"
+        )
 
-        return {
+        result: Dict[str, float] = {
             "val_loss": avg_loss,
             "val_accuracy": accuracy,
         }
+
+        # Compute per-class metrics
+        if total > 0:
+            all_probs = inference["all_probs"]
+            num_classes = all_probs.shape[1]
+            classification_metrics = self._compute_classification_metrics(
+                inference["all_targets"],
+                inference["all_predictions"],
+                all_probs,
+                num_classes,
+                prefix="val_",
+            )
+            result.update(classification_metrics)
+
+            _logger.info(
+                f"Epoch {self._current_epoch} [Val] - "
+                f"Balanced Acc: {result.get('val_balanced_accuracy', 0.0):.4f}, "
+                f"ROC-AUC: {result.get('val_roc_auc', 0.0):.4f}"
+            )
+
+        return result
 
     def get_model(self) -> Any:
         """Return the classification model."""
         return self.model
 
-    def get_train_loader(self) -> DataLoader:
+    def get_train_loader(self) -> Optional[DataLoader]:
         """Return the training DataLoader."""
         return self.train_loader
 
@@ -506,7 +723,7 @@ class ClassifierTrainer:
         """Return the validation DataLoader."""
         return self.val_loader
 
-    def get_optimizer(self) -> torch.optim.Optimizer:
+    def get_optimizer(self) -> Optional[torch.optim.Optimizer]:
         """Return the optimizer."""
         return self.optimizer
 
@@ -523,6 +740,8 @@ class ClassifierTrainer:
         **kwargs: Any,
     ) -> None:
         """Save training checkpoint."""
+        if self.optimizer is None:
+            raise RuntimeError("optimizer is required to save a checkpoint")
         save_checkpoint(
             path=path,
             model=self.model,
@@ -584,6 +803,7 @@ class ClassifierTrainer:
             Dictionary containing evaluation metrics:
             - 'loss': Average loss
             - 'accuracy': Classification accuracy
+            - Per-class precision, recall, F1, AUC metrics, confusion matrix
 
         Example:
             >>> test_loader = DataLoader(test_dataset, batch_size=32)
@@ -596,38 +816,24 @@ class ClassifierTrainer:
         if dataloader is None:
             return {"loss": 0.0, "accuracy": 0.0}
 
-        self.model.eval()
+        inference = self._run_inference(dataloader, desc="Evaluate")
 
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        num_batches = 0
-
-        with torch.no_grad():
-            for data, target in dataloader:
-                # Move data to device
-                data, target = data.to(self.device), target.to(self.device)
-
-                # Forward pass
-                predictions = self.model(data)
-
-                # Compute loss
-                loss = cast(torch.Tensor, self.model.compute_loss(predictions, target))
-
-                # Track metrics
-                total_loss += loss.item()
-                num_batches += 1
-
-                # Compute accuracy
-                _, predicted = torch.max(predictions.data, 1)
-                total += target.size(0)
-                correct += (predicted == target).sum().item()
-
-        # Compute metrics
-        avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
-        accuracy = 100.0 * correct / total if total > 0 else 0.0
-
-        return {
-            "loss": avg_loss,
-            "accuracy": accuracy,
+        result: Dict[str, float] = {
+            "loss": inference["avg_loss"],
+            "accuracy": inference["accuracy"],
         }
+
+        # Compute per-class metrics
+        if inference["total"] > 0:
+            all_probs = inference["all_probs"]
+            num_classes = all_probs.shape[1]
+            classification_metrics = self._compute_classification_metrics(
+                inference["all_targets"],
+                inference["all_predictions"],
+                all_probs,
+                num_classes,
+                prefix="",
+            )
+            result.update(classification_metrics)
+
+        return result

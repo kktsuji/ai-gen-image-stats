@@ -104,6 +104,15 @@ def get_v2_default_config():
         return copy.deepcopy(yaml.safe_load(f))
 
 
+def _make_evaluate_config() -> dict:
+    """Create a valid evaluate-mode config (no filesystem dependency)."""
+    config = get_v2_default_config()
+    config["mode"] = "evaluate"
+    config["evaluation"] = {"checkpoint": "path/to/checkpoint.pth"}
+    config["output"]["subdirs"]["reports"] = "reports"
+    return config
+
+
 @pytest.mark.unit
 class TestValidateConfig:
     """Test configuration validation."""
@@ -140,22 +149,14 @@ class TestValidateConfig:
 
     def test_valid_modes(self):
         """Test validation succeeds with all valid modes."""
+        # Train mode
         config = get_v2_default_config()
+        config["mode"] = "train"
+        validate_config(config)
 
-        for mode in ["train", "evaluate"]:
-            config["mode"] = mode
-            # For evaluate mode, need to add evaluation section
-            if mode == "evaluate":
-                config["evaluation"] = {
-                    "checkpoint": "path/to/checkpoint.pth",
-                    "data": {"test_path": "data/test", "batch_size": 32},
-                    "output": {
-                        "save_predictions": True,
-                        "save_confusion_matrix": True,
-                        "save_metrics": True,
-                    },
-                }
-            validate_config(config)
+        # Evaluate mode
+        eval_config = _make_evaluate_config()
+        validate_config(eval_config)
 
     def test_invalid_device(self):
         """Test validation fails with invalid device."""
@@ -241,20 +242,21 @@ class TestValidateConfig:
 
     def test_evaluate_mode_requires_checkpoint(self):
         """Test validation fails in evaluate mode without checkpoint."""
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": None,  # Invalid: should be a path
-            "data": {"test_path": "data/test", "batch_size": 32},
-            "output": {
-                "save_predictions": True,
-                "save_confusion_matrix": True,
-                "save_metrics": True,
-            },
-        }
+        config = _make_evaluate_config()
+        config["evaluation"]["checkpoint"] = None  # Invalid: should be a path
 
         with pytest.raises(
             ValueError, match="evaluation.checkpoint is required for evaluate mode"
+        ):
+            validate_config(config)
+
+    def test_evaluate_mode_requires_reports_subdir(self):
+        """Test validation fails in evaluate mode without reports subdir."""
+        config = _make_evaluate_config()
+        config["output"]["subdirs"].pop("reports", None)
+
+        with pytest.raises(
+            ValueError, match="output.subdirs.reports is required for evaluate mode"
         ):
             validate_config(config)
 
@@ -616,12 +618,7 @@ class TestValidateSyntheticAugmentation:
 
     def test_not_validated_in_evaluate_mode(self):
         """synthetic_augmentation is not validated in evaluate mode."""
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": "path/to/checkpoint.pth",
-            "data": {"test_path": "data/test", "batch_size": 32},
-        }
+        config = _make_evaluate_config()
         config["data"]["synthetic_augmentation"] = {
             "enabled": True,
             "split_file": None,  # would fail in train mode

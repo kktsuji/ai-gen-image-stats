@@ -180,6 +180,12 @@ def validate_config(config: Dict[str, Any]) -> None:
     # Validate output configuration
     validate_output_section(config)
 
+    valid_modes = ["train", "evaluate"]
+    if config["mode"] not in valid_modes:
+        raise ValueError(
+            f"Invalid mode: {config['mode']}. Must be one of {valid_modes}"
+        )
+
     # Mode-specific validation
     if config["mode"] == "train":
         if "training" not in config:
@@ -283,5 +289,11 @@ def validate_config(config: Dict[str, Any]) -> None:
             )
 
         evaluation = config["evaluation"]
-        if "checkpoint" not in evaluation or evaluation["checkpoint"] is None:
+        checkpoint = evaluation.get("checkpoint")
+        if not isinstance(checkpoint, str) or not checkpoint.strip():
             raise ValueError("evaluation.checkpoint is required for evaluate mode")
+
+        # Validate reports subdir for evaluate mode
+        subdirs = config.get("output", {}).get("subdirs", {})
+        if "reports" not in subdirs or subdirs["reports"] is None:
+            raise ValueError("output.subdirs.reports is required for evaluate mode")

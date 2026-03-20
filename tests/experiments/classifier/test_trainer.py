@@ -61,7 +61,8 @@ def _make_val_loader(
     if num_samples == 0:
         return None
     X = torch.randn(num_samples, input_dim)
-    y = torch.randint(0, num_classes, (num_samples,))
+    # Ensure all classes are represented by cycling labels deterministically
+    y = torch.tensor([i % num_classes for i in range(num_samples)])
     dataset = TensorDataset(X, y)
     return DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
@@ -300,6 +301,19 @@ def test_validate_epoch_returns_metrics(classifier_trainer):
     assert isinstance(metrics["val_loss"], float)
     assert isinstance(metrics["val_accuracy"], float)
 
+    # Per-class metrics (binary: classes 0 and 1)
+    assert "val_balanced_accuracy" in metrics
+    for cls in [0, 1]:
+        assert f"val_precision_{cls}" in metrics
+        assert f"val_recall_{cls}" in metrics
+        assert f"val_f1_{cls}" in metrics
+    assert "val_roc_auc" in metrics
+    assert "val_pr_auc" in metrics
+    # Confusion matrix entries
+    for i in [0, 1]:
+        for j in [0, 1]:
+            assert f"val_cm_{i}_{j}" in metrics
+
 
 @pytest.mark.component
 def test_validate_epoch_no_gradient_updates(classifier_trainer):
@@ -344,6 +358,19 @@ def test_evaluate_method(classifier_trainer):
     assert "accuracy" in metrics
     assert isinstance(metrics["loss"], float)
     assert isinstance(metrics["accuracy"], float)
+
+    # Per-class metrics (binary: classes 0 and 1)
+    assert "balanced_accuracy" in metrics
+    for cls in [0, 1]:
+        assert f"precision_{cls}" in metrics
+        assert f"recall_{cls}" in metrics
+        assert f"f1_{cls}" in metrics
+    assert "roc_auc" in metrics
+    assert "pr_auc" in metrics
+    # Confusion matrix entries
+    for i in [0, 1]:
+        for j in [0, 1]:
+            assert f"cm_{i}_{j}" in metrics
 
 
 @pytest.mark.component
@@ -469,6 +496,24 @@ def test_training_with_best_model_saving(classifier_trainer):
 
         # Check that best model was saved
         assert (checkpoint_dir / "best_model.pth").exists()
+
+
+@pytest.mark.unit
+def test_train_zero_epochs_no_error(classifier_trainer):
+    """Train with num_epochs=0 must not raise NameError on final checkpoint."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Should not raise NameError for undefined train_metrics / val_metrics
+        classifier_trainer.train(
+            num_epochs=0,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=1,
+            save_best=False,
+        )
+
+        # Final checkpoint should still be saved
+        assert (checkpoint_dir / "final_model.pth").exists()
 
 
 @pytest.mark.integration
@@ -667,3 +712,128 @@ def test_classifier_trainer_logs_best_model_updates(
 
         # Check that logging occurred during training
         assert len(capture_logs.records) >= 0
+
+
+@pytest.mark.integration
+def test_evaluate_loads_checkpoint_and_produces_metrics(simple_logger):
+    """Test that evaluate works after saving and loading a checkpoint."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    train_loader = _make_train_loader(num_samples=20, batch_size=4)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    trainer = ClassifierTrainer(
+        model=model,
+        train_loader=train_loader,
+        optimizer=optimizer,
+        logger=simple_logger,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        # Train for 1 epoch and save checkpoint
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            save_best=False,
+        )
+
+        # Create a fresh model and trainer using for_evaluation factory
+        fresh_model = SimpleClassifierModel(input_dim=10, num_classes=2)
+        assert val_loader is not None
+        fresh_trainer = ClassifierTrainer.for_evaluation(
+            model=fresh_model,
+            val_loader=val_loader,
+            device="cpu",
+            show_progress=False,
+        )
+
+        # Load checkpoint
+        checkpoint_path = checkpoint_dir / "final_model.pth"
+        fresh_trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
+
+        # Evaluate
+        eval_metrics = fresh_trainer.evaluate(val_loader)
+
+        assert "loss" in eval_metrics
+        assert "accuracy" in eval_metrics
+        assert "balanced_accuracy" in eval_metrics
+        assert "roc_auc" in eval_metrics
+        assert "pr_auc" in eval_metrics
+        for cls in [0, 1]:
+            assert f"precision_{cls}" in eval_metrics
+            assert f"recall_{cls}" in eval_metrics
+            assert f"f1_{cls}" in eval_metrics
+
+
+@pytest.mark.unit
+def test_for_evaluation_factory():
+    """Test that for_evaluation creates a trainer without training components."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    assert trainer.get_train_loader() is None
+    assert trainer.get_optimizer() is None
+    assert trainer.get_val_loader() is not None
+
+
+@pytest.mark.unit
+def test_for_evaluation_factory_cannot_train():
+    """Test that for_evaluation trainer raises on training methods."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with pytest.raises(RuntimeError, match="train_loader is required"):
+        trainer.train_epoch()
+
+    with pytest.raises(RuntimeError, match="train_loader is required"):
+        trainer.train(num_epochs=1)
+
+
+@pytest.mark.unit
+def test_evaluate_warns_on_softmax_output(caplog):
+    """Test that _run_inference warns when model output looks like probabilities."""
+    import logging
+
+    class SoftmaxModel(SimpleClassifierModel):
+        """Model that returns softmax probabilities instead of logits."""
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            logits = super().forward(x)
+            return torch.softmax(logits, dim=1)
+
+    model = SoftmaxModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.experiments.classifier.trainer"):
+        trainer.evaluate(val_loader)
+
+    assert any("look like probabilities" in r.message for r in caplog.records)
