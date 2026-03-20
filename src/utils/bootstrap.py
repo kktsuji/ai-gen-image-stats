@@ -18,46 +18,6 @@ from sklearn.metrics import (
 _logger = logging.getLogger(__name__)
 
 
-def bootstrap_ci(
-    metric_fn: Callable[[np.ndarray], float],
-    n_samples: int,
-    n_bootstrap: int = 10000,
-    confidence_level: float = 0.95,
-    seed: Optional[int] = None,
-) -> Tuple[float, float]:
-    """Compute bootstrap confidence interval for a metric.
-
-    Args:
-        metric_fn: Function that takes bootstrap indices and returns a scalar metric.
-        n_samples: Total number of samples to resample from.
-        n_bootstrap: Number of bootstrap iterations.
-        confidence_level: Confidence level in (0, 1), e.g. 0.95 for 95% CI.
-        seed: Random seed for reproducibility.
-
-    Returns:
-        Tuple of (ci_lower, ci_upper).
-    """
-    rng = np.random.RandomState(seed)
-    bootstrap_values: List[float] = []
-
-    for _ in range(n_bootstrap):
-        indices = rng.randint(0, n_samples, size=n_samples)
-        try:
-            value = metric_fn(indices)
-            if not np.isnan(value):
-                bootstrap_values.append(value)
-        except (ValueError, ZeroDivisionError):
-            continue
-
-    if not bootstrap_values:
-        return (float("nan"), float("nan"))
-
-    alpha = 1.0 - confidence_level
-    lower = float(np.nanpercentile(bootstrap_values, 100 * alpha / 2))
-    upper = float(np.nanpercentile(bootstrap_values, 100 * (1 - alpha / 2)))
-    return (lower, upper)
-
-
 def bootstrap_classification_metrics(
     targets: np.ndarray,
     predictions: np.ndarray,
@@ -89,21 +49,23 @@ def bootstrap_classification_metrics(
     """
     n_samples = len(targets)
     rng = np.random.RandomState(seed)
+    labels = list(range(num_classes))
 
-    # Build metric lambdas
-    metric_fns = _build_metric_fns(
+    # Build metric functions; precision/recall/f1 are grouped separately
+    # so that precision_recall_fscore_support is called at most once per
+    # bootstrap iteration.
+    scalar_fns, prf_metrics = _build_metric_fns(
         targets, predictions, probs, num_classes, metric_names
     )
 
-    results: Dict[str, Tuple[float, float]] = {}
+    all_metric_names = list(scalar_fns.keys()) + list(prf_metrics.keys())
+    metric_values: Dict[str, List[float]] = {name: [] for name in all_metric_names}
 
-    # Compute all bootstrap values — generate indices lazily to avoid OOM
-    # for large datasets (n_bootstrap * n_samples int64 array).
-    metric_values: Dict[str, List[float]] = {name: [] for name in metric_fns}
-
-    for _i in range(n_bootstrap):
+    for _ in range(n_bootstrap):
         indices = rng.randint(0, n_samples, size=n_samples)
-        for name, fn in metric_fns.items():
+
+        # Scalar metrics (independent calls)
+        for name, fn in scalar_fns.items():
             try:
                 value = fn(indices)
                 if not np.isnan(value):
@@ -111,6 +73,28 @@ def bootstrap_classification_metrics(
             except (ValueError, ZeroDivisionError):
                 continue
 
+        # Precision/recall/f1 — one call for all per-class metrics
+        if prf_metrics:
+            try:
+                prec, rec, f1, _ = precision_recall_fscore_support(
+                    targets[indices],
+                    predictions[indices],
+                    labels=labels,
+                    zero_division=0.0,  # type: ignore[arg-type]
+                )
+                for name, (kind, cls_idx) in prf_metrics.items():
+                    if kind == "precision":
+                        v = float(prec[cls_idx])  # type: ignore[index]
+                    elif kind == "recall":
+                        v = float(rec[cls_idx])  # type: ignore[index]
+                    else:
+                        v = float(f1[cls_idx])  # type: ignore[index]
+                    if not np.isnan(v):
+                        metric_values[name].append(v)
+            except (ValueError, ZeroDivisionError):
+                pass
+
+    results: Dict[str, Tuple[float, float]] = {}
     alpha = 1.0 - confidence_level
     for name, values in metric_values.items():
         if not values:
@@ -129,8 +113,15 @@ def _build_metric_fns(
     probs: np.ndarray,
     num_classes: int,
     metric_names: List[str],
-) -> Dict[str, Callable[[np.ndarray], float]]:
-    """Build metric lambda functions for bootstrap evaluation.
+) -> Tuple[
+    Dict[str, Callable[[np.ndarray], float]],
+    Dict[str, Tuple[str, int]],
+]:
+    """Build metric functions for bootstrap evaluation.
+
+    Precision, recall, and f1 metrics are grouped so that
+    ``precision_recall_fscore_support`` is called only once per bootstrap
+    iteration regardless of how many per-class metrics are requested.
 
     Args:
         targets: Ground truth labels.
@@ -140,9 +131,15 @@ def _build_metric_fns(
         metric_names: List of metric names.
 
     Returns:
-        Dict mapping metric name -> callable(indices) -> float.
+        Tuple of (scalar_fns, prf_metrics).
+        scalar_fns: Dict mapping metric name -> callable(indices) -> float,
+            for metrics that are computed independently.
+        prf_metrics: Dict mapping metric name -> (kind, class_idx) where
+            kind is "precision", "recall", or "f1". These are computed
+            together via a single ``precision_recall_fscore_support`` call.
     """
-    fns: Dict[str, Callable[[np.ndarray], float]] = {}
+    scalar_fns: Dict[str, Callable[[np.ndarray], float]] = {}
+    prf_metrics: Dict[str, Tuple[str, int]] = {}
     labels = list(range(num_classes))
 
     for name in metric_names:
@@ -151,14 +148,14 @@ def _build_metric_fns(
             def _balanced_acc(idx: np.ndarray) -> float:
                 return float(balanced_accuracy_score(targets[idx], predictions[idx]))
 
-            fns[name] = _balanced_acc
+            scalar_fns[name] = _balanced_acc
 
         elif name == "accuracy":
 
             def _accuracy(idx: np.ndarray) -> float:
                 return float(100.0 * np.mean(targets[idx] == predictions[idx]))
 
-            fns[name] = _accuracy
+            scalar_fns[name] = _accuracy
 
         elif name == "loss":
 
@@ -170,7 +167,7 @@ def _build_metric_fns(
                 y_onehot = np.eye(n_cls)[t]
                 return float(-(y_onehot * np.log(p + 1e-12)).sum(axis=1).mean())
 
-            fns[name] = _loss
+            scalar_fns[name] = _loss
 
         elif name == "roc_auc":
 
@@ -191,7 +188,7 @@ def _build_metric_fns(
                     )
                 )
 
-            fns[name] = _roc_auc
+            scalar_fns[name] = _roc_auc
 
         elif name == "pr_auc":
 
@@ -209,51 +206,18 @@ def _build_metric_fns(
                     average_precision_score(t_onehot, probs[idx], average="weighted")
                 )
 
-            fns[name] = _pr_auc
+            scalar_fns[name] = _pr_auc
 
         elif name.startswith("precision_"):
-            cls_idx = int(name.split("_")[1])
-
-            def _precision(idx: np.ndarray, c: int = cls_idx) -> float:
-                prec, _, _, _ = precision_recall_fscore_support(
-                    targets[idx],
-                    predictions[idx],
-                    labels=labels,
-                    zero_division=0.0,  # type: ignore[arg-type]
-                )
-                return float(prec[c])  # type: ignore[index]
-
-            fns[name] = _precision
+            prf_metrics[name] = ("precision", int(name.split("_")[1]))
 
         elif name.startswith("recall_"):
-            cls_idx = int(name.split("_")[1])
-
-            def _recall(idx: np.ndarray, c: int = cls_idx) -> float:
-                _, rec, _, _ = precision_recall_fscore_support(
-                    targets[idx],
-                    predictions[idx],
-                    labels=labels,
-                    zero_division=0.0,  # type: ignore[arg-type]
-                )
-                return float(rec[c])  # type: ignore[index]
-
-            fns[name] = _recall
+            prf_metrics[name] = ("recall", int(name.split("_")[1]))
 
         elif name.startswith("f1_"):
-            cls_idx = int(name.split("_")[1])
-
-            def _f1(idx: np.ndarray, c: int = cls_idx) -> float:
-                _, _, f1, _ = precision_recall_fscore_support(
-                    targets[idx],
-                    predictions[idx],
-                    labels=labels,
-                    zero_division=0.0,  # type: ignore[arg-type]
-                )
-                return float(f1[c])  # type: ignore[index]
-
-            fns[name] = _f1
+            prf_metrics[name] = ("f1", int(name.split("_")[1]))
 
         else:
             _logger.warning(f"Unknown metric for bootstrap: {name}")
 
-    return fns
+    return scalar_fns, prf_metrics

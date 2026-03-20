@@ -142,6 +142,29 @@ def build_comparison_dataframe(
     return df
 
 
+def _format_value_with_ci(
+    val: float,
+    lo: Optional[float],
+    hi: Optional[float],
+    floatfmt: str = ".4f",
+) -> str:
+    """Format a single metric value with optional CI bounds.
+
+    Args:
+        val: Metric value.
+        lo: CI lower bound (None or NaN to omit).
+        hi: CI upper bound (None or NaN to omit).
+        floatfmt: Float format string.
+
+    Returns:
+        Formatted string, e.g. "0.8500 [0.8200, 0.8800]" or "0.8500".
+    """
+    val_str = f"{float(val):{floatfmt}}"
+    if lo is not None and hi is not None and bool(pd.notna(lo)) and bool(pd.notna(hi)):
+        return f"{val_str} [{float(lo):{floatfmt}}, {float(hi):{floatfmt}}]"
+    return val_str
+
+
 def _format_with_ci(df: pd.DataFrame, metric: str, floatfmt: str = ".4f") -> pd.Series:
     """Format a metric column with CI bounds if available.
 
@@ -158,29 +181,18 @@ def _format_with_ci(df: pd.DataFrame, metric: str, floatfmt: str = ".4f") -> pd.
     """
     lower_col = f"{metric}_ci_lower"
     upper_col = f"{metric}_ci_upper"
+    has_ci = lower_col in df.columns and upper_col in df.columns
 
-    if lower_col in df.columns and upper_col in df.columns:
-        formatted = []
-        for idx in df.index:
-            val = df.loc[idx, metric]
-            lo = df.loc[idx, lower_col]
-            hi = df.loc[idx, upper_col]
-            if pd.notna(val):
-                val_str = f"{float(val):{floatfmt}}"
-                if bool(pd.notna(lo)) and bool(pd.notna(hi)):
-                    formatted.append(
-                        f"{val_str} [{float(lo):{floatfmt}}, {float(hi):{floatfmt}}]"
-                    )
-                else:
-                    formatted.append(val_str)
-            else:
-                formatted.append("")
-        return pd.Series(formatted, index=df.index)
-    else:
-        return pd.Series(
-            [f"{float(v):{floatfmt}}" if pd.notna(v) else "" for v in df[metric]],
-            index=df.index,
-        )
+    formatted = []
+    for idx in df.index:
+        val = df.loc[idx, metric]
+        if pd.notna(val):
+            lo = df.loc[idx, lower_col] if has_ci else None
+            hi = df.loc[idx, upper_col] if has_ci else None
+            formatted.append(_format_value_with_ci(val, lo, hi, floatfmt))
+        else:
+            formatted.append("")
+    return pd.Series(formatted, index=df.index)
 
 
 def generate_classifier_table(df: pd.DataFrame) -> str:
@@ -242,20 +254,9 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
         if best_idx is not None and bool(pd.notna(best_idx)):
             best_row = df.loc[best_idx]
             value = best_row[metric]
-            value_str = f"{value:.4f}"
-
-            lower_col = f"{metric}_ci_lower"
-            upper_col = f"{metric}_ci_upper"
-            if (
-                lower_col in df.columns
-                and upper_col in df.columns
-                and bool(pd.notna(best_row.get(lower_col)))
-                and bool(pd.notna(best_row.get(upper_col)))
-            ):
-                value_str = (
-                    f"{value:.4f} [{best_row[lower_col]:.4f}, "
-                    f"{best_row[upper_col]:.4f}]"
-                )
+            lo = best_row.get(f"{metric}_ci_lower")
+            hi = best_row.get(f"{metric}_ci_upper")
+            value_str = _format_value_with_ci(value, lo, hi)
 
             rows.append(
                 {
@@ -384,22 +385,34 @@ def generate_report(
             # Format with CI if available
             lower_col = f"{metric}_ci_lower"
             upper_col = f"{metric}_ci_upper"
-            bl_ci = ""
-            syn_ci = ""
-            if lower_col in df.columns and upper_col in df.columns:
-                bl_lo = baselines.loc[bl_best_idx, lower_col]
-                bl_hi = baselines.loc[bl_best_idx, upper_col]
-                if bool(pd.notna(bl_lo)) and bool(pd.notna(bl_hi)):
-                    bl_ci = f" [{float(bl_lo):.4f}, {float(bl_hi):.4f}]"
-                syn_lo = synthetics.loc[syn_best_idx, lower_col]
-                syn_hi = synthetics.loc[syn_best_idx, upper_col]
-                if bool(pd.notna(syn_lo)) and bool(pd.notna(syn_hi)):
-                    syn_ci = f" [{float(syn_lo):.4f}, {float(syn_hi):.4f}]"
+            bl_lo = (
+                baselines.loc[bl_best_idx, lower_col]
+                if lower_col in df.columns
+                else None
+            )
+            bl_hi = (
+                baselines.loc[bl_best_idx, upper_col]
+                if upper_col in df.columns
+                else None
+            )
+            syn_lo = (
+                synthetics.loc[syn_best_idx, lower_col]
+                if lower_col in df.columns
+                else None
+            )
+            syn_hi = (
+                synthetics.loc[syn_best_idx, upper_col]
+                if upper_col in df.columns
+                else None
+            )
+
+            bl_str = _format_value_with_ci(best_baseline_val, bl_lo, bl_hi)
+            syn_str = _format_value_with_ci(best_synthetic_val, syn_lo, syn_hi)
 
             report_lines.append(
-                f"- **{metric}**: best baseline={best_baseline_val:.4f}{bl_ci} "
+                f"- **{metric}**: best baseline={bl_str} "
                 f"({best_baseline_name}), "
-                f"best synthetic={best_synthetic_val:.4f}{syn_ci} "
+                f"best synthetic={syn_str} "
                 f"({best_synthetic_name}), delta={sign}{delta:.4f}"
             )
 
