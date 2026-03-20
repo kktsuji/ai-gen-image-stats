@@ -409,6 +409,55 @@ class TestRunSampleSelectionEvaluate:
     @patch("src.experiments.sample_selection.evaluator.create_feature_model")
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_k_at_boundary_succeeds(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        mock_create_model,
+        mock_extract,
+        mock_eval_gen,
+        tmp_output_dir,
+    ):
+        """k < smallest dataset size should succeed."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+        config["evaluation"]["k"] = 5  # k=5 with 6 real samples → should pass
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=6)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=50)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        mock_create_model.return_value = MagicMock()
+
+        mock_extract.side_effect = [
+            (_make_mock_features(6, seed=1), [f"r_{i}.png" for i in range(6)]),
+            (_make_mock_features(50, seed=2), [f"g_{i}.png" for i in range(50)]),
+        ]
+
+        mock_eval_gen.return_value = {
+            "fid": 10.0,
+            "precision": 0.8,
+            "recall": 0.7,
+            "roc_auc": 0.9,
+            "pr_auc": 0.85,
+        }
+
+        # Should not raise
+        reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
+        assert (reports_dir / "evaluation.json").exists()
+
+    @patch("src.experiments.sample_selection.evaluator.evaluate_generative_model")
+    @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
+    @patch("src.experiments.sample_selection.evaluator.create_feature_model")
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
     def test_auc_failure_falls_back_to_fid_precision_recall(
         self,
         mock_simple_ds,

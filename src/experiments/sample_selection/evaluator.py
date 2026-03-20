@@ -49,7 +49,8 @@ def run_sample_selection_evaluate(
     Args:
         config: Full experiment configuration dictionary.
         device: Device string (e.g. "cpu" or "cuda").
-        log_dir: Directory for log files (created by setup_experiment_common).
+        log_dir: Directory for log files (unused; kept for API consistency
+            with other experiment runners).
 
     Returns:
         Path to the output reports directory.

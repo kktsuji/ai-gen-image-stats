@@ -887,6 +887,10 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
         )
 
         run_sample_selection_evaluate(config, device, log_dir)
+    else:
+        raise ValueError(
+            f"Unknown sample_selection mode: {mode!r}. Expected 'select' or 'evaluate'."
+        )
 
     logger.info("")
     logger.info("Sample selection completed successfully!")
