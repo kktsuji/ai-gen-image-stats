@@ -178,6 +178,33 @@ def test_generate_best_per_metric_fid_uses_min():
     assert "rvg_fid" in LOWER_IS_BETTER
 
 
+@pytest.mark.unit
+def test_generate_best_per_metric_skips_all_nan():
+    """Test that all-NaN metric columns are skipped without error."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "exp-a",
+                "diffusion_variant": "ws",
+                "rvs_fid": float("nan"),
+                "rvs_precision": 0.9,
+            },
+            {
+                "experiment": "exp-b",
+                "diffusion_variant": "ds",
+                "rvs_fid": float("nan"),
+                "rvs_precision": 0.7,
+            },
+        ]
+    )
+    result = generate_best_per_metric(df)
+    # rvs_fid is all NaN, should be skipped; rvs_precision should still appear
+    assert "rvs_precision" in result
+    assert "rvs_fid" not in result
+
+
 @pytest.mark.component
 def test_load_selection_eval_results(tmp_path):
     """Test loading selection-eval results from directory structure."""

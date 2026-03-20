@@ -144,7 +144,7 @@ def load_selection_eval_results(
             with open(json_path) as f:
                 metrics = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
-            _logger.warning(f"Skipping malformed file {json_path}: {e}")
+            _logger.warning("Skipping malformed file %s: %s", json_path, e)
             continue
         if not isinstance(metrics, dict):
             _logger.warning(
@@ -171,7 +171,7 @@ def load_selection_eval_results(
         reserved_keys = set(entry.keys())
         conflicts = reserved_keys & flat.keys()
         if conflicts:
-            _logger.warning(f"Skipping reserved keys in {json_path}: {conflicts}")
+            _logger.warning("Skipping reserved keys in %s: %s", json_path, conflicts)
             flat = {k: v for k, v in flat.items() if k not in conflicts}
 
         entry.update(flat)
@@ -238,7 +238,7 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
 
     rows = []
     for metric in KEY_METRICS:
-        if metric not in df.columns:
+        if metric not in df.columns or bool(df[metric].isna().all()):
             continue
 
         if metric in LOWER_IS_BETTER:
@@ -276,7 +276,7 @@ def generate_report(
 
     # Load results
     results = load_selection_eval_results(base_dir)
-    _logger.info(f"Found {len(results)} selection-eval results")
+    _logger.info("Found %d selection-eval results", len(results))
 
     if not results:
         _logger.warning("No selection-eval results found. Run evaluations first.")
@@ -311,12 +311,12 @@ def generate_report(
     report_md_path = output_path / "selection_eval_report.md"
     with open(report_md_path, "w") as f:
         f.write(report_text)
-    _logger.info(f"Report saved to: {report_md_path}")
+    _logger.info("Report saved to: %s", report_md_path)
 
     # Save CSV
     csv_path = output_path / "selection_eval_results.csv"
     df.to_csv(csv_path, index=False)
-    _logger.info(f"CSV saved to: {csv_path}")
+    _logger.info("CSV saved to: %s", csv_path)
 
     # Log summary
     _logger.info("Report summary:\n%s", report_text)
