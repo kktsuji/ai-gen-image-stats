@@ -48,11 +48,10 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
     """Parse selection-eval path into dimension components.
 
     Expected path structure:
-        outputs/diffusion-{train}/selection-eval/{gen}_{sel}/reports/evaluation.json
+        outputs/diffusion-{train}/selection-eval/{gen}__{sel}/reports/evaluation.json
 
-    The combo directory name uses underscore as the separator between gen_config
-    and selection. Since gen_config may contain underscores, we split from the
-    right (rsplit) to keep selection as the last token.
+    The combo directory name uses double underscore as the separator between
+    gen_config and selection.
 
     Returns:
         Dictionary with keys: diffusion_variant, gen_config, selection
@@ -73,11 +72,9 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
         else:
             diffusion_variant = diffusion_name or "-"
 
-        # Extract gen and sel from "{gen}_{sel}"
-        # rsplit from right: selection is always a simple token (topk, percentile,
-        # threshold), while gen_config may contain underscores.
+        # Extract gen and sel from "{gen}__{sel}"
         combo = combo_dir.name
-        parts = combo.rsplit("_", 1)
+        parts = combo.rsplit("__", 1)
         if len(parts) == 2:
             gen_config = parts[0]
             selection = parts[1]
@@ -182,8 +179,8 @@ def load_selection_eval_results(
         dimensions = _parse_selection_eval_path(json_path)
         experiment = (
             f"{dimensions['diffusion_variant']}"
-            f"_{dimensions['gen_config']}"
-            f"_{dimensions['selection']}"
+            f"__{dimensions['gen_config']}"
+            f"__{dimensions['selection']}"
         )
 
         entry: Dict[str, Any] = {"experiment": experiment}

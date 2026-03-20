@@ -20,7 +20,7 @@ from src.experiments.classifier.evaluation_report import (
 @pytest.mark.unit
 def test_parse_experiment_name_baseline():
     """Test parsing baseline experiment names."""
-    result = _parse_experiment_name("baseline_vanilla")
+    result = _parse_experiment_name("baseline__vanilla")
     assert result["type"] == "baseline"
     assert result["baseline_strategy"] == "vanilla"
     assert result["diffusion_variant"] == "-"
@@ -29,7 +29,7 @@ def test_parse_experiment_name_baseline():
 @pytest.mark.unit
 def test_parse_experiment_name_synthetic():
     """Test parsing synthetic augmentation experiment names."""
-    result = _parse_experiment_name("ws_n100-gs3_topk_all")
+    result = _parse_experiment_name("ws__n100-gs3__topk__all")
     assert result["type"] == "synthetic"
     assert result["diffusion_variant"] == "ws"
     assert result["gen_config"] == "n100-gs3"
@@ -136,7 +136,7 @@ def test_generate_best_per_metric():
 def test_load_evaluation_results(tmp_path):
     """Test loading evaluation results from directory structure."""
     # Create mock evaluation.json files
-    for exp_name in ["baseline_vanilla", "ws_n100-gs3_topk_all"]:
+    for exp_name in ["baseline__vanilla", "ws__n100-gs3__topk__all"]:
         reports_dir = tmp_path / exp_name / "reports"
         reports_dir.mkdir(parents=True)
         metrics = {"accuracy": 80.0, "balanced_accuracy": 0.7, "recall_1": 0.5}
@@ -145,7 +145,7 @@ def test_load_evaluation_results(tmp_path):
 
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 2
-    baseline = [r for r in results if r["experiment"] == "baseline_vanilla"]
+    baseline = [r for r in results if r["experiment"] == "baseline__vanilla"]
     assert len(baseline) == 1
     assert baseline[0]["accuracy"] == 80.0
 
@@ -153,7 +153,7 @@ def test_load_evaluation_results(tmp_path):
 @pytest.mark.component
 def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     """Test that reserved metadata keys in evaluation.json are skipped."""
-    reports_dir = tmp_path / "baseline_vanilla" / "reports"
+    reports_dir = tmp_path / "baseline__vanilla" / "reports"
     reports_dir.mkdir(parents=True)
     # Include a conflicting "type" key that should be skipped
     metrics = {"accuracy": 80.0, "type": "should_be_ignored", "experiment": "evil"}
@@ -164,7 +164,7 @@ def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     assert len(results) == 1
     # Reserved keys should NOT be overwritten by evaluation.json
     assert results[0]["type"] == "baseline"
-    assert results[0]["experiment"] == "baseline_vanilla"
+    assert results[0]["experiment"] == "baseline__vanilla"
     assert results[0]["accuracy"] == 80.0
 
 
@@ -172,7 +172,7 @@ def test_load_evaluation_results_skips_reserved_keys(tmp_path):
 def test_load_evaluation_results_skips_malformed_json(tmp_path):
     """Test that malformed evaluation.json files are skipped with a warning."""
     # Create one valid and one malformed evaluation.json
-    valid_dir = tmp_path / "baseline_vanilla" / "reports"
+    valid_dir = tmp_path / "baseline__vanilla" / "reports"
     valid_dir.mkdir(parents=True)
     with open(valid_dir / "evaluation.json", "w") as f:
         json.dump({"accuracy": 80.0}, f)
@@ -183,4 +183,4 @@ def test_load_evaluation_results_skips_malformed_json(tmp_path):
 
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 1
-    assert results[0]["experiment"] == "baseline_vanilla"
+    assert results[0]["experiment"] == "baseline__vanilla"

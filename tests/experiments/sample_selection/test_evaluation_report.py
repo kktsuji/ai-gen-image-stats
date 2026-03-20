@@ -23,7 +23,7 @@ from src.experiments.sample_selection.evaluation_report import (
 @pytest.mark.unit
 def test_parse_selection_eval_path_standard():
     """Test parsing standard selection-eval path."""
-    path = "outputs/diffusion-ws/selection-eval/n100-gs3_topk/reports/evaluation.json"
+    path = "outputs/diffusion-ws/selection-eval/n100-gs3__topk/reports/evaluation.json"
     result = _parse_selection_eval_path(path)
     assert result["diffusion_variant"] == "ws"
     assert result["gen_config"] == "n100-gs3"
@@ -56,7 +56,7 @@ def test_build_comparison_dataframe():
     """Test building DataFrame from results list."""
     results = [
         {
-            "experiment": "ws_n100-gs3_topk",
+            "experiment": "ws__n100-gs3__topk",
             "diffusion_variant": "ws",
             "gen_config": "n100-gs3",
             "selection": "topk",
@@ -65,7 +65,7 @@ def test_build_comparison_dataframe():
             "rvs_recall": 0.6,
         },
         {
-            "experiment": "ds_n100-gs5_percentile",
+            "experiment": "ds__n100-gs5__percentile",
             "diffusion_variant": "ds",
             "gen_config": "n100-gs5",
             "selection": "percentile",
@@ -98,7 +98,7 @@ def test_generate_selection_eval_table():
     df = pd.DataFrame(
         [
             {
-                "experiment": "ws_n100-gs3_topk",
+                "experiment": "ws__n100-gs3__topk",
                 "diffusion_variant": "ws",
                 "gen_config": "n100-gs3",
                 "selection": "topk",
@@ -106,7 +106,7 @@ def test_generate_selection_eval_table():
                 "rvs_precision": 0.7,
             },
             {
-                "experiment": "ds_n100-gs5_percentile",
+                "experiment": "ds__n100-gs5__percentile",
                 "diffusion_variant": "ds",
                 "gen_config": "n100-gs5",
                 "selection": "percentile",
@@ -116,11 +116,11 @@ def test_generate_selection_eval_table():
         ]
     )
     result = generate_selection_eval_table(df)
-    assert "ws_n100-gs3_topk" in result
-    assert "ds_n100-gs5_percentile" in result
+    assert "ws__n100-gs3__topk" in result
+    assert "ds__n100-gs5__percentile" in result
     # Lower FID should appear first
-    pos_ds = result.index("ds_n100-gs5_percentile")
-    pos_ws = result.index("ws_n100-gs3_topk")
+    pos_ds = result.index("ds__n100-gs5__percentile")
+    pos_ws = result.index("ws__n100-gs3__topk")
     assert pos_ds < pos_ws
 
 
@@ -231,8 +231,8 @@ def test_load_selection_eval_results_empty_dir(tmp_path):
 def test_load_selection_eval_results(tmp_path):
     """Test loading selection-eval results from directory structure."""
     # Create mock directory structure:
-    # tmp_path/diffusion-ws/selection-eval/n100-gs3_topk/reports/evaluation.json
-    for train, gen_sel in [("ws", "n100-gs3_topk"), ("ds", "n100-gs5_percentile")]:
+    # tmp_path/diffusion-ws/selection-eval/n100-gs3__topk/reports/evaluation.json
+    for train, gen_sel in [("ws", "n100-gs3__topk"), ("ds", "n100-gs5__percentile")]:
         reports_dir = (
             tmp_path / f"diffusion-{train}" / "selection-eval" / gen_sel / "reports"
         )
@@ -263,14 +263,18 @@ def test_load_selection_eval_results_skips_malformed(tmp_path):
     """Test that malformed evaluation.json files are skipped with a warning."""
     # Create one valid and one malformed
     valid_dir = (
-        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3_topk" / "reports"
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3__topk" / "reports"
     )
     valid_dir.mkdir(parents=True)
     with open(valid_dir / "evaluation.json", "w") as f:
         json.dump({"comparisons": {}, "dataset_sizes": {}}, f)
 
     bad_dir = (
-        tmp_path / "diffusion-ds" / "selection-eval" / "n100-gs5_percentile" / "reports"
+        tmp_path
+        / "diffusion-ds"
+        / "selection-eval"
+        / "n100-gs5__percentile"
+        / "reports"
     )
     bad_dir.mkdir(parents=True)
     (bad_dir / "evaluation.json").write_text("not valid json {{{")
@@ -284,7 +288,7 @@ def test_load_selection_eval_results_skips_malformed(tmp_path):
 def test_load_selection_eval_results_skips_reserved_keys(tmp_path, monkeypatch):
     """Test that reserved metadata keys in flattened metrics are skipped."""
     reports_dir = (
-        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3_topk" / "reports"
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3__topk" / "reports"
     )
     reports_dir.mkdir(parents=True)
     metrics = {
@@ -309,7 +313,7 @@ def test_load_selection_eval_results_skips_reserved_keys(tmp_path, monkeypatch):
     results = load_selection_eval_results(str(tmp_path))
     assert len(results) == 1
     # Reserved "experiment" key from flattened metrics must NOT overwrite metadata
-    assert results[0]["experiment"] == "ws_n100-gs3_topk"
+    assert results[0]["experiment"] == "ws__n100-gs3__topk"
     assert results[0]["diffusion_variant"] == "ws"
     assert results[0]["rvs_fid"] == 10.0
 
@@ -317,7 +321,7 @@ def test_load_selection_eval_results_skips_reserved_keys(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_parse_selection_eval_path_underscore_in_gen_config():
     """Test that gen_config with underscores is parsed correctly via rsplit."""
-    path = "outputs/diffusion-ws/selection-eval/n100_gs3_topk/reports/evaluation.json"
+    path = "outputs/diffusion-ws/selection-eval/n100_gs3__topk/reports/evaluation.json"
     result = _parse_selection_eval_path(path)
     assert result["diffusion_variant"] == "ws"
     assert result["gen_config"] == "n100_gs3"
@@ -362,7 +366,7 @@ def test_generate_report_writes_output_files(tmp_path):
     """Test that generate_report creates markdown and CSV output files."""
     # Create mock directory structure
     reports_dir = (
-        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3_topk" / "reports"
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3__topk" / "reports"
     )
     reports_dir.mkdir(parents=True)
     metrics = {
@@ -386,4 +390,4 @@ def test_generate_report_writes_output_files(tmp_path):
     report_text = (output_dir / "selection_eval_report.md").read_text()
     assert "Selection Evaluation Report" in report_text
     assert "Total experiments: 1" in report_text
-    assert "ws_n100-gs3_topk" in report_text
+    assert "ws__n100-gs3__topk" in report_text
