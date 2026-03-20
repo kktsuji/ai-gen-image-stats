@@ -293,6 +293,21 @@ def test_flatten_metrics_skips_nested_dicts():
     assert flat["ds_real"] == 100
 
 
+@pytest.mark.unit
+def test_flatten_metrics_skips_nested_dicts_in_dataset_sizes():
+    """Test that nested dict values in dataset_sizes are skipped."""
+    metrics = {
+        "comparisons": {},
+        "dataset_sizes": {
+            "real": 100,
+            "per_class": {"class_0": 50, "class_1": 50},
+        },
+    }
+    flat = _flatten_metrics(metrics)
+    assert flat["ds_real"] == 100
+    assert "ds_per_class" not in flat
+
+
 @pytest.mark.component
 def test_generate_report_writes_output_files(tmp_path):
     """Test that generate_report creates markdown and CSV output files."""

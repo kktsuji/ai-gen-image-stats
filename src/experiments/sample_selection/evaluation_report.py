@@ -117,7 +117,8 @@ def _flatten_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     dataset_sizes = metrics.get("dataset_sizes", {})
     if isinstance(dataset_sizes, dict):
         for size_key, value in dataset_sizes.items():
-            flat[f"ds_{size_key}"] = value
+            if isinstance(value, (int, float, str, bool, type(None))):
+                flat[f"ds_{size_key}"] = value
 
     return flat
 
