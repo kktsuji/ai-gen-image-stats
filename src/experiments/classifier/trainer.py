@@ -597,6 +597,16 @@ class ClassifierTrainer:
                 # Accumulate for per-class metrics
                 all_targets.extend(target.cpu().tolist())
                 all_predictions.extend(predicted.cpu().tolist())
+                # Model must return raw logits (pre-softmax).
+                # Guard: if outputs look like probabilities already, warn.
+                if num_batches == 1:
+                    min_val = predictions.min().item()
+                    sum_val = predictions[0].sum().item()
+                    if min_val >= 0 and abs(sum_val - 1.0) < 1e-3:
+                        _logger.warning(
+                            "Model outputs look like probabilities (non-negative, "
+                            "sum≈1). Expected raw logits. AUC metrics may be wrong."
+                        )
                 probs = torch.softmax(predictions, dim=1).cpu().numpy()
                 all_probs_list.append(probs)
 

@@ -4,6 +4,8 @@ This module provides configuration validation for classifier experiments.
 Strict validation: all parameters must be explicitly specified in the config file.
 """
 
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 from src.utils.config import (
@@ -296,3 +298,17 @@ def validate_config(config: Dict[str, Any]) -> None:
         subdirs = config.get("output", {}).get("subdirs", {})
         if "reports" not in subdirs or subdirs["reports"] is None:
             raise ValueError("output.subdirs.reports is required for evaluate mode")
+
+        # Validate that split_file contains a val split
+        split_file = config.get("data", {}).get("split_file")
+        if split_file is None:
+            raise ValueError("data.split_file is required for evaluate mode")
+        split_path = Path(split_file)
+        if split_path.exists():
+            with open(split_path) as f:
+                split_data = json.load(f)
+            if "val" not in split_data or not split_data["val"]:
+                raise ValueError(
+                    f"split_file '{split_file}' has no 'val' entries. "
+                    "A non-empty val split is required for evaluate mode."
+                )

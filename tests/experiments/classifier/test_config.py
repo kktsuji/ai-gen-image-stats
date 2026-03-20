@@ -279,6 +279,30 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
+    def test_evaluate_mode_requires_nonempty_val_split(self, tmp_path):
+        """Test validation fails when split_file has no val entries."""
+        import json
+
+        split_file = tmp_path / "split.json"
+        split_file.write_text(json.dumps({"train": [{"path": "a.png", "label": 0}]}))
+
+        config = get_v2_default_config()
+        config["mode"] = "evaluate"
+        config["evaluation"] = {
+            "checkpoint": "path/to/checkpoint.pth",
+            "data": {"test_path": "data/test", "batch_size": 32},
+            "output": {
+                "save_predictions": True,
+                "save_confusion_matrix": True,
+                "save_metrics": True,
+            },
+        }
+        config["output"]["subdirs"]["reports"] = "reports"
+        config["data"]["split_file"] = str(split_file)
+
+        with pytest.raises(ValueError, match="no 'val' entries"):
+            validate_config(config)
+
     def test_save_latest_valid_true(self):
         """save_latest: true is accepted."""
         config = get_v2_default_config()

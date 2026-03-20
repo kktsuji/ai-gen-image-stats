@@ -789,3 +789,32 @@ def test_for_evaluation_factory_cannot_train():
 
     with pytest.raises(RuntimeError, match="train_loader is required"):
         trainer.train(num_epochs=1)
+
+
+@pytest.mark.unit
+def test_evaluate_warns_on_softmax_output(caplog):
+    """Test that _run_inference warns when model output looks like probabilities."""
+    import logging
+
+    class SoftmaxModel(SimpleClassifierModel):
+        """Model that returns softmax probabilities instead of logits."""
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            logits = super().forward(x)
+            return torch.softmax(logits, dim=1)
+
+    model = SoftmaxModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.experiments.classifier.trainer"):
+        trainer.evaluate(val_loader)
+
+    assert any("look like probabilities" in r.message for r in caplog.records)

@@ -179,7 +179,7 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
         else:
             best_idx = df[metric].idxmax()
 
-        if best_idx is not None and best_idx == best_idx:  # NaN != NaN
+        if best_idx is not None and bool(pd.notna(best_idx)):
             best_row = df.loc[best_idx]
             rows.append(
                 {
@@ -308,8 +308,8 @@ def generate_report(
     df.to_csv(csv_path, index=False)
     _logger.info(f"CSV saved to: {csv_path}")
 
-    # Print summary
-    print(report_text)
+    # Log summary
+    _logger.info("Report summary:\n%s", report_text)
 
 
 def main() -> None:
