@@ -24,13 +24,18 @@ from src.experiments.sample_selection.selector import (
 from src.utils.config import resolve_output_path
 from src.utils.data.datasets import SimpleImageDataset, SplitFileDataset
 from src.utils.data.transforms import get_val_transforms
-from src.utils.metrics import evaluate_generative_model
+from src.utils.metrics import (
+    calculate_fid,
+    calculate_precision_recall,
+    evaluate_generative_model,
+)
 
 logger = logging.getLogger(__name__)
 
-# Minimum samples per set required for ROC-AUC/PR-AUC (train_test_split
-# with stratify needs at least 2 samples per class in the test split).
-_MIN_SAMPLES_FOR_AUC = 6
+# Minimum samples per set required for ROC-AUC/PR-AUC.  train_test_split
+# with test_size=0.3 and stratify needs at least ceil(2/0.3)=7 samples
+# per class to guarantee 2 samples in the test split.
+_MIN_SAMPLES_FOR_AUC = 7
 
 
 def run_sample_selection_evaluate(
@@ -71,6 +76,11 @@ def run_sample_selection_evaluate(
         root=data_config["generated"]["directory"],
         transform=transform,
     )
+
+    if len(real_dataset) == 0:
+        raise ValueError("Real dataset is empty — cannot compute metrics")
+    if len(gen_dataset) == 0:
+        raise ValueError("Generated dataset is empty — cannot compute metrics")
 
     logger.info(f"Real images: {len(real_dataset)}")
     logger.info(f"Generated images: {len(gen_dataset)}")
@@ -196,14 +206,12 @@ def _compute_pair_metrics(
     Returns:
         Dictionary of metric name to value.
     """
-    total_samples = len(features_a) + len(features_b)
-    if total_samples < _MIN_SAMPLES_FOR_AUC:
+    min_set_size = min(len(features_a), len(features_b))
+    if min_set_size < _MIN_SAMPLES_FOR_AUC:
         logger.warning(
             f"Skipping ROC-AUC/PR-AUC for {pair_name}: "
-            f"too few samples ({total_samples} < {_MIN_SAMPLES_FOR_AUC})"
+            f"too few samples in smaller set ({min_set_size} < {_MIN_SAMPLES_FOR_AUC})"
         )
-        from src.utils.metrics import calculate_fid, calculate_precision_recall
-
         fid = calculate_fid(features_a, features_b)
         precision, recall = calculate_precision_recall(features_a, features_b, k=k)
         return {

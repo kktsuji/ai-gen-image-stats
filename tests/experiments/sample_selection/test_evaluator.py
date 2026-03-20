@@ -277,3 +277,106 @@ class TestRunSampleSelectionEvaluate:
         expected = Path(config["output"]["base_dir"]) / "reports" / "evaluation.json"
         assert expected.exists()
         assert reports_dir == expected.parent
+
+    @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
+    @patch("src.experiments.sample_selection.evaluator.create_feature_model")
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_small_dataset_skips_auc_metrics(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        mock_create_model,
+        mock_extract,
+        tmp_output_dir,
+    ):
+        """With fewer samples than threshold, report omits roc_auc/pr_auc."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+
+        # 5 samples is below _MIN_SAMPLES_FOR_AUC (7) but enough for k-NN (k=3)
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=5)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=50)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        mock_create_model.return_value = MagicMock()
+
+        real_feats = _make_mock_features(5, seed=1)
+        gen_feats = _make_mock_features(50, seed=2)
+        mock_extract.side_effect = [
+            (real_feats, [f"r_{i}.png" for i in range(5)]),
+            (gen_feats, [f"g_{i}.png" for i in range(50)]),
+        ]
+
+        reports_dir = run_sample_selection_evaluate(
+            config, "cpu", tmp_output_dir / "logs"
+        )
+
+        with open(reports_dir / "evaluation.json") as f:
+            report = json.load(f)
+
+        metrics = report["comparisons"]["real_vs_generated"]
+        assert "fid" in metrics
+        assert "precision" in metrics
+        assert "recall" in metrics
+        assert "roc_auc" not in metrics
+        assert "pr_auc" not in metrics
+
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_empty_real_dataset_raises(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        tmp_output_dir,
+    ):
+        """Empty real dataset should raise ValueError."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=0)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=10)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        with pytest.raises(ValueError, match="Real dataset is empty"):
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir / "logs")
+
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_empty_generated_dataset_raises(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        tmp_output_dir,
+    ):
+        """Empty generated dataset should raise ValueError."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=10)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=0)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        with pytest.raises(ValueError, match="Generated dataset is empty"):
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir / "logs")
