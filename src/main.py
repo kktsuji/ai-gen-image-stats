@@ -199,7 +199,8 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         metrics_logger = create_experiment_logger(config, log_dir)
 
         # Initialize trainer for evaluation only (no train_loader/optimizer needed)
-        assert val_loader is not None, "val_loader is required for evaluate mode"
+        if val_loader is None:
+            raise ValueError("val_loader is required for evaluate mode")
         trainer = ClassifierTrainer.for_evaluation(
             model=model,
             val_loader=val_loader,

@@ -545,6 +545,9 @@ class ClassifierTrainer:
         """Run inference on a dataloader and collect predictions.
 
         Shared implementation for validate_epoch and evaluate.
+        Assumes the model returns raw logits (pre-softmax), as used with
+        CrossEntropyLoss. Softmax is applied here to obtain probabilities
+        for AUC and per-class metrics.
 
         Args:
             dataloader: DataLoader to run inference on.
