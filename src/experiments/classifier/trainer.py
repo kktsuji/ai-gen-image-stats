@@ -601,8 +601,13 @@ class ClassifierTrainer:
                 # Guard: if outputs look like probabilities already, warn.
                 if num_batches == 1:
                     min_val = predictions.min().item()
+                    max_val = predictions.max().item()
                     sum_val = predictions[0].sum().item()
-                    if min_val >= 0 and abs(sum_val - 1.0) < 1e-3:
+                    if (
+                        min_val >= 0
+                        and max_val <= 1.0 + 1e-3
+                        and abs(sum_val - 1.0) < 1e-3
+                    ):
                         _logger.warning(
                             "Model outputs look like probabilities (non-negative, "
                             "sum≈1). Expected raw logits. AUC metrics may be wrong."

@@ -5,6 +5,7 @@ This module tests the classifier configuration management, including:
 - Model-specific configuration overrides
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -104,6 +105,25 @@ def get_v2_default_config():
         return copy.deepcopy(yaml.safe_load(f))
 
 
+def _make_evaluate_config(tmp_path: Path) -> dict:
+    """Create a valid evaluate-mode config with a real split file on disk."""
+    split_file = tmp_path / "split.json"
+    split_file.write_text(
+        json.dumps(
+            {
+                "train": [{"path": "a.png", "label": 0}],
+                "val": [{"path": "b.png", "label": 1}],
+            }
+        )
+    )
+    config = get_v2_default_config()
+    config["mode"] = "evaluate"
+    config["evaluation"] = {"checkpoint": "path/to/checkpoint.pth"}
+    config["output"]["subdirs"]["reports"] = "reports"
+    config["data"]["split_file"] = str(split_file)
+    return config
+
+
 @pytest.mark.unit
 class TestValidateConfig:
     """Test configuration validation."""
@@ -138,24 +158,16 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="Invalid mode"):
             validate_config(config)
 
-    def test_valid_modes(self):
+    def test_valid_modes(self, tmp_path):
         """Test validation succeeds with all valid modes."""
+        # Train mode
         config = get_v2_default_config()
+        config["mode"] = "train"
+        validate_config(config)
 
-        for mode in ["train", "evaluate"]:
-            config["mode"] = mode
-            # For evaluate mode, need to add evaluation section
-            if mode == "evaluate":
-                config["evaluation"] = {
-                    "checkpoint": "path/to/checkpoint.pth",
-                    "data": {"test_path": "data/test", "batch_size": 32},
-                    "output": {
-                        "save_predictions": True,
-                        "save_confusion_matrix": True,
-                        "save_metrics": True,
-                    },
-                }
-            validate_config(config)
+        # Evaluate mode
+        eval_config = _make_evaluate_config(tmp_path)
+        validate_config(eval_config)
 
     def test_invalid_device(self):
         """Test validation fails with invalid device."""
@@ -239,39 +251,19 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="Invalid scheduler"):
             validate_config(config)
 
-    def test_evaluate_mode_requires_checkpoint(self):
+    def test_evaluate_mode_requires_checkpoint(self, tmp_path):
         """Test validation fails in evaluate mode without checkpoint."""
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": None,  # Invalid: should be a path
-            "data": {"test_path": "data/test", "batch_size": 32},
-            "output": {
-                "save_predictions": True,
-                "save_confusion_matrix": True,
-                "save_metrics": True,
-            },
-        }
+        config = _make_evaluate_config(tmp_path)
+        config["evaluation"]["checkpoint"] = None  # Invalid: should be a path
 
         with pytest.raises(
             ValueError, match="evaluation.checkpoint is required for evaluate mode"
         ):
             validate_config(config)
 
-    def test_evaluate_mode_requires_reports_subdir(self):
+    def test_evaluate_mode_requires_reports_subdir(self, tmp_path):
         """Test validation fails in evaluate mode without reports subdir."""
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": "path/to/checkpoint.pth",
-            "data": {"test_path": "data/test", "batch_size": 32},
-            "output": {
-                "save_predictions": True,
-                "save_confusion_matrix": True,
-                "save_metrics": True,
-            },
-        }
-        # Remove reports subdir
+        config = _make_evaluate_config(tmp_path)
         config["output"]["subdirs"].pop("reports", None)
 
         with pytest.raises(
@@ -281,26 +273,29 @@ class TestValidateConfig:
 
     def test_evaluate_mode_requires_nonempty_val_split(self, tmp_path):
         """Test validation fails when split_file has no val entries."""
-        import json
-
-        split_file = tmp_path / "split.json"
+        config = _make_evaluate_config(tmp_path)
+        # Overwrite split file with one that has no val entries
+        split_file = Path(config["data"]["split_file"])
         split_file.write_text(json.dumps({"train": [{"path": "a.png", "label": 0}]}))
 
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": "path/to/checkpoint.pth",
-            "data": {"test_path": "data/test", "batch_size": 32},
-            "output": {
-                "save_predictions": True,
-                "save_confusion_matrix": True,
-                "save_metrics": True,
-            },
-        }
-        config["output"]["subdirs"]["reports"] = "reports"
-        config["data"]["split_file"] = str(split_file)
-
         with pytest.raises(ValueError, match="no 'val' entries"):
+            validate_config(config)
+
+    def test_evaluate_mode_requires_existing_split_file(self, tmp_path):
+        """Test validation fails when split_file does not exist."""
+        config = _make_evaluate_config(tmp_path)
+        config["data"]["split_file"] = str(tmp_path / "nonexistent.json")
+
+        with pytest.raises(FileNotFoundError, match="not found"):
+            validate_config(config)
+
+    def test_evaluate_mode_rejects_malformed_split_file(self, tmp_path):
+        """Test validation fails when split_file is not valid JSON."""
+        config = _make_evaluate_config(tmp_path)
+        split_file = Path(config["data"]["split_file"])
+        split_file.write_text("not valid json {{{")
+
+        with pytest.raises(ValueError, match="not valid JSON"):
             validate_config(config)
 
     def test_save_latest_valid_true(self):
@@ -659,14 +654,9 @@ class TestValidateSyntheticAugmentation:
         }
         validate_config(config)  # should not raise
 
-    def test_not_validated_in_evaluate_mode(self):
+    def test_not_validated_in_evaluate_mode(self, tmp_path):
         """synthetic_augmentation is not validated in evaluate mode."""
-        config = get_v2_default_config()
-        config["mode"] = "evaluate"
-        config["evaluation"] = {
-            "checkpoint": "path/to/checkpoint.pth",
-            "data": {"test_path": "data/test", "batch_size": 32},
-        }
+        config = _make_evaluate_config(tmp_path)
         config["data"]["synthetic_augmentation"] = {
             "enabled": True,
             "split_file": None,  # would fail in train mode

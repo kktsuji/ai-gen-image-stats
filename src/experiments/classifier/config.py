@@ -304,11 +304,18 @@ def validate_config(config: Dict[str, Any]) -> None:
         if split_file is None:
             raise ValueError("data.split_file is required for evaluate mode")
         split_path = Path(split_file)
-        if split_path.exists():
+        if not split_path.exists():
+            raise FileNotFoundError(
+                f"split_file '{split_file}' not found. "
+                "A valid split file is required for evaluate mode."
+            )
+        try:
             with open(split_path) as f:
                 split_data = json.load(f)
-            if "val" not in split_data or not split_data["val"]:
-                raise ValueError(
-                    f"split_file '{split_file}' has no 'val' entries. "
-                    "A non-empty val split is required for evaluate mode."
-                )
+        except json.JSONDecodeError as e:
+            raise ValueError(f"split_file '{split_file}' is not valid JSON: {e}") from e
+        if "val" not in split_data or not split_data["val"]:
+            raise ValueError(
+                f"split_file '{split_file}' has no 'val' entries. "
+                "A non-empty val split is required for evaluate mode."
+            )
