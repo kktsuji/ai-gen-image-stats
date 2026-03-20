@@ -286,7 +286,7 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
         return "No best-per-metric data available.\n"
 
     result: Optional[str] = pd.DataFrame(rows).to_markdown(index=False, floatfmt=".4f")
-    return result if result is not None else ""
+    return result if result is not None else "No best-per-metric data available.\n"
 
 
 def generate_report(
