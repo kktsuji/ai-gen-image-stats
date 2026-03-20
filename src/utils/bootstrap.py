@@ -90,9 +90,6 @@ def bootstrap_classification_metrics(
     n_samples = len(targets)
     rng = np.random.RandomState(seed)
 
-    # Pre-generate all bootstrap index arrays for correlated bootstrap
-    all_indices = rng.randint(0, n_samples, size=(n_bootstrap, n_samples))
-
     # Build metric lambdas
     metric_fns = _build_metric_fns(
         targets, predictions, probs, num_classes, metric_names
@@ -100,11 +97,12 @@ def bootstrap_classification_metrics(
 
     results: Dict[str, Tuple[float, float]] = {}
 
-    # Compute all bootstrap values in one pass over indices
+    # Compute all bootstrap values — generate indices lazily to avoid OOM
+    # for large datasets (n_bootstrap * n_samples int64 array).
     metric_values: Dict[str, List[float]] = {name: [] for name in metric_fns}
 
-    for i in range(n_bootstrap):
-        indices = all_indices[i]
+    for _i in range(n_bootstrap):
+        indices = rng.randint(0, n_samples, size=n_samples)
         for name, fn in metric_fns.items():
             try:
                 value = fn(indices)
@@ -183,13 +181,15 @@ def _build_metric_fns(
                     return float("nan")
                 if num_classes == 2:
                     return float(roc_auc_score(t, probs[idx, 1]))
-                elif len(unique) == num_classes:
-                    return float(
-                        roc_auc_score(
-                            t, probs[idx], multi_class="ovr", average="weighted"
-                        )
+                return float(
+                    roc_auc_score(
+                        t,
+                        probs[idx],
+                        multi_class="ovr",
+                        average="weighted",
+                        labels=labels,
                     )
-                return float("nan")
+                )
 
             fns[name] = _roc_auc
 
@@ -202,11 +202,12 @@ def _build_metric_fns(
                     return float("nan")
                 if num_classes == 2:
                     return float(average_precision_score(t, probs[idx, 1]))
-                elif len(unique) == num_classes:
-                    return float(
-                        average_precision_score(t, probs[idx], average="weighted")
-                    )
-                return float("nan")
+                # One-hot encode with all classes to handle missing classes
+                # in bootstrap samples
+                t_onehot = np.eye(num_classes)[t]
+                return float(
+                    average_precision_score(t_onehot, probs[idx], average="weighted")
+                )
 
             fns[name] = _pr_auc
 

@@ -862,30 +862,5 @@ class ClassifierTrainer:
             >>> metrics = trainer.evaluate(test_loader)
             >>> print(f"Test Accuracy: {metrics['accuracy']:.2f}%")
         """
-        if dataloader is None:
-            dataloader = self.val_loader
-
-        if dataloader is None:
-            return {"loss": 0.0, "accuracy": 0.0}
-
-        inference = self._run_inference(dataloader, desc="Evaluate")
-
-        result: Dict[str, float] = {
-            "loss": inference["avg_loss"],
-            "accuracy": inference["accuracy"],
-        }
-
-        # Compute per-class metrics
-        if inference["total"] > 0:
-            all_probs = inference["all_probs"]
-            num_classes = all_probs.shape[1]
-            classification_metrics = self._compute_classification_metrics(
-                inference["all_targets"],
-                inference["all_predictions"],
-                all_probs,
-                num_classes,
-                prefix="",
-            )
-            result.update(classification_metrics)
-
-        return result
+        metrics, _ = self.evaluate_with_predictions(dataloader)
+        return metrics

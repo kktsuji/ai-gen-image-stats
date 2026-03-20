@@ -154,8 +154,8 @@ def test_generate_classifier_table_with_ci():
     result = generate_classifier_table(df)
     assert "baseline__vanilla" in result
     # Should contain CI format: value [lower, upper]
-    assert "[0.25, 0.35]" in result
-    assert "[0.60, 0.70]" in result
+    assert "[0.2500, 0.3500]" in result
+    assert "[0.6000, 0.7000]" in result
 
 
 @pytest.mark.unit
@@ -185,7 +185,7 @@ def test_generate_best_per_metric_with_ci():
     )
     result = generate_best_per_metric(df)
     # Best recall_1 is exp-a with CI
-    assert "[0.75, 0.85]" in result
+    assert "[0.7500, 0.8500]" in result
     # Best balanced_accuracy is exp-b, no CI available
     assert "exp-b" in result
 

@@ -168,7 +168,9 @@ def _format_with_ci(df: pd.DataFrame, metric: str, floatfmt: str = ".4f") -> pd.
             if pd.notna(val):
                 val_str = f"{float(val):{floatfmt}}"
                 if bool(pd.notna(lo)) and bool(pd.notna(hi)):
-                    formatted.append(f"{val_str} [{float(lo):.2f}, {float(hi):.2f}]")
+                    formatted.append(
+                        f"{val_str} [{float(lo):{floatfmt}}, {float(hi):{floatfmt}}]"
+                    )
                 else:
                     formatted.append(val_str)
             else:
@@ -251,8 +253,8 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
                 and bool(pd.notna(best_row.get(upper_col)))
             ):
                 value_str = (
-                    f"{value:.4f} [{best_row[lower_col]:.2f}, "
-                    f"{best_row[upper_col]:.2f}]"
+                    f"{value:.4f} [{best_row[lower_col]:.4f}, "
+                    f"{best_row[upper_col]:.4f}]"
                 )
 
             rows.append(
@@ -388,11 +390,11 @@ def generate_report(
                 bl_lo = baselines.loc[bl_best_idx, lower_col]
                 bl_hi = baselines.loc[bl_best_idx, upper_col]
                 if bool(pd.notna(bl_lo)) and bool(pd.notna(bl_hi)):
-                    bl_ci = f" [{float(bl_lo):.2f}, {float(bl_hi):.2f}]"
+                    bl_ci = f" [{float(bl_lo):.4f}, {float(bl_hi):.4f}]"
                 syn_lo = synthetics.loc[syn_best_idx, lower_col]
                 syn_hi = synthetics.loc[syn_best_idx, upper_col]
                 if bool(pd.notna(syn_lo)) and bool(pd.notna(syn_hi)):
-                    syn_ci = f" [{float(syn_lo):.2f}, {float(syn_hi):.2f}]"
+                    syn_ci = f" [{float(syn_lo):.4f}, {float(syn_hi):.4f}]"
 
             report_lines.append(
                 f"- **{metric}**: best baseline={best_baseline_val:.4f}{bl_ci} "
