@@ -305,6 +305,7 @@ def main() -> None:
     # Baseline Classifier Training (real data only)
     # ------------------------------------------------------------------
     if RUN_BASELINE_CLASSIFIER:
+        # outputs/classifier/baseline_{strategy}/
         for baseline_name, baseline_overrides in BASELINE_VARIANTS:
             out_dir = f"outputs/classifier/{baseline_name}"
             overrides = [
@@ -322,6 +323,7 @@ def main() -> None:
     # Evaluation: re-evaluate all classifier experiments with enriched metrics
     # ------------------------------------------------------------------
     if RUN_EVALUATION:
+        # outputs/classifier/{train}_{gen}_{sel}_{cls}/ or outputs/classifier/baseline_{strategy}/
         import glob
 
         # Find all classifier experiment directories
