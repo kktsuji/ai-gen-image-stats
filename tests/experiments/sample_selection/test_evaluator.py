@@ -417,6 +417,57 @@ class TestRunSampleSelectionEvaluate:
         with pytest.raises(ValueError, match="evaluation.k"):
             run_sample_selection_evaluate(config, "cpu")
 
+    @patch("src.experiments.sample_selection.evaluator.evaluate_generative_model")
+    @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
+    @patch("src.experiments.sample_selection.evaluator.create_feature_model")
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_auc_failure_falls_back_to_fid_precision_recall(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        mock_create_model,
+        mock_extract,
+        mock_eval_gen,
+        tmp_output_dir,
+    ):
+        """When evaluate_generative_model raises ValueError, should fall back gracefully."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=10)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=10)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        mock_create_model.return_value = MagicMock()
+
+        mock_extract.side_effect = [
+            (_make_mock_features(10, seed=1), [f"r_{i}.png" for i in range(10)]),
+            (_make_mock_features(10, seed=2), [f"g_{i}.png" for i in range(10)]),
+        ]
+
+        # Simulate AUC computation failure (e.g. stratified split issue)
+        mock_eval_gen.side_effect = ValueError("too few samples for stratify")
+
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
+
+        with open(reports_dir / "evaluation.json") as f:
+            report = json.load(f)
+
+        metrics = report["comparisons"]["real_vs_generated"]
+        assert "fid" in metrics
+        assert "precision" in metrics
+        assert "recall" in metrics
+        assert metrics["roc_auc"] is None
+        assert metrics["pr_auc"] is None
+
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
     def test_empty_generated_dataset_raises(

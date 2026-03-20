@@ -28,6 +28,13 @@ from src.utils.data.transforms import get_val_transforms
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "run_sample_selection",
+    "load_real_dataset",
+    "create_feature_model",
+    "extract_features_from_loader",
+]
+
 
 def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> Path:
     """Main pipeline: load data -> extract features -> score -> filter -> copy -> report.

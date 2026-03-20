@@ -231,4 +231,20 @@ def _compute_pair_metrics(
         }
 
     logger.info(f"Computing metrics for {pair_name}...")
-    return evaluate_generative_model(features_a, features_b, k=k)
+    try:
+        return evaluate_generative_model(features_a, features_b, k=k)
+    except ValueError:
+        logger.warning(
+            f"AUC computation failed for {pair_name} "
+            f"(likely too few samples for stratified split), "
+            f"falling back to FID/Precision/Recall only"
+        )
+        fid = calculate_fid(features_a, features_b)
+        precision, recall = calculate_precision_recall(features_a, features_b, k=k)
+        return {
+            "fid": fid,
+            "precision": precision,
+            "recall": recall,
+            "roc_auc": None,
+            "pr_auc": None,
+        }
