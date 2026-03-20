@@ -97,6 +97,14 @@ def load_evaluation_results(
 
         entry: Dict[str, Any] = {"experiment": exp_name}
         entry.update(_parse_experiment_name(exp_name))
+
+        # Prevent evaluation.json keys from overwriting metadata columns
+        reserved_keys = entry.keys()
+        conflicts = reserved_keys & metrics.keys()
+        if conflicts:
+            _logger.warning(f"Skipping reserved keys in {json_path}: {conflicts}")
+            metrics = {k: v for k, v in metrics.items() if k not in conflicts}
+
         entry.update(metrics)
         results.append(entry)
 

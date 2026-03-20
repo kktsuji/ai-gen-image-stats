@@ -723,14 +723,11 @@ def test_evaluate_loads_checkpoint_and_produces_metrics(simple_logger):
             save_best=False,
         )
 
-        # Create a fresh model and trainer
+        # Create a fresh model and trainer using for_evaluation factory
         fresh_model = SimpleClassifierModel(input_dim=10, num_classes=2)
-        fresh_optimizer = torch.optim.SGD(fresh_model.parameters(), lr=0.01)
-        fresh_trainer = ClassifierTrainer(
+        assert val_loader is not None
+        fresh_trainer = ClassifierTrainer.for_evaluation(
             model=fresh_model,
-            train_loader=train_loader,
-            optimizer=fresh_optimizer,
-            logger=simple_logger,
             val_loader=val_loader,
             device="cpu",
             show_progress=False,
@@ -752,3 +749,43 @@ def test_evaluate_loads_checkpoint_and_produces_metrics(simple_logger):
             assert f"precision_{cls}" in eval_metrics
             assert f"recall_{cls}" in eval_metrics
             assert f"f1_{cls}" in eval_metrics
+
+
+@pytest.mark.unit
+def test_for_evaluation_factory():
+    """Test that for_evaluation creates a trainer without training components."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    assert trainer.get_train_loader() is None
+    assert trainer.get_optimizer() is None
+    assert trainer.get_val_loader() is not None
+
+
+@pytest.mark.unit
+def test_for_evaluation_factory_cannot_train():
+    """Test that for_evaluation trainer raises on training methods."""
+    model = SimpleClassifierModel(input_dim=10, num_classes=2)
+    val_loader = _make_val_loader(num_samples=10, batch_size=4)
+    assert val_loader is not None
+
+    trainer = ClassifierTrainer.for_evaluation(
+        model=model,
+        val_loader=val_loader,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with pytest.raises(RuntimeError, match="train_loader is required"):
+        trainer.train_epoch()
+
+    with pytest.raises(RuntimeError, match="train_loader is required"):
+        trainer.train(num_epochs=1)

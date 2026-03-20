@@ -199,9 +199,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         metrics_logger = create_experiment_logger(config, log_dir)
 
         # Initialize trainer for evaluation only (no train_loader/optimizer needed)
-        trainer = ClassifierTrainer(
+        assert val_loader is not None, "val_loader is required for evaluate mode"
+        trainer = ClassifierTrainer.for_evaluation(
             model=model,
-            logger=metrics_logger,
             val_loader=val_loader,
             device=device,
             show_progress=True,
@@ -213,6 +213,10 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
 
         # Run evaluation
+        logger.warning(
+            "Evaluating on the validation split. For unbiased comparison, "
+            "consider using a held-out test set."
+        )
         eval_metrics = trainer.evaluate(val_loader)
 
         logger.info("Evaluation results:")

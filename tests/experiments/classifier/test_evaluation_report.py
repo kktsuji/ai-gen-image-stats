@@ -147,3 +147,21 @@ def test_load_evaluation_results(tmp_path):
     assert len(results) == 2
     assert results[0]["experiment"] == "baseline-vanilla"
     assert results[0]["accuracy"] == 80.0
+
+
+@pytest.mark.component
+def test_load_evaluation_results_skips_reserved_keys(tmp_path):
+    """Test that reserved metadata keys in evaluation.json are skipped."""
+    reports_dir = tmp_path / "baseline-vanilla" / "reports"
+    reports_dir.mkdir(parents=True)
+    # Include a conflicting "type" key that should be skipped
+    metrics = {"accuracy": 80.0, "type": "should_be_ignored", "experiment": "evil"}
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump(metrics, f)
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 1
+    # Reserved keys should NOT be overwritten by evaluation.json
+    assert results[0]["type"] == "baseline"
+    assert results[0]["experiment"] == "baseline-vanilla"
+    assert results[0]["accuracy"] == 80.0
