@@ -377,19 +377,15 @@ class TestRunSampleSelectionEvaluate:
         with pytest.raises(ValueError, match="Selected dataset is empty"):
             run_sample_selection_evaluate(config, "cpu")
 
-    @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
-    @patch("src.experiments.sample_selection.evaluator.create_feature_model")
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
     def test_k_exceeds_dataset_size_raises(
         self,
         mock_simple_ds,
         mock_load_real,
-        mock_create_model,
-        mock_extract,
         tmp_output_dir,
     ):
-        """k >= smaller dataset size should raise ValueError."""
+        """k >= smaller dataset size should raise ValueError before feature extraction."""
         from src.experiments.sample_selection.evaluator import (
             run_sample_selection_evaluate,
         )
@@ -404,15 +400,6 @@ class TestRunSampleSelectionEvaluate:
         mock_gen_ds = MagicMock()
         mock_gen_ds.__len__ = MagicMock(return_value=50)
         mock_simple_ds.return_value = mock_gen_ds
-
-        mock_create_model.return_value = MagicMock()
-
-        real_feats = _make_mock_features(5, seed=1)
-        gen_feats = _make_mock_features(50, seed=2)
-        mock_extract.side_effect = [
-            (real_feats, [f"r_{i}.png" for i in range(5)]),
-            (gen_feats, [f"g_{i}.png" for i in range(50)]),
-        ]
 
         with pytest.raises(ValueError, match="evaluation.k"):
             run_sample_selection_evaluate(config, "cpu")

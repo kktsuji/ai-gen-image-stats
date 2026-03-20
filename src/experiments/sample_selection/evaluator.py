@@ -102,6 +102,17 @@ def run_sample_selection_evaluate(config: Dict[str, Any], device: str) -> Path:
         logger.info(f"Selected images: {len(selected_dataset)}")
         dataset_sizes["selected"] = len(selected_dataset)
 
+    # Validate k against all dataset sizes before expensive feature extraction
+    all_sizes = [len(real_dataset), len(gen_dataset)]
+    if selected_dataset is not None:
+        all_sizes.append(len(selected_dataset))
+    min_dataset_size = min(all_sizes)
+    if k >= min_dataset_size:
+        raise ValueError(
+            f"evaluation.k ({k}) must be less than the smallest dataset size "
+            f"({min_dataset_size})"
+        )
+
     # Create feature extraction model
     model = create_feature_model(fe_config["model"], device)
 
@@ -220,31 +231,31 @@ def _compute_pair_metrics(
             f"Skipping ROC-AUC/PR-AUC for {pair_name}: "
             f"too few samples in smaller set ({min_set_size} < {_MIN_SAMPLES_FOR_AUC})"
         )
-        fid = calculate_fid(features_a, features_b)
-        precision, recall = calculate_precision_recall(features_a, features_b, k=k)
-        return {
-            "fid": fid,
-            "precision": precision,
-            "recall": recall,
-            "roc_auc": None,
-            "pr_auc": None,
-        }
+        return _fid_precision_recall_only(features_a, features_b, k)
 
     logger.info(f"Computing metrics for {pair_name}...")
     try:
         return evaluate_generative_model(features_a, features_b, k=k)
-    except ValueError:
+    except ValueError as exc:
         logger.warning(
-            f"AUC computation failed for {pair_name} "
-            f"(likely too few samples for stratified split), "
-            f"falling back to FID/Precision/Recall only"
+            f"AUC computation failed for {pair_name}: {exc}. "
+            f"Falling back to FID/Precision/Recall only"
         )
-        fid = calculate_fid(features_a, features_b)
-        precision, recall = calculate_precision_recall(features_a, features_b, k=k)
-        return {
-            "fid": fid,
-            "precision": precision,
-            "recall": recall,
-            "roc_auc": None,
-            "pr_auc": None,
-        }
+        return _fid_precision_recall_only(features_a, features_b, k)
+
+
+def _fid_precision_recall_only(
+    features_a: np.ndarray,
+    features_b: np.ndarray,
+    k: int,
+) -> Dict[str, float | None]:
+    """Compute FID, Precision, and Recall without AUC metrics."""
+    fid = calculate_fid(features_a, features_b)
+    precision, recall = calculate_precision_recall(features_a, features_b, k=k)
+    return {
+        "fid": fid,
+        "precision": precision,
+        "recall": recall,
+        "roc_auc": None,
+        "pr_auc": None,
+    }
