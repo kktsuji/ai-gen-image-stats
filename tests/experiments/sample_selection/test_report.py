@@ -11,6 +11,7 @@ import pytest
 
 from src.experiments.sample_selection.report import (
     write_accepted_samples_json,
+    write_evaluation_report,
     write_quality_report,
     write_summary,
 )
@@ -268,3 +269,100 @@ class TestWriteSummary:
         with open(output) as f:
             data = json.load(f)
         assert "created_at" in data
+
+
+# ============================================================================
+# Unit Tests - write_evaluation_report
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestWriteEvaluationReport:
+    """Test evaluation report JSON generation."""
+
+    def test_output_structure_single_comparison(self, tmp_output_dir):
+        """Report with one comparison should have correct structure."""
+        output = tmp_output_dir / "evaluation.json"
+        comparisons: dict[str, dict[str, float | None]] = {
+            "real_vs_generated": {
+                "fid": 12.3,
+                "precision": 0.85,
+                "recall": 0.72,
+                "roc_auc": 0.65,
+                "pr_auc": 0.68,
+            },
+        }
+        write_evaluation_report(
+            output_path=output,
+            comparisons=comparisons,
+            dataset_sizes={"real": 100, "generated": 500},
+            config={"feature_extraction": {"model": "inceptionv3"}},
+        )
+        with open(output) as f:
+            data = json.load(f)
+
+        assert data["mode"] == "evaluate"
+        assert "created_at" in data
+        assert len(data["comparisons"]) == 1
+        assert data["comparisons"]["real_vs_generated"]["fid"] == 12.3
+        assert data["dataset_sizes"]["real"] == 100
+        assert data["dataset_sizes"]["generated"] == 500
+
+    def test_output_structure_three_comparisons(self, tmp_output_dir):
+        """Report with three comparisons should include all pairs."""
+        output = tmp_output_dir / "evaluation.json"
+        comparisons: dict[str, dict[str, float | None]] = {
+            "real_vs_generated": {"fid": 12.3, "precision": 0.85},
+            "real_vs_selected": {"fid": 8.1, "precision": 0.92},
+            "generated_vs_selected": {"fid": 3.2, "precision": 0.97},
+        }
+        write_evaluation_report(
+            output_path=output,
+            comparisons=comparisons,
+            dataset_sizes={"real": 100, "generated": 500, "selected": 400},
+            config={},
+        )
+        with open(output) as f:
+            data = json.load(f)
+
+        assert len(data["comparisons"]) == 3
+        assert "real_vs_generated" in data["comparisons"]
+        assert "real_vs_selected" in data["comparisons"]
+        assert "generated_vs_selected" in data["comparisons"]
+        assert data["dataset_sizes"]["selected"] == 400
+
+    def test_config_snapshot_included(self, tmp_output_dir):
+        """Report should include relevant config sections."""
+        output = tmp_output_dir / "evaluation.json"
+        config = {
+            "feature_extraction": {"model": "resnet50", "batch_size": 32},
+            "evaluation": {"k": 5},
+            "data": {
+                "real": {"source": "directory", "directory": "/tmp/real"},
+                "generated": {"directory": "/tmp/gen"},
+            },
+        }
+        write_evaluation_report(
+            output_path=output,
+            comparisons={"real_vs_generated": {"fid": 10.0, "roc_auc": None}},
+            dataset_sizes={"real": 50, "generated": 100},
+            config=config,
+        )
+        with open(output) as f:
+            data = json.load(f)
+
+        assert data["config"]["feature_extraction"]["model"] == "resnet50"
+        assert data["config"]["evaluation"]["k"] == 5
+        assert data["config"]["data"]["real"]["source"] == "directory"
+        assert data["config"]["data"]["generated"]["directory"] == "/tmp/gen"
+
+    def test_creates_parent_directories(self, tmp_output_dir):
+        """Should create parent directories if they don't exist."""
+        output = tmp_output_dir / "nested" / "dir" / "evaluation.json"
+        write_evaluation_report(
+            output_path=output,
+            comparisons={"real_vs_generated": {"fid": 5.0, "roc_auc": None}},
+            dataset_sizes={"real": 10, "generated": 20},
+            config={},
+        )
+        assert output.exists()

@@ -22,6 +22,8 @@ def validate_config(config: Dict[str, Any]) -> None:
     """Validate sample selection configuration.
 
     Checks that all required fields are present and have valid values.
+    Validation is mode-aware: select and evaluate modes have different
+    required sections.
 
     Args:
         config: Configuration dictionary to validate
@@ -31,31 +33,46 @@ def validate_config(config: Dict[str, Any]) -> None:
         KeyError: If required fields are missing
     """
     # Validate experiment type and mode
-    validate_experiment_section(config, "sample_selection", ["select"])
+    validate_experiment_section(config, "sample_selection", ["select", "evaluate"])
+
+    mode = config["mode"]
 
     # Validate compute section
     validate_compute_section(config)
 
-    # Validate output section (only logs needed, no checkpoints)
-    validate_output_section(config, required_subdirs=["logs", "reports", "selected"])
-
-    # Validate feature_extraction section
+    # Validate feature_extraction section (both modes)
     _validate_feature_extraction_section(config)
 
-    # Validate data section
-    _validate_data_section(config)
-
-    # Validate scoring section
-    _validate_scoring_section(config)
-
-    # Validate selection section
-    _validate_selection_section(config)
-
-    # Validate dataset_metrics section
-    _validate_dataset_metrics_section(config)
-
-    # Validate logging section
+    # Validate logging section (both modes)
     _validate_logging_section(config)
+
+    if mode == "select":
+        # Validate output section
+        validate_output_section(
+            config, required_subdirs=["logs", "reports", "selected"]
+        )
+
+        # Validate data section (select mode)
+        _validate_data_section_select(config)
+
+        # Validate scoring section
+        _validate_scoring_section(config)
+
+        # Validate selection section
+        _validate_selection_section(config)
+
+        # Validate dataset_metrics section
+        _validate_dataset_metrics_section(config)
+
+    elif mode == "evaluate":
+        # Validate output section (no selected subdir needed)
+        validate_output_section(config, required_subdirs=["logs", "reports"])
+
+        # Validate data section (evaluate mode)
+        _validate_data_section_evaluate(config)
+
+        # Validate evaluation section
+        _validate_evaluation_section(config)
 
 
 def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
@@ -111,22 +128,16 @@ def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
         )
 
 
-def _validate_data_section(config: Dict[str, Any]) -> None:
-    """Validate data configuration section.
+def _validate_data_real_subsection(data: Dict[str, Any]) -> None:
+    """Validate data.real subsection (shared by select and evaluate modes).
 
     Args:
-        config: Full configuration dictionary
+        data: The data section of the configuration dictionary.
 
     Raises:
         KeyError: If required keys are missing
         ValueError: If values are invalid
     """
-    if "data" not in config:
-        raise KeyError("Missing required config key: data")
-
-    data = config["data"]
-
-    # Validate data.real section
     if "real" not in data:
         raise KeyError("Missing required config key: data.real")
 
@@ -186,7 +197,17 @@ def _validate_data_section(config: Dict[str, Any]) -> None:
         if not isinstance(real["directory"], str) or not real["directory"]:
             raise ValueError("data.real.directory must be a non-empty string")
 
-    # Validate data.generated section
+
+def _validate_data_generated_subsection(data: Dict[str, Any]) -> None:
+    """Validate data.generated subsection (shared by select and evaluate modes).
+
+    Args:
+        data: The data section of the configuration dictionary.
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
     if "generated" not in data:
         raise KeyError("Missing required config key: data.generated")
 
@@ -196,6 +217,25 @@ def _validate_data_section(config: Dict[str, Any]) -> None:
         raise KeyError("Missing required field: data.generated.directory")
     if not isinstance(generated["directory"], str) or not generated["directory"]:
         raise ValueError("data.generated.directory must be a non-empty string")
+
+
+def _validate_data_section_select(config: Dict[str, Any]) -> None:
+    """Validate data configuration section for select mode.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "data" not in config:
+        raise KeyError("Missing required config key: data")
+
+    data = config["data"]
+
+    _validate_data_real_subsection(data)
+    _validate_data_generated_subsection(data)
 
     # Validate label and class_name for output metadata
     if "label" not in data:
@@ -346,3 +386,69 @@ def _validate_logging_section(config: Dict[str, Any]) -> None:
             f"Invalid logging.file_level: '{log['file_level']}'. "
             f"Must be one of {valid_log_levels}"
         )
+
+
+def _validate_data_section_evaluate(config: Dict[str, Any]) -> None:
+    """Validate data configuration section for evaluate mode.
+
+    Requires data.real and data.generated (same rules as select mode for
+    those subsections). Does NOT require data.label or data.class_name.
+    Optional data.selected: if present, requires split_file and split.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "data" not in config:
+        raise KeyError("Missing required config key: data")
+
+    data = config["data"]
+
+    _validate_data_real_subsection(data)
+    _validate_data_generated_subsection(data)
+
+    # Validate optional data.selected section
+    if "selected" in data:
+        selected = data["selected"]
+
+        if "split_file" not in selected:
+            raise KeyError("Missing required field: data.selected.split_file")
+        if not isinstance(selected["split_file"], str) or not selected["split_file"]:
+            raise ValueError("data.selected.split_file must be a non-empty string")
+
+        if "split" not in selected:
+            raise KeyError("Missing required field: data.selected.split")
+        if selected["split"] != "train":
+            raise ValueError(
+                f"Invalid data.selected.split: '{selected['split']}'. Must be 'train'"
+            )
+
+
+def _validate_evaluation_section(config: Dict[str, Any]) -> None:
+    """Validate evaluation configuration section.
+
+    Requires evaluation.k as a positive integer.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "evaluation" not in config:
+        raise KeyError("Missing required config key: evaluation")
+
+    evaluation = config["evaluation"]
+
+    if "k" not in evaluation:
+        raise KeyError("Missing required field: evaluation.k")
+    if (
+        isinstance(evaluation["k"], bool)
+        or not isinstance(evaluation["k"], int)
+        or evaluation["k"] < 1
+    ):
+        raise ValueError("evaluation.k must be a positive integer")
