@@ -10,9 +10,11 @@ import pytest
 
 from src.experiments.sample_selection.evaluation_report import (
     LOWER_IS_BETTER,
+    _flatten_metrics,
     _parse_selection_eval_path,
     build_comparison_dataframe,
     generate_best_per_metric,
+    generate_report,
     generate_selection_eval_table,
     load_selection_eval_results,
 )
@@ -252,3 +254,63 @@ def test_load_selection_eval_results_skips_reserved_keys(tmp_path):
     assert results[0]["experiment"] == "ws_n100-gs3_topk"
     assert results[0]["diffusion_variant"] == "ws"
     assert results[0]["rvs_fid"] == 10.0
+
+
+@pytest.mark.unit
+def test_parse_selection_eval_path_underscore_in_gen_config():
+    """Test that gen_config with underscores is parsed correctly via rsplit."""
+    path = "outputs/diffusion-ws/selection-eval/n100_gs3_topk/reports/evaluation.json"
+    result = _parse_selection_eval_path(path)
+    assert result["diffusion_variant"] == "ws"
+    assert result["gen_config"] == "n100_gs3"
+    assert result["selection"] == "topk"
+
+
+@pytest.mark.unit
+def test_flatten_metrics_skips_nested_dicts():
+    """Test that nested dict values in comparisons are skipped."""
+    metrics = {
+        "comparisons": {
+            "real_vs_selected": {
+                "fid": 12.5,
+                "per_class": {"class_0": 10.0, "class_1": 15.0},
+            },
+        },
+        "dataset_sizes": {"real": 100},
+    }
+    flat = _flatten_metrics(metrics)
+    assert flat["rvs_fid"] == 12.5
+    assert "rvs_per_class" not in flat
+    assert flat["ds_real"] == 100
+
+
+@pytest.mark.component
+def test_generate_report_writes_output_files(tmp_path):
+    """Test that generate_report creates markdown and CSV output files."""
+    # Create mock directory structure
+    reports_dir = (
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3_topk" / "reports"
+    )
+    reports_dir.mkdir(parents=True)
+    metrics = {
+        "comparisons": {
+            "real_vs_selected": {"fid": 12.5, "precision": 0.8, "recall": 0.6},
+            "real_vs_generated": {"fid": 15.0, "precision": 0.7, "recall": 0.5},
+        },
+        "dataset_sizes": {"real": 100, "generated": 200, "selected": 50},
+    }
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump(metrics, f)
+
+    output_dir = tmp_path / "report_output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    # Check output files exist
+    assert (output_dir / "selection_eval_report.md").exists()
+    assert (output_dir / "selection_eval_results.csv").exists()
+
+    # Check report content
+    report_text = (output_dir / "selection_eval_report.md").read_text()
+    assert "Selection Evaluation Report" in report_text
+    assert "Total experiments: 1" in report_text
+    assert "ws_n100-gs3_topk" in report_text

@@ -45,6 +45,10 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
     Expected path structure:
         outputs/diffusion-{train}/selection-eval/{gen}_{sel}/reports/evaluation.json
 
+    The combo directory name uses underscore as the separator between gen_config
+    and selection. Since gen_config may contain underscores, we split from the
+    right (rsplit) to keep selection as the last token.
+
     Returns:
         Dictionary with keys: diffusion_variant, gen_config, selection
     """
@@ -65,11 +69,13 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
             diffusion_variant = diffusion_name
 
         # Extract gen and sel from "{gen}_{sel}"
+        # rsplit from right: selection is always a simple token (topk, percentile,
+        # threshold), while gen_config may contain underscores.
         combo = combo_dir.name
-        parts = combo.split("_")
-        if len(parts) >= 2:
+        parts = combo.rsplit("_", 1)
+        if len(parts) == 2:
             gen_config = parts[0]
-            selection = "_".join(parts[1:])
+            selection = parts[1]
         else:
             gen_config = combo
             selection = "-"
@@ -104,7 +110,8 @@ def _flatten_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
             pair_metrics = comparisons.get(pair_key, {})
             if isinstance(pair_metrics, dict):
                 for metric_name, value in pair_metrics.items():
-                    flat[f"{prefix}_{metric_name}"] = value
+                    if isinstance(value, (int, float, str, bool, type(None))):
+                        flat[f"{prefix}_{metric_name}"] = value
 
     # Flatten dataset_sizes
     dataset_sizes = metrics.get("dataset_sizes", {})
