@@ -38,9 +38,7 @@ logger = logging.getLogger(__name__)
 _MIN_SAMPLES_FOR_AUC = 7
 
 
-def run_sample_selection_evaluate(
-    config: Dict[str, Any], device: str, log_dir: Path
-) -> Path:
+def run_sample_selection_evaluate(config: Dict[str, Any], device: str) -> Path:
     """Evaluate distribution-level quality of generated and selected images.
 
     Compares real vs generated (always), and if data.selected is present,
@@ -49,7 +47,6 @@ def run_sample_selection_evaluate(
     Args:
         config: Full experiment configuration dictionary.
         device: Device string (e.g. "cpu" or "cuda").
-        log_dir: Log directory path.
 
     Returns:
         Path to the output reports directory.
@@ -100,6 +97,8 @@ def run_sample_selection_evaluate(
             transform=transform,
             return_labels=False,
         )
+        if len(selected_dataset) == 0:
+            raise ValueError("Selected dataset is empty — cannot compute metrics")
         logger.info(f"Selected images: {len(selected_dataset)}")
         dataset_sizes["selected"] = len(selected_dataset)
 
@@ -150,7 +149,7 @@ def run_sample_selection_evaluate(
         logger.info(f"Selected features shape: {sel_features.shape}")
 
     # Compute metrics per pair
-    comparisons: Dict[str, Dict[str, float]] = {}
+    comparisons: Dict[str, Dict[str, float | None]] = {}
 
     comparisons["real_vs_generated"] = _compute_pair_metrics(
         real_features, gen_features, k, "real_vs_generated"
@@ -181,7 +180,10 @@ def run_sample_selection_evaluate(
     for pair_name, metrics in comparisons.items():
         logger.info(f"--- {pair_name} ---")
         for metric_name, value in metrics.items():
-            logger.info(f"  {metric_name}: {value:.4f}")
+            if value is None:
+                logger.info(f"  {metric_name}: N/A")
+            else:
+                logger.info(f"  {metric_name}: {value:.4f}")
 
     return reports_dir
 
@@ -191,7 +193,7 @@ def _compute_pair_metrics(
     features_b: np.ndarray,
     k: int,
     pair_name: str,
-) -> Dict[str, float]:
+) -> Dict[str, float | None]:
     """Compute distribution metrics for a pair of feature sets.
 
     If either set has too few samples for ROC-AUC/PR-AUC, those metrics
@@ -207,6 +209,12 @@ def _compute_pair_metrics(
         Dictionary of metric name to value.
     """
     min_set_size = min(len(features_a), len(features_b))
+    if k >= min_set_size:
+        raise ValueError(
+            f"evaluation.k ({k}) must be less than the smaller dataset size "
+            f"({min_set_size}) for {pair_name}"
+        )
+
     if min_set_size < _MIN_SAMPLES_FOR_AUC:
         logger.warning(
             f"Skipping ROC-AUC/PR-AUC for {pair_name}: "
@@ -218,6 +226,8 @@ def _compute_pair_metrics(
             "fid": fid,
             "precision": precision,
             "recall": recall,
+            "roc_auc": None,
+            "pr_auc": None,
         }
 
     logger.info(f"Computing metrics for {pair_name}...")

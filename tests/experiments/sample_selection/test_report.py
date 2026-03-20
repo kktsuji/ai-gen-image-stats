@@ -283,7 +283,7 @@ class TestWriteEvaluationReport:
     def test_output_structure_single_comparison(self, tmp_output_dir):
         """Report with one comparison should have correct structure."""
         output = tmp_output_dir / "evaluation.json"
-        comparisons = {
+        comparisons: dict[str, dict[str, float | None]] = {
             "real_vs_generated": {
                 "fid": 12.3,
                 "precision": 0.85,
@@ -311,7 +311,7 @@ class TestWriteEvaluationReport:
     def test_output_structure_three_comparisons(self, tmp_output_dir):
         """Report with three comparisons should include all pairs."""
         output = tmp_output_dir / "evaluation.json"
-        comparisons = {
+        comparisons: dict[str, dict[str, float | None]] = {
             "real_vs_generated": {"fid": 12.3, "precision": 0.85},
             "real_vs_selected": {"fid": 8.1, "precision": 0.92},
             "generated_vs_selected": {"fid": 3.2, "precision": 0.97},
@@ -340,7 +340,7 @@ class TestWriteEvaluationReport:
         }
         write_evaluation_report(
             output_path=output,
-            comparisons={"real_vs_generated": {"fid": 10.0}},
+            comparisons={"real_vs_generated": {"fid": 10.0, "roc_auc": None}},
             dataset_sizes={"real": 50, "generated": 100},
             config=config,
         )
@@ -355,7 +355,7 @@ class TestWriteEvaluationReport:
         output = tmp_output_dir / "nested" / "dir" / "evaluation.json"
         write_evaluation_report(
             output_path=output,
-            comparisons={"real_vs_generated": {"fid": 5.0}},
+            comparisons={"real_vs_generated": {"fid": 5.0, "roc_auc": None}},
             dataset_sizes={"real": 10, "generated": 20},
             config={},
         )

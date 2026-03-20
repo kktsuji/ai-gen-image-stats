@@ -886,7 +886,7 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
             run_sample_selection_evaluate,
         )
 
-        run_sample_selection_evaluate(config, device, log_dir)
+        run_sample_selection_evaluate(config, device)
 
     logger.info("")
     logger.info("Sample selection completed successfully!")

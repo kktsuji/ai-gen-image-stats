@@ -141,7 +141,7 @@ def write_summary(
 
 def write_evaluation_report(
     output_path: Path,
-    comparisons: Dict[str, Dict[str, float]],
+    comparisons: Dict[str, Dict[str, float | None]],
     dataset_sizes: Dict[str, int],
     config: Dict[str, Any],
 ) -> None:

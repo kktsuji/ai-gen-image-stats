@@ -128,22 +128,16 @@ def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
         )
 
 
-def _validate_data_section_select(config: Dict[str, Any]) -> None:
-    """Validate data configuration section for select mode.
+def _validate_data_real_subsection(data: Dict[str, Any]) -> None:
+    """Validate data.real subsection (shared by select and evaluate modes).
 
     Args:
-        config: Full configuration dictionary
+        data: The data section of the configuration dictionary.
 
     Raises:
         KeyError: If required keys are missing
         ValueError: If values are invalid
     """
-    if "data" not in config:
-        raise KeyError("Missing required config key: data")
-
-    data = config["data"]
-
-    # Validate data.real section
     if "real" not in data:
         raise KeyError("Missing required config key: data.real")
 
@@ -203,7 +197,17 @@ def _validate_data_section_select(config: Dict[str, Any]) -> None:
         if not isinstance(real["directory"], str) or not real["directory"]:
             raise ValueError("data.real.directory must be a non-empty string")
 
-    # Validate data.generated section
+
+def _validate_data_generated_subsection(data: Dict[str, Any]) -> None:
+    """Validate data.generated subsection (shared by select and evaluate modes).
+
+    Args:
+        data: The data section of the configuration dictionary.
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
     if "generated" not in data:
         raise KeyError("Missing required config key: data.generated")
 
@@ -213,6 +217,25 @@ def _validate_data_section_select(config: Dict[str, Any]) -> None:
         raise KeyError("Missing required field: data.generated.directory")
     if not isinstance(generated["directory"], str) or not generated["directory"]:
         raise ValueError("data.generated.directory must be a non-empty string")
+
+
+def _validate_data_section_select(config: Dict[str, Any]) -> None:
+    """Validate data configuration section for select mode.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "data" not in config:
+        raise KeyError("Missing required config key: data")
+
+    data = config["data"]
+
+    _validate_data_real_subsection(data)
+    _validate_data_generated_subsection(data)
 
     # Validate label and class_name for output metadata
     if "label" not in data:
@@ -384,76 +407,8 @@ def _validate_data_section_evaluate(config: Dict[str, Any]) -> None:
 
     data = config["data"]
 
-    # Validate data.real section (same rules as select mode)
-    if "real" not in data:
-        raise KeyError("Missing required config key: data.real")
-
-    real = data["real"]
-
-    if "source" not in real:
-        raise KeyError("Missing required field: data.real.source")
-    if real["source"] not in VALID_REAL_SOURCES:
-        raise ValueError(
-            f"Invalid data.real.source: '{real['source']}'. "
-            f"Must be one of {VALID_REAL_SOURCES}"
-        )
-
-    if real["source"] == "split_file":
-        if "split_file" not in real:
-            raise KeyError(
-                "Missing required field: data.real.split_file "
-                "(required when source='split_file')"
-            )
-        if not isinstance(real["split_file"], str) or not real["split_file"]:
-            raise ValueError("data.real.split_file must be a non-empty string")
-
-        if "split" not in real:
-            raise KeyError(
-                "Missing required field: data.real.split "
-                "(required when source='split_file')"
-            )
-        if real["split"] not in ("train", "val"):
-            raise ValueError(
-                f"Invalid data.real.split: '{real['split']}'. Must be 'train' or 'val'"
-            )
-
-        if "class_label" not in real:
-            raise KeyError(
-                "Missing required field: data.real.class_label "
-                "(required when source='split_file')"
-            )
-        class_label = real["class_label"]
-        if class_label is not None:
-            if not isinstance(class_label, int) or isinstance(class_label, bool):
-                raise ValueError(
-                    f"data.real.class_label must be null or a non-negative integer, "
-                    f"got {type(class_label).__name__}: {class_label!r}"
-                )
-            if class_label < 0:
-                raise ValueError(
-                    f"data.real.class_label must be null or a non-negative integer, "
-                    f"got {class_label}"
-                )
-
-    elif real["source"] == "directory":
-        if "directory" not in real:
-            raise KeyError(
-                "Missing required field: data.real.directory "
-                "(required when source='directory')"
-            )
-        if not isinstance(real["directory"], str) or not real["directory"]:
-            raise ValueError("data.real.directory must be a non-empty string")
-
-    # Validate data.generated section
-    if "generated" not in data:
-        raise KeyError("Missing required config key: data.generated")
-
-    generated = data["generated"]
-
-    if "directory" not in generated:
-        raise KeyError("Missing required field: data.generated.directory")
-    if not isinstance(generated["directory"], str) or not generated["directory"]:
-        raise ValueError("data.generated.directory must be a non-empty string")
+    _validate_data_real_subsection(data)
+    _validate_data_generated_subsection(data)
 
     # Validate optional data.selected section
     if "selected" in data:

@@ -110,9 +110,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"gen_{i}.png" for i in range(30)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(
-            config, "cpu", tmp_output_dir / "logs"
-        )
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
 
         report_path = reports_dir / "evaluation.json"
         assert report_path.exists()
@@ -172,9 +170,7 @@ class TestRunSampleSelectionEvaluate:
             (sel_feats, [f"sel_{i}.png" for i in range(15)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(
-            config, "cpu", tmp_output_dir / "logs"
-        )
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
 
         report_path = reports_dir / "evaluation.json"
         with open(report_path) as f:
@@ -222,9 +218,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"gen_{i}.png" for i in range(30)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(
-            config, "cpu", tmp_output_dir / "logs"
-        )
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
 
         with open(reports_dir / "evaluation.json") as f:
             report = json.load(f)
@@ -270,9 +264,7 @@ class TestRunSampleSelectionEvaluate:
             (_make_mock_features(10, seed=2), [f"g_{i}.png" for i in range(10)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(
-            config, "cpu", tmp_output_dir / "logs"
-        )
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
 
         expected = Path(config["output"]["base_dir"]) / "reports" / "evaluation.json"
         assert expected.exists()
@@ -290,7 +282,7 @@ class TestRunSampleSelectionEvaluate:
         mock_extract,
         tmp_output_dir,
     ):
-        """With fewer samples than threshold, report omits roc_auc/pr_auc."""
+        """With fewer samples than threshold, report sets roc_auc/pr_auc to null."""
         from src.experiments.sample_selection.evaluator import (
             run_sample_selection_evaluate,
         )
@@ -315,9 +307,7 @@ class TestRunSampleSelectionEvaluate:
             (gen_feats, [f"g_{i}.png" for i in range(50)]),
         ]
 
-        reports_dir = run_sample_selection_evaluate(
-            config, "cpu", tmp_output_dir / "logs"
-        )
+        reports_dir = run_sample_selection_evaluate(config, "cpu")
 
         with open(reports_dir / "evaluation.json") as f:
             report = json.load(f)
@@ -326,8 +316,8 @@ class TestRunSampleSelectionEvaluate:
         assert "fid" in metrics
         assert "precision" in metrics
         assert "recall" in metrics
-        assert "roc_auc" not in metrics
-        assert "pr_auc" not in metrics
+        assert metrics["roc_auc"] is None
+        assert metrics["pr_auc"] is None
 
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
@@ -353,7 +343,79 @@ class TestRunSampleSelectionEvaluate:
         mock_simple_ds.return_value = mock_gen_ds
 
         with pytest.raises(ValueError, match="Real dataset is empty"):
-            run_sample_selection_evaluate(config, "cpu", tmp_output_dir / "logs")
+            run_sample_selection_evaluate(config, "cpu")
+
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    @patch("src.experiments.sample_selection.evaluator.SplitFileDataset")
+    def test_empty_selected_dataset_raises(
+        self,
+        mock_split_ds,
+        mock_simple_ds,
+        mock_load_real,
+        tmp_output_dir,
+    ):
+        """Empty selected dataset should raise ValueError."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir, include_selected=True)
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=10)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=10)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        mock_sel_ds = MagicMock()
+        mock_sel_ds.__len__ = MagicMock(return_value=0)
+        mock_split_ds.return_value = mock_sel_ds
+
+        with pytest.raises(ValueError, match="Selected dataset is empty"):
+            run_sample_selection_evaluate(config, "cpu")
+
+    @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
+    @patch("src.experiments.sample_selection.evaluator.create_feature_model")
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_k_exceeds_dataset_size_raises(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        mock_create_model,
+        mock_extract,
+        tmp_output_dir,
+    ):
+        """k >= smaller dataset size should raise ValueError."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+        config["evaluation"]["k"] = 5  # k=5 but only 5 real samples → k >= min_size
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=5)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_gen_ds = MagicMock()
+        mock_gen_ds.__len__ = MagicMock(return_value=50)
+        mock_simple_ds.return_value = mock_gen_ds
+
+        mock_create_model.return_value = MagicMock()
+
+        real_feats = _make_mock_features(5, seed=1)
+        gen_feats = _make_mock_features(50, seed=2)
+        mock_extract.side_effect = [
+            (real_feats, [f"r_{i}.png" for i in range(5)]),
+            (gen_feats, [f"g_{i}.png" for i in range(50)]),
+        ]
+
+        with pytest.raises(ValueError, match="evaluation.k"):
+            run_sample_selection_evaluate(config, "cpu")
 
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
@@ -379,4 +441,4 @@ class TestRunSampleSelectionEvaluate:
         mock_simple_ds.return_value = mock_gen_ds
 
         with pytest.raises(ValueError, match="Generated dataset is empty"):
-            run_sample_selection_evaluate(config, "cpu", tmp_output_dir / "logs")
+            run_sample_selection_evaluate(config, "cpu")
