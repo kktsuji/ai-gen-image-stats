@@ -246,7 +246,7 @@ def generate_selection_eval_table(df: pd.DataFrame) -> str:
         subset = subset.sort_values(by="rvs_fid", ascending=True)  # type: ignore[call-overload]
 
     result: Optional[str] = subset.to_markdown(index=False, floatfmt=".4f")
-    return result if result is not None else ""
+    return result if result is not None else "No evaluation results found.\n"
 
 
 def generate_best_per_metric(df: pd.DataFrame) -> str:
@@ -343,7 +343,7 @@ def generate_report(
 
     # Save CSV
     csv_path = output_path / "selection_eval_results.csv"
-    df.to_csv(csv_path, index=False)
+    df.to_csv(csv_path, index=False, encoding="utf-8")
     _logger.info("CSV saved to: %s", csv_path)
 
     # Log summary
