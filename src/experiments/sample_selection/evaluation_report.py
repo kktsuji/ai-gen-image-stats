@@ -93,7 +93,9 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
             "gen_config": gen_config,
             "selection": selection,
         }
-    except AttributeError:
+    except (
+        AttributeError
+    ):  # Defensive: pathlib ops are safe, but guards against non-Path input
         return {
             "diffusion_variant": "-",
             "gen_config": "-",
