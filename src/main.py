@@ -60,6 +60,34 @@ from src.utils.training import create_optimizer, create_scheduler
 logger = logging.getLogger(__name__)
 
 
+def _validate_split_file_has_val(split_file: str) -> None:
+    """Validate that a split file exists on disk and contains a non-empty val split.
+
+    Args:
+        split_file: Path to the JSON split file.
+
+    Raises:
+        FileNotFoundError: If the split file does not exist.
+        ValueError: If the file is not valid JSON or has no val entries.
+    """
+    split_path = Path(split_file)
+    if not split_path.exists():
+        raise FileNotFoundError(
+            f"split_file '{split_file}' not found. "
+            "A valid split file is required for evaluate mode."
+        )
+    try:
+        with open(split_path) as f:
+            split_data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"split_file '{split_file}' is not valid JSON: {e}") from e
+    if "val" not in split_data or not split_data["val"]:
+        raise ValueError(
+            f"split_file '{split_file}' has no 'val' entries. "
+            "A non-empty val split is required for evaluate mode."
+        )
+
+
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     """Setup and run classifier experiment.
 
@@ -189,6 +217,10 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
     if mode == "evaluate":
         # Evaluate mode: load checkpoint and evaluate with enriched metrics
+
+        # Validate that split_file contains a val split
+        _validate_split_file_has_val(split_file)
+
         evaluation_config = config["evaluation"]
         checkpoint_path = Path(evaluation_config["checkpoint"])
 

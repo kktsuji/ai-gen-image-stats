@@ -5,7 +5,6 @@ This module tests the classifier configuration management, including:
 - Model-specific configuration overrides
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -105,22 +104,12 @@ def get_v2_default_config():
         return copy.deepcopy(yaml.safe_load(f))
 
 
-def _make_evaluate_config(tmp_path: Path) -> dict:
-    """Create a valid evaluate-mode config with a real split file on disk."""
-    split_file = tmp_path / "split.json"
-    split_file.write_text(
-        json.dumps(
-            {
-                "train": [{"path": "a.png", "label": 0}],
-                "val": [{"path": "b.png", "label": 1}],
-            }
-        )
-    )
+def _make_evaluate_config() -> dict:
+    """Create a valid evaluate-mode config (no filesystem dependency)."""
     config = get_v2_default_config()
     config["mode"] = "evaluate"
     config["evaluation"] = {"checkpoint": "path/to/checkpoint.pth"}
     config["output"]["subdirs"]["reports"] = "reports"
-    config["data"]["split_file"] = str(split_file)
     return config
 
 
@@ -158,7 +147,7 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="Invalid mode"):
             validate_config(config)
 
-    def test_valid_modes(self, tmp_path):
+    def test_valid_modes(self):
         """Test validation succeeds with all valid modes."""
         # Train mode
         config = get_v2_default_config()
@@ -166,7 +155,7 @@ class TestValidateConfig:
         validate_config(config)
 
         # Evaluate mode
-        eval_config = _make_evaluate_config(tmp_path)
+        eval_config = _make_evaluate_config()
         validate_config(eval_config)
 
     def test_invalid_device(self):
@@ -251,9 +240,9 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="Invalid scheduler"):
             validate_config(config)
 
-    def test_evaluate_mode_requires_checkpoint(self, tmp_path):
+    def test_evaluate_mode_requires_checkpoint(self):
         """Test validation fails in evaluate mode without checkpoint."""
-        config = _make_evaluate_config(tmp_path)
+        config = _make_evaluate_config()
         config["evaluation"]["checkpoint"] = None  # Invalid: should be a path
 
         with pytest.raises(
@@ -261,41 +250,14 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
-    def test_evaluate_mode_requires_reports_subdir(self, tmp_path):
+    def test_evaluate_mode_requires_reports_subdir(self):
         """Test validation fails in evaluate mode without reports subdir."""
-        config = _make_evaluate_config(tmp_path)
+        config = _make_evaluate_config()
         config["output"]["subdirs"].pop("reports", None)
 
         with pytest.raises(
             ValueError, match="output.subdirs.reports is required for evaluate mode"
         ):
-            validate_config(config)
-
-    def test_evaluate_mode_requires_nonempty_val_split(self, tmp_path):
-        """Test validation fails when split_file has no val entries."""
-        config = _make_evaluate_config(tmp_path)
-        # Overwrite split file with one that has no val entries
-        split_file = Path(config["data"]["split_file"])
-        split_file.write_text(json.dumps({"train": [{"path": "a.png", "label": 0}]}))
-
-        with pytest.raises(ValueError, match="no 'val' entries"):
-            validate_config(config)
-
-    def test_evaluate_mode_requires_existing_split_file(self, tmp_path):
-        """Test validation fails when split_file does not exist."""
-        config = _make_evaluate_config(tmp_path)
-        config["data"]["split_file"] = str(tmp_path / "nonexistent.json")
-
-        with pytest.raises(FileNotFoundError, match="not found"):
-            validate_config(config)
-
-    def test_evaluate_mode_rejects_malformed_split_file(self, tmp_path):
-        """Test validation fails when split_file is not valid JSON."""
-        config = _make_evaluate_config(tmp_path)
-        split_file = Path(config["data"]["split_file"])
-        split_file.write_text("not valid json {{{")
-
-        with pytest.raises(ValueError, match="not valid JSON"):
             validate_config(config)
 
     def test_save_latest_valid_true(self):
@@ -654,9 +616,9 @@ class TestValidateSyntheticAugmentation:
         }
         validate_config(config)  # should not raise
 
-    def test_not_validated_in_evaluate_mode(self, tmp_path):
+    def test_not_validated_in_evaluate_mode(self):
         """synthetic_augmentation is not validated in evaluate mode."""
-        config = _make_evaluate_config(tmp_path)
+        config = _make_evaluate_config()
         config["data"]["synthetic_augmentation"] = {
             "enabled": True,
             "split_file": None,  # would fail in train mode

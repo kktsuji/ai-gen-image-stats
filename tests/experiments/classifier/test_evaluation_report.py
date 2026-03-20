@@ -165,3 +165,21 @@ def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     assert results[0]["type"] == "baseline"
     assert results[0]["experiment"] == "baseline-vanilla"
     assert results[0]["accuracy"] == 80.0
+
+
+@pytest.mark.component
+def test_load_evaluation_results_skips_malformed_json(tmp_path):
+    """Test that malformed evaluation.json files are skipped with a warning."""
+    # Create one valid and one malformed evaluation.json
+    valid_dir = tmp_path / "baseline-vanilla" / "reports"
+    valid_dir.mkdir(parents=True)
+    with open(valid_dir / "evaluation.json", "w") as f:
+        json.dump({"accuracy": 80.0}, f)
+
+    bad_dir = tmp_path / "broken-exp" / "reports"
+    bad_dir.mkdir(parents=True)
+    (bad_dir / "evaluation.json").write_text("not valid json {{{")
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 1
+    assert results[0]["experiment"] == "baseline-vanilla"

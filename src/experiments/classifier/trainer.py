@@ -600,14 +600,10 @@ class ClassifierTrainer:
                 # Model must return raw logits (pre-softmax).
                 # Guard: if outputs look like probabilities already, warn.
                 if num_batches == 1:
-                    min_val = predictions.min().item()
-                    max_val = predictions.max().item()
-                    sum_val = predictions[0].sum().item()
-                    if (
-                        min_val >= 0
-                        and max_val <= 1.0 + 1e-3
-                        and abs(sum_val - 1.0) < 1e-3
-                    ):
+                    row_sums = predictions.sum(dim=1)
+                    all_non_negative = predictions.min().item() >= 0
+                    all_sum_to_one = (row_sums - 1.0).abs().max().item() < 1e-3
+                    if all_non_negative and all_sum_to_one:
                         _logger.warning(
                             "Model outputs look like probabilities (non-negative, "
                             "sum≈1). Expected raw logits. AUC metrics may be wrong."

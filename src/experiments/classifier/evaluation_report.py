@@ -92,8 +92,12 @@ def load_evaluation_results(
         path = Path(json_path)
         exp_name = path.parent.parent.name
 
-        with open(json_path) as f:
-            metrics = json.load(f)
+        try:
+            with open(json_path) as f:
+                metrics = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            _logger.warning(f"Skipping malformed file {json_path}: {e}")
+            continue
 
         entry: Dict[str, Any] = {"experiment": exp_name}
         entry.update(_parse_experiment_name(exp_name))
@@ -275,8 +279,8 @@ def generate_report(
 
             bl_best_idx = baselines[metric].idxmax()  # type: ignore[union-attr]
             syn_best_idx = synthetics[metric].idxmax()  # type: ignore[union-attr]
-            # Skip if either index is NaN (all-NaN column); NaN != NaN
-            if bl_best_idx != bl_best_idx or syn_best_idx != syn_best_idx:
+            # Skip if either index is NaN (all-NaN column)
+            if bool(pd.isna(bl_best_idx)) or bool(pd.isna(syn_best_idx)):
                 continue
 
             best_baseline_val = float(baselines.loc[bl_best_idx, metric])
