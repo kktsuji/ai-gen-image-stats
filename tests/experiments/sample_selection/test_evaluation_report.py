@@ -232,15 +232,12 @@ def test_load_selection_eval_results_skips_malformed(tmp_path):
 
 
 @pytest.mark.component
-def test_load_selection_eval_results_skips_reserved_keys(tmp_path):
+def test_load_selection_eval_results_skips_reserved_keys(tmp_path, monkeypatch):
     """Test that reserved metadata keys in flattened metrics are skipped."""
     reports_dir = (
         tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3_topk" / "reports"
     )
     reports_dir.mkdir(parents=True)
-    # Create metrics that would flatten to a reserved key name
-    # "experiment" is a reserved key, but flattened keys are prefixed so no real
-    # conflict in practice. Test with dataset_sizes containing "experiment" key.
     metrics = {
         "comparisons": {"real_vs_selected": {"fid": 10.0}},
         "dataset_sizes": {"real": 100},
@@ -248,9 +245,21 @@ def test_load_selection_eval_results_skips_reserved_keys(tmp_path):
     with open(reports_dir / "evaluation.json", "w") as f:
         json.dump(metrics, f)
 
+    # Patch _flatten_metrics to inject a key that collides with reserved metadata
+    import src.experiments.sample_selection.evaluation_report as report_mod
+
+    original_flatten = report_mod._flatten_metrics
+
+    def _flatten_with_conflict(m):
+        flat = original_flatten(m)
+        flat["experiment"] = "should_be_dropped"
+        return flat
+
+    monkeypatch.setattr(report_mod, "_flatten_metrics", _flatten_with_conflict)
+
     results = load_selection_eval_results(str(tmp_path))
     assert len(results) == 1
-    # Metadata should be intact
+    # Reserved "experiment" key from flattened metrics must NOT overwrite metadata
     assert results[0]["experiment"] == "ws_n100-gs3_topk"
     assert results[0]["diffusion_variant"] == "ws"
     assert results[0]["rvs_fid"] == 10.0
