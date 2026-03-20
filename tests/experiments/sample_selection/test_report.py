@@ -337,6 +337,10 @@ class TestWriteEvaluationReport:
         config = {
             "feature_extraction": {"model": "resnet50", "batch_size": 32},
             "evaluation": {"k": 5},
+            "data": {
+                "real": {"source": "directory", "directory": "/tmp/real"},
+                "generated": {"directory": "/tmp/gen"},
+            },
         }
         write_evaluation_report(
             output_path=output,
@@ -349,6 +353,8 @@ class TestWriteEvaluationReport:
 
         assert data["config"]["feature_extraction"]["model"] == "resnet50"
         assert data["config"]["evaluation"]["k"] == 5
+        assert data["config"]["data"]["real"]["source"] == "directory"
+        assert data["config"]["data"]["generated"]["directory"] == "/tmp/gen"
 
     def test_creates_parent_directories(self, tmp_output_dir):
         """Should create parent directories if they don't exist."""

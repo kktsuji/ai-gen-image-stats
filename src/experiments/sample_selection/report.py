@@ -168,6 +168,7 @@ def write_evaluation_report(
         "config": {
             "feature_extraction": config.get("feature_extraction"),
             "evaluation": config.get("evaluation"),
+            "data": config.get("data"),
         },
     }
 

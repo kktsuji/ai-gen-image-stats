@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Minimum samples per set required for ROC-AUC/PR-AUC.  train_test_split
 # with test_size=0.3 and stratify needs at least ceil(2/0.3)=7 samples
 # per class to guarantee 2 samples in the test split.
+# Source: test_size parameter in compute_auc() at src/utils/metrics.py.
 _MIN_SAMPLES_FOR_AUC = 7
 
 
@@ -72,11 +73,22 @@ def run_sample_selection_evaluate(
     num_workers = fe_config["num_workers"]
 
     # Load datasets
-    real_dataset = load_real_dataset(data_config, transform)
-    gen_dataset = SimpleImageDataset(
-        root=data_config["generated"]["directory"],
-        transform=transform,
-    )
+    try:
+        real_dataset = load_real_dataset(data_config, transform)
+    except (ValueError, FileNotFoundError) as e:
+        raise type(e)(
+            f"Failed to load real dataset (source={data_config['real']['source']}): {e}"
+        ) from e
+    try:
+        gen_dataset = SimpleImageDataset(
+            root=data_config["generated"]["directory"],
+            transform=transform,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        raise type(e)(
+            f"Failed to load generated dataset "
+            f"(directory={data_config['generated']['directory']}): {e}"
+        ) from e
 
     if len(real_dataset) == 0:
         raise ValueError("Real dataset is empty — cannot compute metrics")
@@ -214,9 +226,13 @@ def _compute_pair_metrics(
     If either set has too few samples for ROC-AUC/PR-AUC, those metrics
     are skipped with a warning.
 
+    Note: FID is symmetric, but Precision and Recall are directional —
+    ``features_a`` is treated as the reference ("real") distribution and
+    ``features_b`` as the evaluated ("generated") distribution.
+
     Args:
-        features_a: Feature vectors from the first set.
-        features_b: Feature vectors from the second set.
+        features_a: Feature vectors from the reference set.
+        features_b: Feature vectors from the evaluated set.
         k: Number of nearest neighbors for precision/recall.
         pair_name: Name of the pair (for logging).
 

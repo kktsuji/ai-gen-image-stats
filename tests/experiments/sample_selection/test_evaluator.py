@@ -453,6 +453,8 @@ class TestRunSampleSelectionEvaluate:
         reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
         assert (reports_dir / "evaluation.json").exists()
 
+    @patch("src.experiments.sample_selection.evaluator.calculate_precision_recall")
+    @patch("src.experiments.sample_selection.evaluator.calculate_fid")
     @patch("src.experiments.sample_selection.evaluator.evaluate_generative_model")
     @patch("src.experiments.sample_selection.evaluator.extract_features_from_loader")
     @patch("src.experiments.sample_selection.evaluator.create_feature_model")
@@ -465,6 +467,8 @@ class TestRunSampleSelectionEvaluate:
         mock_create_model,
         mock_extract,
         mock_eval_gen,
+        mock_calc_fid,
+        mock_calc_pr,
         tmp_output_dir,
     ):
         """When evaluate_generative_model raises ValueError, should fall back gracefully."""
@@ -491,6 +495,8 @@ class TestRunSampleSelectionEvaluate:
 
         # Simulate AUC computation failure (e.g. stratified split issue)
         mock_eval_gen.side_effect = ValueError("too few samples for stratify")
+        mock_calc_fid.return_value = 15.0
+        mock_calc_pr.return_value = (0.8, 0.7)
 
         reports_dir = run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
@@ -498,11 +504,52 @@ class TestRunSampleSelectionEvaluate:
             report = json.load(f)
 
         metrics = report["comparisons"]["real_vs_generated"]
-        assert "fid" in metrics
-        assert "precision" in metrics
-        assert "recall" in metrics
+        assert metrics["fid"] == 15.0
+        assert metrics["precision"] == 0.8
+        assert metrics["recall"] == 0.7
         assert metrics["roc_auc"] is None
         assert metrics["pr_auc"] is None
+
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    def test_real_dataset_load_error_has_friendly_message(
+        self,
+        mock_load_real,
+        tmp_output_dir,
+    ):
+        """FileNotFoundError from load_real_dataset should include config context."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+        mock_load_real.side_effect = FileNotFoundError("no such directory")
+
+        with pytest.raises(FileNotFoundError, match="Failed to load real dataset"):
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
+
+    @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
+    @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
+    def test_generated_dataset_load_error_has_friendly_message(
+        self,
+        mock_simple_ds,
+        mock_load_real,
+        tmp_output_dir,
+    ):
+        """FileNotFoundError from SimpleImageDataset should include config context."""
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        config = _make_evaluate_config(tmp_output_dir)
+
+        mock_real_ds = MagicMock()
+        mock_real_ds.__len__ = MagicMock(return_value=10)
+        mock_load_real.return_value = mock_real_ds
+
+        mock_simple_ds.side_effect = FileNotFoundError("no such directory")
+
+        with pytest.raises(FileNotFoundError, match="Failed to load generated dataset"):
+            run_sample_selection_evaluate(config, "cpu", tmp_output_dir)
 
     @patch("src.experiments.sample_selection.evaluator.load_real_dataset")
     @patch("src.experiments.sample_selection.evaluator.SimpleImageDataset")
