@@ -35,10 +35,13 @@ def test_parse_selection_eval_path_unknown():
     """Test parsing path that doesn't match expected structure."""
     path = "some/random/path/evaluation.json"
     result = _parse_selection_eval_path(path)
-    # Should not crash, returns parsed components from whatever structure exists
-    assert "diffusion_variant" in result
-    assert "gen_config" in result
-    assert "selection" in result
+    # Should not crash; parses whatever structure exists from path components
+    # Path: some/random/path/evaluation.json
+    #   reports_dir=some/random/path, combo_dir=some/random, selection_eval_dir=some,
+    #   diffusion_dir=. → diffusion_variant=""
+    assert result["diffusion_variant"] == ""
+    assert result["gen_config"] == "random"
+    assert result["selection"] == "-"
 
 
 @pytest.mark.unit
@@ -203,6 +206,18 @@ def test_generate_best_per_metric_skips_all_nan():
     # rvs_fid is all NaN, should be skipped; rvs_precision should still appear
     assert "rvs_precision" in result
     assert "rvs_fid" not in result
+
+
+@pytest.mark.unit
+def test_generate_best_per_metric_no_key_metrics():
+    """Test that generate_best_per_metric returns fallback when no KEY_METRICS columns exist."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [{"experiment": "exp-a", "diffusion_variant": "ws", "ds_real": 100}]
+    )
+    result = generate_best_per_metric(df)
+    assert "No best-per-metric data available" in result
 
 
 @pytest.mark.component

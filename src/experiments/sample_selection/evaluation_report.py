@@ -91,7 +91,7 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
             "gen_config": gen_config,
             "selection": selection,
         }
-    except (IndexError, AttributeError):
+    except AttributeError:
         return {
             "diffusion_variant": "-",
             "gen_config": "-",
@@ -150,7 +150,14 @@ def load_selection_eval_results(
     Returns:
         List of dictionaries, each containing experiment name + flattened metrics.
     """
-    pattern = f"{base_dir}/{diffusion_pattern}/selection-eval/*/reports/evaluation.json"
+    pattern = str(
+        Path(base_dir)
+        / diffusion_pattern
+        / "selection-eval"
+        / "*"
+        / "reports"
+        / "evaluation.json"
+    )
     results = []
 
     for json_path in sorted(glob(pattern)):
@@ -267,9 +274,12 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
                     "metric": metric,
                     "best_experiment": best_row["experiment"],
                     "value": best_row[metric],
-                    "diffusion_variant": best_row.get("diffusion_variant", "-"),
+                    "diffusion_variant": best_row["diffusion_variant"],
                 }
             )
+
+    if not rows:
+        return "No best-per-metric data available.\n"
 
     result: Optional[str] = pd.DataFrame(rows).to_markdown(index=False, floatfmt=".4f")
     return result if result is not None else ""
@@ -323,7 +333,7 @@ def generate_report(
 
     # Save markdown
     report_md_path = output_path / "selection_eval_report.md"
-    with open(report_md_path, "w") as f:
+    with open(report_md_path, "w", encoding="utf-8") as f:
         f.write(report_text)
     _logger.info("Report saved to: %s", report_md_path)
 
