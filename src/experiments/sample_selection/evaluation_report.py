@@ -28,7 +28,9 @@ KEY_METRICS = [
     "rvg_recall",
 ]
 
-# Metrics where lower is better (FID); all others are higher-is-better
+# Metrics where lower is better (FID); all others are higher-is-better.
+# gvs_fid is excluded from KEY_METRICS (less important than real-vs-* metrics)
+# but included here for correct direction handling if used in downstream analysis.
 LOWER_IS_BETTER = {"rvs_fid", "rvg_fid", "gvs_fid"}
 
 # Prefix mapping for comparison pair flattening
@@ -67,9 +69,9 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
         # Extract diffusion variant from "diffusion-{train}"
         diffusion_name = diffusion_dir.name
         if diffusion_name.startswith("diffusion-"):
-            diffusion_variant = diffusion_name[len("diffusion-") :]
+            diffusion_variant = diffusion_name[len("diffusion-") :] or "-"
         else:
-            diffusion_variant = diffusion_name
+            diffusion_variant = diffusion_name or "-"
 
         # Extract gen and sel from "{gen}_{sel}"
         # rsplit from right: selection is always a simple token (topk, percentile,
@@ -162,7 +164,7 @@ def load_selection_eval_results(
 
     for json_path in sorted(glob(pattern)):
         try:
-            with open(json_path) as f:
+            with open(json_path, encoding="utf-8") as f:
                 metrics = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             _logger.warning("Skipping malformed file %s: %s", json_path, e)

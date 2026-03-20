@@ -38,8 +38,8 @@ def test_parse_selection_eval_path_unknown():
     # Should not crash; parses whatever structure exists from path components
     # Path: some/random/path/evaluation.json
     #   reports_dir=some/random/path, combo_dir=some/random, selection_eval_dir=some,
-    #   diffusion_dir=. → diffusion_variant=""
-    assert result["diffusion_variant"] == ""
+    #   diffusion_dir=. → diffusion_variant="-" (normalised from empty)
+    assert result["diffusion_variant"] == "-"
     assert result["gen_config"] == "random"
     assert result["selection"] == "-"
 
@@ -218,6 +218,13 @@ def test_generate_best_per_metric_no_key_metrics():
     )
     result = generate_best_per_metric(df)
     assert "No best-per-metric data available" in result
+
+
+@pytest.mark.component
+def test_load_selection_eval_results_empty_dir(tmp_path):
+    """Test that an empty directory returns no results."""
+    results = load_selection_eval_results(str(tmp_path))
+    assert results == []
 
 
 @pytest.mark.component
