@@ -56,14 +56,14 @@ def test_build_comparison_dataframe():
     """Test building DataFrame from results list."""
     results = [
         {
-            "experiment": "baseline_vanilla",
+            "experiment": "baseline__vanilla",
             "type": "baseline",
             "accuracy": 83.5,
             "balanced_accuracy": 0.65,
             "recall_1": 0.3,
         },
         {
-            "experiment": "ws_n100-gs3_topk_all",
+            "experiment": "ws__n100-gs3__topk__all",
             "type": "synthetic",
             "accuracy": 85.0,
             "balanced_accuracy": 0.75,
@@ -94,7 +94,7 @@ def test_generate_classifier_table():
     df = pd.DataFrame(
         [
             {
-                "experiment": "baseline_vanilla",
+                "experiment": "baseline__vanilla",
                 "type": "baseline",
                 "recall_1": 0.3,
                 "balanced_accuracy": 0.65,
@@ -102,7 +102,7 @@ def test_generate_classifier_table():
         ]
     )
     result = generate_classifier_table(df)
-    assert "baseline_vanilla" in result
+    assert "baseline__vanilla" in result
     assert "recall_1" in result
 
 
