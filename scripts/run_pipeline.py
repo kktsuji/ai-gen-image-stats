@@ -22,6 +22,7 @@ RUN_SELECTION_EVALUATE = False
 RUN_CLASSIFIER = False
 RUN_BASELINE_CLASSIFIER = False
 RUN_EVALUATION = False
+RUN_SUMMARIZE = False
 
 # Each variant: (name, extra CLI overrides for training)
 TRAIN_VARIANTS = [
@@ -356,6 +357,42 @@ def main() -> None:
             print(f"[EVAL] {exp_name}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
             proc = run(CLASSIFIER_CONFIG, overrides)
             proc.wait()
+
+    # ------------------------------------------------------------------
+    # Summarize: aggregate evaluation reports (CPU-only, no Docker)
+    # ------------------------------------------------------------------
+    if RUN_SUMMARIZE:
+        # Selection-eval aggregation
+        print("[SUMMARIZE] Generating selection-eval report")
+        subprocess.run(
+            [
+                "python3",
+                "-m",
+                "src.experiments.sample_selection.evaluation_report",
+                "--base-dir",
+                "outputs",
+                "--output-dir",
+                "outputs/evaluation_report",
+            ],
+            check=True,
+        )
+
+        # Classifier aggregation
+        print("[SUMMARIZE] Generating classifier evaluation report")
+        subprocess.run(
+            [
+                "python3",
+                "-m",
+                "src.experiments.classifier.evaluation_report",
+                "--base-dir",
+                "outputs/classifier",
+                "--output-dir",
+                "outputs/evaluation_report",
+                "--selection-summary-pattern",
+                "outputs/diffusion-*/selection-eval/*/reports/evaluation.json",
+            ],
+            check=True,
+        )
 
 
 if __name__ == "__main__":
