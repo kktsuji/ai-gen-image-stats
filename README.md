@@ -17,7 +17,7 @@ This repository implements a **Vertical Slice + Base Class** architecture patter
   - **Data Preparation**: Reproducible train/val splitting with JSON split files
   - **Diffusion Models**: DDPM for synthetic image generation
   - **Sample Selection**: Quality-based filtering of generated samples using k-NN distance in feature space
-  - **Classifiers**: InceptionV3, ResNet (50/101), WRN for classification tasks
+  - **Classifiers**: InceptionV3, ResNet (50/101), WRN for classification tasks with per-class evaluation metrics
   - **GANs**: (Planned) Adversarial training for image generation
 
 - **Comprehensive Testing**: Four-tier strategy from fast unit tests to GPU smoke tests
@@ -39,7 +39,8 @@ src/
 │   │   └── prepare.py      # Scanning and splitting logic
 │   ├── classifier/    # Classification models and training
 │   │   ├── config.py       # Config validation
-│   │   └── train.py        # Training logic
+│   │   ├── trainer.py      # Training and evaluation logic
+│   │   └── evaluation_report.py  # Cross-experiment evaluation reports
 │   ├── diffusion/     # Diffusion models (DDPM)
 │   │   ├── config.py       # Config validation
 │   │   ├── train.py        # Training logic
@@ -118,6 +119,16 @@ python -m src.main configs/classifier/baseline.yaml
 # Train with InceptionV3
 python -m src.main configs/classifier/inceptionv3.yaml
 ```
+
+### Evaluating a Classifier
+
+```bash
+# Evaluate a trained classifier on validation set
+python -m src.main configs/classifier.yaml --mode evaluate \
+  --evaluation.checkpoint outputs/classifier/checkpoints/best_model.pth
+```
+
+This runs inference on the validation set and produces `reports/evaluation.json` with per-class metrics (precision, recall, F1, AUC) and a confusion matrix.
 
 ### Training a Diffusion Model
 
@@ -833,7 +844,13 @@ This project is undergoing active refactoring according to the plan in [docs/res
 2. **Select Quality Samples** (optional): Filter generated images using sample selection to keep only realistic samples
 3. **Train Baseline Classifier**: Train on real data only
 4. **Train with Synthetic Augmentation**: Train on real + selected synthetic data
-5. **Compare Results**: Analyze performance differences using built-in tools
+5. **Evaluate Models**: Run evaluate mode to generate per-class metrics and comparison reports
+6. **Compare Results**: Analyze performance differences using built-in tools
+
+```bash
+# Run the full synthetic augmentation research pipeline
+python scripts/run_pipeline.py
+```
 
 ## Docker Usage
 
