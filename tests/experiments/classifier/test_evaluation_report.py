@@ -20,7 +20,7 @@ from src.experiments.classifier.evaluation_report import (
 @pytest.mark.unit
 def test_parse_experiment_name_baseline():
     """Test parsing baseline experiment names."""
-    result = _parse_experiment_name("baseline-vanilla")
+    result = _parse_experiment_name("baseline_vanilla")
     assert result["type"] == "baseline"
     assert result["baseline_strategy"] == "vanilla"
     assert result["diffusion_variant"] == "-"
@@ -29,7 +29,7 @@ def test_parse_experiment_name_baseline():
 @pytest.mark.unit
 def test_parse_experiment_name_synthetic():
     """Test parsing synthetic augmentation experiment names."""
-    result = _parse_experiment_name("ws-n100-gs3-topk-all")
+    result = _parse_experiment_name("ws_n100-gs3_topk_all")
     assert result["type"] == "synthetic"
     assert result["diffusion_variant"] == "ws"
     assert result["gen_config"] == "n100-gs3"
@@ -56,14 +56,14 @@ def test_build_comparison_dataframe():
     """Test building DataFrame from results list."""
     results = [
         {
-            "experiment": "baseline-vanilla",
+            "experiment": "baseline_vanilla",
             "type": "baseline",
             "accuracy": 83.5,
             "balanced_accuracy": 0.65,
             "recall_1": 0.3,
         },
         {
-            "experiment": "ws-n100-gs3-topk-all",
+            "experiment": "ws_n100-gs3_topk_all",
             "type": "synthetic",
             "accuracy": 85.0,
             "balanced_accuracy": 0.75,
@@ -94,7 +94,7 @@ def test_generate_classifier_table():
     df = pd.DataFrame(
         [
             {
-                "experiment": "baseline-vanilla",
+                "experiment": "baseline_vanilla",
                 "type": "baseline",
                 "recall_1": 0.3,
                 "balanced_accuracy": 0.65,
@@ -102,7 +102,7 @@ def test_generate_classifier_table():
         ]
     )
     result = generate_classifier_table(df)
-    assert "baseline-vanilla" in result
+    assert "baseline_vanilla" in result
     assert "recall_1" in result
 
 
@@ -136,7 +136,7 @@ def test_generate_best_per_metric():
 def test_load_evaluation_results(tmp_path):
     """Test loading evaluation results from directory structure."""
     # Create mock evaluation.json files
-    for exp_name in ["baseline-vanilla", "ws-n100-gs3-topk-all"]:
+    for exp_name in ["baseline_vanilla", "ws_n100-gs3_topk_all"]:
         reports_dir = tmp_path / exp_name / "reports"
         reports_dir.mkdir(parents=True)
         metrics = {"accuracy": 80.0, "balanced_accuracy": 0.7, "recall_1": 0.5}
@@ -145,14 +145,14 @@ def test_load_evaluation_results(tmp_path):
 
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 2
-    assert results[0]["experiment"] == "baseline-vanilla"
+    assert results[0]["experiment"] == "baseline_vanilla"
     assert results[0]["accuracy"] == 80.0
 
 
 @pytest.mark.component
 def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     """Test that reserved metadata keys in evaluation.json are skipped."""
-    reports_dir = tmp_path / "baseline-vanilla" / "reports"
+    reports_dir = tmp_path / "baseline_vanilla" / "reports"
     reports_dir.mkdir(parents=True)
     # Include a conflicting "type" key that should be skipped
     metrics = {"accuracy": 80.0, "type": "should_be_ignored", "experiment": "evil"}
@@ -163,7 +163,7 @@ def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     assert len(results) == 1
     # Reserved keys should NOT be overwritten by evaluation.json
     assert results[0]["type"] == "baseline"
-    assert results[0]["experiment"] == "baseline-vanilla"
+    assert results[0]["experiment"] == "baseline_vanilla"
     assert results[0]["accuracy"] == 80.0
 
 
@@ -171,7 +171,7 @@ def test_load_evaluation_results_skips_reserved_keys(tmp_path):
 def test_load_evaluation_results_skips_malformed_json(tmp_path):
     """Test that malformed evaluation.json files are skipped with a warning."""
     # Create one valid and one malformed evaluation.json
-    valid_dir = tmp_path / "baseline-vanilla" / "reports"
+    valid_dir = tmp_path / "baseline_vanilla" / "reports"
     valid_dir.mkdir(parents=True)
     with open(valid_dir / "evaluation.json", "w") as f:
         json.dump({"accuracy": 80.0}, f)
@@ -182,4 +182,4 @@ def test_load_evaluation_results_skips_malformed_json(tmp_path):
 
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 1
-    assert results[0]["experiment"] == "baseline-vanilla"
+    assert results[0]["experiment"] == "baseline_vanilla"

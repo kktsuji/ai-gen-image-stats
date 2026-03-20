@@ -33,34 +33,36 @@ KEY_METRICS = [
 def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     """Parse experiment name into dimension components.
 
+    Dimensions are separated by "_" (single underscore). Hyphens may appear
+    within a dimension value (e.g., "n100-gs3"). See configs/exec.py for the
+    naming convention.
+
     Expected formats:
-        - Synthetic augmentation: {diffusion_variant}-{gen_config}-{selection}-{aug_limit}
-          e.g., "ws-n100-gs3-topk-all"
-        - Baselines: "baseline-vanilla", "baseline-ws", "baseline-us"
+        - Synthetic: {train}_{gen}_{sel}_{cls}  e.g. "ws_n100-gs3_topk_all"
+        - Baseline:  baseline_{strategy}        e.g. "baseline_vanilla"
 
     Returns:
         Dictionary with keys: type, diffusion_variant, gen_config, selection, aug_limit
     """
-    if exp_name.startswith("baseline-"):
+    parts = exp_name.split("_")
+
+    if parts[0] == "baseline" and len(parts) == 2:
         return {
             "type": "baseline",
             "diffusion_variant": "-",
             "gen_config": "-",
             "selection": "-",
             "aug_limit": "-",
-            "baseline_strategy": exp_name.removeprefix("baseline-"),
+            "baseline_strategy": parts[1],
         }
 
-    parts = exp_name.split("-")
-    # Expected: {diffusion}-{gen_n}-{gen_gs}-{selection}-{aug_limit}
-    # e.g., ws-n100-gs3-topk-all → diffusion=ws, gen=n100-gs3, sel=topk, limit=all
-    if len(parts) >= 5:
+    if len(parts) == 4:
         return {
             "type": "synthetic",
             "diffusion_variant": parts[0],
-            "gen_config": f"{parts[1]}-{parts[2]}",
-            "selection": parts[3],
-            "aug_limit": parts[4],
+            "gen_config": parts[1],
+            "selection": parts[2],
+            "aug_limit": parts[3],
             "baseline_strategy": "-",
         }
 
@@ -240,9 +242,21 @@ def generate_report(
         gen_results = []
         for json_path in sorted(glob(selection_summary_pattern)):
             path = Path(json_path)
-            with open(json_path) as f:
-                summary = json.load(f)
-            gen_results.append({"path": str(path), **summary})
+            try:
+                with open(json_path) as f:
+                    summary = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                _logger.warning(f"Skipping malformed file {json_path}: {e}")
+                continue
+
+            entry: Dict[str, Any] = {"path": str(path)}
+            reserved_keys = set(entry.keys())
+            conflicts = reserved_keys & summary.keys()
+            if conflicts:
+                _logger.warning(f"Skipping reserved keys in {json_path}: {conflicts}")
+                summary = {k: v for k, v in summary.items() if k not in conflicts}
+            entry.update(summary)
+            gen_results.append(entry)
 
         if gen_results:
             gen_df = pd.DataFrame(gen_results)
