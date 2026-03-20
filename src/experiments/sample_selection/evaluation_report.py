@@ -38,6 +38,9 @@ _COMPARISON_PREFIXES = {
     "generated_vs_selected": "gvs",
 }
 
+# Known selection method tokens (selection names must not contain underscores)
+_KNOWN_SELECTIONS = {"topk", "percentile", "threshold"}
+
 
 def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
     """Parse selection-eval path into dimension components.
@@ -80,6 +83,9 @@ def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
             gen_config = combo
             selection = "-"
 
+        if selection not in _KNOWN_SELECTIONS and selection != "-":
+            _logger.warning("Unexpected selection token %r in %s", selection, json_path)
+
         return {
             "diffusion_variant": diffusion_variant,
             "gen_config": gen_config,
@@ -112,6 +118,12 @@ def _flatten_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
                 for metric_name, value in pair_metrics.items():
                     if isinstance(value, (int, float, str, bool, type(None))):
                         flat[f"{prefix}_{metric_name}"] = value
+                    else:
+                        _logger.debug(
+                            "Skipping non-scalar comparisons.%s.%s",
+                            pair_key,
+                            metric_name,
+                        )
 
     # Flatten dataset_sizes
     dataset_sizes = metrics.get("dataset_sizes", {})
@@ -119,6 +131,8 @@ def _flatten_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
         for size_key, value in dataset_sizes.items():
             if isinstance(value, (int, float, str, bool, type(None))):
                 flat[f"ds_{size_key}"] = value
+            else:
+                _logger.debug("Skipping non-scalar dataset_sizes.%s", size_key)
 
     return flat
 
