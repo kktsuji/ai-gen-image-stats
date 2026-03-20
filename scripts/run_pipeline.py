@@ -3,6 +3,7 @@ import subprocess
 
 DIFFUSION_CONFIG = "configs/diffusion.yaml"
 SELECTION_CONFIG = "configs/sample-selection.yaml"
+SELECTION_EVALUATE_CONFIG = "configs/sample-selection-evaluate.yaml"
 CLASSIFIER_CONFIG = "configs/classifier.yaml"
 
 # Naming convention:
@@ -17,6 +18,7 @@ CLASSIFIER_CONFIG = "configs/classifier.yaml"
 RUN_TRAINING = False
 RUN_GENERATION = False
 RUN_SELECTION = False
+RUN_SELECTION_EVALUATE = False
 RUN_CLASSIFIER = False
 RUN_BASELINE_CLASSIFIER = False
 RUN_EVALUATION = False
@@ -241,6 +243,29 @@ def main() -> None:
                         f"[SEL] {train_name}/{gen_name}/{sel_name}: {SELECTION_CONFIG} {' '.join(overrides)}"
                     )
                     proc = run(SELECTION_CONFIG, overrides)
+                    proc.wait()
+
+    # ------------------------------------------------------------------
+    # Selection Evaluation
+    # ------------------------------------------------------------------
+    if RUN_SELECTION_EVALUATE:
+        # outputs/diffusion-{train}/selection-eval/{gen}_{sel}/
+        for train_name, _ in TRAIN_VARIANTS:
+            for gen_name, _ in GEN_VARIANTS:
+                for sel_name, _ in SELECTION_VARIANTS:
+                    overrides = [
+                        "--output.base_dir",
+                        f"outputs/diffusion-{train_name}/selection-eval/{gen_name}_{sel_name}",
+                        "--data.generated.directory",
+                        f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
+                        "--data.selected.split_file",
+                        f"outputs/diffusion-{train_name}/selection/{gen_name}_{sel_name}/reports/accepted_samples.json",
+                    ]
+                    print(
+                        f"[SEL-EVAL] {train_name}/{gen_name}/{sel_name}: "
+                        f"{SELECTION_EVALUATE_CONFIG} {' '.join(overrides)}"
+                    )
+                    proc = run(SELECTION_EVALUATE_CONFIG, overrides)
                     proc.wait()
 
     # ------------------------------------------------------------------

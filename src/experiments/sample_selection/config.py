@@ -22,6 +22,8 @@ def validate_config(config: Dict[str, Any]) -> None:
     """Validate sample selection configuration.
 
     Checks that all required fields are present and have valid values.
+    Validation is mode-aware: select and evaluate modes have different
+    required sections.
 
     Args:
         config: Configuration dictionary to validate
@@ -31,31 +33,46 @@ def validate_config(config: Dict[str, Any]) -> None:
         KeyError: If required fields are missing
     """
     # Validate experiment type and mode
-    validate_experiment_section(config, "sample_selection", ["select"])
+    validate_experiment_section(config, "sample_selection", ["select", "evaluate"])
+
+    mode = config["mode"]
 
     # Validate compute section
     validate_compute_section(config)
 
-    # Validate output section (only logs needed, no checkpoints)
-    validate_output_section(config, required_subdirs=["logs", "reports", "selected"])
-
-    # Validate feature_extraction section
+    # Validate feature_extraction section (both modes)
     _validate_feature_extraction_section(config)
 
-    # Validate data section
-    _validate_data_section(config)
-
-    # Validate scoring section
-    _validate_scoring_section(config)
-
-    # Validate selection section
-    _validate_selection_section(config)
-
-    # Validate dataset_metrics section
-    _validate_dataset_metrics_section(config)
-
-    # Validate logging section
+    # Validate logging section (both modes)
     _validate_logging_section(config)
+
+    if mode == "select":
+        # Validate output section
+        validate_output_section(
+            config, required_subdirs=["logs", "reports", "selected"]
+        )
+
+        # Validate data section (select mode)
+        _validate_data_section_select(config)
+
+        # Validate scoring section
+        _validate_scoring_section(config)
+
+        # Validate selection section
+        _validate_selection_section(config)
+
+        # Validate dataset_metrics section
+        _validate_dataset_metrics_section(config)
+
+    elif mode == "evaluate":
+        # Validate output section (no selected subdir needed)
+        validate_output_section(config, required_subdirs=["logs", "reports"])
+
+        # Validate data section (evaluate mode)
+        _validate_data_section_evaluate(config)
+
+        # Validate evaluation section
+        _validate_evaluation_section(config)
 
 
 def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
@@ -111,8 +128,8 @@ def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
         )
 
 
-def _validate_data_section(config: Dict[str, Any]) -> None:
-    """Validate data configuration section.
+def _validate_data_section_select(config: Dict[str, Any]) -> None:
+    """Validate data configuration section for select mode.
 
     Args:
         config: Full configuration dictionary
@@ -346,3 +363,137 @@ def _validate_logging_section(config: Dict[str, Any]) -> None:
             f"Invalid logging.file_level: '{log['file_level']}'. "
             f"Must be one of {valid_log_levels}"
         )
+
+
+def _validate_data_section_evaluate(config: Dict[str, Any]) -> None:
+    """Validate data configuration section for evaluate mode.
+
+    Requires data.real and data.generated (same rules as select mode for
+    those subsections). Does NOT require data.label or data.class_name.
+    Optional data.selected: if present, requires split_file and split.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "data" not in config:
+        raise KeyError("Missing required config key: data")
+
+    data = config["data"]
+
+    # Validate data.real section (same rules as select mode)
+    if "real" not in data:
+        raise KeyError("Missing required config key: data.real")
+
+    real = data["real"]
+
+    if "source" not in real:
+        raise KeyError("Missing required field: data.real.source")
+    if real["source"] not in VALID_REAL_SOURCES:
+        raise ValueError(
+            f"Invalid data.real.source: '{real['source']}'. "
+            f"Must be one of {VALID_REAL_SOURCES}"
+        )
+
+    if real["source"] == "split_file":
+        if "split_file" not in real:
+            raise KeyError(
+                "Missing required field: data.real.split_file "
+                "(required when source='split_file')"
+            )
+        if not isinstance(real["split_file"], str) or not real["split_file"]:
+            raise ValueError("data.real.split_file must be a non-empty string")
+
+        if "split" not in real:
+            raise KeyError(
+                "Missing required field: data.real.split "
+                "(required when source='split_file')"
+            )
+        if real["split"] not in ("train", "val"):
+            raise ValueError(
+                f"Invalid data.real.split: '{real['split']}'. Must be 'train' or 'val'"
+            )
+
+        if "class_label" not in real:
+            raise KeyError(
+                "Missing required field: data.real.class_label "
+                "(required when source='split_file')"
+            )
+        class_label = real["class_label"]
+        if class_label is not None:
+            if not isinstance(class_label, int) or isinstance(class_label, bool):
+                raise ValueError(
+                    f"data.real.class_label must be null or a non-negative integer, "
+                    f"got {type(class_label).__name__}: {class_label!r}"
+                )
+            if class_label < 0:
+                raise ValueError(
+                    f"data.real.class_label must be null or a non-negative integer, "
+                    f"got {class_label}"
+                )
+
+    elif real["source"] == "directory":
+        if "directory" not in real:
+            raise KeyError(
+                "Missing required field: data.real.directory "
+                "(required when source='directory')"
+            )
+        if not isinstance(real["directory"], str) or not real["directory"]:
+            raise ValueError("data.real.directory must be a non-empty string")
+
+    # Validate data.generated section
+    if "generated" not in data:
+        raise KeyError("Missing required config key: data.generated")
+
+    generated = data["generated"]
+
+    if "directory" not in generated:
+        raise KeyError("Missing required field: data.generated.directory")
+    if not isinstance(generated["directory"], str) or not generated["directory"]:
+        raise ValueError("data.generated.directory must be a non-empty string")
+
+    # Validate optional data.selected section
+    if "selected" in data:
+        selected = data["selected"]
+
+        if "split_file" not in selected:
+            raise KeyError("Missing required field: data.selected.split_file")
+        if not isinstance(selected["split_file"], str) or not selected["split_file"]:
+            raise ValueError("data.selected.split_file must be a non-empty string")
+
+        if "split" not in selected:
+            raise KeyError("Missing required field: data.selected.split")
+        if selected["split"] != "train":
+            raise ValueError(
+                f"Invalid data.selected.split: '{selected['split']}'. Must be 'train'"
+            )
+
+
+def _validate_evaluation_section(config: Dict[str, Any]) -> None:
+    """Validate evaluation configuration section.
+
+    Requires evaluation.k as a positive integer.
+
+    Args:
+        config: Full configuration dictionary
+
+    Raises:
+        KeyError: If required keys are missing
+        ValueError: If values are invalid
+    """
+    if "evaluation" not in config:
+        raise KeyError("Missing required config key: evaluation")
+
+    evaluation = config["evaluation"]
+
+    if "k" not in evaluation:
+        raise KeyError("Missing required field: evaluation.k")
+    if (
+        isinstance(evaluation["k"], bool)
+        or not isinstance(evaluation["k"], int)
+        or evaluation["k"] < 1
+    ):
+        raise ValueError("evaluation.k must be a positive integer")

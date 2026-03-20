@@ -137,3 +137,39 @@ def write_summary(
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+
+
+def write_evaluation_report(
+    output_path: Path,
+    comparisons: Dict[str, Dict[str, float]],
+    dataset_sizes: Dict[str, int],
+    config: Dict[str, Any],
+) -> None:
+    """Write evaluation report as JSON.
+
+    Compares distribution-level metrics (FID, Precision, Recall, ROC-AUC,
+    PR-AUC) across dataset pairs (real vs generated, real vs selected,
+    generated vs selected).
+
+    Args:
+        output_path: Path to write the JSON file.
+        comparisons: Dict mapping pair names to metric dicts.
+        dataset_sizes: Dict mapping dataset names to sample counts.
+        config: Full experiment configuration (for reference).
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    report = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "mode": "evaluate",
+        "dataset_sizes": dataset_sizes,
+        "comparisons": comparisons,
+        "config": {
+            "feature_extraction": config.get("feature_extraction"),
+            "evaluation": config.get("evaluation"),
+        },
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2)

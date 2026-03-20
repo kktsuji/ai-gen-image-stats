@@ -55,7 +55,7 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
 
     # Load datasets
     try:
-        real_dataset = _load_real_dataset(data_config, transform)
+        real_dataset = load_real_dataset(data_config, transform)
     except (ValueError, FileNotFoundError) as e:
         raise type(e)(
             f"Failed to load real dataset (source={data_config['real']['source']}): {e}"
@@ -94,7 +94,7 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
     )
 
     # Create feature extraction model
-    model = _create_feature_model(fe_config["model"], device)
+    model = create_feature_model(fe_config["model"], device)
 
     # Extract features
     logger.info("Extracting features from real images...")
@@ -218,7 +218,7 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
     return reports_dir
 
 
-def _load_real_dataset(
+def load_real_dataset(
     data_config: Dict[str, Any],
     transform: Any,
 ) -> Any:
@@ -307,7 +307,7 @@ class _FilteredDataset:
         return list(self._filtered_paths)
 
 
-def _create_feature_model(model_name: str, device: str) -> torch.nn.Module:
+def create_feature_model(model_name: str, device: str) -> torch.nn.Module:
     """Create a pretrained feature extraction model.
 
     Args:

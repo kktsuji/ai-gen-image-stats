@@ -869,7 +869,6 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
     from src.experiments.sample_selection.config import (
         validate_config as validate_sample_selection_config,
     )
-    from src.experiments.sample_selection.selector import run_sample_selection
 
     validate_sample_selection_config(config)
 
@@ -877,7 +876,17 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
         config, "SAMPLE SELECTION EXPERIMENT STARTED"
     )
 
-    run_sample_selection(config, device, log_dir)
+    mode = config["mode"]
+    if mode == "select":
+        from src.experiments.sample_selection.selector import run_sample_selection
+
+        run_sample_selection(config, device, log_dir)
+    elif mode == "evaluate":
+        from src.experiments.sample_selection.evaluator import (
+            run_sample_selection_evaluate,
+        )
+
+        run_sample_selection_evaluate(config, device, log_dir)
 
     logger.info("")
     logger.info("Sample selection completed successfully!")

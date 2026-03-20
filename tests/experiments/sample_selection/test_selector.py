@@ -495,7 +495,7 @@ class TestEmptyDatasetValidation:
 
     def test_load_real_dataset_missing_split_file_raises(self):
         """_load_real_dataset propagates FileNotFoundError from SplitFileDataset."""
-        from src.experiments.sample_selection.selector import _load_real_dataset
+        from src.experiments.sample_selection.selector import load_real_dataset
 
         data_config = {
             "real": {
@@ -506,7 +506,7 @@ class TestEmptyDatasetValidation:
             },
         }
         with pytest.raises(FileNotFoundError, match="not found"):
-            _load_real_dataset(data_config, transform=None)
+            load_real_dataset(data_config, transform=None)
 
     def test_run_selection_wraps_real_dataset_error(self):
         """run_sample_selection wraps real dataset errors with context."""
@@ -532,7 +532,7 @@ class TestEmptyDatasetValidation:
         }
 
         with patch(
-            "src.experiments.sample_selection.selector._load_real_dataset",
+            "src.experiments.sample_selection.selector.load_real_dataset",
             side_effect=ValueError("No valid images found in /fake"),
         ):
             with pytest.raises(ValueError, match="Failed to load real dataset"):
@@ -563,7 +563,7 @@ class TestEmptyDatasetValidation:
 
         with (
             patch(
-                "src.experiments.sample_selection.selector._load_real_dataset",
+                "src.experiments.sample_selection.selector.load_real_dataset",
                 return_value=MagicMock(),
             ),
             patch(

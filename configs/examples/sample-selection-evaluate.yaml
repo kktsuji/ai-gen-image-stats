@@ -1,0 +1,46 @@
+# ------------------------------------------------------------------------------
+# SAMPLE SELECTION EVALUATE CONFIGURATION (EXAMPLE)
+# ------------------------------------------------------------------------------
+experiment: sample_selection # Name of the experiment to run
+mode: evaluate # Evaluate mode: compare real vs generated vs selected
+
+# Compute settings
+compute:
+  device: cuda # Device to use (cuda, cpu, auto)
+  seed: 42 # Random seed for reproducibility (null for no seed)
+
+# Feature extraction settings
+feature_extraction:
+  model: inceptionv3 # Feature extractor (inceptionv3, resnet50, resnet101, resnet152)
+  batch_size: 32 # Batch size for feature extraction
+  image_size: 299 # Image resize/crop size (299 for inceptionv3, 224 for resnet50/101/152)
+  num_workers: 4 # Number of data loading workers
+
+# Data sources
+data:
+  real:
+    source: split_file # How to load real images (split_file or directory)
+    split_file: "outputs/splits/train_val_split.json" # Path to split JSON file
+    split: train # Which split to use (train or val)
+    class_label: 0 # Filter to this class label (null to use all)
+  generated:
+    directory: "outputs/diffusion/generated" # Directory containing generated images
+  selected:
+    split_file: "outputs/sample_selection/reports/accepted_samples.json" # Path to accepted samples JSON
+    split: train # Must be 'train'
+
+# Evaluation settings
+evaluation:
+  k: 5 # Number of nearest neighbors for precision/recall
+
+# Output directories
+output:
+  base_dir: outputs/sample_selection_evaluate # Base output directory
+  subdirs:
+    logs: logs # Log files and config snapshot
+    reports: reports # Evaluation report JSON
+
+# Logging configuration
+logging:
+  console_level: INFO # Console log level
+  file_level: INFO # File log level

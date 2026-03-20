@@ -500,3 +500,116 @@ class TestValidateConfig:
         del config["output"]["subdirs"]["selected"]
         with pytest.raises(ValueError, match="selected"):
             validate_config(config)
+
+
+def _make_valid_evaluate_config():
+    """Create a valid evaluate mode config for testing.
+
+    Loads from configs/examples/sample-selection-evaluate.yaml to stay in sync
+    with the canonical example config (single source of truth).
+    """
+    config_path = _PROJECT_ROOT / "configs/examples/sample-selection-evaluate.yaml"
+    with open(config_path) as f:
+        return copy.deepcopy(yaml.safe_load(f))
+
+
+@pytest.mark.unit
+class TestValidateConfigEvaluateMode:
+    """Test configuration validation for evaluate mode."""
+
+    def test_valid_evaluate_config_passes(self):
+        """Test that a valid evaluate config passes validation."""
+        config = _make_valid_evaluate_config()
+        validate_config(config)  # Should not raise
+
+    def test_evaluate_mode_without_select_only_sections_passes(self):
+        """Evaluate mode should not require scoring/selection/dataset_metrics/label/class_name."""
+        config = _make_valid_evaluate_config()
+        # These should NOT be present in evaluate config and should pass
+        assert "scoring" not in config
+        assert "selection" not in config
+        assert "dataset_metrics" not in config
+        assert "label" not in config.get("data", {})
+        assert "class_name" not in config.get("data", {})
+        validate_config(config)  # Should not raise
+
+    def test_evaluate_mode_requires_evaluation_section(self):
+        """Evaluate mode must have an evaluation section."""
+        config = _make_valid_evaluate_config()
+        del config["evaluation"]
+        with pytest.raises(KeyError, match="evaluation"):
+            validate_config(config)
+
+    def test_evaluate_mode_requires_evaluation_k(self):
+        """Evaluate mode must have evaluation.k."""
+        config = _make_valid_evaluate_config()
+        del config["evaluation"]["k"]
+        with pytest.raises(KeyError, match="evaluation.k"):
+            validate_config(config)
+
+    def test_evaluate_mode_evaluation_k_must_be_positive_int(self):
+        """evaluation.k must be a positive integer."""
+        config = _make_valid_evaluate_config()
+        config["evaluation"]["k"] = 0
+        with pytest.raises(ValueError, match="evaluation.k"):
+            validate_config(config)
+
+    def test_evaluate_mode_evaluation_k_boolean_raises(self):
+        """evaluation.k must not be a boolean."""
+        config = _make_valid_evaluate_config()
+        config["evaluation"]["k"] = True
+        with pytest.raises(ValueError, match="evaluation.k"):
+            validate_config(config)
+
+    def test_evaluate_mode_output_requires_reports(self):
+        """Evaluate mode requires reports subdir."""
+        config = _make_valid_evaluate_config()
+        del config["output"]["subdirs"]["reports"]
+        with pytest.raises(ValueError, match="reports"):
+            validate_config(config)
+
+    def test_evaluate_mode_output_does_not_require_selected(self):
+        """Evaluate mode should NOT require selected subdir."""
+        config = _make_valid_evaluate_config()
+        assert "selected" not in config["output"]["subdirs"]
+        validate_config(config)  # Should not raise
+
+    # -- data.selected validation --
+
+    def test_evaluate_mode_selected_split_file_required(self):
+        """data.selected requires split_file when present."""
+        config = _make_valid_evaluate_config()
+        config["data"]["selected"] = {"split": "train"}
+        with pytest.raises(KeyError, match="data.selected.split_file"):
+            validate_config(config)
+
+    def test_evaluate_mode_selected_split_required(self):
+        """data.selected requires split when present."""
+        config = _make_valid_evaluate_config()
+        config["data"]["selected"] = {"split_file": "some/path.json"}
+        with pytest.raises(KeyError, match="data.selected.split"):
+            validate_config(config)
+
+    def test_evaluate_mode_selected_split_must_be_train(self):
+        """data.selected.split must be 'train'."""
+        config = _make_valid_evaluate_config()
+        config["data"]["selected"] = {
+            "split_file": "some/path.json",
+            "split": "val",
+        }
+        with pytest.raises(ValueError, match="data.selected.split"):
+            validate_config(config)
+
+    def test_evaluate_mode_selected_split_file_non_empty(self):
+        """data.selected.split_file must be non-empty."""
+        config = _make_valid_evaluate_config()
+        config["data"]["selected"] = {"split_file": "", "split": "train"}
+        with pytest.raises(ValueError, match="data.selected.split_file"):
+            validate_config(config)
+
+    def test_evaluate_mode_without_selected_passes(self):
+        """Evaluate mode should work without data.selected."""
+        config = _make_valid_evaluate_config()
+        if "selected" in config["data"]:
+            del config["data"]["selected"]
+        validate_config(config)  # Should not raise
