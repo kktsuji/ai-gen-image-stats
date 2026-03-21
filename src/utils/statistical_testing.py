@@ -215,6 +215,33 @@ def adjust_pvalues(
         )
 
 
+def apply_correction_with_nan(
+    pvalues: List[float],
+    method: str = "benjamini-hochberg",
+) -> List[float]:
+    """Apply multiple comparison correction, passing NaN values through.
+
+    Finite p-values are corrected together; NaN entries are preserved in place.
+
+    Args:
+        pvalues: List of raw p-values (may contain NaN).
+        method: Correction method for ``adjust_pvalues``.
+
+    Returns:
+        List of corrected p-values in the same order as input.
+    """
+    finite_mask = [math.isfinite(p) for p in pvalues]
+    finite_pvals = [p for p, m in zip(pvalues, finite_mask) if m]
+
+    if finite_pvals:
+        corrected_finite = adjust_pvalues(finite_pvals, method=method)
+    else:
+        corrected_finite = []
+
+    corrected_iter = iter(corrected_finite)
+    return [next(corrected_iter) if m else float("nan") for m in finite_mask]
+
+
 def compare_experiment_pair(
     baseline_values: Dict[str, np.ndarray],
     treatment_values: Dict[str, np.ndarray],
@@ -280,16 +307,7 @@ def compare_experiment_pair(
         raw_pvalues.append(p_val)
 
     # Apply multiple comparison correction
-    finite_mask = [math.isfinite(p) for p in raw_pvalues]
-    finite_pvals = [p for p, m in zip(raw_pvalues, finite_mask) if m]
-
-    if finite_pvals:
-        corrected_finite = adjust_pvalues(finite_pvals, method=correction_method)
-    else:
-        corrected_finite = []
-
-    corrected_iter = iter(corrected_finite)
-    corrected_all = [next(corrected_iter) if m else float("nan") for m in finite_mask]
+    corrected_all = apply_correction_with_nan(raw_pvalues, method=correction_method)
 
     results: List[ComparisonResult] = []
     for raw, p_corr in zip(raw_results, corrected_all):

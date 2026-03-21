@@ -598,6 +598,23 @@ def test_generate_statistical_comparison_table_matching_seeds():
 
 
 @pytest.mark.unit
+def test_aggregate_multi_seed_skips_duplicate_seeds():
+    """Test that experiments with duplicate seeds are excluded."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70},
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.72},  # duplicate seed
+            {"experiment": "exp-a", "seed": 1, "recall_1": 0.68},
+        ]
+    )
+
+    aggregated = aggregate_multi_seed(df, ["recall_1"])
+    assert "exp-a" not in aggregated
+
+
+@pytest.mark.unit
 def test_aggregate_multi_seed_skips_metric_with_nan():
     """Test that a metric with NaN for any seed is excluded (not misaligned)."""
     import numpy as np

@@ -9,6 +9,7 @@ from scipy import stats
 from src.utils.statistical_testing import (
     ComparisonResult,
     adjust_pvalues,
+    apply_correction_with_nan,
     cohens_d_paired,
     compare_experiment_pair,
     interpret_effect_size,
@@ -265,6 +266,42 @@ class TestAdjustPvalues:
         # The smallest raw p-value (index 1) should have the smallest adjusted
         assert adjusted[1] <= adjusted[0]
         assert adjusted[1] <= adjusted[2]
+
+
+class TestApplyCorrectionWithNan:
+    """Tests for apply_correction_with_nan."""
+
+    @pytest.mark.unit
+    def test_all_finite(self) -> None:
+        """All finite p-values should be corrected normally."""
+        pvals = [0.01, 0.04, 0.03]
+        result = apply_correction_with_nan(pvals, method="bonferroni")
+        assert len(result) == 3
+        assert all(math.isfinite(p) for p in result)
+
+    @pytest.mark.unit
+    def test_nan_passthrough(self) -> None:
+        """NaN p-values should be preserved in output."""
+        pvals = [0.01, float("nan"), 0.03]
+        result = apply_correction_with_nan(pvals, method="bonferroni")
+        assert math.isfinite(result[0])
+        assert math.isnan(result[1])
+        assert math.isfinite(result[2])
+        # Correction uses n=2 (only finite values), not n=3
+        assert result[0] == pytest.approx(0.02)
+        assert result[2] == pytest.approx(0.06)
+
+    @pytest.mark.unit
+    def test_all_nan(self) -> None:
+        """All NaN p-values should return all NaN."""
+        pvals = [float("nan"), float("nan")]
+        result = apply_correction_with_nan(pvals, method="bonferroni")
+        assert all(math.isnan(p) for p in result)
+
+    @pytest.mark.unit
+    def test_empty(self) -> None:
+        """Empty input should return empty output."""
+        assert apply_correction_with_nan([], method="bonferroni") == []
 
 
 class TestCompareExperimentPair:

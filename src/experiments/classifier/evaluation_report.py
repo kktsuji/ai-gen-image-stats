@@ -27,7 +27,7 @@ import pandas as pd
 
 from src.utils.statistical_testing import (
     ComparisonResult,
-    adjust_pvalues,
+    apply_correction_with_nan,
     cohens_d_paired,
     interpret_effect_size,
     paired_ttest,
@@ -232,6 +232,10 @@ def aggregate_multi_seed(
         if len(group) < 2:
             continue
 
+        if group["seed"].duplicated().any():
+            _logger.warning(f"Experiment {exp_name!r} has duplicate seeds, skipping")
+            continue
+
         # Sort by seed to ensure consistent pairing across experiments
         group = group.sort_values("seed")
 
@@ -432,16 +436,7 @@ def generate_statistical_comparison_table(
         return ""
 
     # Apply global multiple comparison correction across all tests
-    finite_mask = [math.isfinite(p) for p in raw_pvalues]
-    finite_pvals = [p for p, m in zip(raw_pvalues, finite_mask) if m]
-
-    if finite_pvals:
-        corrected_finite = adjust_pvalues(finite_pvals, method=correction_method)
-    else:
-        corrected_finite = []
-
-    corrected_iter = iter(corrected_finite)
-    corrected_all = [next(corrected_iter) if m else float("nan") for m in finite_mask]
+    corrected_all = apply_correction_with_nan(raw_pvalues, method=correction_method)
 
     # Build ComparisonResult objects and table rows
     all_results: List[tuple] = []
