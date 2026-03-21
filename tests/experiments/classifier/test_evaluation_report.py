@@ -457,7 +457,7 @@ def test_build_mean_std_dataframe_skips_metric_with_nan():
     result = build_mean_std_dataframe(df, ["recall_1", "f1_1"])
     assert len(result) == 1
     # recall_1 has NaN -> omitted
-    assert "recall_1" not in result.columns or pd.isna(result.iloc[0].get("recall_1"))
+    assert "recall_1" not in result.columns
     # f1_1 is complete -> present
     assert result.iloc[0]["f1_1"] == pytest.approx(0.66)
 

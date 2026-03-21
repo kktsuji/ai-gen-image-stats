@@ -414,19 +414,18 @@ def generate_statistical_comparison_table(
     all_raw_pvalues: List[float] = []
     syn_names_per_result: List[str] = []
 
-    bl_seeds = bl_values.get("_seeds")
+    bl_seeds = bl_values["_seeds"]  # always set by aggregate_multi_seed
 
     for syn_name, syn_vals in sorted(synthetics.items()):
         # Validate seed pairing: both must have the same seed set
-        syn_seeds = syn_vals.get("_seeds")
-        if bl_seeds is not None and syn_seeds is not None:
-            if not np.array_equal(bl_seeds, syn_seeds):
-                _logger.warning(
-                    f"Skipping {syn_name}: seed mismatch with baseline "
-                    f"(baseline seeds={bl_seeds.tolist()}, "
-                    f"treatment seeds={syn_seeds.tolist()})"
-                )
-                continue
+        syn_seeds = syn_vals["_seeds"]  # always set by aggregate_multi_seed
+        if not np.array_equal(bl_seeds, syn_seeds):
+            _logger.warning(
+                f"Skipping {syn_name}: seed mismatch with baseline "
+                f"(baseline seeds={bl_seeds.tolist()}, "
+                f"treatment seeds={syn_seeds.tolist()})"
+            )
+            continue
 
         raw_results, raw_pvalues = compute_raw_comparisons(
             bl_values, syn_vals, metric_names
