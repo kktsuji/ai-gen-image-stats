@@ -108,7 +108,15 @@ def _make_evaluate_config() -> dict:
     """Create a valid evaluate-mode config (no filesystem dependency)."""
     config = get_v2_default_config()
     config["mode"] = "evaluate"
-    config["evaluation"] = {"checkpoint": "path/to/checkpoint.pth"}
+    config["evaluation"] = {
+        "checkpoint": "path/to/checkpoint.pth",
+        "bootstrap": {
+            "enabled": False,
+            "n_bootstrap": 1000,
+            "confidence_level": 0.95,
+            "save_predictions": False,
+        },
+    }
     config["output"]["subdirs"]["reports"] = "reports"
     return config
 
@@ -652,18 +660,24 @@ class TestValidateBootstrapConfig:
         validate_config(config)  # should not raise
 
     def test_evaluate_mode_with_disabled_bootstrap(self):
-        """Disabled bootstrap config passes validation."""
+        """Disabled bootstrap config with all fields passes validation."""
         config = _make_evaluate_config()
         config["evaluation"]["bootstrap"] = {
             "enabled": False,
+            "n_bootstrap": 1000,
+            "confidence_level": 0.95,
+            "save_predictions": False,
         }
         validate_config(config)  # should not raise
 
     def test_evaluate_mode_without_bootstrap_section(self):
-        """Missing bootstrap section passes validation (optional)."""
+        """Missing bootstrap section raises KeyError in evaluate mode."""
         config = _make_evaluate_config()
         config["evaluation"].pop("bootstrap", None)
-        validate_config(config)  # should not raise
+        with pytest.raises(
+            KeyError, match="Missing required field: evaluation.bootstrap"
+        ):
+            validate_config(config)
 
     def test_bootstrap_missing_enabled(self):
         """bootstrap without enabled key raises KeyError."""
@@ -678,11 +692,23 @@ class TestValidateBootstrapConfig:
         ):
             validate_config(config)
 
+    def test_bootstrap_empty_dict_raises(self):
+        """Empty bootstrap dict raises KeyError for missing fields."""
+        config = _make_evaluate_config()
+        config["evaluation"]["bootstrap"] = {}
+        with pytest.raises(
+            KeyError, match="Missing required field: evaluation.bootstrap.enabled"
+        ):
+            validate_config(config)
+
     def test_bootstrap_enabled_not_bool(self):
         """bootstrap.enabled = 'yes' raises ValueError."""
         config = _make_evaluate_config()
         config["evaluation"]["bootstrap"] = {
             "enabled": "yes",
+            "n_bootstrap": 1000,
+            "confidence_level": 0.95,
+            "save_predictions": False,
         }
         with pytest.raises(
             ValueError, match="evaluation.bootstrap.enabled must be a boolean"
@@ -690,7 +716,7 @@ class TestValidateBootstrapConfig:
             validate_config(config)
 
     def test_bootstrap_missing_n_bootstrap(self):
-        """enabled bootstrap without n_bootstrap raises KeyError."""
+        """bootstrap without n_bootstrap raises KeyError."""
         config = _make_evaluate_config()
         config["evaluation"]["bootstrap"] = {
             "enabled": True,
@@ -699,6 +725,21 @@ class TestValidateBootstrapConfig:
         }
         with pytest.raises(
             KeyError, match="Missing required field: evaluation.bootstrap.n_bootstrap"
+        ):
+            validate_config(config)
+
+    def test_bootstrap_disabled_missing_field_raises(self):
+        """Disabled bootstrap still requires all fields."""
+        config = _make_evaluate_config()
+        config["evaluation"]["bootstrap"] = {
+            "enabled": False,
+            "n_bootstrap": 1000,
+            "confidence_level": 0.95,
+            # save_predictions missing
+        }
+        with pytest.raises(
+            KeyError,
+            match="Missing required field: evaluation.bootstrap.save_predictions",
         ):
             validate_config(config)
 

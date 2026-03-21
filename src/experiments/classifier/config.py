@@ -298,50 +298,41 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "reports" not in subdirs or subdirs["reports"] is None:
             raise ValueError("output.subdirs.reports is required for evaluate mode")
 
-        # Validate bootstrap configuration
-        bootstrap = evaluation.get("bootstrap", {})
-        if bootstrap:
-            if "enabled" not in bootstrap:
-                raise KeyError("Missing required field: evaluation.bootstrap.enabled")
-            if not isinstance(bootstrap["enabled"], bool):
-                raise ValueError("evaluation.bootstrap.enabled must be a boolean")
+        # Validate bootstrap configuration (required in evaluate mode)
+        if "bootstrap" not in evaluation:
+            raise KeyError(
+                "Missing required field: evaluation.bootstrap "
+                "(must be explicitly specified in evaluate mode)"
+            )
+        bootstrap = evaluation["bootstrap"]
 
-            if bootstrap["enabled"]:
-                if "n_bootstrap" not in bootstrap:
-                    raise KeyError(
-                        "Missing required field: evaluation.bootstrap.n_bootstrap"
-                    )
-                n_bootstrap = bootstrap["n_bootstrap"]
-                if (
-                    isinstance(n_bootstrap, bool)
-                    or not isinstance(n_bootstrap, int)
-                    or n_bootstrap < 1
-                ):
-                    raise ValueError(
-                        "evaluation.bootstrap.n_bootstrap must be a positive integer"
-                    )
+        for field in ("enabled", "n_bootstrap", "confidence_level", "save_predictions"):
+            if field not in bootstrap:
+                raise KeyError(f"Missing required field: evaluation.bootstrap.{field}")
 
-                if "confidence_level" not in bootstrap:
-                    raise KeyError(
-                        "Missing required field: evaluation.bootstrap.confidence_level"
-                    )
-                confidence_level = bootstrap["confidence_level"]
-                if (
-                    isinstance(confidence_level, bool)
-                    or not isinstance(confidence_level, (int, float))
-                    or confidence_level <= 0
-                    or confidence_level >= 1
-                ):
-                    raise ValueError(
-                        "evaluation.bootstrap.confidence_level must be a number "
-                        "in (0, 1)"
-                    )
+        if not isinstance(bootstrap["enabled"], bool):
+            raise ValueError("evaluation.bootstrap.enabled must be a boolean")
 
-                if "save_predictions" not in bootstrap:
-                    raise KeyError(
-                        "Missing required field: evaluation.bootstrap.save_predictions"
-                    )
-                if not isinstance(bootstrap["save_predictions"], bool):
-                    raise ValueError(
-                        "evaluation.bootstrap.save_predictions must be a boolean"
-                    )
+        if not isinstance(bootstrap["save_predictions"], bool):
+            raise ValueError("evaluation.bootstrap.save_predictions must be a boolean")
+
+        n_bootstrap = bootstrap["n_bootstrap"]
+        if (
+            isinstance(n_bootstrap, bool)
+            or not isinstance(n_bootstrap, int)
+            or n_bootstrap < 1
+        ):
+            raise ValueError(
+                "evaluation.bootstrap.n_bootstrap must be a positive integer"
+            )
+
+        confidence_level = bootstrap["confidence_level"]
+        if (
+            isinstance(confidence_level, bool)
+            or not isinstance(confidence_level, (int, float))
+            or confidence_level <= 0
+            or confidence_level >= 1
+        ):
+            raise ValueError(
+                "evaluation.bootstrap.confidence_level must be a number in (0, 1)"
+            )

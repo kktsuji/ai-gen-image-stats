@@ -20,9 +20,9 @@ class TestBootstrapClassificationMetrics:
     @pytest.fixture()
     def binary_data(self):
         """Create binary classification data for testing."""
-        rng = np.random.RandomState(42)
+        rng = np.random.default_rng(42)
         n = 100
-        targets = rng.randint(0, 2, size=n)
+        targets = rng.integers(0, 2, size=n)
         predictions = targets.copy()
         # Flip ~20% of predictions
         flip_mask = rng.random(n) < 0.2
@@ -177,13 +177,13 @@ class TestBootstrapClassificationMetrics:
 
     def test_multiclass_bootstrap(self):
         """Bootstrap CIs work for multiclass (>2 classes) classification."""
-        rng = np.random.RandomState(42)
+        rng = np.random.default_rng(42)
         n = 150
         num_classes = 3
-        targets = rng.randint(0, num_classes, size=n)
+        targets = rng.integers(0, num_classes, size=n)
         predictions = targets.copy()
         flip_mask = rng.random(n) < 0.2
-        predictions[flip_mask] = rng.randint(0, num_classes, size=flip_mask.sum())
+        predictions[flip_mask] = rng.integers(0, num_classes, size=int(flip_mask.sum()))
         probs = np.full((n, num_classes), 0.1)
         for i in range(n):
             probs[i, predictions[i]] = 0.8
