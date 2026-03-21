@@ -68,17 +68,18 @@ class TestPairedTtest:
         tr = bl + rng.normal(0.03, 0.01, size=10)
 
         t_stat, p_val = paired_ttest(bl, tr)
-        expected_t, expected_p = stats.ttest_rel(bl, tr)
+        # paired_ttest computes treatment - baseline, matching scipy(tr, bl)
+        expected_t, expected_p = stats.ttest_rel(tr, bl)
 
         assert t_stat == pytest.approx(float(expected_t))
         assert p_val == pytest.approx(float(expected_p))
 
     @pytest.mark.unit
     def test_list_input(self) -> None:
-        """Should accept list inputs (converted to arrays)."""
+        """Should accept list inputs (converted to arrays internally)."""
         bl = [0.72, 0.68, 0.75, 0.70, 0.66]
         tr = [0.78, 0.75, 0.77, 0.76, 0.71]
-        t_stat, p_val = paired_ttest(np.array(bl), np.array(tr))
+        t_stat, p_val = paired_ttest(bl, tr)  # type: ignore[arg-type]
         assert math.isfinite(t_stat)
         assert math.isfinite(p_val)
 
@@ -144,6 +145,30 @@ class TestCohensDPaired:
         treatment = np.array([0.70, 0.72, 0.69, 0.71, 0.70])
         d = cohens_d_paired(baseline, treatment)
         assert d < 0
+
+    @pytest.mark.unit
+    def test_n2_returns_uncorrected(self) -> None:
+        """n=2 should return uncorrected Cohen's d (correction not applicable)."""
+        baseline = np.array([0.60, 0.70])
+        treatment = np.array([0.80, 0.85])
+        d = cohens_d_paired(baseline, treatment)
+        # For n=2 (df=1), Hedges' correction is undefined, so raw d is returned.
+        # diffs = [0.20, 0.15], raw d = mean/std = 0.175/0.0354 ≈ 4.95
+        assert math.isfinite(d)
+        assert abs(d) > 1.0  # should be large, not zeroed out
+
+    @pytest.mark.unit
+    def test_n3_uses_exact_hedges(self) -> None:
+        """n≥3 should use exact Hedges' correction (smaller than raw d)."""
+        baseline = np.array([0.70, 0.72, 0.68])
+        treatment = np.array([0.80, 0.82, 0.78])
+        d = cohens_d_paired(baseline, treatment)
+
+        diffs = treatment - baseline
+        raw_d = float(np.mean(diffs)) / float(np.std(diffs, ddof=1))
+        # Exact correction for df=2 is ~0.564, so |g| < |raw_d|
+        assert abs(d) < abs(raw_d)
+        assert abs(d) > 0
 
 
 class TestInterpretEffectSize:

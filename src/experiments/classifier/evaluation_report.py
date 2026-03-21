@@ -25,7 +25,13 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from src.utils.statistical_testing import compare_experiment_pair
+from src.utils.statistical_testing import (
+    ComparisonResult,
+    adjust_pvalues,
+    cohens_d_paired,
+    interpret_effect_size,
+    paired_ttest,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -284,13 +290,9 @@ def build_mean_std_dataframe(
                     if len(values) > 1:
                         row[f"{metric}_std"] = float(values.std(ddof=1))
 
-                # Preserve CI columns if present (from bootstrap)
-                for suffix in ["_ci_lower", "_ci_upper"]:
-                    ci_col = f"{metric}{suffix}"
-                    if ci_col in group.columns:
-                        ci_values = group[ci_col].dropna()
-                        if len(ci_values) > 0:
-                            row[ci_col] = float(ci_values.mean())
+                # Note: bootstrap CI columns are not preserved for multi-seed
+                # aggregation because the CI of an average is not the average
+                # of the CIs. Use {metric}_std with the t-distribution instead.
 
         rows.append(row)
 
@@ -361,34 +363,78 @@ def generate_statistical_comparison_table(
 
     bl_values = baselines[selected_baseline]
 
-    # Collect all comparison results across all synthetics
-    all_results: List[tuple] = []  # (synthetic_name, ComparisonResult)
+    # Collect raw (uncorrected) results across ALL synthetics × metrics,
+    # so multiple comparison correction is applied globally.
+    raw_entries: List[Dict[str, Any]] = []
+    raw_pvalues: List[float] = []
+
     for syn_name, syn_vals in sorted(synthetics.items()):
-        # Find common metrics with matching seed counts
-        common_metrics = [
-            m
-            for m in metric_names
-            if m in bl_values
-            and m in syn_vals
-            and len(bl_values[m]) == len(syn_vals[m])
-        ]
-        if not common_metrics:
-            continue
+        for metric in metric_names:
+            if (
+                metric not in bl_values
+                or metric not in syn_vals
+                or len(bl_values[metric]) != len(syn_vals[metric])
+            ):
+                continue
 
-        comparisons = compare_experiment_pair(
-            bl_values,
-            syn_vals,
-            common_metrics,
-            alpha=alpha,
-            correction_method=correction_method,
-        )
-        for result in comparisons:
-            all_results.append((syn_name, result))
+            bl = bl_values[metric]
+            tr = syn_vals[metric]
 
-    if not all_results:
+            t_stat, p_val = paired_ttest(bl, tr)
+            d = cohens_d_paired(bl, tr)
+
+            raw_entries.append(
+                {
+                    "syn_name": syn_name,
+                    "metric": metric,
+                    "baseline_mean": float(np.mean(bl)),
+                    "baseline_std": (float(np.std(bl, ddof=1)) if len(bl) > 1 else 0.0),
+                    "treatment_mean": float(np.mean(tr)),
+                    "treatment_std": (
+                        float(np.std(tr, ddof=1)) if len(tr) > 1 else 0.0
+                    ),
+                    "mean_diff": float(np.mean(tr) - np.mean(bl)),
+                    "t_statistic": t_stat,
+                    "p_value": p_val,
+                    "cohens_d": d,
+                }
+            )
+            raw_pvalues.append(p_val)
+
+    if not raw_entries:
         return ""
 
-    # Build table
+    # Apply global multiple comparison correction across all tests
+    finite_mask = [math.isfinite(p) for p in raw_pvalues]
+    finite_pvals = [p for p, m in zip(raw_pvalues, finite_mask) if m]
+
+    if finite_pvals:
+        corrected_finite = adjust_pvalues(finite_pvals, method=correction_method)
+    else:
+        corrected_finite = []
+
+    corrected_iter = iter(corrected_finite)
+    corrected_all = [next(corrected_iter) if m else float("nan") for m in finite_mask]
+
+    # Build ComparisonResult objects and table rows
+    all_results: List[tuple] = []
+    for entry, p_corr in zip(raw_entries, corrected_all):
+        result = ComparisonResult(
+            metric=entry["metric"],
+            baseline_mean=entry["baseline_mean"],
+            baseline_std=entry["baseline_std"],
+            treatment_mean=entry["treatment_mean"],
+            treatment_std=entry["treatment_std"],
+            mean_diff=entry["mean_diff"],
+            t_statistic=entry["t_statistic"],
+            p_value=entry["p_value"],
+            p_value_corrected=p_corr,
+            cohens_d=entry["cohens_d"],
+            effect_size_interpretation=interpret_effect_size(entry["cohens_d"]),
+            significant=bool(math.isfinite(p_corr) and p_corr < alpha),
+        )
+        all_results.append((entry["syn_name"], result))
+
     rows: List[Dict[str, Any]] = []
     sig_count = 0
     for syn_name, r in all_results:
@@ -421,7 +467,7 @@ def generate_statistical_comparison_table(
     total = len(all_results)
     header_lines = [
         f"Baseline: **{selected_baseline}**",
-        f"Correction: {correction_method}, alpha={alpha}",
+        f"Correction: {correction_method} (global, n={total}), alpha={alpha}",
         f"Significant: {sig_count}/{total} comparisons",
         "",
     ]

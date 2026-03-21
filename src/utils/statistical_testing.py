@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 from scipy import stats
+from scipy.special import gammaln
 
 _logger = logging.getLogger(__name__)
 
@@ -69,7 +70,9 @@ def paired_ttest(
     if np.std(diffs, ddof=1) == 0:
         return (float("nan"), float("nan"))
 
-    t_stat, p_value = stats.ttest_rel(baseline_values, treatment_values)
+    # Compute as treatment - baseline so t > 0 means treatment is better,
+    # consistent with mean_diff and cohens_d sign convention.
+    t_stat, p_value = stats.ttest_rel(treatment_values, baseline_values)
     return (float(t_stat), float(p_value))
 
 
@@ -79,8 +82,10 @@ def cohens_d_paired(
 ) -> float:
     """Cohen's d for paired samples with Hedges' g correction.
 
-    Computes d = mean(diffs) / std(diffs, ddof=1), then applies Hedges'
-    correction factor (1 - 3/(4*(n-1) - 1)) to reduce small-sample bias.
+    Computes d = mean(diffs) / std(diffs, ddof=1), then applies the exact
+    Hedges' correction factor J(df) = Γ(df/2) / (√(df/2) · Γ((df-1)/2))
+    to reduce small-sample bias. The exact formula is used instead of the
+    approximation (1 - 3/(4*df - 1)) which breaks down for df <= 1.
 
     Args:
         baseline_values: Metric values from baseline runs, shape (n,).
@@ -111,8 +116,21 @@ def cohens_d_paired(
 
     d = float(np.mean(diffs)) / sd
 
-    # Hedges' correction factor for small sample bias
-    correction = 1.0 - 3.0 / (4.0 * (n - 1) - 1)
+    # Hedges' correction factor reduces small-sample bias.
+    # For df=1 (n=2) the exact gamma formula is undefined (Γ(0) = ±∞),
+    # so we return uncorrected Cohen's d. For df≥2 we use the exact formula:
+    # J(df) = Γ(df/2) / (√(df/2) · Γ((df-1)/2))
+    df = n - 1
+    if df < 2:
+        _logger.warning(
+            "Hedges' correction not applicable for n=2 (df=1); "
+            "returning uncorrected Cohen's d"
+        )
+        return d
+
+    correction = float(
+        np.exp(gammaln(df / 2) - gammaln((df - 1) / 2)) / np.sqrt(df / 2)
+    )
     return d * correction
 
 
