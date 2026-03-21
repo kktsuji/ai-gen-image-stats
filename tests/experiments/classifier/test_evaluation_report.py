@@ -15,6 +15,7 @@ from src.experiments.classifier.evaluation_report import (
     build_mean_std_dataframe,
     generate_best_per_metric,
     generate_classifier_table,
+    generate_report,
     generate_statistical_comparison_table,
     load_evaluation_results,
 )
@@ -664,3 +665,20 @@ def test_generate_statistical_comparison_table_invalid_alpha():
         generate_statistical_comparison_table(df, alpha=1.0)
     with pytest.raises(ValueError, match="alpha must be in"):
         generate_statistical_comparison_table(df, alpha=-0.5)
+
+
+@pytest.mark.unit
+def test_generate_report_invalid_alpha(tmp_path):
+    """Test that generate_report validates alpha early, even without multi-seed data."""
+    with pytest.raises(ValueError, match="alpha must be in"):
+        generate_report(
+            base_dir=str(tmp_path),
+            output_dir=str(tmp_path / "output"),
+            alpha=0.0,
+        )
+    with pytest.raises(ValueError, match="alpha must be in"):
+        generate_report(
+            base_dir=str(tmp_path),
+            output_dir=str(tmp_path / "output"),
+            alpha=1.5,
+        )

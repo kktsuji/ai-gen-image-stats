@@ -26,11 +26,8 @@ import numpy as np
 import pandas as pd
 
 from src.utils.statistical_testing import (
-    ComparisonResult,
-    apply_correction_with_nan,
-    cohens_d_paired,
-    interpret_effect_size,
-    paired_ttest,
+    compute_raw_comparisons,
+    finalize_comparisons,
 )
 
 _logger = logging.getLogger(__name__)
@@ -383,8 +380,9 @@ def generate_statistical_comparison_table(
 
     # Collect raw (uncorrected) results across ALL synthetics × metrics,
     # so multiple comparison correction is applied globally.
-    raw_entries: List[Dict[str, Any]] = []
-    raw_pvalues: List[float] = []
+    all_raw_results: List[dict] = []
+    all_raw_pvalues: List[float] = []
+    syn_names_per_result: List[str] = []
 
     bl_seeds = bl_values.get("_seeds")
 
@@ -400,66 +398,25 @@ def generate_statistical_comparison_table(
                 )
                 continue
 
-        for metric in metric_names:
-            if (
-                metric not in bl_values
-                or metric not in syn_vals
-                or len(bl_values[metric]) != len(syn_vals[metric])
-            ):
-                continue
+        raw_results, raw_pvalues = compute_raw_comparisons(
+            bl_values, syn_vals, metric_names
+        )
+        for _ in raw_results:
+            syn_names_per_result.append(syn_name)
+        all_raw_results.extend(raw_results)
+        all_raw_pvalues.extend(raw_pvalues)
 
-            bl = bl_values[metric]
-            tr = syn_vals[metric]
-
-            t_stat, p_val = paired_ttest(bl, tr)
-            d = cohens_d_paired(bl, tr)
-
-            raw_entries.append(
-                {
-                    "syn_name": syn_name,
-                    "metric": metric,
-                    "baseline_mean": float(np.mean(bl)),
-                    "baseline_std": (float(np.std(bl, ddof=1)) if len(bl) > 1 else 0.0),
-                    "treatment_mean": float(np.mean(tr)),
-                    "treatment_std": (
-                        float(np.std(tr, ddof=1)) if len(tr) > 1 else 0.0
-                    ),
-                    "mean_diff": float(np.mean(tr) - np.mean(bl)),
-                    "t_statistic": t_stat,
-                    "p_value": p_val,
-                    "cohens_d": d,
-                }
-            )
-            raw_pvalues.append(p_val)
-
-    if not raw_entries:
+    if not all_raw_results:
         return ""
 
-    # Apply global multiple comparison correction across all tests
-    corrected_all = apply_correction_with_nan(raw_pvalues, method=correction_method)
-
-    # Build ComparisonResult objects and table rows
-    all_results: List[tuple] = []
-    for entry, p_corr in zip(raw_entries, corrected_all):
-        result = ComparisonResult(
-            metric=entry["metric"],
-            baseline_mean=entry["baseline_mean"],
-            baseline_std=entry["baseline_std"],
-            treatment_mean=entry["treatment_mean"],
-            treatment_std=entry["treatment_std"],
-            mean_diff=entry["mean_diff"],
-            t_statistic=entry["t_statistic"],
-            p_value=entry["p_value"],
-            p_value_corrected=p_corr,
-            cohens_d=entry["cohens_d"],
-            effect_size_interpretation=interpret_effect_size(entry["cohens_d"]),
-            significant=bool(math.isfinite(p_corr) and p_corr < alpha),
-        )
-        all_results.append((entry["syn_name"], result))
+    # Apply global correction and build ComparisonResult objects
+    comparison_results = finalize_comparisons(
+        all_raw_results, all_raw_pvalues, alpha, correction_method
+    )
 
     rows: List[Dict[str, Any]] = []
     sig_count = 0
-    for syn_name, r in all_results:
+    for syn_name, r in zip(syn_names_per_result, comparison_results):
         sig_marker = "*" if r.significant else ""
         rows.append(
             {
@@ -486,7 +443,7 @@ def generate_statistical_comparison_table(
     table_df = pd.DataFrame(rows)
     table_str: Optional[str] = table_df.to_markdown(index=False, disable_numparse=True)
 
-    total = len(all_results)
+    total = len(comparison_results)
     header_lines = [
         f"Baseline: **{selected_baseline}**",
         f"Correction: {correction_method} (global, n={total}), alpha={alpha}",
@@ -686,6 +643,9 @@ def generate_report(
         alpha: Significance threshold for statistical testing.
         correction_method: P-value correction method.
     """
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 

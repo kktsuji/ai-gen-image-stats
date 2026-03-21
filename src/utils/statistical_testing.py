@@ -242,34 +242,28 @@ def apply_correction_with_nan(
     return [next(corrected_iter) if m else float("nan") for m in finite_mask]
 
 
-def compare_experiment_pair(
+def compute_raw_comparisons(
     baseline_values: Dict[str, np.ndarray],
     treatment_values: Dict[str, np.ndarray],
     metric_names: List[str],
-    alpha: float = 0.05,
-    correction_method: str = "benjamini-hochberg",
-) -> List[ComparisonResult]:
-    """Compare two experiments across multiple metrics with correction.
+) -> Tuple[List[dict], List[float]]:
+    """Compute raw paired t-test and Cohen's d for each metric (no correction).
 
-    Runs paired t-test and Cohen's d for each metric, then applies
-    multiple comparison correction to the p-values.
+    This is the shared building block for both single-pair comparison
+    (``compare_experiment_pair``) and multi-pair global correction
+    (``generate_statistical_comparison_table``).
 
     Args:
         baseline_values: Dict mapping metric name -> array of seed values.
         treatment_values: Dict mapping metric name -> array of seed values.
         metric_names: List of metric names to compare.
-        alpha: Significance threshold (after correction). Must be in (0, 1).
-        correction_method: P-value correction method.
 
     Returns:
-        List of ComparisonResult, one per metric.
-
-    Raises:
-        ValueError: If alpha is not in (0, 1).
+        Tuple of (raw_results, raw_pvalues) where raw_results is a list of
+        dicts with keys: metric, baseline_mean, baseline_std, treatment_mean,
+        treatment_std, mean_diff, t_statistic, p_value, cohens_d; and
+        raw_pvalues is a parallel list of uncorrected p-values.
     """
-    if not (0 < alpha < 1):
-        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-
     raw_results: List[dict] = []
     raw_pvalues: List[float] = []
 
@@ -306,7 +300,32 @@ def compare_experiment_pair(
         )
         raw_pvalues.append(p_val)
 
-    # Apply multiple comparison correction
+    return raw_results, raw_pvalues
+
+
+def finalize_comparisons(
+    raw_results: List[dict],
+    raw_pvalues: List[float],
+    alpha: float = 0.05,
+    correction_method: str = "benjamini-hochberg",
+) -> List[ComparisonResult]:
+    """Apply multiple comparison correction and build ComparisonResult objects.
+
+    Args:
+        raw_results: Raw comparison dicts from ``compute_raw_comparisons``.
+        raw_pvalues: Parallel list of uncorrected p-values.
+        alpha: Significance threshold (after correction). Must be in (0, 1).
+        correction_method: P-value correction method.
+
+    Returns:
+        List of ComparisonResult, one per entry in raw_results.
+
+    Raises:
+        ValueError: If alpha is not in (0, 1).
+    """
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     corrected_all = apply_correction_with_nan(raw_pvalues, method=correction_method)
 
     results: List[ComparisonResult] = []
@@ -329,3 +348,34 @@ def compare_experiment_pair(
         )
 
     return results
+
+
+def compare_experiment_pair(
+    baseline_values: Dict[str, np.ndarray],
+    treatment_values: Dict[str, np.ndarray],
+    metric_names: List[str],
+    alpha: float = 0.05,
+    correction_method: str = "benjamini-hochberg",
+) -> List[ComparisonResult]:
+    """Compare two experiments across multiple metrics with correction.
+
+    Runs paired t-test and Cohen's d for each metric, then applies
+    multiple comparison correction to the p-values.
+
+    Args:
+        baseline_values: Dict mapping metric name -> array of seed values.
+        treatment_values: Dict mapping metric name -> array of seed values.
+        metric_names: List of metric names to compare.
+        alpha: Significance threshold (after correction). Must be in (0, 1).
+        correction_method: P-value correction method.
+
+    Returns:
+        List of ComparisonResult, one per metric.
+
+    Raises:
+        ValueError: If alpha is not in (0, 1).
+    """
+    raw_results, raw_pvalues = compute_raw_comparisons(
+        baseline_values, treatment_values, metric_names
+    )
+    return finalize_comparisons(raw_results, raw_pvalues, alpha, correction_method)

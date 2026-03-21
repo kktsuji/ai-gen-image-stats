@@ -12,6 +12,8 @@ from src.utils.statistical_testing import (
     apply_correction_with_nan,
     cohens_d_paired,
     compare_experiment_pair,
+    compute_raw_comparisons,
+    finalize_comparisons,
     interpret_effect_size,
     paired_ttest,
 )
@@ -421,3 +423,103 @@ class TestCompareExperimentPair:
             compare_experiment_pair(bl, tr, ["m"], alpha=0.0)
         with pytest.raises(ValueError, match="alpha must be in"):
             compare_experiment_pair(bl, tr, ["m"], alpha=1.0)
+
+
+class TestComputeRawComparisons:
+    """Tests for compute_raw_comparisons."""
+
+    @pytest.mark.unit
+    def test_returns_raw_results_and_pvalues(self) -> None:
+        """Should return parallel lists of raw dicts and p-values."""
+        bl = {"recall_1": np.array([0.72, 0.68, 0.75, 0.70, 0.66])}
+        tr = {"recall_1": np.array([0.78, 0.75, 0.77, 0.76, 0.71])}
+
+        raw_results, raw_pvalues = compute_raw_comparisons(bl, tr, ["recall_1"])
+
+        assert len(raw_results) == 1
+        assert len(raw_pvalues) == 1
+        assert raw_results[0]["metric"] == "recall_1"
+        assert math.isfinite(raw_pvalues[0])
+
+    @pytest.mark.unit
+    def test_multiple_metrics(self) -> None:
+        """Should return one entry per valid metric."""
+        bl = {
+            "m1": np.array([0.70, 0.72, 0.68]),
+            "m2": np.array([0.60, 0.62, 0.58]),
+        }
+        tr = {
+            "m1": np.array([0.80, 0.82, 0.78]),
+            "m2": np.array([0.65, 0.67, 0.63]),
+        }
+
+        raw_results, raw_pvalues = compute_raw_comparisons(bl, tr, ["m1", "m2"])
+        assert len(raw_results) == 2
+        assert len(raw_pvalues) == 2
+
+    @pytest.mark.unit
+    def test_missing_metric_skipped(self) -> None:
+        """Missing metric should be skipped without error."""
+        bl = {"m1": np.array([0.7, 0.8])}
+        tr = {"m2": np.array([0.7, 0.8])}
+
+        raw_results, raw_pvalues = compute_raw_comparisons(bl, tr, ["m1", "m2"])
+        assert len(raw_results) == 0
+        assert len(raw_pvalues) == 0
+
+
+class TestFinalizeComparisons:
+    """Tests for finalize_comparisons."""
+
+    @pytest.mark.unit
+    def test_applies_correction_and_builds_results(self) -> None:
+        """Should apply correction and return ComparisonResult objects."""
+        bl = {"m": np.array([0.70, 0.72, 0.68, 0.71, 0.69])}
+        tr = {"m": np.array([0.80, 0.83, 0.77, 0.81, 0.79])}
+
+        raw_results, raw_pvalues = compute_raw_comparisons(bl, tr, ["m"])
+        results = finalize_comparisons(raw_results, raw_pvalues, alpha=0.05)
+
+        assert len(results) == 1
+        assert isinstance(results[0], ComparisonResult)
+        assert math.isfinite(results[0].p_value_corrected)
+        assert results[0].effect_size_interpretation in {
+            "negligible",
+            "small",
+            "medium",
+            "large",
+        }
+
+    @pytest.mark.unit
+    def test_invalid_alpha(self) -> None:
+        """Invalid alpha should raise ValueError."""
+        with pytest.raises(ValueError, match="alpha must be in"):
+            finalize_comparisons([], [], alpha=0.0)
+
+    @pytest.mark.unit
+    def test_consistent_with_compare_experiment_pair(self) -> None:
+        """compute_raw + finalize should produce same results as compare_experiment_pair."""
+        bl = {
+            "m1": np.array([0.72, 0.68, 0.75, 0.70, 0.66]),
+            "m2": np.array([0.60, 0.62, 0.58, 0.61, 0.59]),
+        }
+        tr = {
+            "m1": np.array([0.78, 0.75, 0.77, 0.76, 0.71]),
+            "m2": np.array([0.66, 0.68, 0.61, 0.67, 0.63]),
+        }
+        metrics = ["m1", "m2"]
+
+        # Via the combined function
+        combined = compare_experiment_pair(bl, tr, metrics, alpha=0.05)
+
+        # Via the two-step approach
+        raw_results, raw_pvalues = compute_raw_comparisons(bl, tr, metrics)
+        two_step = finalize_comparisons(raw_results, raw_pvalues, alpha=0.05)
+
+        assert len(combined) == len(two_step)
+        for c, t in zip(combined, two_step):
+            assert c.metric == t.metric
+            assert c.p_value == pytest.approx(t.p_value)
+            assert c.p_value_corrected == pytest.approx(t.p_value_corrected)
+            assert c.cohens_d == pytest.approx(t.cohens_d)
+            assert c.significant == t.significant
