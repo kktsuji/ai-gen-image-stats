@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 from src.utils.data.loaders import (
     _make_worker_init_fn,
@@ -254,7 +254,7 @@ def test_create_train_loader_weighted_sampler(tmp_path):
         balancing_config=balancing_config,
     )
     assert isinstance(loader, DataLoader)
-    assert loader.sampler is not None
+    assert isinstance(loader.sampler, WeightedRandomSampler)
 
 
 @pytest.mark.unit
@@ -280,15 +280,38 @@ def test_create_train_loader_downsampling(tmp_path):
         seed=42,
     )
     assert isinstance(loader, DataLoader)
-    assert len(loader.dataset) > 0  # type: ignore[arg-type]
+    assert len(loader.dataset) <= 8  # type: ignore[arg-type]  # downsampled from 8
 
 
 @pytest.mark.unit
 def test_create_train_loader_upsampling(tmp_path):
-    """Test upsampling balancing path in create_train_loader."""
+    """Test upsampling balancing path in create_train_loader with imbalanced data."""
     from torchvision import transforms
 
-    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    # Create imbalanced dataset: class0 has 6 samples, class1 has 2
+    # _create_split_json creates equal per-class, so build manually
+    class_names = ["0.Class0", "1.Class1"]
+    train_entries = []
+    classes_dict = {name: idx for idx, name in enumerate(class_names)}
+    images_dir = tmp_path / "images"
+    for idx, (class_name, count) in enumerate(zip(class_names, [6, 2])):
+        class_dir = images_dir / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(count):
+            img_path = class_dir / f"train_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            train_entries.append({"path": str(img_path), "label": idx})
+    split_data = {
+        "metadata": {"classes": classes_dict},
+        "train": train_entries,
+        "val": [],
+    }
+    split_file = tmp_path / "split.json"
+    with open(split_file, "w") as f:
+        json.dump(split_data, f)
+
     transform = transforms.Compose(
         [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
     )
@@ -298,7 +321,7 @@ def test_create_train_loader_upsampling(tmp_path):
         "upsampling": {"enabled": True, "target_ratio": 1.0},
     }
     loader = create_train_loader(
-        split_file=split_file,
+        split_file=str(split_file),
         batch_size=2,
         transform=transform,
         num_workers=0,
@@ -306,7 +329,8 @@ def test_create_train_loader_upsampling(tmp_path):
         seed=42,
     )
     assert isinstance(loader, DataLoader)
-    assert len(loader.dataset) >= 8  # type: ignore[arg-type]
+    # Original 8 samples (6+2); upsampling minority to match majority adds 4 → 12
+    assert len(loader.dataset) > 8  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
