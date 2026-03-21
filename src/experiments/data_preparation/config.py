@@ -49,7 +49,11 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError(f"Class '{class_name}' path must be a non-empty string")
         if "label" not in class_entry:
             raise KeyError(f"Class '{class_name}' missing required key: 'label'")
-        if not isinstance(class_entry["label"], int) or class_entry["label"] < 0:
+        if (
+            isinstance(class_entry["label"], bool)
+            or not isinstance(class_entry["label"], int)
+            or class_entry["label"] < 0
+        ):
             raise ValueError(
                 f"Class '{class_name}' label must be a non-negative integer"
             )

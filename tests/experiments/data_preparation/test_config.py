@@ -180,6 +180,14 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="non-negative integer"):
             validate_config(config)
 
+    def test_bool_label_raises(self):
+        """Test that boolean label raises ValueError (bool is subclass of int)."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": True}
+        config["classes"]["abnormal"] = {"path": "data/y", "label": False}
+        with pytest.raises(ValueError, match="non-negative integer"):
+            validate_config(config)
+
     def test_duplicate_labels_raises(self):
         """Test that duplicate labels raise ValueError."""
         config = _make_valid_config()
