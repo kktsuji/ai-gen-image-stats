@@ -208,14 +208,20 @@ def _build_metric_fns(
 
             scalar_fns[name] = _pr_auc
 
-        elif name.startswith("precision_"):
-            prf_metrics[name] = ("precision", int(name.split("_")[1]))
-
-        elif name.startswith("recall_"):
-            prf_metrics[name] = ("recall", int(name.split("_")[1]))
-
-        elif name.startswith("f1_"):
-            prf_metrics[name] = ("f1", int(name.split("_")[1]))
+        elif name.startswith(("precision_", "recall_", "f1_")):
+            kind = name.split("_")[0]
+            try:
+                cls_idx = int(name.split("_")[1])
+            except ValueError:
+                _logger.warning(f"Cannot parse class index from metric: {name}")
+                continue
+            if cls_idx >= num_classes:
+                _logger.warning(
+                    f"Class index {cls_idx} out of range for "
+                    f"{num_classes} classes: {name}"
+                )
+                continue
+            prf_metrics[name] = (kind, cls_idx)
 
         else:
             _logger.warning(f"Unknown metric for bootstrap: {name}")
