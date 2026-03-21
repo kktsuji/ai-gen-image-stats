@@ -1,6 +1,7 @@
 import os
 import subprocess
 
+DATA_PREPARATION_CONFIG = "configs/data-preparation.yaml"
 DIFFUSION_CONFIG = "configs/diffusion.yaml"
 SELECTION_CONFIG = "configs/sample-selection.yaml"
 SELECTION_EVALUATE_CONFIG = "configs/sample-selection-evaluate.yaml"
@@ -14,6 +15,7 @@ CLASSIFIER_CONFIG = "configs/classifier.yaml"
 #   Baseline:   baseline__{strategy}           e.g. baseline__vanilla
 
 # ON/OFF switches for each experiment phase
+RUN_DATA_PREPARATION = False
 RUN_TRAINING = False
 RUN_GENERATION = False
 RUN_SELECTION = False
@@ -168,6 +170,15 @@ def run(
 
 
 def main() -> None:
+    # ------------------------------------------------------------------
+    # Data Preparation: create train/val split
+    # ------------------------------------------------------------------
+    if RUN_DATA_PREPARATION:
+        # outputs/splits-seed{N}-tr{R}/train_val_split.json
+        print(f"[DATA-PREP] {DATA_PREPARATION_CONFIG}")
+        proc = run(DATA_PREPARATION_CONFIG, [])
+        proc.wait()
+
     # ------------------------------------------------------------------
     # Training (max 2 parallel, sliding window)
     # ------------------------------------------------------------------
@@ -378,6 +389,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     if RUN_SUMMARIZE:
         # Selection-eval aggregation
+        # outputs/evaluation_report/selection_evaluation_summary.json
         print("[SUMMARIZE] Generating selection-eval report")
         subprocess.run(
             [
@@ -393,6 +405,7 @@ def main() -> None:
         )
 
         # Classifier aggregation
+        # outputs/evaluation_report/classifier_evaluation_summary.json
         print("[SUMMARIZE] Generating classifier evaluation report")
         subprocess.run(
             [
