@@ -211,14 +211,16 @@ def aggregate_multi_seed(
 ) -> Dict[str, Dict[str, np.ndarray]]:
     """Aggregate multi-seed results by experiment name.
 
-    Groups rows by experiment name and collects metric values across seeds.
+    Groups rows by experiment name, sorts by seed, and collects metric values.
+    A special "_seeds" key stores the sorted seed indices for pairing validation.
 
     Args:
         df: DataFrame with "experiment", "seed", and metric columns.
         metric_names: List of metric column names to aggregate.
 
     Returns:
-        Dict mapping experiment_name -> {metric_name -> np.ndarray of seed values}.
+        Dict mapping experiment_name -> {metric_name -> np.ndarray of seed values,
+        "_seeds" -> np.ndarray of seed indices}.
         Only includes experiments with >= 2 seeds.
     """
     if "seed" not in df.columns:
@@ -230,14 +232,19 @@ def aggregate_multi_seed(
         if len(group) < 2:
             continue
 
+        # Sort by seed to ensure consistent pairing across experiments
+        group = group.sort_values("seed")
+
         metric_arrays: Dict[str, np.ndarray] = {}
+        metric_arrays["_seeds"] = np.array(group["seed"].values, dtype=np.int64)
+
         for metric in metric_names:
             if metric in group.columns:
                 values = group[metric].dropna().values
                 if len(values) >= 2:
                     metric_arrays[metric] = np.array(values, dtype=np.float64)
 
-        if metric_arrays:
+        if len(metric_arrays) > 1:  # more than just "_seeds"
             aggregated[str(exp_name)] = metric_arrays
 
     return aggregated
@@ -369,7 +376,20 @@ def generate_statistical_comparison_table(
     raw_entries: List[Dict[str, Any]] = []
     raw_pvalues: List[float] = []
 
+    bl_seeds = bl_values.get("_seeds")
+
     for syn_name, syn_vals in sorted(synthetics.items()):
+        # Validate seed pairing: both must have the same seed set
+        syn_seeds = syn_vals.get("_seeds")
+        if bl_seeds is not None and syn_seeds is not None:
+            if not np.array_equal(bl_seeds, syn_seeds):
+                _logger.warning(
+                    f"Skipping {syn_name}: seed mismatch with baseline "
+                    f"(baseline seeds={bl_seeds.tolist()}, "
+                    f"treatment seeds={syn_seeds.tolist()})"
+                )
+                continue
+
         for metric in metric_names:
             if (
                 metric not in bl_values

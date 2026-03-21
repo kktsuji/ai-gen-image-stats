@@ -345,6 +345,10 @@ def test_aggregate_multi_seed():
     assert "exp-b" in aggregated
     assert len(aggregated["exp-a"]["recall_1"]) == 3
     assert len(aggregated["exp-b"]["recall_1"]) == 2
+    # Verify _seeds key is present and sorted
+    assert "_seeds" in aggregated["exp-a"]
+    assert list(aggregated["exp-a"]["_seeds"]) == [0, 1, 2]
+    assert list(aggregated["exp-b"]["_seeds"]) == [0, 1]
 
 
 @pytest.mark.unit
@@ -507,3 +511,87 @@ def test_generate_classifier_table_with_mean_std():
     result = generate_classifier_table(df)
     assert "baseline__vanilla" in result
     assert "+/-" in result
+
+
+@pytest.mark.unit
+def test_aggregate_multi_seed_sorts_by_seed():
+    """Test that seeds are sorted numerically, not lexicographically."""
+    import numpy as np
+    import pandas as pd
+
+    # Insert seeds out of order to verify sorting
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 10, "recall_1": 0.90},
+            {"experiment": "exp-a", "seed": 2, "recall_1": 0.70},
+            {"experiment": "exp-a", "seed": 1, "recall_1": 0.60},
+        ]
+    )
+
+    aggregated = aggregate_multi_seed(df, ["recall_1"])
+    assert list(aggregated["exp-a"]["_seeds"]) == [1, 2, 10]
+    # Values should follow seed order, not insertion order
+    np.testing.assert_array_equal(aggregated["exp-a"]["recall_1"], [0.60, 0.70, 0.90])
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table_mismatched_seeds():
+    """Test that mismatched seeds between baseline and synthetic are skipped."""
+    import pandas as pd
+
+    rows = []
+    # Baseline has seeds 0, 1, 2
+    for seed, val in [(0, 0.70), (1, 0.72), (2, 0.74)]:
+        rows.append(
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": seed,
+                "recall_1": val,
+            }
+        )
+    # Synthetic has seeds 1, 2, 3 (mismatched — seed 0 missing, seed 3 extra)
+    for seed, val in [(1, 0.80), (2, 0.82), (3, 0.84)]:
+        rows.append(
+            {
+                "experiment": "ws__n100-gs3__topk__all",
+                "type": "synthetic",
+                "seed": seed,
+                "recall_1": val,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    result = generate_statistical_comparison_table(df, alpha=0.05)
+    # Should return empty string because seed sets don't match
+    assert result == ""
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table_matching_seeds():
+    """Test that matching seeds produce a valid comparison table."""
+    import pandas as pd
+
+    rows = []
+    for seed, bl, syn in [(0, 0.70, 0.80), (1, 0.72, 0.82), (2, 0.74, 0.84)]:
+        rows.append(
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": seed,
+                "recall_1": bl,
+            }
+        )
+        rows.append(
+            {
+                "experiment": "ws__n100-gs3__topk__all",
+                "type": "synthetic",
+                "seed": seed,
+                "recall_1": syn,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    result = generate_statistical_comparison_table(df, alpha=0.05)
+    assert "ws__n100-gs3__topk__all" in result
+    assert "p_corrected" in result
