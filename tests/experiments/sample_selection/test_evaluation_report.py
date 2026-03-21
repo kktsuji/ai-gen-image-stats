@@ -361,6 +361,87 @@ def test_flatten_metrics_skips_nested_dicts_in_dataset_sizes():
     assert "ds_per_class" not in flat
 
 
+@pytest.mark.unit
+def test_parse_selection_eval_path_no_double_underscore():
+    """Test parsing path where combo dir has no __ separator."""
+    path = "outputs/diffusion-ws/selection-eval/n100-gs3/reports/evaluation.json"
+    result = _parse_selection_eval_path(path)
+    assert result["diffusion_variant"] == "ws"
+    assert result["gen_config"] == "n100-gs3"
+    assert result["selection"] == "-"
+
+
+@pytest.mark.unit
+def test_flatten_metrics_empty_comparisons():
+    """Test flattening when comparisons is empty or missing."""
+    assert _flatten_metrics({}) == {}
+    assert _flatten_metrics({"comparisons": {}}) == {}
+    assert _flatten_metrics({"comparisons": {}, "dataset_sizes": {}}) == {}
+
+
+@pytest.mark.unit
+def test_flatten_metrics_non_dict_comparisons():
+    """Test flattening when comparisons value is not a dict."""
+    flat = _flatten_metrics({"comparisons": "not_a_dict"})
+    # Should gracefully return empty (isinstance check fails)
+    assert flat == {}
+
+
+@pytest.mark.unit
+def test_flatten_metrics_non_dict_dataset_sizes():
+    """Test flattening when dataset_sizes value is not a dict."""
+    flat = _flatten_metrics({"dataset_sizes": [1, 2, 3]})
+    assert flat == {}
+
+
+@pytest.mark.unit
+def test_load_selection_eval_results_non_dict_json(tmp_path):
+    """Test that a JSON array (not object) in evaluation.json is skipped."""
+    reports_dir = (
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3__topk" / "reports"
+    )
+    reports_dir.mkdir(parents=True)
+    # Write a JSON array instead of object
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump([1, 2, 3], f)
+
+    results = load_selection_eval_results(str(tmp_path))
+    assert results == []
+
+
+@pytest.mark.unit
+def test_generate_report_no_results(tmp_path):
+    """Test that generate_report handles empty results gracefully."""
+    output_dir = tmp_path / "report_output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+    # Should not create files when no results found
+    assert not (output_dir / "selection_eval_report.md").exists()
+
+
+@pytest.mark.unit
+def test_generate_report_writes_files(tmp_path):
+    """Test that generate_report creates markdown and CSV when results exist."""
+    # Create mock directory structure
+    reports_dir = (
+        tmp_path / "diffusion-ws" / "selection-eval" / "n100-gs3__topk" / "reports"
+    )
+    reports_dir.mkdir(parents=True)
+    metrics = {
+        "comparisons": {
+            "real_vs_selected": {"fid": 12.5, "precision": 0.8, "recall": 0.6},
+        },
+        "dataset_sizes": {"real": 100},
+    }
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump(metrics, f)
+
+    output_dir = tmp_path / "report_output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    assert (output_dir / "selection_eval_report.md").exists()
+    assert (output_dir / "selection_eval_results.csv").exists()
+
+
 @pytest.mark.component
 def test_generate_report_writes_output_files(tmp_path):
     """Test that generate_report creates markdown and CSV output files."""

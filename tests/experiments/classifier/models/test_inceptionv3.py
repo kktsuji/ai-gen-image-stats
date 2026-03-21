@@ -29,7 +29,6 @@ class TestInceptionV3Instantiation:
         model = InceptionV3Classifier(num_classes=2)
         assert model is not None
         assert isinstance(model, nn.Module)
-        assert isinstance(model, nn.Module)
 
     def test_model_creation_custom_params(self):
         """Test model creation with custom parameters."""
@@ -281,6 +280,59 @@ class TestInceptionV3ModelDir:
             assert not cache_file.exists()
 
 
+@pytest.mark.component
+class TestInceptionV3ForwardComponent:
+    """Component tests for forward pass, feature extraction, and loss on CPU."""
+
+    def test_forward_output_shape(self):
+        """forward() returns (batch, num_classes) logits."""
+        model = InceptionV3Classifier(num_classes=3, pretrained=False)
+        model.eval()
+        # InceptionV3 needs >=75 spatial size due to its architecture
+        x = torch.randn(2, 3, 75, 75)
+        with torch.no_grad():
+            out = model(x)
+        assert out.shape == (2, 3)
+        assert not torch.isnan(out).any()
+
+    def test_forward_gradients_flow(self):
+        """Gradients propagate through unfrozen model."""
+        model = InceptionV3Classifier(
+            num_classes=2, freeze_backbone=False, pretrained=False
+        )
+        model.train()
+        x = torch.randn(2, 3, 75, 75)  # batch_size>=2 for BatchNorm in train mode
+        out = model(x)
+        out.sum().backward()
+        assert model.fc.weight.grad is not None
+
+    def test_extract_features_shape(self):
+        """extract_features() returns (batch, 2048)."""
+        model = InceptionV3Classifier(num_classes=2, pretrained=False)
+        model.eval()
+        x = torch.randn(2, 3, 75, 75)
+        with torch.no_grad():
+            feats = model.extract_features(x)
+        assert feats.shape == (2, 2048)
+
+    def test_compute_loss_returns_scalar(self):
+        """compute_loss() returns a non-negative scalar."""
+        model = InceptionV3Classifier(num_classes=3, pretrained=False)
+        preds = torch.randn(4, 3)
+        targets = torch.tensor([0, 1, 2, 0])
+        loss = model.compute_loss(preds, targets)
+        assert loss.dim() == 0
+        assert loss.item() >= 0
+
+    def test_dropout_layer_with_nonzero_dropout(self):
+        """dropout > 0 creates nn.Dropout with correct probability."""
+        model = InceptionV3Classifier(
+            num_classes=2, dropout=0.3, freeze_backbone=True, pretrained=False
+        )
+        assert isinstance(model.dropout_layer, nn.Dropout)
+        assert model.dropout_layer.p == 0.3
+
+
 # ============================================================================
 # Component Tests - Small data, minimal computation on CPU
 # ============================================================================
@@ -317,9 +369,8 @@ class TestInceptionV3Forward:
 
         # Logits can be any real number (not constrained to [0, 1])
         assert output.dtype == torch.float32
-        # Check that output is not probability-like (can be > 1 or < 0)
-        # We just check that there's no softmax applied (values aren't constrained)
-        assert True  # Logits can be any value
+        # Verify output is raw logits (not softmax): at least one value outside [0, 1]
+        assert output.min() < 0 or output.max() > 1
 
     def test_forward_pass_batch_size_one(self):
         """Test forward pass with batch size 1."""
