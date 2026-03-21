@@ -48,8 +48,14 @@ class TestDataPreparationPipeline:
         config = {
             "experiment": "data_preparation",
             "classes": {
-                "normal": str(mock_dataset_medium / "0.Normal"),
-                "abnormal": str(mock_dataset_medium / "1.Abnormal"),
+                "normal": {
+                    "path": str(mock_dataset_medium / "0.Normal"),
+                    "label": 0,
+                },
+                "abnormal": {
+                    "path": str(mock_dataset_medium / "1.Abnormal"),
+                    "label": 1,
+                },
             },
             "split": {
                 "seed": 42,

@@ -128,9 +128,10 @@ def prepare_split(config: Dict[str, Any]) -> str:
     # Create RNG instance (isolated from global random state)
     rng = random.Random(seed)
 
-    # Build class-to-label mapping (sorted by class name for determinism)
-    sorted_class_names = sorted(classes_config.keys())
-    class_to_label = {name: idx for idx, name in enumerate(sorted_class_names)}
+    # Build class-to-label mapping from explicit config labels
+    class_to_label = {name: entry["label"] for name, entry in classes_config.items()}
+    # Sort by label for deterministic iteration order
+    sorted_class_names = sorted(classes_config.keys(), key=lambda n: class_to_label[n])
 
     logger.info("=" * 60)
     logger.info("DATA PREPARATION - Train/Val Split")
@@ -146,7 +147,7 @@ def prepare_split(config: Dict[str, Any]) -> str:
     source_paths = {}
 
     for class_name in sorted_class_names:
-        class_path = classes_config[class_name]
+        class_path = classes_config[class_name]["path"]
         label = class_to_label[class_name]
         source_paths[class_name] = class_path
 
