@@ -322,7 +322,10 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
         logger.info("Evaluation results:")
         for key, value in sorted(scalar_eval_metrics.items()):
-            logger.info(f"  {key}: {value:.4f}")
+            if value == int(value):
+                logger.info(f"  {key}: {int(value)}")
+            else:
+                logger.info(f"  {key}: {value:.4f}")
 
         # Save full results (including non-scalars) to reports directory
         report_path = reports_dir / "evaluation.json"

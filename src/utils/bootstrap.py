@@ -48,7 +48,7 @@ def bootstrap_classification_metrics(
         Dict mapping metric_name -> (ci_lower, ci_upper).
     """
     n_samples = len(targets)
-    rng = np.random.RandomState(seed)
+    rng = np.random.default_rng(seed)
     labels = list(range(num_classes))
 
     # Build metric functions; precision/recall/f1 are grouped separately
@@ -62,7 +62,7 @@ def bootstrap_classification_metrics(
     metric_values: Dict[str, List[float]] = {name: [] for name in all_metric_names}
 
     for _ in range(n_bootstrap):
-        indices = rng.randint(0, n_samples, size=n_samples)
+        indices = rng.integers(0, n_samples, size=n_samples)
 
         # Scalar metrics (independent calls)
         for name, fn in scalar_fns.items():
