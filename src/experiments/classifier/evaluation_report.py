@@ -556,13 +556,10 @@ def generate_classifier_table(df: pd.DataFrame) -> str:
         return "No evaluation results found.\n"
 
     display_cols = ["experiment", "type"]
+    if "n_seeds" in df.columns:
+        display_cols.append("n_seeds")
     metric_cols = [m for m in KEY_METRICS if m in df.columns]
     cols = display_cols + metric_cols
-
-    # Add n_seeds column if present
-    if "n_seeds" in df.columns:
-        display_cols = ["experiment", "type", "n_seeds"]
-        cols = display_cols + metric_cols
 
     available = [c for c in cols if c in df.columns]
     subset = df[available].copy()
@@ -692,11 +689,10 @@ def generate_report(
         f"Baselines: {n_baselines}",
         f"Synthetic augmentation: {n_synthetic}",
     ]
-    if is_multi_seed:
-        seed_counts = df.groupby("experiment")["seed"].nunique()
-        report_lines.append(
-            f"Seeds per experiment: {int(seed_counts.min())}-{int(seed_counts.max())}"
-        )
+    if is_multi_seed and "n_seeds" in display_df.columns:
+        seed_min = int(display_df["n_seeds"].min())
+        seed_max = int(display_df["n_seeds"].max())
+        report_lines.append(f"Seeds per experiment: {seed_min}-{seed_max}")
     report_lines.append("")
 
     # Table 1: Generation quality (from selection summaries)
