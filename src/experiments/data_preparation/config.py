@@ -38,9 +38,41 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(classes, dict) or len(classes) == 0:
         raise ValueError("'classes' must be a non-empty dictionary")
 
-    for class_name, class_path in classes.items():
-        if not isinstance(class_path, str) or not class_path:
-            raise ValueError(f"Class '{class_name}' must have a non-empty string path")
+    for class_name, class_entry in classes.items():
+        if not isinstance(class_entry, dict):
+            raise ValueError(
+                f"Class '{class_name}' must be a dict with 'path' and 'label' keys"
+            )
+        unexpected_keys = set(class_entry) - {"path", "label"}
+        if unexpected_keys:
+            raise ValueError(
+                f"Class '{class_name}' has unsupported keys: {sorted(unexpected_keys)}. "
+                "Only 'path' and 'label' are allowed"
+            )
+        if "path" not in class_entry:
+            raise KeyError(f"Class '{class_name}' missing required key: 'path'")
+        if not isinstance(class_entry["path"], str) or not class_entry["path"]:
+            raise ValueError(f"Class '{class_name}' path must be a non-empty string")
+        if "label" not in class_entry:
+            raise KeyError(f"Class '{class_name}' missing required key: 'label'")
+        if (
+            isinstance(class_entry["label"], bool)
+            or not isinstance(class_entry["label"], int)
+            or class_entry["label"] < 0
+        ):
+            raise ValueError(
+                f"Class '{class_name}' label must be a non-negative integer"
+            )
+
+    labels = [entry["label"] for entry in classes.values()]
+    if len(set(labels)) != len(labels):
+        raise ValueError("Class labels must be unique")
+    expected = set(range(len(labels)))
+    if set(labels) != expected:
+        raise ValueError(
+            f"Class labels must form a contiguous range 0..{len(labels) - 1}, "
+            f"got {sorted(labels)}"
+        )
 
     # Validate split section
     if "split" not in config:

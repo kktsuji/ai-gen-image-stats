@@ -4,9 +4,15 @@
 experiment: data_preparation # Name of the experiment to run
 
 # Class directories to scan for images
+# Each class must specify a path (directory containing images) and a label (integer).
+# Labels must be unique and form a contiguous range starting from 0.
 classes:
-  normal: "data/0.Normal" # Path to the directory containing normal class images
-  abnormal: "data/1.Abnormal" # Path to the directory containing abnormal class images
+  normal:
+    path: "data/0.Normal" # Path to the directory containing normal class images
+    label: 0
+  abnormal:
+    path: "data/1.Abnormal" # Path to the directory containing abnormal class images
+    label: 1
 
 # Split configuration
 split:

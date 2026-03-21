@@ -27,15 +27,21 @@ def _create_mock_class_dirs(base_dir, class_config):
     Args:
         base_dir: Base directory to create class dirs in
         class_config: Dict mapping class_name to num_images
+
+    Returns:
+        Dict mapping class_name to {"path": str, "label": int},
+        with labels assigned alphabetically (0, 1, 2, ...).
     """
     paths = {}
-    for class_name, num_images in class_config.items():
+    sorted_names = sorted(class_config.keys())
+    for idx, class_name in enumerate(sorted_names):
+        num_images = class_config[class_name]
         class_dir = base_dir / class_name
         class_dir.mkdir(parents=True, exist_ok=True)
         for i in range(num_images):
             img = Image.new("RGB", (32, 32), color="red")
             img.save(class_dir / f"img_{i:03d}.png")
-        paths[class_name] = str(class_dir)
+        paths[class_name] = {"path": str(class_dir), "label": idx}
     return paths
 
 
@@ -296,12 +302,15 @@ class TestPrepareSplit:
             # The label should match the class that the path belongs to
             path = entry["path"]
             label = entry["label"]
+            matched = False
             for class_name, class_label in classes.items():
                 if class_label == label:
                     # The class path should be a prefix of the file path
                     source_path = data["metadata"]["source_paths"][class_name]
                     assert path.startswith(source_path)
+                    matched = True
                     break
+            assert matched, f"Label {label} not found in class mapping"
 
     def test_skip_existing_file(self, tmp_path):
         """Test that existing file is skipped when force=false."""
@@ -338,7 +347,9 @@ class TestPrepareSplit:
         """Test that missing class directory raises error."""
         config = {
             "experiment": "data_preparation",
-            "classes": {"normal": str(tmp_path / "nonexistent")},
+            "classes": {
+                "normal": {"path": str(tmp_path / "nonexistent"), "label": 0},
+            },
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
@@ -357,7 +368,7 @@ class TestPrepareSplit:
 
         config = {
             "experiment": "data_preparation",
-            "classes": {"empty": str(empty_dir)},
+            "classes": {"empty": {"path": str(empty_dir), "label": 0}},
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
@@ -513,7 +524,7 @@ class TestPrepareSplitUnit:
         assert len(data["train"]) + len(data["val"]) == 8
 
     def test_class_label_ordering(self, tmp_path):
-        """Test that class_to_label mapping is sorted alphabetically."""
+        """Test that class_to_label mapping uses explicit labels from config."""
         config = self._make_config(tmp_path, {"zebra": 3, "apple": 3, "mango": 3})
         output_path = prepare_split(config)
 
@@ -521,13 +532,44 @@ class TestPrepareSplitUnit:
             data = json.load(f)
 
         classes = data["metadata"]["classes"]
+        # _create_mock_class_dirs assigns labels alphabetically: apple=0, mango=1, zebra=2
         assert classes == {"apple": 0, "mango": 1, "zebra": 2}
+
+    def test_explicit_label_mapping(self, tmp_path):
+        """Test that explicit labels override alphabetical ordering."""
+        class_paths = _create_mock_class_dirs(tmp_path / "data", {"cat": 3, "dog": 3})
+        # Swap labels: cat=1, dog=0 (reverse of alphabetical)
+        class_paths["cat"]["label"] = 1
+        class_paths["dog"]["label"] = 0
+        config = {
+            "experiment": "data_preparation",
+            "classes": class_paths,
+            "split": {
+                "seed": 42,
+                "train_ratio": 0.8,
+                "save_dir": str(tmp_path / "output"),
+                "split_file": "split.json",
+                "force": False,
+            },
+        }
+        output_path = prepare_split(config)
+        with open(output_path) as f:
+            data = json.load(f)
+
+        assert data["metadata"]["classes"] == {"cat": 1, "dog": 0}
+        for entry in data["train"] + data["val"]:
+            if "cat" in entry["path"]:
+                assert entry["label"] == 1
+            elif "dog" in entry["path"]:
+                assert entry["label"] == 0
 
     def test_missing_class_dir_raises(self, tmp_path):
         """Test that nonexistent data directory raises FileNotFoundError."""
         config = {
             "experiment": "data_preparation",
-            "classes": {"ghost": str(tmp_path / "nonexistent")},
+            "classes": {
+                "ghost": {"path": str(tmp_path / "nonexistent"), "label": 0},
+            },
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,

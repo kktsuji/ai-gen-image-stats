@@ -140,6 +140,87 @@ class TestValidateConfig:
     def test_class_with_empty_path_raises(self):
         """Test that class with empty string path raises ValueError."""
         config = _make_valid_config()
-        config["classes"]["normal"] = ""
+        config["classes"]["normal"] = {"path": "", "label": 0}
         with pytest.raises(ValueError, match="non-empty string"):
             validate_config(config)
+
+    def test_class_not_dict_raises(self):
+        """Test that class with string value (old format) raises ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = "data/path"
+        with pytest.raises(ValueError, match="dict"):
+            validate_config(config)
+
+    def test_class_missing_path_raises(self):
+        """Test that class without path key raises KeyError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"label": 0}
+        with pytest.raises(KeyError, match="path"):
+            validate_config(config)
+
+    def test_class_missing_label_raises(self):
+        """Test that class without label key raises KeyError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": 0}
+        config["classes"]["abnormal"] = {"path": "data/y"}
+        with pytest.raises(KeyError, match="label"):
+            validate_config(config)
+
+    def test_class_negative_label_raises(self):
+        """Test that negative label raises ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": -1}
+        with pytest.raises(ValueError, match="non-negative"):
+            validate_config(config)
+
+    def test_class_non_int_label_raises(self):
+        """Test that non-integer label raises ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": "0"}
+        with pytest.raises(ValueError, match="non-negative integer"):
+            validate_config(config)
+
+    def test_bool_label_raises(self):
+        """Test that boolean label raises ValueError (bool is subclass of int)."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": True}
+        config["classes"]["abnormal"] = {"path": "data/y", "label": False}
+        with pytest.raises(ValueError, match="non-negative integer"):
+            validate_config(config)
+
+    def test_duplicate_labels_raises(self):
+        """Test that duplicate labels raise ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": 0}
+        config["classes"]["abnormal"] = {"path": "data/y", "label": 0}
+        with pytest.raises(ValueError, match="unique"):
+            validate_config(config)
+
+    def test_non_contiguous_labels_raises(self):
+        """Test that non-contiguous labels raise ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {"path": "data/x", "label": 0}
+        config["classes"]["abnormal"] = {"path": "data/y", "label": 2}
+        with pytest.raises(ValueError, match="contiguous"):
+            validate_config(config)
+
+    def test_class_unexpected_keys_raises(self):
+        """Test that unexpected keys in class entry raise ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {
+            "path": "data/x",
+            "label": 0,
+            "extra": "value",
+        }
+        with pytest.raises(ValueError, match="unsupported keys"):
+            validate_config(config)
+
+    def test_valid_three_classes(self):
+        """Test that three classes with contiguous labels passes."""
+        config = _make_valid_config()
+        config["classes"] = {
+            "a": {"path": "data/a", "label": 0},
+            "b": {"path": "data/b", "label": 1},
+            "c": {"path": "data/c", "label": 2},
+        }
+        validate_config(config)  # Should not raise

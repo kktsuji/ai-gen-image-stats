@@ -48,8 +48,14 @@ class TestDataPreparationPipeline:
         config = {
             "experiment": "data_preparation",
             "classes": {
-                "normal": str(mock_dataset_medium / "0.Normal"),
-                "abnormal": str(mock_dataset_medium / "1.Abnormal"),
+                "normal": {
+                    "path": str(mock_dataset_medium / "0.Normal"),
+                    "label": 1,
+                },
+                "abnormal": {
+                    "path": str(mock_dataset_medium / "1.Abnormal"),
+                    "label": 0,
+                },
             },
             "split": {
                 "seed": 42,
@@ -85,8 +91,8 @@ class TestDataPreparationPipeline:
         assert len(classes) == 2, f"Expected 2 classes, got {len(classes)}"
         assert "abnormal" in classes
         assert "normal" in classes
-        # Labels should be 0-indexed integers
-        assert set(classes.values()) == {0, 1}
+        # Labels should match explicit config (non-alphabetical)
+        assert classes == {"normal": 1, "abnormal": 0}
 
         # Step 5: Validate train/val counts match train_ratio
         train_entries = split_data["train"]
@@ -113,13 +119,24 @@ class TestDataPreparationPipeline:
             f"Expected {expected_val} val samples, got {len(val_entries)}"
         )
 
-        # Step 6: Verify all paths in JSON exist on disk
+        # Step 6: Verify all paths in JSON exist on disk and labels match config
         for entry in train_entries + val_entries:
             assert "path" in entry, "Entry missing 'path' key"
             assert "label" in entry, "Entry missing 'label' key"
             assert Path(entry["path"]).exists(), (
                 f"Image path does not exist: {entry['path']}"
             )
+            # Verify label-path pairing matches non-alphabetical config
+            if "0.Normal" in entry["path"]:
+                assert entry["label"] == 1, (
+                    f"Normal image should have label 1, got {entry['label']}"
+                )
+            elif "1.Abnormal" in entry["path"]:
+                assert entry["label"] == 0, (
+                    f"Abnormal image should have label 0, got {entry['label']}"
+                )
+            else:
+                pytest.fail(f"Unexpected class path pattern: {entry['path']}")
 
         # Step 7: Load with SplitFileDataset (downstream compatibility)
         transform = transforms.Compose(
