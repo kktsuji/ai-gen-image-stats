@@ -29,7 +29,6 @@ class TestResNetInstantiation:
         model = ResNetClassifier(num_classes=2)
         assert model is not None
         assert isinstance(model, nn.Module)
-        assert isinstance(model, nn.Module)
 
     def test_model_creation_resnet50(self):
         """Test ResNet50 variant creation."""
@@ -293,9 +292,9 @@ class TestResNetModelDir:
             assert not cache_file.exists()
 
 
-@pytest.mark.unit
-class TestResNetForwardUnit:
-    """Unit tests for forward pass, feature extraction, and loss on CPU."""
+@pytest.mark.component
+class TestResNetForwardComponent:
+    """Component tests for forward pass, feature extraction, and loss on CPU."""
 
     def test_forward_output_shape(self):
         """forward() returns (batch, num_classes) logits."""
@@ -413,8 +412,9 @@ class TestResNetForward:
 
         # Logits can be any real number (not constrained to [0, 1])
         assert output.dtype == torch.float32
-        # Just verify output exists and is not NaN
         assert not torch.isnan(output).any()
+        # Verify output is raw logits (not softmax): at least one value outside [0, 1]
+        assert output.min() < 0 or output.max() > 1
 
     def test_forward_pass_batch_size_one(self):
         """Test forward pass with batch size 1."""

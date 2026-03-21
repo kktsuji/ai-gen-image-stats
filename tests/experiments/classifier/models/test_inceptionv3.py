@@ -29,7 +29,6 @@ class TestInceptionV3Instantiation:
         model = InceptionV3Classifier(num_classes=2)
         assert model is not None
         assert isinstance(model, nn.Module)
-        assert isinstance(model, nn.Module)
 
     def test_model_creation_custom_params(self):
         """Test model creation with custom parameters."""
@@ -281,9 +280,9 @@ class TestInceptionV3ModelDir:
             assert not cache_file.exists()
 
 
-@pytest.mark.unit
-class TestInceptionV3ForwardUnit:
-    """Unit tests for forward pass, feature extraction, and loss on CPU."""
+@pytest.mark.component
+class TestInceptionV3ForwardComponent:
+    """Component tests for forward pass, feature extraction, and loss on CPU."""
 
     def test_forward_output_shape(self):
         """forward() returns (batch, num_classes) logits."""
@@ -370,9 +369,8 @@ class TestInceptionV3Forward:
 
         # Logits can be any real number (not constrained to [0, 1])
         assert output.dtype == torch.float32
-        # Check that output is not probability-like (can be > 1 or < 0)
-        # We just check that there's no softmax applied (values aren't constrained)
-        assert True  # Logits can be any value
+        # Verify output is raw logits (not softmax): at least one value outside [0, 1]
+        assert output.min() < 0 or output.max() > 1
 
     def test_forward_pass_batch_size_one(self):
         """Test forward pass with batch size 1."""

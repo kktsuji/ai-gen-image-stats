@@ -218,13 +218,23 @@ def test_make_worker_init_fn_returns_callable():
 @pytest.mark.unit
 def test_make_worker_init_fn_seeds_worker():
     """Test that calling the worker init function sets deterministic seeds."""
-    fn = _make_worker_init_fn(100)
-    fn(0)
-    seed_w0 = torch.initial_seed()
-    fn(1)
-    seed_w1 = torch.initial_seed()
-    # worker_seed = seed + worker_id, so seeds should differ
-    assert seed_w0 != seed_w1
+    import random
+
+    py_state = random.getstate()
+    np_state = np.random.get_state()
+    torch_state = torch.random.get_rng_state()
+    try:
+        fn = _make_worker_init_fn(100)
+        fn(0)
+        seed_w0 = torch.initial_seed()
+        fn(1)
+        seed_w1 = torch.initial_seed()
+        assert seed_w0 == 100
+        assert seed_w1 == 101
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+        torch.random.set_rng_state(torch_state)
 
 
 @pytest.mark.unit
@@ -284,7 +294,7 @@ def test_create_train_loader_downsampling(tmp_path):
 
 
 @pytest.mark.unit
-def test_create_train_loader_upsampling(tmp_path):
+def test_create_train_loader_upsampling_unit(tmp_path):
     """Test upsampling balancing path in create_train_loader with imbalanced data."""
     from torchvision import transforms
 
@@ -437,7 +447,7 @@ def test_create_train_loader_downsampling_unit(tmp_path):
 
 
 @pytest.mark.component
-def test_create_train_loader_upsampling_unit(tmp_path):
+def test_create_train_loader_upsampling_component(tmp_path):
     """Component test: upsampling balancing config is applied and returns a valid DataLoader."""
     from torchvision import transforms
 
