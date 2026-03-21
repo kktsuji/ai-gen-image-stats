@@ -133,12 +133,13 @@ def load_evaluation_results(
                 results.append(entry)
 
     # Also load single-seed results (backward compatibility)
+    multi_seed_experiments = {r["experiment"] for r in results}
     single_seed_pattern = f"{base_dir}/*/reports/evaluation.json"
     for json_path in sorted(glob(single_seed_pattern)):
         path = Path(json_path)
         exp_name = path.parent.parent.name
         # Skip if this experiment already has multi-seed results
-        if any(r["experiment"] == exp_name for r in results):
+        if exp_name in multi_seed_experiments:
             continue
 
         entry = _load_single_result(json_path, exp_name)

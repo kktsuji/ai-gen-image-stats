@@ -33,9 +33,8 @@ class TestPairedTtest:
 
         t_stat, p_val = paired_ttest(baseline, synthetic)
 
-        # scipy.stats.ttest_rel returns negative t when treatment > baseline
-        # because it computes baseline - treatment
-        assert abs(t_stat) == pytest.approx(6.06, abs=0.1)
+        # t > 0 when treatment > baseline (treatment - baseline convention)
+        assert t_stat == pytest.approx(6.06, abs=0.1)
         assert p_val == pytest.approx(0.004, abs=0.002)
         assert p_val < 0.05
 
@@ -102,7 +101,7 @@ class TestCohensDPaired:
     def test_hedges_correction_reduces_magnitude(self) -> None:
         """Hedges' g should be smaller in magnitude than raw Cohen's d for small n."""
         baseline = np.array([0.70, 0.72, 0.68, 0.71, 0.69])
-        treatment = np.array([0.75, 0.77, 0.73, 0.76, 0.74])
+        treatment = np.array([0.76, 0.77, 0.72, 0.76, 0.74])
 
         diffs = treatment - baseline
         raw_d = float(np.mean(diffs)) / float(np.std(diffs, ddof=1))
@@ -142,7 +141,7 @@ class TestCohensDPaired:
     def test_negative_effect(self) -> None:
         """Treatment worse than baseline should give negative d."""
         baseline = np.array([0.80, 0.82, 0.79, 0.81, 0.80])
-        treatment = np.array([0.70, 0.72, 0.69, 0.71, 0.70])
+        treatment = np.array([0.70, 0.71, 0.69, 0.72, 0.70])
         d = cohens_d_paired(baseline, treatment)
         assert d < 0
 
@@ -161,7 +160,7 @@ class TestCohensDPaired:
     def test_n3_uses_exact_hedges(self) -> None:
         """n≥3 should use exact Hedges' correction (smaller than raw d)."""
         baseline = np.array([0.70, 0.72, 0.68])
-        treatment = np.array([0.80, 0.82, 0.78])
+        treatment = np.array([0.80, 0.83, 0.77])
         d = cohens_d_paired(baseline, treatment)
 
         diffs = treatment - baseline
@@ -322,7 +321,7 @@ class TestCompareExperimentPair:
     def test_result_fields(self) -> None:
         """Verify all ComparisonResult fields are populated correctly."""
         bl = np.array([0.70, 0.72, 0.68, 0.71, 0.69])
-        tr = np.array([0.80, 0.82, 0.78, 0.81, 0.79])
+        tr = np.array([0.80, 0.83, 0.77, 0.81, 0.79])
 
         results = compare_experiment_pair({"m": bl}, {"m": tr}, ["m"], alpha=0.05)
 

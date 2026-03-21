@@ -67,7 +67,7 @@ def paired_ttest(
         return (float("nan"), float("nan"))
 
     diffs = treatment_values - baseline_values
-    if np.std(diffs, ddof=1) == 0:
+    if np.std(diffs, ddof=1) < np.finfo(np.float64).eps * 100:
         return (float("nan"), float("nan"))
 
     # Compute as treatment - baseline so t > 0 means treatment is better,
@@ -111,7 +111,7 @@ def cohens_d_paired(
     diffs = treatment_values - baseline_values
     sd = float(np.std(diffs, ddof=1))
 
-    if sd == 0:
+    if sd < np.finfo(np.float64).eps * 100:
         return float("nan")
 
     d = float(np.mean(diffs)) / sd
