@@ -135,6 +135,8 @@ class TestDataPreparationPipeline:
                 assert entry["label"] == 0, (
                     f"Abnormal image should have label 0, got {entry['label']}"
                 )
+            else:
+                pytest.fail(f"Unexpected class path pattern: {entry['path']}")
 
         # Step 7: Load with SplitFileDataset (downstream compatibility)
         transform = transforms.Compose(
