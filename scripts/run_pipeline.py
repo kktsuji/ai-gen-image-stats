@@ -335,14 +335,16 @@ def main() -> None:
     if RUN_EVALUATION:
         import glob
 
-        # Find all seed directories (multi-seed layout)
+        # Find all seed directories (multi-seed layout) and legacy
+        # experiment dirs that have no seed subdirectories.
         seed_dirs = sorted(glob.glob("outputs/classifier/*/seed*/"))
+        legacy_dirs = [
+            d
+            for d in sorted(glob.glob("outputs/classifier/*/"))
+            if not glob.glob(os.path.join(d, "seed*/"))
+        ]
 
-        # Fall back to legacy single-seed layout if no seed dirs found
-        if not seed_dirs:
-            seed_dirs = sorted(glob.glob("outputs/classifier/*/"))
-
-        for exp_dir in seed_dirs:
+        for exp_dir in [*seed_dirs, *legacy_dirs]:
             exp_label = exp_dir.rstrip("/").replace("outputs/classifier/", "")
 
             # Find best checkpoint, fall back to final

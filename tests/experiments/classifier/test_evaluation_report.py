@@ -428,6 +428,41 @@ def test_build_mean_std_dataframe_no_seed_column():
 
 
 @pytest.mark.unit
+def test_build_mean_std_dataframe_skips_duplicate_seeds():
+    """Experiments with duplicate seeds are omitted (mirrors aggregate_multi_seed)."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70},
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.72},  # duplicate
+            {"experiment": "exp-a", "seed": 1, "recall_1": 0.68},
+        ]
+    )
+    result = build_mean_std_dataframe(df, ["recall_1"])
+    assert len(result) == 0
+
+
+@pytest.mark.unit
+def test_build_mean_std_dataframe_skips_metric_with_nan():
+    """Metrics with any NaN seed are omitted (mirrors aggregate_multi_seed)."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70, "f1_1": 0.65},
+            {"experiment": "exp-a", "seed": 1, "recall_1": float("nan"), "f1_1": 0.67},
+        ]
+    )
+    result = build_mean_std_dataframe(df, ["recall_1", "f1_1"])
+    assert len(result) == 1
+    # recall_1 has NaN -> omitted
+    assert "recall_1" not in result.columns or pd.isna(result.iloc[0].get("recall_1"))
+    # f1_1 is complete -> present
+    assert result.iloc[0]["f1_1"] == pytest.approx(0.66)
+
+
+@pytest.mark.unit
 def test_generate_statistical_comparison_table():
     """Test statistical comparison table generation with multi-seed data."""
     import pandas as pd

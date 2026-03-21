@@ -282,7 +282,15 @@ def build_mean_std_dataframe(
         "baseline_strategy",
     ]
 
-    for _, group in df.groupby("experiment"):
+    for exp_name, group in df.groupby("experiment"):
+        # Mirror aggregate_multi_seed strictness: reject duplicate seeds
+        if group["seed"].duplicated().any():
+            _logger.warning(
+                "Experiment %r has duplicate seeds; omitting from aggregated tables",
+                exp_name,
+            )
+            continue
+
         row: Dict[str, Any] = {}
         # Copy metadata from first entry
         for col in meta_cols:
@@ -293,11 +301,19 @@ def build_mean_std_dataframe(
 
         for metric in metric_names:
             if metric in group.columns:
-                values = group[metric].dropna()
-                if len(values) > 0:
-                    row[metric] = float(values.mean())
-                    if len(values) > 1:
-                        row[f"{metric}_std"] = float(values.std(ddof=1))
+                values = group[metric]
+                # Mirror aggregate_multi_seed: require all seeds non-NaN
+                if bool(values.isna().any()):
+                    _logger.warning(
+                        "Experiment %r metric %r has NaN seeds; "
+                        "omitting from aggregated tables",
+                        exp_name,
+                        metric,
+                    )
+                    continue
+                row[metric] = float(values.mean())
+                if len(values) > 1:
+                    row[f"{metric}_std"] = float(values.std(ddof=1))
 
                 # Note: bootstrap CI columns are not preserved for multi-seed
                 # aggregation because the CI of an average is not the average
@@ -366,10 +382,19 @@ def generate_statistical_comparison_table(
         selected_baseline = baseline_name
     else:
         if baseline_name:
-            _logger.warning(
-                f"Requested baseline {baseline_name!r} not found in aggregated "
-                f"results; falling back to auto-selection"
-            )
+            # Distinguish "not in data at all" vs "filtered out by aggregation"
+            in_raw = baseline_name in df["experiment"].values
+            if in_raw:
+                _logger.warning(
+                    f"Requested baseline {baseline_name!r} found in raw results "
+                    f"but excluded during aggregation (needs >=2 seeds with no "
+                    f"duplicates); falling back to auto-selection"
+                )
+            else:
+                _logger.warning(
+                    f"Requested baseline {baseline_name!r} not found in results; "
+                    f"falling back to auto-selection"
+                )
         # Use baseline with highest mean recall_1 (or first available)
         best_bl_name = None
         best_bl_recall = -float("inf")

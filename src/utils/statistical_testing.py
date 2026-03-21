@@ -67,6 +67,10 @@ def paired_ttest(
         return (float("nan"), float("nan"))
 
     diffs = treatment_values - baseline_values
+    # 100× machine epsilon (~2.2e-14) as a safety margin: bare epsilon can
+    # be exceeded by floating-point rounding even when all diffs are equal,
+    # while 100× still detects effectively-zero variance without rejecting
+    # meaningful variation.
     if np.std(diffs, ddof=1) < np.finfo(np.float64).eps * 100:
         return (float("nan"), float("nan"))
 
@@ -111,6 +115,7 @@ def cohens_d_paired(
     diffs = treatment_values - baseline_values
     sd = float(np.std(diffs, ddof=1))
 
+    # See paired_ttest for rationale on the 100× epsilon threshold.
     if sd < np.finfo(np.float64).eps * 100:
         return float("nan")
 
