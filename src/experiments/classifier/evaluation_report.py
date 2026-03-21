@@ -311,9 +311,9 @@ def build_mean_std_dataframe(
                         metric,
                     )
                     continue
-                row[metric] = float(values.mean())
+                row[metric] = float(values.mean())  # type: ignore[arg-type]
                 if len(values) > 1:
-                    row[f"{metric}_std"] = float(values.std(ddof=1))
+                    row[f"{metric}_std"] = float(values.std(ddof=1))  # type: ignore[arg-type]
 
                 # Note: bootstrap CI columns are not preserved for multi-seed
                 # aggregation because the CI of an average is not the average
