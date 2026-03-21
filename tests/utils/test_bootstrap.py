@@ -175,6 +175,46 @@ class TestBootstrapClassificationMetrics:
         assert "roc_auc" in result
         assert "recall_1" in result
 
+    def test_multiclass_bootstrap(self):
+        """Bootstrap CIs work for multiclass (>2 classes) classification."""
+        rng = np.random.RandomState(42)
+        n = 150
+        num_classes = 3
+        targets = rng.randint(0, num_classes, size=n)
+        predictions = targets.copy()
+        flip_mask = rng.random(n) < 0.2
+        predictions[flip_mask] = rng.randint(0, num_classes, size=flip_mask.sum())
+        probs = np.full((n, num_classes), 0.1)
+        for i in range(n):
+            probs[i, predictions[i]] = 0.8
+
+        metrics = [
+            "recall_0",
+            "precision_1",
+            "f1_2",
+            "balanced_accuracy",
+            "accuracy",
+            "roc_auc",
+            "pr_auc",
+        ]
+
+        result = bootstrap_classification_metrics(
+            targets,
+            predictions,
+            probs,
+            num_classes=num_classes,
+            metric_names=metrics,
+            n_bootstrap=200,
+            seed=42,
+        )
+
+        for name in metrics:
+            assert name in result, f"{name} missing from results"
+            lo, hi = result[name]
+            assert not np.isnan(lo), f"{name} lower is NaN"
+            assert not np.isnan(hi), f"{name} upper is NaN"
+            assert lo <= hi, f"{name}: lower > upper"
+
     def test_filters_inf_values(self, binary_data):
         """Inf values from metric computations are filtered out."""
         targets, predictions, probs = binary_data

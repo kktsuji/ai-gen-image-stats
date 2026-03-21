@@ -527,8 +527,12 @@ class ClassifierTrainer:
                         targets_arr, all_probs, multi_class="ovr", average="weighted"
                     )
                 )
+                # One-hot encode to match bootstrap.py's _pr_auc closure
+                targets_onehot = np.eye(num_classes)[targets_arr]
                 metrics[f"{prefix}pr_auc"] = float(
-                    average_precision_score(targets_arr, all_probs, average="weighted")
+                    average_precision_score(
+                        targets_onehot, all_probs, average="weighted"
+                    )
                 )
             else:
                 _logger.warning(

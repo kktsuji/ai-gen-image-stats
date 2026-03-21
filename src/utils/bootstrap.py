@@ -100,8 +100,8 @@ def bootstrap_classification_metrics(
         if not values:
             results[name] = (float("nan"), float("nan"))
         else:
-            lower = float(np.nanpercentile(values, 100 * alpha / 2))
-            upper = float(np.nanpercentile(values, 100 * (1 - alpha / 2)))
+            lower = float(np.percentile(values, 100 * alpha / 2))
+            upper = float(np.percentile(values, 100 * (1 - alpha / 2)))
             results[name] = (lower, upper)
 
     return results
