@@ -10,9 +10,12 @@ import pytest
 
 from src.experiments.classifier.evaluation_report import (
     _parse_experiment_name,
+    aggregate_multi_seed,
     build_comparison_dataframe,
+    build_mean_std_dataframe,
     generate_best_per_metric,
     generate_classifier_table,
+    generate_statistical_comparison_table,
     load_evaluation_results,
 )
 
@@ -264,3 +267,243 @@ def test_load_evaluation_results_skips_malformed_json(tmp_path):
     results = load_evaluation_results(str(tmp_path))
     assert len(results) == 1
     assert results[0]["experiment"] == "baseline__vanilla"
+
+
+# --- Multi-seed tests ---
+
+
+def _create_multi_seed_results(tmp_path, exp_name, seeds, metrics_per_seed):
+    """Helper to create multi-seed evaluation.json files."""
+    for seed, metrics in zip(seeds, metrics_per_seed):
+        reports_dir = tmp_path / exp_name / f"seed{seed}" / "reports"
+        reports_dir.mkdir(parents=True)
+        with open(reports_dir / "evaluation.json", "w") as f:
+            json.dump(metrics, f)
+
+
+@pytest.mark.component
+def test_load_evaluation_results_multi_seed(tmp_path):
+    """Test loading multi-seed evaluation results."""
+    seeds = [0, 1, 2]
+    metrics_list = [
+        {"recall_1": 0.70, "balanced_accuracy": 0.75},
+        {"recall_1": 0.72, "balanced_accuracy": 0.77},
+        {"recall_1": 0.68, "balanced_accuracy": 0.73},
+    ]
+    _create_multi_seed_results(tmp_path, "baseline__vanilla", seeds, metrics_list)
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 3
+    assert all(r["experiment"] == "baseline__vanilla" for r in results)
+    assert sorted(r["seed"] for r in results) == [0, 1, 2]
+
+
+@pytest.mark.component
+def test_load_evaluation_results_backward_compatibility(tmp_path):
+    """Test that single-seed results are loaded alongside multi-seed."""
+    # Multi-seed experiment
+    _create_multi_seed_results(
+        tmp_path,
+        "baseline__vanilla",
+        [0, 1],
+        [{"recall_1": 0.70}, {"recall_1": 0.72}],
+    )
+    # Single-seed experiment (legacy layout)
+    reports_dir = tmp_path / "ws__n100-gs3__topk__all" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump({"recall_1": 0.80}, f)
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 3
+    # Multi-seed results have seed field
+    multi = [r for r in results if "seed" in r]
+    assert len(multi) == 2
+    # Single-seed result has no seed field
+    single = [r for r in results if "seed" not in r]
+    assert len(single) == 1
+    assert single[0]["experiment"] == "ws__n100-gs3__topk__all"
+
+
+@pytest.mark.unit
+def test_aggregate_multi_seed():
+    """Test aggregating multi-seed results by experiment name."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70, "f1_1": 0.65},
+            {"experiment": "exp-a", "seed": 1, "recall_1": 0.72, "f1_1": 0.67},
+            {"experiment": "exp-a", "seed": 2, "recall_1": 0.68, "f1_1": 0.63},
+            {"experiment": "exp-b", "seed": 0, "recall_1": 0.80, "f1_1": 0.75},
+            {"experiment": "exp-b", "seed": 1, "recall_1": 0.82, "f1_1": 0.77},
+        ]
+    )
+
+    aggregated = aggregate_multi_seed(df, ["recall_1", "f1_1"])
+    assert "exp-a" in aggregated
+    assert "exp-b" in aggregated
+    assert len(aggregated["exp-a"]["recall_1"]) == 3
+    assert len(aggregated["exp-b"]["recall_1"]) == 2
+
+
+@pytest.mark.unit
+def test_aggregate_multi_seed_skips_single_seed():
+    """Test that experiments with only one seed are excluded."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70},
+        ]
+    )
+
+    aggregated = aggregate_multi_seed(df, ["recall_1"])
+    assert "exp-a" not in aggregated
+
+
+@pytest.mark.unit
+def test_aggregate_multi_seed_no_seed_column():
+    """Test that aggregation returns empty dict without seed column."""
+    import pandas as pd
+
+    df = pd.DataFrame([{"experiment": "exp-a", "recall_1": 0.70}])
+    aggregated = aggregate_multi_seed(df, ["recall_1"])
+    assert aggregated == {}
+
+
+@pytest.mark.unit
+def test_build_mean_std_dataframe():
+    """Test building mean +/- std DataFrame from multi-seed results."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": 0,
+                "recall_1": 0.70,
+                "diffusion_variant": "-",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "vanilla",
+            },
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": 1,
+                "recall_1": 0.80,
+                "diffusion_variant": "-",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "vanilla",
+            },
+        ]
+    )
+
+    result = build_mean_std_dataframe(df, ["recall_1"])
+    assert len(result) == 1
+    assert result.iloc[0]["recall_1"] == pytest.approx(0.75)
+    assert "recall_1_std" in result.columns
+    assert result.iloc[0]["n_seeds"] == 2
+
+
+@pytest.mark.unit
+def test_build_mean_std_dataframe_no_seed_column():
+    """Test that build_mean_std_dataframe returns df unchanged without seed column."""
+    import pandas as pd
+
+    df = pd.DataFrame([{"experiment": "exp-a", "recall_1": 0.70}])
+    result = build_mean_std_dataframe(df, ["recall_1"])
+    assert len(result) == 1
+    assert result.iloc[0]["recall_1"] == 0.70
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table():
+    """Test statistical comparison table generation with multi-seed data."""
+    import pandas as pd
+
+    # Create multi-seed data with clear improvement
+    rows = []
+    baseline_vals = [0.72, 0.68, 0.75, 0.70, 0.66]
+    synthetic_vals = [0.78, 0.75, 0.77, 0.76, 0.71]
+
+    for seed, (bl, syn) in enumerate(zip(baseline_vals, synthetic_vals)):
+        rows.append(
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": seed,
+                "recall_1": bl,
+                "diffusion_variant": "-",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "vanilla",
+            }
+        )
+        rows.append(
+            {
+                "experiment": "ws__n100-gs3__topk__all",
+                "type": "synthetic",
+                "seed": seed,
+                "recall_1": syn,
+                "diffusion_variant": "ws",
+                "gen_config": "n100-gs3",
+                "selection": "topk",
+                "aug_limit": "all",
+                "baseline_strategy": "-",
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    result = generate_statistical_comparison_table(df, alpha=0.05)
+
+    assert "baseline__vanilla" in result
+    assert "ws__n100-gs3__topk__all" in result
+    assert "cohens_d" in result
+    assert "p_corrected" in result
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table_no_seed():
+    """Test that statistical table returns empty for single-seed data."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "baseline__vanilla", "type": "baseline", "recall_1": 0.7},
+            {
+                "experiment": "ws__n100-gs3__topk__all",
+                "type": "synthetic",
+                "recall_1": 0.8,
+            },
+        ]
+    )
+    result = generate_statistical_comparison_table(df)
+    assert result == ""
+
+
+@pytest.mark.unit
+def test_generate_classifier_table_with_mean_std():
+    """Test classifier table with mean +/- std formatting."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "recall_1": 0.75,
+                "recall_1_std": 0.03,
+                "n_seeds": 5,
+            },
+        ]
+    )
+    result = generate_classifier_table(df)
+    assert "baseline__vanilla" in result
+    assert "+/-" in result
