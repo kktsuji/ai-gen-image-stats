@@ -421,7 +421,7 @@ def test_create_val_loader_empty_val_returns_none(tmp_path):
 
 
 @pytest.mark.component
-def test_create_train_loader_downsampling_unit(tmp_path):
+def test_create_train_loader_downsampling_component(tmp_path):
     """Component test: downsampling balancing returns a DataLoader with a valid dataset."""
     from torchvision import transforms
 
