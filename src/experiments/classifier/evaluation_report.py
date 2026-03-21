@@ -715,8 +715,8 @@ def generate_report(
         f"Synthetic augmentation: {n_synthetic}",
     ]
     if is_multi_seed and "n_seeds" in display_df.columns:
-        seed_min = int(display_df["n_seeds"].min())
-        seed_max = int(display_df["n_seeds"].max())
+        seed_min = int(display_df["n_seeds"].min())  # type: ignore[arg-type]
+        seed_max = int(display_df["n_seeds"].max())  # type: ignore[arg-type]
         report_lines.append(f"Seeds per experiment: {seed_min}-{seed_max}")
     report_lines.append("")
 
