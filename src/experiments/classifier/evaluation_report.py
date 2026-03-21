@@ -267,7 +267,10 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
                 }
             )
 
-    result: Optional[str] = pd.DataFrame(rows).to_markdown(index=False)
+    result: Optional[str] = pd.DataFrame(rows).to_markdown(
+        index=False,
+        disable_numparse=True,
+    )
     return result if result is not None else ""
 
 

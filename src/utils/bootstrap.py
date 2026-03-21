@@ -68,7 +68,7 @@ def bootstrap_classification_metrics(
         for name, fn in scalar_fns.items():
             try:
                 value = fn(indices)
-                if not np.isnan(value):
+                if np.isfinite(value):
                     metric_values[name].append(value)
             except (ValueError, ZeroDivisionError):
                 continue
@@ -89,7 +89,7 @@ def bootstrap_classification_metrics(
                         v = float(rec[cls_idx])  # type: ignore[index]
                     else:
                         v = float(f1[cls_idx])  # type: ignore[index]
-                    if not np.isnan(v):
+                    if np.isfinite(v):
                         metric_values[name].append(v)
             except (ValueError, ZeroDivisionError):
                 pass

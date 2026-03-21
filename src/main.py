@@ -307,8 +307,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             )
 
             for metric, (lo, hi) in ci_results.items():
-                eval_metrics[f"{metric}_ci_lower"] = lo
-                eval_metrics[f"{metric}_ci_upper"] = hi
+                if np.isfinite(lo) and np.isfinite(hi):
+                    eval_metrics[f"{metric}_ci_lower"] = lo
+                    eval_metrics[f"{metric}_ci_upper"] = hi
             eval_metrics["bootstrap_n"] = n_bootstrap
             eval_metrics["bootstrap_confidence_level"] = confidence_level
 

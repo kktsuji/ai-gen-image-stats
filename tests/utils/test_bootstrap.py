@@ -174,3 +174,22 @@ class TestBootstrapClassificationMetrics:
         # Either way it should not crash
         assert "roc_auc" in result
         assert "recall_1" in result
+
+    def test_filters_inf_values(self, binary_data):
+        """Inf values from metric computations are filtered out."""
+        targets, predictions, probs = binary_data
+
+        result = bootstrap_classification_metrics(
+            targets,
+            predictions,
+            probs,
+            num_classes=2,
+            metric_names=["recall_1", "accuracy"],
+            n_bootstrap=200,
+            seed=42,
+        )
+
+        for name in ["recall_1", "accuracy"]:
+            lo, hi = result[name]
+            assert np.isfinite(lo), f"{name} lower is not finite"
+            assert np.isfinite(hi), f"{name} upper is not finite"
