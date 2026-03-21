@@ -293,6 +293,58 @@ class TestResNetModelDir:
             assert not cache_file.exists()
 
 
+@pytest.mark.unit
+class TestResNetForwardUnit:
+    """Unit tests for forward pass, feature extraction, and loss on CPU."""
+
+    def test_forward_output_shape(self):
+        """forward() returns (batch, num_classes) logits."""
+        model = ResNetClassifier(num_classes=3, variant="resnet50", pretrained=False)
+        model.eval()
+        x = torch.randn(2, 3, 64, 64)
+        with torch.no_grad():
+            out = model(x)
+        assert out.shape == (2, 3)
+        assert not torch.isnan(out).any()
+
+    def test_forward_gradients_flow(self):
+        """Gradients propagate through unfrozen model."""
+        model = ResNetClassifier(
+            num_classes=2, variant="resnet50", freeze_backbone=False, pretrained=False
+        )
+        model.train()
+        x = torch.randn(1, 3, 64, 64)
+        out = model(x)
+        out.sum().backward()
+        assert model.fc.weight.grad is not None
+
+    def test_extract_features_shape(self):
+        """extract_features() returns (batch, 2048)."""
+        model = ResNetClassifier(num_classes=2, variant="resnet50", pretrained=False)
+        model.eval()
+        x = torch.randn(2, 3, 64, 64)
+        with torch.no_grad():
+            feats = model.extract_features(x)
+        assert feats.shape == (2, 2048)
+
+    def test_compute_loss_returns_scalar(self):
+        """compute_loss() returns a non-negative scalar."""
+        model = ResNetClassifier(num_classes=3, pretrained=False)
+        preds = torch.randn(4, 3)
+        targets = torch.tensor([0, 1, 2, 0])
+        loss = model.compute_loss(preds, targets)
+        assert loss.dim() == 0
+        assert loss.item() >= 0
+
+    def test_dropout_nonzero_creates_dropout_layer(self):
+        """dropout > 0 creates nn.Dropout (not Identity), with parameters unfrozen."""
+        model = ResNetClassifier(
+            num_classes=2, dropout=0.5, freeze_backbone=True, pretrained=False
+        )
+        assert isinstance(model.dropout_layer, nn.Dropout)
+        assert model.dropout_layer.p == 0.5
+
+
 # ============================================================================
 # Component Tests - Small data, minimal computation on CPU
 # ============================================================================

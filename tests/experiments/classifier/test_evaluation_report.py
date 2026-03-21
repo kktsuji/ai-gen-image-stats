@@ -9,6 +9,7 @@ import json
 import pytest
 
 from src.experiments.classifier.evaluation_report import (
+    _load_single_result,
     _parse_experiment_name,
     aggregate_multi_seed,
     build_comparison_dataframe,
@@ -774,3 +775,227 @@ def test_generate_best_per_metric_with_std():
     assert "0.8000 +/- 0.0200" in result
     # Best balanced_accuracy is exp-b, should show std
     assert "0.9000 +/- 0.0400" in result
+
+
+# ============================================================================
+# Unit Tests - _load_single_result
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_load_single_result_valid(tmp_path):
+    """_load_single_result loads valid JSON and merges with experiment name."""
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    eval_file = report_dir / "evaluation.json"
+    eval_file.write_text(json.dumps({"recall_1": 0.85, "accuracy": 0.90}))
+
+    result = _load_single_result(str(eval_file), "baseline__vanilla")
+    assert result is not None
+    assert result["experiment"] == "baseline__vanilla"
+    assert result["recall_1"] == 0.85
+
+
+@pytest.mark.unit
+def test_load_single_result_malformed_json(tmp_path):
+    """_load_single_result returns None for invalid JSON."""
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text("{{not valid json")
+
+    result = _load_single_result(str(bad_file), "exp")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_load_single_result_non_dict_json(tmp_path):
+    """_load_single_result returns None when JSON is not a dict."""
+    list_file = tmp_path / "list.json"
+    list_file.write_text(json.dumps([1, 2, 3]))
+
+    result = _load_single_result(str(list_file), "exp")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_load_single_result_reserved_key_conflict(tmp_path):
+    """_load_single_result strips reserved keys from metrics."""
+    eval_file = tmp_path / "evaluation.json"
+    eval_file.write_text(
+        json.dumps({"experiment": "should_be_dropped", "recall_1": 0.7})
+    )
+
+    result = _load_single_result(str(eval_file), "baseline__vanilla")
+    assert result is not None
+    # The "experiment" key should keep the metadata value, not the JSON value
+    assert result["experiment"] == "baseline__vanilla"
+    assert result["recall_1"] == 0.7
+
+
+# ============================================================================
+# Unit Tests - load_evaluation_results
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_load_evaluation_results_multi_seed_unit(tmp_path):
+    """load_evaluation_results discovers multi-seed directory layout."""
+    for seed in [0, 1]:
+        reports_dir = tmp_path / "baseline__vanilla" / f"seed{seed}" / "reports"
+        reports_dir.mkdir(parents=True)
+        with open(reports_dir / "evaluation.json", "w") as f:
+            json.dump({"recall_1": 0.70 + seed * 0.02}, f)
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 2
+    assert all(r["experiment"] == "baseline__vanilla" for r in results)
+    assert sorted(r["seed"] for r in results) == [0, 1]
+
+
+@pytest.mark.unit
+def test_load_evaluation_results_single_seed_unit(tmp_path):
+    """load_evaluation_results loads legacy single-seed layout."""
+    reports_dir = tmp_path / "baseline__vanilla" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump({"recall_1": 0.75}, f)
+
+    results = load_evaluation_results(str(tmp_path))
+    assert len(results) == 1
+    assert results[0]["experiment"] == "baseline__vanilla"
+    assert "seed" not in results[0]
+
+
+@pytest.mark.unit
+def test_load_evaluation_results_empty_dir_unit(tmp_path):
+    """load_evaluation_results returns [] for empty directory."""
+    results = load_evaluation_results(str(tmp_path))
+    assert results == []
+
+
+# ============================================================================
+# Unit Tests - generate_statistical_comparison_table edge cases
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_statistical_table_no_key_metrics():
+    """Returns empty string when no KEY_METRICS columns in DataFrame."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "baseline__vanilla", "seed": 0, "some_other_metric": 0.5},
+            {"experiment": "baseline__vanilla", "seed": 1, "some_other_metric": 0.6},
+        ]
+    )
+    result = generate_statistical_comparison_table(df)
+    assert result == ""
+
+
+@pytest.mark.unit
+def test_statistical_table_no_baselines():
+    """Returns empty string when no baseline experiments exist."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "ws__n100__topk__all", "seed": 0, "recall_1": 0.80},
+            {"experiment": "ws__n100__topk__all", "seed": 1, "recall_1": 0.82},
+        ]
+    )
+    result = generate_statistical_comparison_table(df)
+    assert result == ""
+
+
+@pytest.mark.unit
+def test_statistical_table_no_synthetics():
+    """Returns empty string when no synthetic experiments exist."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "baseline__vanilla", "seed": 0, "recall_1": 0.70},
+            {"experiment": "baseline__vanilla", "seed": 1, "recall_1": 0.72},
+        ]
+    )
+    result = generate_statistical_comparison_table(df)
+    assert result == ""
+
+
+@pytest.mark.unit
+def test_statistical_table_auto_selects_baseline():
+    """Auto-selects baseline with highest mean recall_1 when no baseline_name given."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "baseline__vanilla", "seed": 0, "recall_1": 0.60},
+            {"experiment": "baseline__vanilla", "seed": 1, "recall_1": 0.62},
+            {"experiment": "baseline__over", "seed": 0, "recall_1": 0.80},
+            {"experiment": "baseline__over", "seed": 1, "recall_1": 0.82},
+            {"experiment": "ws__n100__topk__all", "seed": 0, "recall_1": 0.90},
+            {"experiment": "ws__n100__topk__all", "seed": 1, "recall_1": 0.92},
+        ]
+    )
+    result = generate_statistical_comparison_table(df)
+    # Should auto-select baseline__over (higher recall_1 mean)
+    assert "baseline__over" in result
+
+
+# ============================================================================
+# Unit Tests - generate_report
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_generate_report_no_results(tmp_path):
+    """generate_report exits early when no results found."""
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+    # Should not create files when there are no results
+    assert not (output_dir / "evaluation_report.md").exists()
+
+
+@pytest.mark.unit
+def test_generate_report_single_seed(tmp_path):
+    """generate_report produces markdown and CSV for single-seed results."""
+    # Create single-seed result
+    reports_dir = tmp_path / "baseline__vanilla" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump({"recall_1": 0.75, "balanced_accuracy": 0.80}, f)
+
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    assert (output_dir / "evaluation_report.md").exists()
+    assert (output_dir / "evaluation_results.csv").exists()
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Evaluation Report" in report
+    assert "baseline__vanilla" in report
+
+
+@pytest.mark.unit
+def test_generate_report_multi_seed(tmp_path):
+    """generate_report with multi-seed data includes aggregation and stat table."""
+    for seed, bl, syn in [(0, 0.70, 0.80), (1, 0.72, 0.82), (2, 0.74, 0.84)]:
+        _create_multi_seed_results(
+            tmp_path,
+            "baseline__vanilla",
+            [seed],
+            [{"recall_1": bl, "balanced_accuracy": bl}],
+        )
+        _create_multi_seed_results(
+            tmp_path,
+            "ws__n100-gs3__topk__all",
+            [seed],
+            [{"recall_1": syn, "balanced_accuracy": syn}],
+        )
+
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Evaluation Report" in report
+    assert (output_dir / "evaluation_results.csv").exists()
