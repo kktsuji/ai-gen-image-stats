@@ -132,6 +132,86 @@ def test_generate_best_per_metric():
     assert "exp-b" in result  # best balanced_accuracy
 
 
+@pytest.mark.unit
+def test_generate_classifier_table_with_ci():
+    """Test generating markdown table with CI bounds."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "recall_1": 0.3,
+                "recall_1_ci_lower": 0.25,
+                "recall_1_ci_upper": 0.35,
+                "balanced_accuracy": 0.65,
+                "balanced_accuracy_ci_lower": 0.60,
+                "balanced_accuracy_ci_upper": 0.70,
+            },
+        ]
+    )
+    result = generate_classifier_table(df)
+    assert "baseline__vanilla" in result
+    # Should contain CI format: value [lower, upper]
+    assert "[0.2500, 0.3500]" in result
+    assert "[0.6000, 0.7000]" in result
+
+
+@pytest.mark.unit
+def test_generate_best_per_metric_with_ci():
+    """Test best-per-metric table includes CI when available."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "exp-a",
+                "type": "synthetic",
+                "recall_1": 0.8,
+                "recall_1_ci_lower": 0.75,
+                "recall_1_ci_upper": 0.85,
+                "balanced_accuracy": 0.7,
+            },
+            {
+                "experiment": "exp-b",
+                "type": "baseline",
+                "recall_1": 0.3,
+                "recall_1_ci_lower": 0.25,
+                "recall_1_ci_upper": 0.35,
+                "balanced_accuracy": 0.9,
+            },
+        ]
+    )
+    result = generate_best_per_metric(df)
+    # Best recall_1 is exp-a with CI
+    assert "[0.7500, 0.8500]" in result
+    # Best balanced_accuracy is exp-b, no CI available
+    assert "exp-b" in result
+
+
+@pytest.mark.unit
+def test_generate_classifier_table_without_ci():
+    """Test table works normally when no CI columns present."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "recall_1": 0.3000,
+                "balanced_accuracy": 0.6500,
+            },
+        ]
+    )
+    result = generate_classifier_table(df)
+    assert "baseline__vanilla" in result
+    assert "0.3000" in result
+    # No CI brackets
+    assert "[" not in result
+
+
 @pytest.mark.component
 def test_load_evaluation_results(tmp_path):
     """Test loading evaluation results from directory structure."""

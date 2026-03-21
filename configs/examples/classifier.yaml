@@ -165,3 +165,16 @@ training:
     checkpoint: null # Path to checkpoint (required if enabled)
     reset_optimizer: false # Reset optimizer state when resuming
     reset_scheduler: false # Reset LR scheduler when resuming
+
+# ------------------------------------------------------------------------------
+# EVALUATION CONFIGURATION
+# ------------------------------------------------------------------------------
+# Only used when mode=evaluate
+
+evaluation:
+  checkpoint: null # Path to checkpoint for evaluate mode (required when mode=evaluate)
+  bootstrap:
+    enabled: true # Compute bootstrap confidence intervals for evaluation metrics
+    n_bootstrap: 10000 # Number of bootstrap iterations
+    confidence_level: 0.95 # Confidence level for intervals (e.g., 0.95 = 95% CI)
+    save_predictions: true # Save per-sample predictions to predictions.npz

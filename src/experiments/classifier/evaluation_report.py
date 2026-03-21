@@ -142,6 +142,59 @@ def build_comparison_dataframe(
     return df
 
 
+def _format_value_with_ci(
+    val: float,
+    lo: Optional[float],
+    hi: Optional[float],
+    floatfmt: str = ".4f",
+) -> str:
+    """Format a single metric value with optional CI bounds.
+
+    Args:
+        val: Metric value.
+        lo: CI lower bound (None or NaN to omit).
+        hi: CI upper bound (None or NaN to omit).
+        floatfmt: Float format string.
+
+    Returns:
+        Formatted string, e.g. "0.8500 [0.8200, 0.8800]" or "0.8500".
+    """
+    val_str = f"{float(val):{floatfmt}}"
+    if lo is not None and hi is not None and bool(pd.notna(lo)) and bool(pd.notna(hi)):
+        return f"{val_str} [{float(lo):{floatfmt}}, {float(hi):{floatfmt}}]"
+    return val_str
+
+
+def _format_with_ci(df: pd.DataFrame, metric: str, floatfmt: str = ".4f") -> pd.Series:
+    """Format a metric column with CI bounds if available.
+
+    If {metric}_ci_lower and {metric}_ci_upper exist in df, formats cells as
+    "0.8500 [0.82, 0.88]". Otherwise returns the plain formatted values.
+
+    Args:
+        df: DataFrame with evaluation results.
+        metric: Metric column name.
+        floatfmt: Float format string.
+
+    Returns:
+        Series of formatted strings.
+    """
+    lower_col = f"{metric}_ci_lower"
+    upper_col = f"{metric}_ci_upper"
+    has_ci = lower_col in df.columns and upper_col in df.columns
+
+    formatted = []
+    for idx in df.index:
+        val = df.loc[idx, metric]
+        if pd.notna(val):
+            lo = df.loc[idx, lower_col] if has_ci else None
+            hi = df.loc[idx, upper_col] if has_ci else None
+            formatted.append(_format_value_with_ci(val, lo, hi, floatfmt))
+        else:
+            formatted.append("")
+    return pd.Series(formatted, index=df.index)
+
+
 def generate_classifier_table(df: pd.DataFrame) -> str:
     """Generate markdown table of classifier performance.
 
@@ -166,7 +219,13 @@ def generate_classifier_table(df: pd.DataFrame) -> str:
     if sort_col in subset.columns:
         subset = subset.sort_values(by=sort_col, ascending=False)  # type: ignore[call-overload]
 
-    result: Optional[str] = subset.to_markdown(index=False, floatfmt=".4f")
+    # Format metric columns with CI bounds (convert to object dtype to keep strings)
+    for metric in metric_cols:
+        if metric in subset.columns:
+            subset[metric] = _format_with_ci(df.loc[subset.index], metric).values
+
+    # disable_numparse prevents tabulate from re-parsing formatted strings as numbers
+    result: Optional[str] = subset.to_markdown(index=False, disable_numparse=True)
     return result if result is not None else ""
 
 
@@ -194,16 +253,24 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
 
         if best_idx is not None and bool(pd.notna(best_idx)):
             best_row = df.loc[best_idx]
+            value = best_row[metric]
+            lo = best_row.get(f"{metric}_ci_lower")
+            hi = best_row.get(f"{metric}_ci_upper")
+            value_str = _format_value_with_ci(value, lo, hi)
+
             rows.append(
                 {
                     "metric": metric,
                     "best_experiment": best_row["experiment"],
-                    "value": best_row[metric],
+                    "value": value_str,
                     "type": best_row.get("type", "unknown"),
                 }
             )
 
-    result: Optional[str] = pd.DataFrame(rows).to_markdown(index=False, floatfmt=".4f")
+    result: Optional[str] = pd.DataFrame(rows).to_markdown(
+        index=False,
+        disable_numparse=True,
+    )
     return result if result is not None else ""
 
 
@@ -318,9 +385,37 @@ def generate_report(
             delta = best_synthetic_val - best_baseline_val
             sign = "+" if delta >= 0 else ""
 
+            # Format with CI if available
+            lower_col = f"{metric}_ci_lower"
+            upper_col = f"{metric}_ci_upper"
+            bl_lo = (
+                baselines.loc[bl_best_idx, lower_col]
+                if lower_col in df.columns
+                else None
+            )
+            bl_hi = (
+                baselines.loc[bl_best_idx, upper_col]
+                if upper_col in df.columns
+                else None
+            )
+            syn_lo = (
+                synthetics.loc[syn_best_idx, lower_col]
+                if lower_col in df.columns
+                else None
+            )
+            syn_hi = (
+                synthetics.loc[syn_best_idx, upper_col]
+                if upper_col in df.columns
+                else None
+            )
+
+            bl_str = _format_value_with_ci(best_baseline_val, bl_lo, bl_hi)
+            syn_str = _format_value_with_ci(best_synthetic_val, syn_lo, syn_hi)
+
             report_lines.append(
-                f"- **{metric}**: best baseline={best_baseline_val:.4f} "
-                f"({best_baseline_name}), best synthetic={best_synthetic_val:.4f} "
+                f"- **{metric}**: best baseline={bl_str} "
+                f"({best_baseline_name}), "
+                f"best synthetic={syn_str} "
                 f"({best_synthetic_name}), delta={sign}{delta:.4f}"
             )
 
