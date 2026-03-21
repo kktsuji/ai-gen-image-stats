@@ -302,12 +302,15 @@ class TestPrepareSplit:
             # The label should match the class that the path belongs to
             path = entry["path"]
             label = entry["label"]
+            matched = False
             for class_name, class_label in classes.items():
                 if class_label == label:
                     # The class path should be a prefix of the file path
                     source_path = data["metadata"]["source_paths"][class_name]
                     assert path.startswith(source_path)
+                    matched = True
                     break
+            assert matched, f"Label {label} not found in class mapping"
 
     def test_skip_existing_file(self, tmp_path):
         """Test that existing file is skipped when force=false."""

@@ -204,6 +204,17 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="contiguous"):
             validate_config(config)
 
+    def test_class_unexpected_keys_raises(self):
+        """Test that unexpected keys in class entry raise ValueError."""
+        config = _make_valid_config()
+        config["classes"]["normal"] = {
+            "path": "data/x",
+            "label": 0,
+            "extra": "value",
+        }
+        with pytest.raises(ValueError, match="unsupported keys"):
+            validate_config(config)
+
     def test_valid_three_classes(self):
         """Test that three classes with contiguous labels passes."""
         config = _make_valid_config()

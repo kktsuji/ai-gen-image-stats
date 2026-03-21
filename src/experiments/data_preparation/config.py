@@ -43,6 +43,12 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError(
                 f"Class '{class_name}' must be a dict with 'path' and 'label' keys"
             )
+        unexpected_keys = set(class_entry) - {"path", "label"}
+        if unexpected_keys:
+            raise ValueError(
+                f"Class '{class_name}' has unsupported keys: {sorted(unexpected_keys)}. "
+                "Only 'path' and 'label' are allowed"
+            )
         if "path" not in class_entry:
             raise KeyError(f"Class '{class_name}' missing required key: 'path'")
         if not isinstance(class_entry["path"], str) or not class_entry["path"]:
