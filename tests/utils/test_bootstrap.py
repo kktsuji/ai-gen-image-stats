@@ -215,21 +215,37 @@ class TestBootstrapClassificationMetrics:
             assert not np.isnan(hi), f"{name} upper is NaN"
             assert lo <= hi, f"{name}: lower > upper"
 
-    def test_filters_inf_values(self, binary_data):
+    def test_filters_inf_values(self, binary_data, monkeypatch):
         """Inf values from metric computations are filtered out."""
+        from unittest.mock import MagicMock
+
+        import src.utils.bootstrap as bootstrap_mod
+
         targets, predictions, probs = binary_data
+
+        # Patch balanced_accuracy_score to return Inf on ~50% of calls
+        call_count = MagicMock(n=0)
+        original_fn = bootstrap_mod.balanced_accuracy_score
+
+        def _sometimes_inf(*args, **kwargs):
+            call_count.n += 1
+            if call_count.n % 2 == 0:
+                return float("inf")
+            return original_fn(*args, **kwargs)
+
+        monkeypatch.setattr(bootstrap_mod, "balanced_accuracy_score", _sometimes_inf)
 
         result = bootstrap_classification_metrics(
             targets,
             predictions,
             probs,
             num_classes=2,
-            metric_names=["recall_1", "accuracy"],
+            metric_names=["balanced_accuracy"],
             n_bootstrap=200,
             seed=42,
         )
 
-        for name in ["recall_1", "accuracy"]:
-            lo, hi = result[name]
-            assert np.isfinite(lo), f"{name} lower is not finite"
-            assert np.isfinite(hi), f"{name} upper is not finite"
+        lo, hi = result["balanced_accuracy"]
+        # Inf values should be filtered; CI should be finite
+        assert np.isfinite(lo), "lower bound is not finite"
+        assert np.isfinite(hi), "upper bound is not finite"

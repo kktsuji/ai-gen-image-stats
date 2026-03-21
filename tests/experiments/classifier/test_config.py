@@ -692,6 +692,20 @@ class TestValidateBootstrapConfig:
         ):
             validate_config(config)
 
+    def test_bootstrap_null_raises(self):
+        """bootstrap: null raises ValueError."""
+        config = _make_evaluate_config()
+        config["evaluation"]["bootstrap"] = None
+        with pytest.raises(ValueError, match="evaluation.bootstrap must be a mapping"):
+            validate_config(config)
+
+    def test_bootstrap_list_raises(self):
+        """bootstrap as a list raises ValueError."""
+        config = _make_evaluate_config()
+        config["evaluation"]["bootstrap"] = ["enabled", True]
+        with pytest.raises(ValueError, match="evaluation.bootstrap must be a mapping"):
+            validate_config(config)
+
     def test_bootstrap_empty_dict_raises(self):
         """Empty bootstrap dict raises KeyError for missing fields."""
         config = _make_evaluate_config()

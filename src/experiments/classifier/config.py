@@ -305,6 +305,8 @@ def validate_config(config: Dict[str, Any]) -> None:
                 "(must be explicitly specified in evaluate mode)"
             )
         bootstrap = evaluation["bootstrap"]
+        if not isinstance(bootstrap, dict):
+            raise ValueError("evaluation.bootstrap must be a mapping")
 
         for field in ("enabled", "n_bootstrap", "confidence_level", "save_predictions"):
             if field not in bootstrap:
