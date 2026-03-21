@@ -231,12 +231,18 @@ def compare_experiment_pair(
         baseline_values: Dict mapping metric name -> array of seed values.
         treatment_values: Dict mapping metric name -> array of seed values.
         metric_names: List of metric names to compare.
-        alpha: Significance threshold (after correction).
+        alpha: Significance threshold (after correction). Must be in (0, 1).
         correction_method: P-value correction method.
 
     Returns:
         List of ComparisonResult, one per metric.
+
+    Raises:
+        ValueError: If alpha is not in (0, 1).
     """
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     raw_results: List[dict] = []
     raw_pvalues: List[float] = []
 

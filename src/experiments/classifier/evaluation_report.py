@@ -240,9 +240,9 @@ def aggregate_multi_seed(
 
         for metric in metric_names:
             if metric in group.columns:
-                values = group[metric].dropna().values
-                if len(values) >= 2:
-                    metric_arrays[metric] = np.array(values, dtype=np.float64)
+                values = np.array(group[metric].values, dtype=np.float64)
+                if len(values) >= 2 and not np.any(np.isnan(values)):
+                    metric_arrays[metric] = values
 
         if len(metric_arrays) > 1:  # more than just "_seeds"
             aggregated[str(exp_name)] = metric_arrays
@@ -320,14 +320,20 @@ def generate_statistical_comparison_table(
 
     Args:
         df: DataFrame with multi-seed evaluation results (must have "seed" column).
-        alpha: Significance threshold after correction.
+        alpha: Significance threshold after correction. Must be in (0, 1).
         correction_method: P-value correction method.
         baseline_name: Specific baseline to use. If None, uses the best
             baseline (highest recall_1 mean).
 
     Returns:
         Markdown-formatted table string, or empty string if not applicable.
+
+    Raises:
+        ValueError: If alpha is not in (0, 1).
     """
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+
     if "seed" not in df.columns:
         return ""
 
@@ -834,6 +840,7 @@ def generate_report(
         report_lines.append("")
 
     # Table 4: Statistical significance (multi-seed only)
+    # Uses raw per-seed df (not aggregated display_df) for paired testing
     if is_multi_seed:
         stat_table = generate_statistical_comparison_table(
             df, alpha=alpha, correction_method=correction_method

@@ -374,3 +374,13 @@ class TestCompareExperimentPair:
         assert len(results) == 1
         assert math.isnan(results[0].p_value)
         assert not results[0].significant
+
+    @pytest.mark.unit
+    def test_invalid_alpha(self) -> None:
+        """Invalid alpha values should raise ValueError."""
+        bl = {"m": np.array([0.7, 0.8])}
+        tr = {"m": np.array([0.8, 0.9])}
+        with pytest.raises(ValueError, match="alpha must be in"):
+            compare_experiment_pair(bl, tr, ["m"], alpha=0.0)
+        with pytest.raises(ValueError, match="alpha must be in"):
+            compare_experiment_pair(bl, tr, ["m"], alpha=1.0)

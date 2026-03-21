@@ -595,3 +595,55 @@ def test_generate_statistical_comparison_table_matching_seeds():
     result = generate_statistical_comparison_table(df, alpha=0.05)
     assert "ws__n100-gs3__topk__all" in result
     assert "p_corrected" in result
+
+
+@pytest.mark.unit
+def test_aggregate_multi_seed_skips_metric_with_nan():
+    """Test that a metric with NaN for any seed is excluded (not misaligned)."""
+    import numpy as np
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70, "f1_1": 0.65},
+            {"experiment": "exp-a", "seed": 1, "recall_1": float("nan"), "f1_1": 0.67},
+            {"experiment": "exp-a", "seed": 2, "recall_1": 0.68, "f1_1": 0.63},
+        ]
+    )
+
+    aggregated = aggregate_multi_seed(df, ["recall_1", "f1_1"])
+    assert "exp-a" in aggregated
+    # recall_1 has a NaN, so it should be excluded entirely
+    assert "recall_1" not in aggregated["exp-a"]
+    # f1_1 is complete, so it should be present with all 3 values
+    assert "f1_1" in aggregated["exp-a"]
+    np.testing.assert_array_equal(aggregated["exp-a"]["f1_1"], [0.65, 0.67, 0.63])
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table_invalid_alpha():
+    """Test that invalid alpha values raise ValueError."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": 0,
+                "recall_1": 0.7,
+            },
+            {
+                "experiment": "baseline__vanilla",
+                "type": "baseline",
+                "seed": 1,
+                "recall_1": 0.7,
+            },
+        ]
+    )
+    with pytest.raises(ValueError, match="alpha must be in"):
+        generate_statistical_comparison_table(df, alpha=0.0)
+    with pytest.raises(ValueError, match="alpha must be in"):
+        generate_statistical_comparison_table(df, alpha=1.0)
+    with pytest.raises(ValueError, match="alpha must be in"):
+        generate_statistical_comparison_table(df, alpha=-0.5)
