@@ -23,6 +23,9 @@ RUN_BASELINE_CLASSIFIER = False
 RUN_EVALUATION = False
 RUN_SUMMARIZE = False
 
+# Random seeds for multi-seed classifier runs (for statistical testing)
+SEEDS = [0, 1, 2, 3, 4]
+
 # Each variant: (name, extra CLI overrides for training)
 TRAIN_VARIANTS = [
     ("noaug", ["--training.epochs", "10"]),
@@ -269,67 +272,80 @@ def main() -> None:
                     proc.wait()
 
     # ------------------------------------------------------------------
-    # Classifier Training with Synthetic Augmentation
+    # Classifier Training with Synthetic Augmentation (multi-seed)
     # ------------------------------------------------------------------
     if RUN_CLASSIFIER:
-        # outputs/classifier/{train}_{gen}_{sel}_{cls}/
+        # outputs/classifier/{train}__{gen}__{sel}__{cls}/seed{N}/
         for train_name, _ in TRAIN_VARIANTS:
             for gen_name, _ in GEN_VARIANTS:
                 for sel_name, _ in SELECTION_VARIANTS:
                     for cls_name, cls_overrides in CLASSIFIER_VARIANTS:
-                        sel_split = (
-                            f"outputs/diffusion-{train_name}/selection"
-                            f"/{gen_name}__{sel_name}/reports/accepted_samples.json"
-                        )
-                        out_dir = (
-                            f"outputs/classifier"
-                            f"/{train_name}__{gen_name}__{sel_name}__{cls_name}"
-                        )
-                        overrides = [
-                            "--output.base_dir",
-                            out_dir,
-                            "--data.synthetic_augmentation.enabled",
-                            "true",
-                            "--data.synthetic_augmentation.split_file",
-                            sel_split,
-                            *cls_overrides,
-                        ]
-                        print(
-                            f"[CLS] {train_name}/{gen_name}/{sel_name}/{cls_name}:"
-                            f" {CLASSIFIER_CONFIG} {' '.join(overrides)}"
-                        )
-                        proc = run(CLASSIFIER_CONFIG, overrides)
-                        proc.wait()
+                        for seed in SEEDS:
+                            sel_split = (
+                                f"outputs/diffusion-{train_name}/selection"
+                                f"/{gen_name}__{sel_name}/reports/accepted_samples.json"
+                            )
+                            exp_name = (
+                                f"{train_name}__{gen_name}__{sel_name}__{cls_name}"
+                            )
+                            out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
+                            overrides = [
+                                "--output.base_dir",
+                                out_dir,
+                                "--compute.seed",
+                                str(seed),
+                                "--data.synthetic_augmentation.enabled",
+                                "true",
+                                "--data.synthetic_augmentation.split_file",
+                                sel_split,
+                                *cls_overrides,
+                            ]
+                            print(
+                                f"[CLS] {exp_name}/seed{seed}:"
+                                f" {CLASSIFIER_CONFIG} {' '.join(overrides)}"
+                            )
+                            proc = run(CLASSIFIER_CONFIG, overrides)
+                            proc.wait()
 
     # ------------------------------------------------------------------
-    # Baseline Classifier Training (real data only)
+    # Baseline Classifier Training (real data only, multi-seed)
     # ------------------------------------------------------------------
     if RUN_BASELINE_CLASSIFIER:
-        # outputs/classifier/baseline_{strategy}/
+        # outputs/classifier/baseline__{strategy}/seed{N}/
         for baseline_name, baseline_overrides in BASELINE_VARIANTS:
-            out_dir = f"outputs/classifier/{baseline_name}"
-            overrides = [
-                "--output.base_dir",
-                out_dir,
-                *baseline_overrides,
-            ]
-            print(
-                f"[BASELINE] {baseline_name}: {CLASSIFIER_CONFIG} {' '.join(overrides)}"
-            )
-            proc = run(CLASSIFIER_CONFIG, overrides)
-            proc.wait()
+            for seed in SEEDS:
+                out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
+                overrides = [
+                    "--output.base_dir",
+                    out_dir,
+                    "--compute.seed",
+                    str(seed),
+                    *baseline_overrides,
+                ]
+                print(
+                    f"[BASELINE] {baseline_name}/seed{seed}:"
+                    f" {CLASSIFIER_CONFIG} {' '.join(overrides)}"
+                )
+                proc = run(CLASSIFIER_CONFIG, overrides)
+                proc.wait()
 
     # ------------------------------------------------------------------
     # Evaluation: re-evaluate all classifier experiments with enriched metrics
     # ------------------------------------------------------------------
     if RUN_EVALUATION:
-        # outputs/classifier/{train}_{gen}_{sel}_{cls}/ or outputs/classifier/baseline_{strategy}/
         import glob
 
-        # Find all classifier experiment directories
-        experiment_dirs = sorted(glob.glob("outputs/classifier/*/"))
-        for exp_dir in experiment_dirs:
-            exp_name = exp_dir.rstrip("/").split("/")[-1]
+        # Find all seed directories (multi-seed layout) and legacy
+        # experiment dirs that have no seed subdirectories.
+        seed_dirs = sorted(glob.glob("outputs/classifier/*/seed*/"))
+        legacy_dirs = [
+            d
+            for d in sorted(glob.glob("outputs/classifier/*/"))
+            if not glob.glob(os.path.join(d, "seed*/"))
+        ]
+
+        for exp_dir in [*seed_dirs, *legacy_dirs]:
+            exp_label = exp_dir.rstrip("/").replace("outputs/classifier/", "")
 
             # Find best checkpoint, fall back to final
             checkpoint = None
@@ -340,7 +356,7 @@ def main() -> None:
                     break
 
             if checkpoint is None:
-                print(f"[EVAL] SKIP {exp_name}: no checkpoint found")
+                print(f"[EVAL] SKIP {exp_label}: no checkpoint found")
                 continue
 
             overrides = [
@@ -353,7 +369,7 @@ def main() -> None:
                 "--data.synthetic_augmentation.enabled",
                 "false",
             ]
-            print(f"[EVAL] {exp_name}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
+            print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
             proc = run(CLASSIFIER_CONFIG, overrides)
             proc.wait()
 
