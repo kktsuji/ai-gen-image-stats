@@ -323,7 +323,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         logger.info("Evaluation results:")
         for key, value in sorted(scalar_eval_metrics.items()):
             try:
-                if value == int(value):
+                if isinstance(eval_metrics.get(key), int):
                     logger.info(f"  {key}: {int(value)}")
                 else:
                     logger.info(f"  {key}: {value:.4f}")

@@ -162,7 +162,10 @@ def _build_metric_fns(
             def _loss(idx: np.ndarray) -> float:
                 t = targets[idx]
                 p = probs[idx]
-                # Cross-entropy from stored probabilities
+                # Cross-entropy recomputed from stored probabilities.
+                # This may differ slightly from the point-estimate loss
+                # reported by the trainer, which is computed batch-by-batch
+                # from logits via nn.CrossEntropyLoss.
                 n_cls = p.shape[1]
                 y_onehot = np.eye(n_cls)[t]
                 return float(-(y_onehot * np.log(p + 1e-12)).sum(axis=1).mean())
