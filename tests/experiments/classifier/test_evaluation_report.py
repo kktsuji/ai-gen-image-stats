@@ -682,3 +682,60 @@ def test_generate_report_invalid_alpha(tmp_path):
             output_dir=str(tmp_path / "output"),
             alpha=1.5,
         )
+
+
+@pytest.mark.component
+def test_generate_report_multi_seed_includes_stat_table(tmp_path):
+    """Full report with multi-seed data should include Table 4 (statistical significance)."""
+    for seed, bl, syn in [(0, 0.70, 0.80), (1, 0.72, 0.82), (2, 0.74, 0.84)]:
+        _create_multi_seed_results(
+            tmp_path,
+            "baseline__vanilla",
+            [seed],
+            [{"recall_1": bl, "balanced_accuracy": bl}],
+        )
+        _create_multi_seed_results(
+            tmp_path,
+            "ws__n100-gs3__topk__all",
+            [seed],
+            [{"recall_1": syn, "balanced_accuracy": syn}],
+        )
+
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Table 4: Statistical Significance" in report
+    assert "p_corrected" in report
+
+
+@pytest.mark.unit
+def test_generate_best_per_metric_with_std():
+    """Test best-per-metric table shows +/- std for multi-seed data."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {
+                "experiment": "exp-a",
+                "type": "synthetic",
+                "recall_1": 0.80,
+                "recall_1_std": 0.02,
+                "balanced_accuracy": 0.70,
+                "balanced_accuracy_std": 0.03,
+            },
+            {
+                "experiment": "exp-b",
+                "type": "baseline",
+                "recall_1": 0.30,
+                "recall_1_std": 0.01,
+                "balanced_accuracy": 0.90,
+                "balanced_accuracy_std": 0.04,
+            },
+        ]
+    )
+    result = generate_best_per_metric(df)
+    # Best recall_1 is exp-a, should show std
+    assert "0.8000 +/- 0.0200" in result
+    # Best balanced_accuracy is exp-b, should show std
+    assert "0.9000 +/- 0.0400" in result

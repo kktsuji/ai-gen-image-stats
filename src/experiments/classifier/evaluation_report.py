@@ -365,6 +365,11 @@ def generate_statistical_comparison_table(
     if baseline_name and baseline_name in baselines:
         selected_baseline = baseline_name
     else:
+        if baseline_name:
+            _logger.warning(
+                f"Requested baseline {baseline_name!r} not found in aggregated "
+                f"results; falling back to auto-selection"
+            )
         # Use baseline with highest mean recall_1 (or first available)
         best_bl_name = None
         best_bl_recall = -float("inf")
@@ -609,7 +614,19 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
             value = best_row[metric]
             lo = best_row.get(f"{metric}_ci_lower")
             hi = best_row.get(f"{metric}_ci_upper")
-            value_str = _format_value_with_ci(value, lo, hi)
+            std_val = best_row.get(f"{metric}_std")
+
+            if (
+                lo is not None
+                and hi is not None
+                and bool(pd.notna(lo))
+                and bool(pd.notna(hi))
+            ):
+                value_str = _format_value_with_ci(value, lo, hi)
+            elif std_val is not None and bool(pd.notna(std_val)):
+                value_str = f"{float(value):.4f} +/- {float(std_val):.4f}"
+            else:
+                value_str = f"{float(value):.4f}"
 
             rows.append(
                 {
