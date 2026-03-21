@@ -405,3 +405,136 @@ class TestPrepareSplit:
 
         output_path = prepare_split(config)
         assert Path(output_path).exists()
+
+
+# ============================================================================
+# Unit Tests - prepare_split
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestPrepareSplitUnit:
+    """Unit tests for the prepare_split function."""
+
+    def _make_config(self, tmp_path, classes_config, **overrides):
+        """Create a config dict for prepare_split."""
+        class_paths = _create_mock_class_dirs(tmp_path / "data", classes_config)
+        save_dir = str(tmp_path / "output")
+
+        split_config = {
+            "seed": 42,
+            "train_ratio": 0.8,
+            "save_dir": save_dir,
+            "split_file": "split.json",
+            "force": False,
+        }
+        split_config.update(overrides)
+
+        return {
+            "experiment": "data_preparation",
+            "classes": class_paths,
+            "split": split_config,
+        }
+
+    def test_creates_json_with_correct_structure(self, tmp_path):
+        """Test that prepare_split creates JSON with metadata, train, val keys."""
+        config = self._make_config(tmp_path, {"normal": 5, "abnormal": 5})
+        output_path = prepare_split(config)
+
+        assert Path(output_path).exists()
+        with open(output_path) as f:
+            data = json.load(f)
+
+        assert "metadata" in data
+        assert "train" in data
+        assert "val" in data
+
+        metadata = data["metadata"]
+        assert metadata["seed"] == 42
+        assert metadata["train_ratio"] == 0.8
+        assert metadata["total_samples"] == 10
+        assert "classes" in metadata
+        assert "class_samples" in metadata
+        assert "source_paths" in metadata
+        assert "created_at" in metadata
+
+        # Every entry has path and label
+        for entry in data["train"] + data["val"]:
+            assert "path" in entry
+            assert "label" in entry
+
+    def test_skips_existing_file(self, tmp_path):
+        """Test that existing file is skipped when force=False."""
+        config = self._make_config(tmp_path, {"normal": 3, "abnormal": 3})
+
+        # First run creates the file
+        output_path = prepare_split(config)
+        with open(output_path) as f:
+            json.load(f)  # verify valid JSON was created
+
+        # Tamper with file to detect if it gets overwritten
+        with open(output_path, "w") as f:
+            json.dump({"tampered": True}, f)
+
+        # Second run should skip (force=False)
+        output_path2 = prepare_split(config)
+        assert output_path == output_path2
+
+        with open(output_path2) as f:
+            data = json.load(f)
+        assert data == {"tampered": True}  # File was NOT overwritten
+
+    def test_force_overwrites(self, tmp_path):
+        """Test that force=True regenerates the file."""
+        config = self._make_config(tmp_path, {"normal": 3, "abnormal": 3}, force=True)
+
+        output_path = prepare_split(config)
+        # Tamper with file
+        with open(output_path, "w") as f:
+            json.dump({"tampered": True}, f)
+
+        # Run again with force=True
+        prepare_split(config)
+        with open(output_path) as f:
+            data = json.load(f)
+        assert "metadata" in data  # Overwritten with proper structure
+
+    def test_null_seed(self, tmp_path):
+        """Test that seed=None produces valid output."""
+        config = self._make_config(
+            tmp_path, {"normal": 4, "abnormal": 4}, seed=None, force=True
+        )
+        output_path = prepare_split(config)
+
+        with open(output_path) as f:
+            data = json.load(f)
+
+        assert data["metadata"]["seed"] is None
+        assert len(data["train"]) + len(data["val"]) == 8
+
+    def test_class_label_ordering(self, tmp_path):
+        """Test that class_to_label mapping is sorted alphabetically."""
+        config = self._make_config(tmp_path, {"zebra": 3, "apple": 3, "mango": 3})
+        output_path = prepare_split(config)
+
+        with open(output_path) as f:
+            data = json.load(f)
+
+        classes = data["metadata"]["classes"]
+        assert classes == {"apple": 0, "mango": 1, "zebra": 2}
+
+    def test_missing_class_dir_raises(self, tmp_path):
+        """Test that nonexistent data directory raises FileNotFoundError."""
+        config = {
+            "experiment": "data_preparation",
+            "classes": {"ghost": str(tmp_path / "nonexistent")},
+            "split": {
+                "seed": 42,
+                "train_ratio": 0.8,
+                "save_dir": str(tmp_path / "output"),
+                "split_file": "split.json",
+                "force": False,
+            },
+        }
+        with pytest.raises(FileNotFoundError):
+            prepare_split(config)

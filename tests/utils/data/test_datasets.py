@@ -497,3 +497,176 @@ class TestImageFolderDatasetPrintSummaryUnit:
         assert "Classes:" in captured.out
         assert "cat" in captured.out
         assert "dog" in captured.out
+
+
+@pytest.mark.unit
+class TestImageFolderGetItemUnit:
+    """Unit tests for ImageFolderDataset __getitem__ paths."""
+
+    def test_getitem_return_labels_false(self, tmp_path, sample_transform):
+        """return_labels=False returns only the image, not a tuple."""
+        (tmp_path / "cat").mkdir()
+        Image.new("RGB", (4, 4)).save(tmp_path / "cat" / "a.png")
+
+        dataset = ImageFolderDataset(
+            str(tmp_path), transform=sample_transform, return_labels=False
+        )
+        item = dataset[0]
+        # Should be a tensor, not a tuple
+        assert isinstance(item, torch.Tensor)
+
+    def test_getitem_return_labels_true(self, tmp_path, sample_transform):
+        """return_labels=True (default) returns (image, label) tuple."""
+        (tmp_path / "cat").mkdir()
+        Image.new("RGB", (4, 4)).save(tmp_path / "cat" / "a.png")
+
+        dataset = ImageFolderDataset(str(tmp_path), transform=sample_transform)
+        item = dataset[0]
+        assert isinstance(item, tuple)
+        assert len(item) == 2
+
+
+@pytest.mark.unit
+class TestImageFolderSampleWeightsUnit:
+    """Unit tests for ImageFolderDataset.get_sample_weights()."""
+
+    def test_get_sample_weights_inverse_frequency(self, tmp_path):
+        """Inverse frequency weights: minority class gets higher weight."""
+        (tmp_path / "cat").mkdir()
+        (tmp_path / "dog").mkdir()
+        # 2 cats, 4 dogs → cat weight should be higher
+        for i in range(2):
+            Image.new("RGB", (4, 4)).save(tmp_path / "cat" / f"{i}.png")
+        for i in range(4):
+            Image.new("RGB", (4, 4)).save(tmp_path / "dog" / f"{i}.png")
+
+        dataset = ImageFolderDataset(str(tmp_path))
+        weights = dataset.get_sample_weights()
+
+        assert len(weights) == 6
+        # cat samples (minority) should have higher weight
+        cat_idx = dataset.class_to_idx["cat"]
+        dog_idx = dataset.class_to_idx["dog"]
+        cat_weight = None
+        dog_weight = None
+        for (_, label), w in zip(dataset.samples, weights):
+            if label == cat_idx and cat_weight is None:
+                cat_weight = w
+            if label == dog_idx and dog_weight is None:
+                dog_weight = w
+        assert cat_weight is not None and dog_weight is not None
+        assert cat_weight > dog_weight
+
+
+@pytest.mark.unit
+class TestSplitFileDatasetAccessorsUnit:
+    """Unit tests for SplitFileDataset property accessors and methods."""
+
+    def _make_split_json(self, tmp_path, entries_per_class=2):
+        """Create a split JSON with real images."""
+        import json
+
+        images = []
+        for cls_idx in range(2):
+            cls_name = f"cls{cls_idx}"
+            cls_dir = tmp_path / cls_name
+            cls_dir.mkdir(exist_ok=True)
+            for i in range(entries_per_class):
+                img_path = cls_dir / f"img_{i}.png"
+                Image.new("RGB", (4, 4)).save(img_path)
+                images.append({"path": str(img_path), "label": cls_idx})
+
+        split_data = {
+            "metadata": {"classes": {"cls0": 0, "cls1": 1}},
+            "train": images,
+            "val": images[:1],
+        }
+        split_file = tmp_path / "split.json"
+        split_file.write_text(json.dumps(split_data))
+        return str(split_file)
+
+    def test_getitem_returns_image_and_label(self, tmp_path, sample_transform):
+        """SplitFileDataset[0] returns (image_tensor, label)."""
+        split_file = self._make_split_json(tmp_path)
+        dataset = SplitFileDataset(
+            split_file, split="train", transform=sample_transform
+        )
+        image, label = dataset[0]
+        assert isinstance(image, torch.Tensor)
+        assert isinstance(label, int)
+
+    def test_getitem_no_labels(self, tmp_path, sample_transform):
+        """return_labels=False returns only image."""
+        split_file = self._make_split_json(tmp_path)
+        dataset = SplitFileDataset(
+            split_file, split="train", transform=sample_transform, return_labels=False
+        )
+        item = dataset[0]
+        assert isinstance(item, torch.Tensor)
+
+    def test_get_class_counts(self, tmp_path):
+        """get_class_counts() returns per-class sample counts."""
+        split_file = self._make_split_json(tmp_path, entries_per_class=3)
+        dataset = SplitFileDataset(split_file, split="train")
+        counts = dataset.get_class_counts()
+        assert counts == {"cls0": 3, "cls1": 3}
+
+    def test_classes_property(self, tmp_path):
+        """classes property returns sorted class names."""
+        split_file = self._make_split_json(tmp_path)
+        dataset = SplitFileDataset(split_file, split="train")
+        assert dataset.classes == ["cls0", "cls1"]
+
+    def test_class_to_idx_property(self, tmp_path):
+        """class_to_idx property returns correct mapping."""
+        split_file = self._make_split_json(tmp_path)
+        dataset = SplitFileDataset(split_file, split="train")
+        assert dataset.class_to_idx == {"cls0": 0, "cls1": 1}
+
+    def test_samples_property(self, tmp_path):
+        """samples property returns list of (path, label) tuples."""
+        split_file = self._make_split_json(tmp_path, entries_per_class=2)
+        dataset = SplitFileDataset(split_file, split="train")
+        samples = dataset.samples
+        assert len(samples) == 4
+        for path, label in samples:
+            assert isinstance(path, str)
+            assert isinstance(label, int)
+
+    def test_targets_property(self, tmp_path):
+        """targets property returns list of label ints."""
+        split_file = self._make_split_json(tmp_path, entries_per_class=2)
+        dataset = SplitFileDataset(split_file, split="train")
+        targets = dataset.targets
+        assert len(targets) == 4
+        assert set(targets) == {0, 1}
+
+
+@pytest.mark.unit
+class TestDatasetFactoryUnit:
+    """Unit tests for get_dataset factory with simple and splitfile types."""
+
+    def test_factory_simple(self, tmp_path):
+        """get_dataset('simple', ...) returns SimpleImageDataset."""
+        Image.new("RGB", (4, 4)).save(tmp_path / "img.png")
+        dataset = get_dataset("simple", str(tmp_path))
+        assert isinstance(dataset, SimpleImageDataset)
+        assert len(dataset) == 1
+
+    def test_factory_splitfile(self, tmp_path):
+        """get_dataset('splitfile', ...) returns SplitFileDataset."""
+        import json
+
+        img_path = tmp_path / "img.png"
+        Image.new("RGB", (4, 4)).save(img_path)
+        split_data = {
+            "metadata": {"classes": {"a": 0}},
+            "train": [{"path": str(img_path), "label": 0}],
+            "val": [],
+        }
+        split_file = tmp_path / "split.json"
+        split_file.write_text(json.dumps(split_data))
+
+        dataset = get_dataset("splitfile", split_file=str(split_file), split="train")
+        assert isinstance(dataset, SplitFileDataset)
+        assert len(dataset) == 1

@@ -13,6 +13,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Subset
 
 from src.utils.data.loaders import (
+    _make_worker_init_fn,
     create_augmented_train_loader,
     create_synthetic_augmentation_dataset,
     create_train_loader,
@@ -205,6 +206,184 @@ def test_get_class_names_missing_metadata(tmp_path):
     split_file.write_text(json.dumps({"train": [], "val": []}))
     with pytest.raises(ValueError, match="No class metadata found"):
         get_class_names(str(split_file))
+
+
+@pytest.mark.unit
+def test_make_worker_init_fn_returns_callable():
+    """Test that _make_worker_init_fn returns a callable."""
+    fn = _make_worker_init_fn(42)
+    assert callable(fn)
+
+
+@pytest.mark.unit
+def test_make_worker_init_fn_seeds_worker():
+    """Test that calling the worker init function sets deterministic seeds."""
+    fn = _make_worker_init_fn(100)
+    fn(0)
+    seed_w0 = torch.initial_seed()
+    fn(1)
+    seed_w1 = torch.initial_seed()
+    # worker_seed = seed + worker_id, so seeds should differ
+    assert seed_w0 != seed_w1
+
+
+@pytest.mark.unit
+def test_create_train_loader_weighted_sampler(tmp_path):
+    """Test weighted_sampler balancing path in create_train_loader."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    balancing_config = {
+        "weighted_sampler": {
+            "enabled": True,
+            "method": "inverse_frequency",
+            "replacement": True,
+            "num_samples": None,
+        },
+        "downsampling": {"enabled": False},
+        "upsampling": {"enabled": False},
+    }
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        balancing_config=balancing_config,
+    )
+    assert isinstance(loader, DataLoader)
+    assert loader.sampler is not None
+
+
+@pytest.mark.unit
+def test_create_train_loader_downsampling(tmp_path):
+    """Test downsampling balancing path in create_train_loader."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    balancing_config = {
+        "weighted_sampler": {"enabled": False},
+        "downsampling": {"enabled": True, "target_ratio": 1.0},
+        "upsampling": {"enabled": False},
+    }
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        balancing_config=balancing_config,
+        seed=42,
+    )
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) > 0  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_create_train_loader_upsampling(tmp_path):
+    """Test upsampling balancing path in create_train_loader."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=4, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    balancing_config = {
+        "weighted_sampler": {"enabled": False},
+        "downsampling": {"enabled": False},
+        "upsampling": {"enabled": True, "target_ratio": 1.0},
+    }
+    loader = create_train_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        balancing_config=balancing_config,
+        seed=42,
+    )
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) >= 8  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_basic(tmp_path):
+    """Test create_augmented_train_loader combines real and synthetic datasets."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=2, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+    )
+    # 8 real + 6 synthetic = 14
+    assert len(combined_loader.dataset) == 14  # type: ignore[arg-type]
+    assert combined_loader.batch_size == 2
+
+
+@pytest.mark.unit
+def test_create_val_loader_returns_dataloader(tmp_path):
+    """Test that create_val_loader returns a DataLoader for valid val split."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(
+        tmp_path, train_per_class=3, val_per_class=3, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    loader = create_val_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+    )
+    assert loader is not None
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) == 6  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_create_val_loader_empty_val_returns_none(tmp_path):
+    """Test that create_val_loader returns None when val split is empty."""
+    from torchvision import transforms
+
+    split_file = _create_split_json_train_only(tmp_path)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    loader = create_val_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+    )
+    assert loader is None
 
 
 @pytest.mark.component
