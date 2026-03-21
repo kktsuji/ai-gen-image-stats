@@ -257,7 +257,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         reports_dir = resolve_output_path(config, "reports")
         reports_dir.mkdir(parents=True, exist_ok=True)
 
-        bootstrap_config = evaluation_config.get("bootstrap", {})
+        bootstrap_config = evaluation_config.get("bootstrap") or {}
         bootstrap_enabled = bootstrap_config.get("enabled", False)
         save_predictions = bootstrap_config.get("save_predictions", False)
 
