@@ -22,3 +22,7 @@ indent-style = "space"
 pythonVersion = "3.11"
 include = ["src", "tests"]
 typeCheckingMode = "basic"
+# torch's type stubs omit many public functions (e.g. torch.max, torch.cat) from
+# __all__, so pyright >=1.1.409 flags them as private imports. These are false
+# positives on documented public API.
+reportPrivateImportUsage = "none"

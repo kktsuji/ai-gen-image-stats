@@ -999,3 +999,36 @@ def test_generate_report_multi_seed(tmp_path):
     report = (output_dir / "evaluation_report.md").read_text()
     assert "Evaluation Report" in report
     assert (output_dir / "evaluation_results.csv").exists()
+
+
+@pytest.mark.unit
+def test_generate_report_respects_baseline_name(tmp_path):
+    """generate_report passes baseline_name through to the stat table.
+
+    baseline__over has higher recall_1 and would be auto-selected; passing
+    baseline_name explicitly must override that choice.
+    """
+    for seed, vanilla, over, syn in [
+        (0, 0.60, 0.80, 0.90),
+        (1, 0.62, 0.82, 0.92),
+        (2, 0.64, 0.84, 0.94),
+    ]:
+        _create_multi_seed_results(
+            tmp_path, "baseline__vanilla", [seed], [{"recall_1": vanilla}]
+        )
+        _create_multi_seed_results(
+            tmp_path, "baseline__over", [seed], [{"recall_1": over}]
+        )
+        _create_multi_seed_results(
+            tmp_path, "ws__n100-gs3__topk__all", [seed], [{"recall_1": syn}]
+        )
+
+    output_dir = tmp_path / "output"
+    generate_report(
+        base_dir=str(tmp_path),
+        output_dir=str(output_dir),
+        baseline_name="baseline__vanilla",
+    )
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Baseline: **baseline__vanilla**" in report
