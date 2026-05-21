@@ -151,6 +151,7 @@ def run_training(
     save_latest_checkpoint: bool,
     validate_frequency: int,
     best_metric: str,
+    save_optimizer: bool = True,
 ) -> None:
     """Run trainer.train() with standard error handling and cleanup.
 
@@ -167,6 +168,7 @@ def run_training(
         save_latest_checkpoint: Whether to save a latest checkpoint symlink.
         validate_frequency: How often to run validation (in epochs).
         best_metric: Metric name for best-model selection.
+        save_optimizer: Whether to include optimizer state in checkpoints.
     """
     logger.info("")
     logger.info(f"Starting training for {num_epochs} epochs...")
@@ -180,6 +182,7 @@ def run_training(
             save_latest_checkpoint=save_latest_checkpoint,
             validate_frequency=validate_frequency,
             best_metric=best_metric,
+            save_optimizer=save_optimizer,
         )
     except KeyboardInterrupt:
         logger.warning("")

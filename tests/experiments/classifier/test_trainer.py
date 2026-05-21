@@ -479,6 +479,28 @@ def test_latest_checkpoint_not_written_when_disabled(classifier_trainer):
 
 
 @pytest.mark.integration
+def test_final_checkpoint_omits_optimizer_when_disabled(classifier_trainer):
+    """final_model.pth has no optimizer_state_dict when save_optimizer=False."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+
+        classifier_trainer.train(
+            num_epochs=1,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=0,
+            save_best=False,
+            save_latest_checkpoint=False,
+            save_optimizer=False,
+        )
+
+        final_path = checkpoint_dir / "final_model.pth"
+        assert final_path.exists()
+        checkpoint = torch.load(final_path, map_location="cpu", weights_only=False)
+        assert "model_state_dict" in checkpoint
+        assert "optimizer_state_dict" not in checkpoint
+
+
+@pytest.mark.integration
 def test_training_with_best_model_saving(classifier_trainer):
     """Test training with best model saving."""
     with tempfile.TemporaryDirectory() as tmpdir:

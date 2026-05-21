@@ -540,6 +540,7 @@ class DiffusionTrainer:
         best_metric: str = "loss",
         best_metric_mode: str = "min",
         save_latest_checkpoint: bool = True,
+        save_optimizer: bool = True,
     ) -> None:
         """Main training loop with scheduler and sample generation support.
 
@@ -556,6 +557,8 @@ class DiffusionTrainer:
             best_metric_mode: 'min' or 'max' for best metric comparison
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
+            save_optimizer: If True, include optimizer state in checkpoints. Set False to
+                            omit it for smaller, inference/evaluation-only checkpoints.
         """
         if checkpoint_dir is not None:
             checkpoint_dir = Path(checkpoint_dir)
@@ -661,6 +664,7 @@ class DiffusionTrainer:
                                     **train_metrics,
                                     **(val_metrics if val_metrics else {}),
                                 },
+                                save_optimizer=save_optimizer,
                             )
 
             # Regular checkpoint saving
@@ -677,6 +681,7 @@ class DiffusionTrainer:
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        save_optimizer=save_optimizer,
                     )
 
                 if save_latest_checkpoint:
@@ -689,6 +694,7 @@ class DiffusionTrainer:
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        save_optimizer=save_optimizer,
                     )
 
         # Save final checkpoint after all epochs complete
@@ -702,6 +708,7 @@ class DiffusionTrainer:
                     **train_metrics,
                     **(val_metrics if val_metrics else {}),
                 },
+                save_optimizer=save_optimizer,
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 
@@ -716,6 +723,7 @@ class DiffusionTrainer:
         best_metric: str = "loss",
         best_metric_mode: str = "min",
         save_latest_checkpoint: bool = True,
+        save_optimizer: bool = True,
     ) -> None:
         """Resume training from a checkpoint.
 
@@ -829,6 +837,7 @@ class DiffusionTrainer:
                                     **train_metrics,
                                     **(val_metrics if val_metrics else {}),
                                 },
+                                save_optimizer=save_optimizer,
                             )
 
             # Regular checkpoint saving
@@ -845,6 +854,7 @@ class DiffusionTrainer:
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        save_optimizer=save_optimizer,
                     )
                 if save_latest_checkpoint:
                     latest_path = checkpoint_dir / "latest_checkpoint.pth"
@@ -856,6 +866,7 @@ class DiffusionTrainer:
                             **train_metrics,
                             **(val_metrics if val_metrics else {}),
                         },
+                        save_optimizer=save_optimizer,
                     )
 
         # Save final checkpoint
@@ -869,6 +880,7 @@ class DiffusionTrainer:
                     **train_metrics,
                     **(val_metrics if val_metrics else {}),
                 },
+                save_optimizer=save_optimizer,
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 

@@ -60,6 +60,23 @@ class TestCheckpointSaveLoad:
         assert "model_state_dict" in checkpoint
         assert "optimizer_state_dict" in checkpoint
 
+    def test_save_without_optimizer_state(self, model, optimizer, tmp_path):
+        """save_optimizer=False omits optimizer state but keeps model weights."""
+        path = tmp_path / "test.pth"
+        save_checkpoint(
+            path,
+            model=model,
+            optimizer=optimizer,
+            epoch=3,
+            global_step=30,
+            save_optimizer=False,
+        )
+
+        checkpoint = load_checkpoint(path, model=model)
+        assert checkpoint["epoch"] == 3
+        assert "model_state_dict" in checkpoint
+        assert "optimizer_state_dict" not in checkpoint
+
     def test_load_without_optimizer(self, model, optimizer, tmp_path):
         """Checkpoint can be loaded without optimizer state."""
         path = tmp_path / "test.pth"
