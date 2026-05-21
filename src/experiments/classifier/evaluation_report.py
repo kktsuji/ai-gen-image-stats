@@ -671,6 +671,7 @@ def generate_report(
     selection_summary_pattern: Optional[str] = None,
     alpha: float = 0.05,
     correction_method: str = "benjamini-hochberg",
+    baseline_name: Optional[str] = None,
 ) -> None:
     """Generate full evaluation report.
 
@@ -680,6 +681,8 @@ def generate_report(
         selection_summary_pattern: Optional glob pattern for selection summary JSONs.
         alpha: Significance threshold for statistical testing.
         correction_method: P-value correction method.
+        baseline_name: Specific baseline experiment to compare against. If None,
+            the baseline with the highest mean recall_1 is auto-selected.
     """
     if not (0 < alpha < 1):
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -835,7 +838,10 @@ def generate_report(
     # Uses raw per-seed df (not aggregated display_df) for paired testing
     if is_multi_seed:
         stat_table = generate_statistical_comparison_table(
-            df, alpha=alpha, correction_method=correction_method
+            df,
+            alpha=alpha,
+            correction_method=correction_method,
+            baseline_name=baseline_name,
         )
         if stat_table:
             report_lines.append(
@@ -895,6 +901,14 @@ def main() -> None:
         choices=["benjamini-hochberg", "bonferroni"],
         help="P-value correction method (default: benjamini-hochberg)",
     )
+    parser.add_argument(
+        "--baseline-name",
+        default=None,
+        help=(
+            "Specific baseline experiment to compare against "
+            "(default: auto-select highest mean recall_1)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -905,6 +919,7 @@ def main() -> None:
         selection_summary_pattern=args.selection_summary_pattern,
         alpha=args.alpha,
         correction_method=args.correction_method,
+        baseline_name=args.baseline_name,
     )
 
 
