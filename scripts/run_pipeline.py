@@ -1,5 +1,14 @@
 import os
 import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dotenv import load_dotenv  # noqa: E402
+
+from src.utils.notification import notify_success  # noqa: E402
 
 DATA_PREPARATION_CONFIG = "configs/data-preparation.yaml"
 DIFFUSION_CONFIG = "configs/diffusion.yaml"
@@ -20,30 +29,36 @@ RUN_TRAINING = False
 RUN_GENERATION = False
 RUN_SELECTION = False
 RUN_SELECTION_EVALUATE = False
-RUN_CLASSIFIER = False
-RUN_BASELINE_CLASSIFIER = False
-RUN_EVALUATION = False
-RUN_SUMMARIZE = False
+RUN_CLASSIFIER = True
+RUN_BASELINE_CLASSIFIER = True
+RUN_EVALUATION = True
+RUN_SUMMARIZE = True
+
+# 完了済み run をスキップする（False にすると従来どおり全て再実行）
+SKIP_COMPLETED = True
 
 # Random seeds for multi-seed classifier runs (for statistical testing)
-SEEDS = [0, 1, 2, 3, 4]
+SEEDS = list(range(20))
+
+# Checkpoint-slimming overrides for classifier runs.
+# Keep only final_model.pth (weights only) per seed: the evaluation phase reads
+# best_model.pth -> final_model.pth, so the periodic and latest checkpoints are
+# redundant, and optimizer state is not needed for evaluation-only reuse.
+CLASSIFIER_CHECKPOINT_OVERRIDES = [
+    "--training.checkpointing.save_optimizer",
+    "false",
+    "--training.checkpointing.save_latest",
+    "false",
+    "--training.checkpointing.save_frequency",
+    "100",
+]
 
 # Each variant: (name, extra CLI overrides for training)
 TRAIN_VARIANTS = [
-    ("noaug", ["--training.epochs", "10"]),
     (
         "ws",
         [
             "--data.balancing.weighted_sampler.enabled",
-            "true",
-            "--training.epochs",
-            "1000",
-        ],
-    ),
-    (
-        "ds",
-        [
-            "--data.balancing.downsampling.enabled",
             "true",
             "--training.epochs",
             "1000",
@@ -63,6 +78,15 @@ TRAIN_VARIANTS = [
 # Generation parameter variants: (name, extra CLI overrides)
 GEN_VARIANTS = [
     (
+        "n100-gs2",
+        [
+            "--generation.sampling.num_samples",
+            "100",
+            "--generation.sampling.guidance_scale",
+            "2.0",
+        ],
+    ),
+    (
         "n100-gs3",
         [
             "--generation.sampling.num_samples",
@@ -72,12 +96,12 @@ GEN_VARIANTS = [
         ],
     ),
     (
-        "n100-gs5",
+        "n100-gs4",
         [
             "--generation.sampling.num_samples",
             "100",
             "--generation.sampling.guidance_scale",
-            "5.0",
+            "4.0",
         ],
     ),
 ]
@@ -86,7 +110,6 @@ GEN_VARIANTS = [
 SELECTION_VARIANTS = [
     ("topk", ["--selection.mode", "top_k", "--selection.value", "50"]),
     ("percentile", ["--selection.mode", "percentile", "--selection.value", "20"]),
-    ("threshold", ["--selection.mode", "threshold", "--selection.value", "1.0"]),
 ]
 
 # Classifier synthetic augmentation limit variants: (name, extra CLI overrides)
@@ -134,6 +157,15 @@ BASELINE_VARIANTS = [
 ]
 
 
+def _is_done(*markers: str) -> bool:
+    """SKIP_COMPLETED 有効かつ全マーカーが存在すれば True。"""
+    return SKIP_COMPLETED and all(os.path.exists(m) for m in markers)
+
+
+def _dir_nonempty(path: str) -> bool:
+    return os.path.isdir(path) and any(os.scandir(path))
+
+
 def run(
     config: str,
     overrides: list[str],
@@ -170,6 +202,9 @@ def run(
 
 
 def main() -> None:
+    load_dotenv()
+    start = time.time()
+
     # ------------------------------------------------------------------
     # Data Preparation: create train/val split
     # ------------------------------------------------------------------
@@ -188,6 +223,11 @@ def main() -> None:
         active: list[subprocess.Popen[bytes]] = []
 
         for name, overrides in TRAIN_VARIANTS:
+            marker = f"outputs/diffusion-{name}/train/checkpoints/final_model.pth"
+            if _is_done(marker):
+                print(f"[SKIP] {name}: training already complete")
+                continue
+
             # Wait for a slot to free up
             while len(active) >= max_parallel:
                 for proc in active:
@@ -222,6 +262,14 @@ def main() -> None:
         # outputs/diffusion-{train}/gen/{gen}/
         for train_name, train_overrides in TRAIN_VARIANTS:
             for gen_name, gen_overrides in GEN_VARIANTS:
+                if SKIP_COMPLETED and _dir_nonempty(
+                    f"outputs/diffusion-{train_name}/gen/{gen_name}/generated"
+                ):
+                    print(
+                        f"[SKIP] {train_name}/{gen_name}: generation already complete"
+                    )
+                    continue
+
                 overrides = [
                     "--mode",
                     "generate",
@@ -246,9 +294,16 @@ def main() -> None:
         for train_name, _ in TRAIN_VARIANTS:
             for gen_name, _ in GEN_VARIANTS:
                 for sel_name, sel_overrides in SELECTION_VARIANTS:
+                    sel_base = f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}"
+                    if _is_done(f"{sel_base}/reports/accepted_samples.json"):
+                        print(
+                            f"[SKIP] {train_name}/{gen_name}/{sel_name}: selection already complete"
+                        )
+                        continue
+
                     overrides = [
                         "--output.base_dir",
-                        f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}",
+                        sel_base,
                         "--data.generated.directory",
                         f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
                         *sel_overrides,
@@ -267,9 +322,20 @@ def main() -> None:
         for train_name, _ in TRAIN_VARIANTS:
             for gen_name, _ in GEN_VARIANTS:
                 for sel_name, _ in SELECTION_VARIANTS:
+                    eval_base = (
+                        f"outputs/diffusion-{train_name}/selection-eval/"
+                        f"{gen_name}__{sel_name}"
+                    )
+                    if _is_done(f"{eval_base}/reports/evaluation.json"):
+                        print(
+                            f"[SKIP] {train_name}/{gen_name}/{sel_name}: "
+                            "selection-eval already complete"
+                        )
+                        continue
+
                     overrides = [
                         "--output.base_dir",
-                        f"outputs/diffusion-{train_name}/selection-eval/{gen_name}__{sel_name}",
+                        eval_base,
                         "--data.generated.directory",
                         f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
                         "--data.selected.split_file",
@@ -300,6 +366,10 @@ def main() -> None:
                                 f"{train_name}__{gen_name}__{sel_name}__{cls_name}"
                             )
                             out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
+                            if _is_done(f"{out_dir}/checkpoints/final_model.pth"):
+                                print(f"[SKIP] {exp_name}/seed{seed}: already complete")
+                                continue
+
                             overrides = [
                                 "--output.base_dir",
                                 out_dir,
@@ -310,6 +380,7 @@ def main() -> None:
                                 "--data.synthetic_augmentation.split_file",
                                 sel_split,
                                 *cls_overrides,
+                                *CLASSIFIER_CHECKPOINT_OVERRIDES,
                             ]
                             print(
                                 f"[CLS] {exp_name}/seed{seed}:"
@@ -326,12 +397,17 @@ def main() -> None:
         for baseline_name, baseline_overrides in BASELINE_VARIANTS:
             for seed in SEEDS:
                 out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
+                if _is_done(f"{out_dir}/checkpoints/final_model.pth"):
+                    print(f"[SKIP] {baseline_name}/seed{seed}: already complete")
+                    continue
+
                 overrides = [
                     "--output.base_dir",
                     out_dir,
                     "--compute.seed",
                     str(seed),
                     *baseline_overrides,
+                    *CLASSIFIER_CHECKPOINT_OVERRIDES,
                 ]
                 print(
                     f"[BASELINE] {baseline_name}/seed{seed}:"
@@ -368,6 +444,10 @@ def main() -> None:
 
             if checkpoint is None:
                 print(f"[EVAL] SKIP {exp_label}: no checkpoint found")
+                continue
+
+            if _is_done(os.path.join(exp_dir, "reports", "evaluation.json")):
+                print(f"[SKIP] {exp_label}: evaluation already complete")
                 continue
 
             overrides = [
@@ -418,9 +498,16 @@ def main() -> None:
                 "outputs/evaluation_report",
                 "--selection-summary-pattern",
                 "outputs/diffusion-*/selection-eval/*/reports/evaluation.json",
+                "--baseline-name",
+                "baseline__vanilla",
             ],
             check=True,
         )
+
+    notify_success(
+        {"experiment": "pipeline", "output": {"base_dir": "outputs"}},
+        time.time() - start,
+    )
 
 
 if __name__ == "__main__":
