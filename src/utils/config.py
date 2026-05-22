@@ -448,6 +448,9 @@ def validate_checkpointing_section(checkpointing_config: Dict[str, Any]) -> None
     if "save_best_only" in checkpointing_config:
         if not isinstance(checkpointing_config["save_best_only"], bool):
             raise ValueError("training.checkpointing.save_best_only must be a boolean")
+    if "save_optimizer" in checkpointing_config:
+        if not isinstance(checkpointing_config["save_optimizer"], bool):
+            raise ValueError("training.checkpointing.save_optimizer must be a boolean")
 
 
 def validate_validation_section(validation_config: Dict[str, Any]) -> None:

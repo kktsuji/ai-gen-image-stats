@@ -60,6 +60,45 @@ class TestCheckpointSaveLoad:
         assert "model_state_dict" in checkpoint
         assert "optimizer_state_dict" in checkpoint
 
+    def test_save_without_optimizer_state(self, model, optimizer, tmp_path):
+        """save_optimizer=False omits optimizer state but keeps model weights."""
+        path = tmp_path / "test.pth"
+        save_checkpoint(
+            path,
+            model=model,
+            optimizer=optimizer,
+            epoch=3,
+            global_step=30,
+            save_optimizer=False,
+        )
+
+        checkpoint = load_checkpoint(path, model=model)
+        assert checkpoint["epoch"] == 3
+        assert "model_state_dict" in checkpoint
+        assert "optimizer_state_dict" not in checkpoint
+
+    def test_load_warns_when_optimizer_provided_but_absent(
+        self, model, optimizer, tmp_path, caplog
+    ):
+        """Loading a save_optimizer=False checkpoint with an optimizer warns."""
+        path = tmp_path / "test.pth"
+        save_checkpoint(
+            path,
+            model=model,
+            optimizer=optimizer,
+            epoch=3,
+            global_step=30,
+            save_optimizer=False,
+        )
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="src.utils.checkpoint"):
+            load_checkpoint(path, model=model, optimizer=optimizer)
+
+        assert "fresh optimizer state" in caplog.text
+        assert optimizer.state_dict()["state"] == {}
+
     def test_load_without_optimizer(self, model, optimizer, tmp_path):
         """Checkpoint can be loaded without optimizer state."""
         path = tmp_path / "test.pth"

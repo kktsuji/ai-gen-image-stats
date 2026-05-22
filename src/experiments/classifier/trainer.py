@@ -300,6 +300,7 @@ class ClassifierTrainer:
         best_metric: str = "loss",
         best_metric_mode: str = "min",
         save_latest_checkpoint: bool = True,
+        save_optimizer: bool = True,
     ) -> None:
         """Main training loop with scheduler support.
 
@@ -315,6 +316,8 @@ class ClassifierTrainer:
             best_metric_mode: 'min' or 'max' for best metric comparison
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
+            save_optimizer: If True, include optimizer state in checkpoints. Set False to
+                            omit it for smaller, inference/evaluation-only checkpoints.
         """
         if self.train_loader is None:
             raise RuntimeError("train_loader is required for training")
@@ -407,6 +410,7 @@ class ClassifierTrainer:
                                 best_metric=self._best_metric,
                                 best_metric_name=self._best_metric_name,
                                 trainer_class=self.__class__.__name__,
+                                save_optimizer=save_optimizer,
                             )
 
             # Regular checkpoint saving
@@ -429,6 +433,7 @@ class ClassifierTrainer:
                         best_metric=self._best_metric,
                         best_metric_name=self._best_metric_name,
                         trainer_class=self.__class__.__name__,
+                        save_optimizer=save_optimizer,
                     )
 
                 if save_latest_checkpoint:
@@ -447,6 +452,7 @@ class ClassifierTrainer:
                         best_metric=self._best_metric,
                         best_metric_name=self._best_metric_name,
                         trainer_class=self.__class__.__name__,
+                        save_optimizer=save_optimizer,
                     )
 
         # Save final checkpoint after all epochs complete
@@ -466,6 +472,7 @@ class ClassifierTrainer:
                 best_metric=self._best_metric,
                 best_metric_name=self._best_metric_name,
                 trainer_class=self.__class__.__name__,
+                save_optimizer=save_optimizer,
             )
             _logger.info(f"Final model checkpoint saved: {final_path}")
 

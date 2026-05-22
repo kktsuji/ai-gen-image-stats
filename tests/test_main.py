@@ -1521,6 +1521,35 @@ class TestDiffusionTrainingMode:
         mock_diffusion_deps["trainer_cls"].return_value.train.assert_called_once()
 
     @pytest.mark.unit
+    def test_setup_diffusion_forwards_save_optimizer(
+        self, tmp_path, mock_diffusion_deps
+    ):
+        """save_optimizer from config is threaded into the trainer's train call."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["checkpointing"]["save_optimizer"] = False
+        setup_experiment_diffusion(config)
+
+        train_mock = mock_diffusion_deps["trainer_cls"].return_value.train
+        train_mock.assert_called_once()
+        assert train_mock.call_args.kwargs["save_optimizer"] is False
+
+    @pytest.mark.unit
+    def test_setup_diffusion_save_optimizer_defaults_true(
+        self, tmp_path, mock_diffusion_deps
+    ):
+        """save_optimizer defaults to True when omitted from config."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        setup_experiment_diffusion(config)
+
+        train_mock = mock_diffusion_deps["trainer_cls"].return_value.train
+        train_mock.assert_called_once()
+        assert train_mock.call_args.kwargs["save_optimizer"] is True
+
+    @pytest.mark.unit
     def test_setup_diffusion_adamw_optimizer(self, tmp_path, mock_diffusion_deps):
         """Test diffusion training with AdamW optimizer."""
         from src.main import setup_experiment_diffusion

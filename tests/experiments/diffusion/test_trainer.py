@@ -621,6 +621,65 @@ def test_diffusion_trainer_latest_checkpoint_not_written_when_disabled():
         assert not (Path(tmpdir) / "latest_checkpoint.pth").exists()
 
 
+def _make_diffusion_trainer_for_checkpoint():
+    model = SimpleDiffusionModel(in_channels=3, image_size=8, num_classes=2)
+    train_loader = _make_diffusion_train_loader(num_samples=16, batch_size=4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    logger = SimpleDiffusionLogger()
+    return DiffusionTrainer(
+        model=model,
+        train_loader=train_loader,
+        optimizer=optimizer,
+        logger=logger,
+        device="cpu",
+        show_progress=False,
+        use_ema=False,
+        log_images_interval=None,
+        log_denoising_interval=None,
+    )
+
+
+@pytest.mark.integration
+def test_diffusion_final_checkpoint_omits_optimizer_when_disabled():
+    """final_model.pth has no optimizer_state_dict when save_optimizer=False."""
+    trainer = _make_diffusion_trainer_for_checkpoint()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_latest_checkpoint=False,
+            save_optimizer=False,
+        )
+
+        final_path = Path(tmpdir) / "final_model.pth"
+        assert final_path.exists()
+        checkpoint = torch.load(final_path, map_location="cpu", weights_only=False)
+        assert "model_state_dict" in checkpoint
+        assert "optimizer_state_dict" not in checkpoint
+
+
+@pytest.mark.integration
+def test_diffusion_final_checkpoint_includes_optimizer_by_default():
+    """final_model.pth keeps optimizer_state_dict when save_optimizer defaults to True."""
+    trainer = _make_diffusion_trainer_for_checkpoint()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_latest_checkpoint=False,
+        )
+
+        final_path = Path(tmpdir) / "final_model.pth"
+        assert final_path.exists()
+        checkpoint = torch.load(final_path, map_location="cpu", weights_only=False)
+        assert "model_state_dict" in checkpoint
+        assert "optimizer_state_dict" in checkpoint
+
+
 @pytest.mark.integration
 def test_diffusion_trainer_checkpoint_save_and_load():
     """Test checkpoint saving and loading."""

@@ -1023,7 +1023,12 @@ class TestValidateCheckpointingSection:
 
     def test_valid_checkpointing_config(self):
         """Test valid checkpointing configuration."""
-        config = {"save_frequency": 10, "save_latest": True, "save_best_only": False}
+        config = {
+            "save_frequency": 10,
+            "save_latest": True,
+            "save_best_only": False,
+            "save_optimizer": True,
+        }
         validate_checkpointing_section(config)
 
     def test_empty_config_valid(self):
@@ -1077,6 +1082,18 @@ class TestValidateCheckpointingSection:
             match="training.checkpointing.save_best_only must be a boolean",
         ):
             validate_checkpointing_section({"save_best_only": 1})
+
+    def test_valid_save_optimizer_bool(self):
+        """Test boolean save_optimizer is accepted."""
+        validate_checkpointing_section({"save_optimizer": False})
+
+    def test_invalid_save_optimizer_non_bool(self):
+        """Test error with non-boolean save_optimizer."""
+        with pytest.raises(
+            ValueError,
+            match="training.checkpointing.save_optimizer must be a boolean",
+        ):
+            validate_checkpointing_section({"save_optimizer": "yes"})
 
 
 @pytest.mark.unit

@@ -259,6 +259,7 @@ class TestRunTraining:
             save_latest_checkpoint=True,
             validate_frequency=1,
             best_metric="loss",
+            save_optimizer=True,
         )
 
     def test_closes_logger_on_success(self):

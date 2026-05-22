@@ -23,6 +23,7 @@ def save_checkpoint(
     best_metric: Optional[float] = None,
     best_metric_name: Optional[str] = None,
     trainer_class: Optional[str] = None,
+    save_optimizer: bool = True,
     **kwargs: Any,
 ) -> None:
     """Save training checkpoint.
@@ -38,6 +39,9 @@ def save_checkpoint(
         best_metric: Best metric value so far
         best_metric_name: Name of the best metric
         trainer_class: Name of the trainer class
+        save_optimizer: If True, include optimizer state (needed only to resume
+            training). If False, omit it to produce a much smaller checkpoint
+            suitable for inference/evaluation-only reuse.
         **kwargs: Additional metadata to save
     """
     path = Path(path)
@@ -47,9 +51,11 @@ def save_checkpoint(
         "epoch": epoch,
         "global_step": global_step,
         "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
         "is_best": is_best,
     }
+
+    if save_optimizer:
+        checkpoint["optimizer_state_dict"] = optimizer.state_dict()
 
     if trainer_class is not None:
         checkpoint["trainer_class"] = trainer_class
@@ -139,6 +145,11 @@ def load_checkpoint(
             logger.error("Failed to load optimizer state dict")
             logger.exception(f"Error details: {e}")
             logger.warning("Continuing without optimizer state")
+    elif optimizer is not None:
+        logger.warning(
+            "Optimizer provided but checkpoint has no optimizer_state_dict; "
+            "continuing with fresh optimizer state"
+        )
 
     logger.info("✓ Checkpoint loaded successfully")
     logger.info(

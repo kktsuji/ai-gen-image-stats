@@ -437,6 +437,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         save_latest_checkpoint=training_config["checkpointing"].get(
             "save_latest", True
         ),
+        save_optimizer=training_config["checkpointing"].get("save_optimizer", True),
         validate_frequency=training_config["validation"].get("frequency", 1),
         best_metric=training_config["validation"].get("metric", "accuracy"),
     )
@@ -896,6 +897,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             save_best=checkpointing_config.get("save_best_only", True),
             checkpoint_frequency=checkpointing_config["save_frequency"],
             save_latest_checkpoint=checkpointing_config.get("save_latest", True),
+            save_optimizer=checkpointing_config.get("save_optimizer", True),
             validate_frequency=validation_config["frequency"],
             best_metric=validation_config["metric"],
         )
