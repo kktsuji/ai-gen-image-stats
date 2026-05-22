@@ -145,6 +145,11 @@ def load_checkpoint(
             logger.error("Failed to load optimizer state dict")
             logger.exception(f"Error details: {e}")
             logger.warning("Continuing without optimizer state")
+    elif optimizer is not None:
+        logger.warning(
+            "Optimizer provided but checkpoint has no optimizer_state_dict; "
+            "continuing with fresh optimizer state"
+        )
 
     logger.info("✓ Checkpoint loaded successfully")
     logger.info(
