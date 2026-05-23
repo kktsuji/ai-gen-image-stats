@@ -96,7 +96,9 @@ data:
       hue: 0.1 # Hue shift range ±0.1 (fraction of hue circle)
 
   # Class balancing: mitigate class imbalance on real training data.
-  # Mutually exclusive with synthetic_augmentation (enable at most one).
+  # Only one strategy applies at a time — if multiple are enabled, priority is:
+  # weighted_sampler > downsampling > upsampling.
+  # Mutually exclusive with synthetic_augmentation (enabling both raises a config error).
   balancing:
     weighted_sampler:
       enabled: false
@@ -113,13 +115,6 @@ data:
     upsampling:
       enabled: false
       target_ratio: 1.0 # minority:majority ratio (1.0 = equal)
-
-    class_weights:
-      enabled: false
-      method: inverse_frequency # Options: inverse_frequency, effective_num, manual
-      beta: 0.999
-      manual_weights: null # e.g., [1.0, 5.0] (required if method=manual)
-      normalize: true # Normalize weights to sum to num_classes
 
   # Synthetic augmentation: use sample-selection output as additional training data
   synthetic_augmentation:
