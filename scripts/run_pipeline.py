@@ -114,7 +114,7 @@ SELECTION_VARIANTS = [
 
 # Classifier synthetic augmentation limit variants: (name, extra CLI overrides)
 CLASSIFIER_VARIANTS = [
-    ("all", []),
+    ("all", ["--data.synthetic_augmentation.limit.mode", "null"]),
     (
         "ratio50",
         [
