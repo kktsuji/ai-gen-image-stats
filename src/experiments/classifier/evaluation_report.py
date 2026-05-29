@@ -45,6 +45,15 @@ KEY_METRICS = [
 ]
 
 
+# Dose ladder: number of synthetic abnormal images added per dose level. This
+# dict is the canonical definition of the ladder — the counts live nowhere else
+# in the repo. Each dose token (d0..d4) is encoded in the experiment name and
+# corresponds to the `--data.synthetic_augmentation.limit.max_samples` value the
+# classifier was launched with for that dose (d0/baseline adds nothing). Keep
+# this in sync with the max_samples values used to run the dose-response sweep.
+DOSE_ADDED = {"d0": 0, "d1": 42, "d2": 84, "d3": 168, "d4": 352}
+
+
 def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     """Parse experiment name into dimension components.
 
@@ -53,11 +62,12 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     See scripts/run_pipeline.py for the naming convention.
 
     Expected formats:
-        - Synthetic: {train}__{gen}__{sel}__{cls}  e.g. "ws__n100-gs3__topk__all"
-        - Baseline:  baseline__{strategy}          e.g. "baseline__vanilla"
+        - Synthetic: {train}__{gen}__{sel}__{dose}  e.g. "us__n1000-gs2__topk__d2"
+        - Baseline:  baseline__{strategy}           e.g. "baseline__vanilla" (dose D0)
 
     Returns:
-        Dictionary with keys: type, diffusion_variant, gen_config, selection, aug_limit
+        Dictionary with keys: type, diffusion_variant, gen_config, selection,
+        aug_limit, dose (number of synthetic images added; "-" if unknown).
     """
     parts = exp_name.split("__")
 
@@ -68,6 +78,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
             "gen_config": "-",
             "selection": "-",
             "aug_limit": "-",
+            "dose": "0",
             "baseline_strategy": parts[1],
         }
 
@@ -78,6 +89,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
             "gen_config": parts[1],
             "selection": parts[2],
             "aug_limit": parts[3],
+            "dose": str(DOSE_ADDED.get(parts[3], "-")),
             "baseline_strategy": "-",
         }
 
@@ -87,6 +99,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
         "gen_config": "-",
         "selection": "-",
         "aug_limit": "-",
+        "dose": "-",
         "baseline_strategy": "-",
     }
 
@@ -279,6 +292,7 @@ def build_mean_std_dataframe(
         "gen_config",
         "selection",
         "aug_limit",
+        "dose",
         "baseline_strategy",
     ]
 

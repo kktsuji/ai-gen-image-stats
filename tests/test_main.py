@@ -786,7 +786,12 @@ def _base_classifier_config(tmp_path):
             },
             "scheduler": {"type": None},
             "checkpointing": {"save_frequency": 10, "save_best_only": True},
-            "validation": {"enabled": True, "frequency": 1},
+            "validation": {
+                "enabled": True,
+                "frequency": 1,
+                "metric": "f1_1",
+                "early_stopping_patience": None,
+            },
         },
         "output": {
             "base_dir": str(tmp_path),
@@ -872,7 +877,7 @@ def _base_diffusion_train_config(tmp_path):
                 "save_best_only": True,
                 "save_latest": True,
             },
-            "validation": {"frequency": 1, "metric": "val_loss"},
+            "validation": {"frequency": 1, "metric": "loss"},
         },
         "logging": {},
     }
@@ -1548,6 +1553,23 @@ class TestDiffusionTrainingMode:
         train_mock = mock_diffusion_deps["trainer_cls"].return_value.train
         train_mock.assert_called_once()
         assert train_mock.call_args.kwargs["save_optimizer"] is True
+
+    @pytest.mark.unit
+    def test_setup_diffusion_resolves_best_metric_to_val_key(
+        self, tmp_path, mock_diffusion_deps
+    ):
+        """Config metric is resolved to its val_ key + mode (e.g. loss -> val_loss/min)
+        so best-checkpoint selection uses validation, not the like-named train metric."""
+        from src.main import setup_experiment_diffusion
+
+        config = _base_diffusion_train_config(tmp_path)
+        config["training"]["validation"]["metric"] = "loss"
+        setup_experiment_diffusion(config)
+
+        train_mock = mock_diffusion_deps["trainer_cls"].return_value.train
+        train_mock.assert_called_once()
+        assert train_mock.call_args.kwargs["best_metric"] == "val_loss"
+        assert train_mock.call_args.kwargs["best_metric_mode"] == "min"
 
     @pytest.mark.unit
     def test_setup_diffusion_adamw_optimizer(self, tmp_path, mock_diffusion_deps):

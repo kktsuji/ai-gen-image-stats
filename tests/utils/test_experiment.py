@@ -15,6 +15,8 @@ import pytest
 
 from src.utils.experiment import (
     create_experiment_logger,
+    resolve_best_metric,
+    resolve_validate_frequency,
     run_training,
     setup_experiment_common,
 )
@@ -259,8 +261,27 @@ class TestRunTraining:
             save_latest_checkpoint=True,
             validate_frequency=1,
             best_metric="loss",
+            best_metric_mode="min",
+            early_stopping_patience=None,
             save_optimizer=True,
         )
+
+    def test_forwards_mode_and_early_stopping(self):
+        """run_training forwards best_metric_mode and early_stopping_patience."""
+        trainer = MagicMock()
+        metrics_logger = MagicMock()
+
+        args = self._make_training_args()
+        args["best_metric"] = "val_f1_1"
+        args["best_metric_mode"] = "max"
+        args["early_stopping_patience"] = 8
+
+        run_training(trainer, metrics_logger, **args)
+
+        _, kwargs = trainer.train.call_args
+        assert kwargs["best_metric"] == "val_f1_1"
+        assert kwargs["best_metric_mode"] == "max"
+        assert kwargs["early_stopping_patience"] == 8
 
     def test_closes_logger_on_success(self):
         """Test that metrics_logger.close() is called on success."""
@@ -321,3 +342,44 @@ class TestRunTraining:
 
         # Should not raise — close failure is logged but swallowed
         run_training(trainer, metrics_logger, **self._make_training_args())
+
+
+@pytest.mark.unit
+class TestResolveBestMetric:
+    """Test resolve_best_metric: config metric name -> (val key, mode)."""
+
+    def test_loss_is_minimized(self):
+        assert resolve_best_metric("loss") == ("val_loss", "min")
+
+    def test_accuracy_is_maximized(self):
+        assert resolve_best_metric("accuracy") == ("val_accuracy", "max")
+
+    def test_f1_1_is_maximized(self):
+        assert resolve_best_metric("f1_1") == ("val_f1_1", "max")
+
+    def test_f1_macro_is_maximized(self):
+        assert resolve_best_metric("f1_macro") == ("val_f1_macro", "max")
+
+    def test_balanced_accuracy_is_maximized(self):
+        assert resolve_best_metric("balanced_accuracy") == (
+            "val_balanced_accuracy",
+            "max",
+        )
+
+
+@pytest.mark.unit
+class TestResolveValidateFrequency:
+    """Test resolve_validate_frequency: honors the `enabled` toggle."""
+
+    def test_enabled_returns_frequency(self):
+        assert resolve_validate_frequency({"enabled": True, "frequency": 3}) == 3
+
+    def test_disabled_returns_zero(self):
+        # frequency is ignored when validation is disabled.
+        assert resolve_validate_frequency({"enabled": False, "frequency": 5}) == 0
+
+    def test_missing_enabled_defaults_to_on(self):
+        assert resolve_validate_frequency({"frequency": 2}) == 2
+
+    def test_missing_frequency_defaults_to_one(self):
+        assert resolve_validate_frequency({"enabled": True}) == 1

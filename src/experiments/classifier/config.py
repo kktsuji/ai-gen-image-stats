@@ -217,6 +217,52 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "checkpointing" in training:
             validate_checkpointing_section(training["checkpointing"])
 
+        # Validate validation section (required in train mode; the training path
+        # assumes it is fully specified — no implicit defaults).
+        if "validation" not in training:
+            raise KeyError("Missing required field: training.validation")
+        validation = training["validation"]
+        if not isinstance(validation, dict):
+            raise ValueError("training.validation must be a mapping")
+
+        for field in ("enabled", "metric", "frequency", "early_stopping_patience"):
+            if field not in validation:
+                raise KeyError(f"Missing required field: training.validation.{field}")
+
+        if not isinstance(validation["enabled"], bool):
+            raise ValueError("training.validation.enabled must be a boolean")
+
+        metric = validation["metric"]
+        valid_metrics = [
+            "accuracy",
+            "loss",
+            "balanced_accuracy",
+            "f1_macro",
+            "f1_1",
+        ]
+        if metric not in valid_metrics:
+            raise ValueError(
+                f"Invalid training.validation.metric: {metric}. "
+                f"Must be one of {valid_metrics}"
+            )
+
+        frequency = validation["frequency"]
+        if (
+            isinstance(frequency, bool)
+            or not isinstance(frequency, int)
+            or frequency < 1
+        ):
+            raise ValueError("training.validation.frequency must be a positive integer")
+
+        patience = validation["early_stopping_patience"]
+        if patience is not None and (
+            isinstance(patience, bool) or not isinstance(patience, int) or patience < 1
+        ):
+            raise ValueError(
+                "training.validation.early_stopping_patience must be null "
+                "or a positive integer"
+            )
+
         # Validate synthetic_augmentation (optional, train-mode only)
         syn_aug = data.get("synthetic_augmentation", {})
         if syn_aug.get("enabled"):

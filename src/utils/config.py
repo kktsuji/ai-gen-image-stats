@@ -462,6 +462,9 @@ def validate_validation_section(validation_config: Dict[str, Any]) -> None:
     Raises:
         ValueError: If values are invalid
     """
+    if "enabled" in validation_config:
+        if not isinstance(validation_config["enabled"], bool):
+            raise ValueError("training.validation.enabled must be a boolean")
     if "frequency" in validation_config:
         freq = validation_config["frequency"]
         if isinstance(freq, bool) or not isinstance(freq, int) or freq < 1:

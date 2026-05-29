@@ -1148,6 +1148,19 @@ class TestValidateValidationSection:
         ):
             validate_validation_section({"metric": 123})
 
+    def test_enabled_bool_passes(self):
+        """Test boolean enabled values pass."""
+        validate_validation_section({"enabled": True})
+        validate_validation_section({"enabled": False})
+
+    @pytest.mark.parametrize("bad", ["false", "true", 1, 0, None])
+    def test_enabled_non_bool_raises(self, bad):
+        """Test error when enabled is not a boolean (e.g. quoted "false")."""
+        with pytest.raises(
+            ValueError, match="training.validation.enabled must be a boolean"
+        ):
+            validate_validation_section({"enabled": bad})
+
 
 @pytest.mark.unit
 class TestValidateTrainingEpochs:
