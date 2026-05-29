@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-from src.utils.notification import (  # noqa: E402
-    _get_webhook_url,
+from src.utils.notification import (
+    _get_webhook_url,  # noqa: E402
     _post_slack,
     notify_success,
 )
@@ -25,15 +25,15 @@ CLASSIFIER_CONFIG = "configs/classifier.yaml"
 #   Dimension separator: "__" (double underscore)
 #   Within-dimension separator: "-" (hyphen) or "_" (single underscore)
 #
-#   Synthetic:  {train}__{gen}__{sel}__{cls}   e.g. ws__n100-gs3__topk__all
-#   Baseline:   baseline__{strategy}           e.g. baseline__vanilla
+#   Synthetic:  {train}__{gen}__{sel}__{dose}  e.g. us__n1000-gs2__topk__d2
+#   Baseline:   baseline__{strategy}           e.g. baseline__vanilla (acts as dose D0)
 
 # ON/OFF switches for each experiment phase
 RUN_DATA_PREPARATION = False
 RUN_TRAINING = False
-RUN_GENERATION = False
-RUN_SELECTION = False
-RUN_SELECTION_EVALUATE = False
+RUN_GENERATION = True
+RUN_SELECTION = True
+RUN_SELECTION_EVALUATE = True
 RUN_CLASSIFIER = True
 RUN_BASELINE_CLASSIFIER = True
 RUN_EVALUATION = True
@@ -50,16 +50,19 @@ DELETE_CHECKPOINTS_AFTER_EVAL = True
 # Launching `docker run --rm --gpus all` back-to-back at high frequency can start a
 # new CUDA init before the NVIDIA driver has released the previous CUDA context,
 # leading to crashes like "CUDA error: unknown error". This fixed pause prevents that.
-# It trades off total wall time (480 runs x N seconds), so tune it here. 0 disables it.
+# It trades off total wall time (runs x N seconds), so tune it here. 0 disables it.
 GPU_COOLDOWN_SECONDS = 5
 
 # Per-run Slack notifications from the classifier containers are suppressed (the pipeline
-# launches 540 classifier runs x train+eval, which would flood the channel). Instead, the
-# pipeline emits a throttled "Classifier: current/total" progress message every N experiments
-# (plus one at completion). Other phases keep their normal per-run notifications.
-CLASSIFIER_NOTIFY_EVERY = 50
+# launches many classifier runs x train+eval, which would flood the channel). Instead, the
+# pipeline emits a throttled "Classifier: current/total" progress message on the first
+# experiment (a "phase started" signal), every N experiments, and at completion. Other phases
+# keep their normal per-run notifications. Keep N small relative to the experiment matrix size
+# so progress stays visible early instead of leaving a multi-hour dead zone at the start.
+CLASSIFIER_NOTIFY_EVERY = 10
 
-# Random seeds for multi-seed classifier runs (for statistical testing)
+# Random seeds for multi-seed classifier runs (for statistical testing).
+# Bump to range(30) if the head-only f1_1 std stays large after the first batch.
 SEEDS = list(range(20))
 
 # Checkpoint-slimming overrides for classifier runs.
@@ -76,7 +79,7 @@ CLASSIFIER_CHECKPOINT_OVERRIDES = [
 ]
 
 # DataLoader runtime settings for the high-frequency classifier phase.
-# The classifier dataset is small (batch_size 8 / epochs 10), so fewer workers has
+# The classifier dataset is small (head-only, batch_size 16 / epochs 40), so fewer workers has
 # negligible performance impact while reducing worker fork/exit churn and
 # shared-memory pressure (Bus error / shm exhaustion). Use "0" for the most conservative.
 CLASSIFIER_RUNTIME_OVERRIDES = [
@@ -85,16 +88,9 @@ CLASSIFIER_RUNTIME_OVERRIDES = [
 ]
 
 # Each variant: (name, extra CLI overrides for training)
+# Dose-response experiment: a single diffusion variant (upsampling) is the
+# fixed generator, so quantity is the only thing that varies downstream.
 TRAIN_VARIANTS = [
-    (
-        "ws",
-        [
-            "--data.balancing.weighted_sampler.enabled",
-            "true",
-            "--training.epochs",
-            "1000",
-        ],
-    ),
     (
         "us",
         [
@@ -107,54 +103,46 @@ TRAIN_VARIANTS = [
 ]
 
 # Generation parameter variants: (name, extra CLI overrides)
+# Single best generation config (guidance 2.0); large pool (~1000) so the
+# top_k=400 selection can feed the full dose ladder (D4 needs +352).
 GEN_VARIANTS = [
     (
-        "n100-gs2",
+        "n1000-gs2",
         [
             "--generation.sampling.num_samples",
-            "100",
+            "1000",
             "--generation.sampling.guidance_scale",
             "2.0",
-        ],
-    ),
-    (
-        "n100-gs3",
-        [
-            "--generation.sampling.num_samples",
-            "100",
-            "--generation.sampling.guidance_scale",
-            "3.0",
-        ],
-    ),
-    (
-        "n100-gs4",
-        [
-            "--generation.sampling.num_samples",
-            "100",
-            "--generation.sampling.guidance_scale",
-            "4.0",
         ],
     ),
 ]
 
 # Selection algorithm variants: (name, extra CLI overrides)
+# Fixed to top_k=400 so the dose ladder is a nested top-N of one ranking
+# (quantity decoupled from the selection method).
 SELECTION_VARIANTS = [
-    ("topk", ["--selection.mode", "top_k", "--selection.value", "50"]),
-    ("percentile", ["--selection.mode", "percentile", "--selection.value", "20"]),
+    ("topk", ["--selection.mode", "top_k", "--selection.value", "400"]),
 ]
 
-# Classifier synthetic augmentation limit variants: (name, extra CLI overrides)
+
+# Classifier dose ladder: (name, extra CLI overrides).
+# Quality is fixed (same top_k=400 ranking); only the number of added abnormal
+# images varies via max_samples (deterministic top-N truncation). Real abnormal
+# train = 84, so d2 doubles it and d4 reaches 1:1 balance (84 + 352 = 436).
+def _dose_overrides(n: int) -> list[str]:
+    return [
+        "--data.synthetic_augmentation.limit.mode",
+        "max_samples",
+        "--data.synthetic_augmentation.limit.max_samples",
+        str(n),
+    ]
+
+
 CLASSIFIER_VARIANTS = [
-    ("all", ["--data.synthetic_augmentation.limit.mode", "null"]),
-    (
-        "ratio50",
-        [
-            "--data.synthetic_augmentation.limit.mode",
-            "max_ratio",
-            "--data.synthetic_augmentation.limit.max_ratio",
-            "0.5",
-        ],
-    ),
+    ("d1", _dose_overrides(42)),  # 0.5x minority
+    ("d2", _dose_overrides(84)),  # 1x (double minority)
+    ("d3", _dose_overrides(168)),  # 2x minority
+    ("d4", _dose_overrides(352)),  # balance to 1:1 (84 + 352 = 436)
 ]
 
 
@@ -268,10 +256,13 @@ def run_and_wait(
 def _notify_classifier_progress(current: int, total: int) -> None:
     """Send a throttled "Classifier: current/total" Slack message.
 
-    Posts only every CLASSIFIER_NOTIFY_EVERY experiments and at completion. Stays silent when
-    the webhook is unset, and never lets a notification failure interrupt the pipeline.
+    Posts on the first experiment (a "phase started" signal), every CLASSIFIER_NOTIFY_EVERY
+    experiments, and at completion. Stays silent when the webhook is unset, and never lets a
+    notification failure interrupt the pipeline.
     """
-    if not total or (current % CLASSIFIER_NOTIFY_EVERY != 0 and current != total):
+    if not total or (
+        current != 1 and current % CLASSIFIER_NOTIFY_EVERY != 0 and current != total
+    ):
         return
     url = _get_webhook_url()
     if not url:
