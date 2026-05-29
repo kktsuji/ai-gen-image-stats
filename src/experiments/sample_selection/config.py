@@ -15,7 +15,7 @@ from src.utils.config import (
 
 VALID_FEATURE_MODELS = ["inceptionv3", "resnet50", "resnet101", "resnet152"]
 VALID_REAL_SOURCES = ["split_file", "directory"]
-VALID_SELECTION_MODES = ["top_k", "percentile", "threshold"]
+VALID_SELECTION_MODES = ["top_k", "percentile", "threshold", "random", "stratified"]
 
 
 def validate_config(config: Dict[str, Any]) -> None:
@@ -331,6 +331,11 @@ def _validate_selection_section(config: Dict[str, Any]) -> None:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(
                 "selection.value must be a positive number for threshold mode"
+            )
+    elif mode in ("random", "stratified"):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(
+                f"selection.value must be a positive integer for {mode} mode"
             )
 
 

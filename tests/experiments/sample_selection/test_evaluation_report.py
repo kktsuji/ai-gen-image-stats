@@ -31,6 +31,20 @@ def test_parse_selection_eval_path_standard():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("selection", ["topk", "random", "stratified"])
+def test_parse_selection_eval_path_known_selections_no_warning(selection, caplog):
+    """Known selection tokens parse without an 'Unexpected selection' warning."""
+    path = (
+        f"outputs/diffusion-us/selection-eval/n1000-gs2__{selection}"
+        "/reports/evaluation.json"
+    )
+    with caplog.at_level("WARNING"):
+        result = _parse_selection_eval_path(path)
+    assert result["selection"] == selection
+    assert "Unexpected selection" not in caplog.text
+
+
+@pytest.mark.unit
 def test_parse_selection_eval_path_unknown():
     """Test parsing path that doesn't match expected structure."""
     path = "some/random/path/evaluation.json"

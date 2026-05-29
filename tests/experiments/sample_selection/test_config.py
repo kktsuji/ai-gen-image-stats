@@ -337,7 +337,7 @@ class TestValidateConfig:
     def test_invalid_selection_mode_raises(self):
         """Test that invalid selection.mode raises ValueError."""
         config = _make_valid_config()
-        config["selection"]["mode"] = "random"
+        config["selection"]["mode"] = "not_a_real_mode"
         with pytest.raises(ValueError, match="selection.mode"):
             validate_config(config)
 
@@ -409,6 +409,36 @@ class TestValidateConfig:
         config["selection"]["mode"] = "threshold"
         config["selection"]["value"] = -1.0
         with pytest.raises(ValueError, match="positive number"):
+            validate_config(config)
+
+    def test_random_valid(self):
+        """Test that random mode with positive integer passes."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "random"
+        config["selection"]["value"] = 352
+        validate_config(config)
+
+    def test_random_non_positive_value_raises(self):
+        """Test that random mode with non-positive value raises ValueError."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "random"
+        config["selection"]["value"] = 0
+        with pytest.raises(ValueError, match="random"):
+            validate_config(config)
+
+    def test_stratified_valid(self):
+        """Test that stratified mode with positive integer passes."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "stratified"
+        config["selection"]["value"] = 352
+        validate_config(config)
+
+    def test_stratified_float_value_raises(self):
+        """Test that stratified mode with a float value raises ValueError."""
+        config = _make_valid_config()
+        config["selection"]["mode"] = "stratified"
+        config["selection"]["value"] = 3.5
+        with pytest.raises(ValueError, match="stratified"):
             validate_config(config)
 
     def test_threshold_valid(self):

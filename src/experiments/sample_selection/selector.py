@@ -139,6 +139,7 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
         value=selection_config["value"],
         realism_flags=realism_flags,
         require_realism=require_realism,
+        seed=config["compute"]["seed"],
     )
     num_selected = int(np.sum(selected_mask))
     logger.info(
@@ -511,16 +512,19 @@ def select_samples(
     value: Any,
     realism_flags: Optional[np.ndarray] = None,
     require_realism: bool = False,
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """Select samples based on quality scores and optional realism filter.
 
     Args:
         scores: Per-sample quality scores (lower = better). Shape (M,).
-        mode: Selection mode ('top_k', 'percentile', 'threshold').
-        value: Selection parameter (N for top_k, percentage for percentile,
-               distance threshold for threshold).
+        mode: Selection mode ('top_k', 'percentile', 'threshold', 'random',
+               'stratified').
+        value: Selection parameter (N for top_k/random/stratified, percentage
+               for percentile, distance threshold for threshold).
         realism_flags: Optional boolean array (M,) from compute_realism_flags.
         require_realism: If True, only consider samples that pass realism check.
+        seed: RNG seed for the 'random' mode (ignored by other modes).
 
     Returns:
         Boolean mask of selected samples, shape (M,).
@@ -558,6 +562,24 @@ def select_samples(
         # Keep samples below distance threshold
         below_threshold = candidate_scores <= value
         selected[candidate_indices[below_threshold]] = True
+
+    elif mode == "random":
+        # Uniform random draw, ignoring the realism ranking. Diversity-preserving
+        # baseline against the realism-greedy top_k (selection-ablation arm).
+        k = min(int(value), len(candidate_indices))
+        rng = np.random.default_rng(seed)
+        chosen = rng.choice(len(candidate_indices), size=k, replace=False)
+        selected[candidate_indices[chosen]] = True
+
+    elif mode == "stratified":
+        # Evenly sample across the realism-score spectrum so both realistic and
+        # less-typical samples are represented (maximizes diversity coverage).
+        # Partition the score-sorted ranking into k contiguous bins and take the
+        # first index of each bin, guaranteeing exactly k distinct picks.
+        order = np.argsort(candidate_scores)
+        k = min(int(value), len(order))
+        bin_starts = np.linspace(0, len(order), k + 1).astype(int)[:-1]
+        selected[candidate_indices[order[bin_starts]]] = True
 
     else:
         raise ValueError(f"Unknown selection mode: {mode!r}")
