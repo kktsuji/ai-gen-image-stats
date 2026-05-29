@@ -542,12 +542,14 @@ def test_diffusion_trainer_full_workflow():
         log_denoising_interval=None,
     )
 
-    # Run training for 2 epochs
+    # Run training for 2 epochs. Pass early_stopping_patience=None to exercise
+    # the accept-only param added for parity with the shared run_training helper.
     with tempfile.TemporaryDirectory() as tmpdir:
         trainer.train(
             num_epochs=2,
             checkpoint_dir=tmpdir,
             validate_frequency=1,
+            early_stopping_patience=None,
         )
 
         # Check that metrics were logged

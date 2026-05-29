@@ -166,11 +166,15 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
     )
     logger.info(f"Quality report saved to: {reports_dir / 'quality_report.csv'}")
 
-    # Accepted samples JSON (compatible with SplitFileDataset)
+    # Accepted samples JSON (compatible with SplitFileDataset). Pass scores so
+    # the entries are written as a quality ranking (best first) enabling a
+    # nested top-N dose ladder downstream.
     selected_paths = [p for p, sel in zip(gen_paths, selected_mask) if sel]
+    selected_scores = [float(s) for s, sel in zip(knn_scores, selected_mask) if sel]
     write_accepted_samples_json(
         output_path=reports_dir / "accepted_samples.json",
         selected_paths=selected_paths,
+        selected_scores=selected_scores,
         label=data_config["label"],
         class_name=data_config["class_name"],
         metadata={

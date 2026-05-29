@@ -51,6 +51,7 @@ from src.utils.cli import parse_args
 from src.utils.cli import validate_config as validate_cli_config
 from src.utils.experiment import (
     create_experiment_logger,
+    resolve_best_metric,
     run_training,
     setup_experiment_common,
 )
@@ -426,6 +427,12 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     if scheduler is not None:
         trainer.scheduler = scheduler
 
+    # Resolve the config metric name to its prefixed validation key and
+    # optimization direction (fixes best-checkpoint selection + mode wiring).
+    best_metric_key, best_metric_mode = resolve_best_metric(
+        training_config["validation"].get("metric", "f1_1")
+    )
+
     # Run training with standard error handling
     run_training(
         trainer,
@@ -439,7 +446,11 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         ),
         save_optimizer=training_config["checkpointing"].get("save_optimizer", True),
         validate_frequency=training_config["validation"].get("frequency", 1),
-        best_metric=training_config["validation"].get("metric", "accuracy"),
+        best_metric=best_metric_key,
+        best_metric_mode=best_metric_mode,
+        early_stopping_patience=training_config["validation"].get(
+            "early_stopping_patience"
+        ),
     )
 
 

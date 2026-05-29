@@ -307,6 +307,11 @@ def test_validate_epoch_returns_metrics(classifier_trainer):
         assert f"val_precision_{cls}" in metrics
         assert f"val_recall_{cls}" in metrics
         assert f"val_f1_{cls}" in metrics
+    # Macro-averaged F1 (mean of per-class F1)
+    assert "val_f1_macro" in metrics
+    assert metrics["val_f1_macro"] == pytest.approx(
+        (metrics["val_f1_0"] + metrics["val_f1_1"]) / 2
+    )
     assert "val_roc_auc" in metrics
     assert "val_pr_auc" in metrics
     # Confusion matrix entries
@@ -518,6 +523,68 @@ def test_training_with_best_model_saving(classifier_trainer):
 
         # Check that best model was saved
         assert (checkpoint_dir / "best_model.pth").exists()
+
+
+@pytest.mark.integration
+def test_best_model_saved_with_f1_max_metric(classifier_trainer):
+    """best_model.pth is written when monitoring val_f1_1 with mode='max'."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+        classifier_trainer.train(
+            num_epochs=2,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="val_f1_1",
+            best_metric_mode="max",
+        )
+        # First validation always sets the best (prev best is None), so the
+        # checkpoint must exist regardless of subsequent fluctuation.
+        assert (checkpoint_dir / "best_model.pth").exists()
+
+
+@pytest.mark.unit
+def test_early_stopping_triggers_and_saves_final(classifier_trainer, monkeypatch):
+    """Early stopping halts before num_epochs and still writes final_model.pth."""
+    # Constant validation metric -> never improves after the first validation.
+    monkeypatch.setattr(
+        classifier_trainer,
+        "validate_epoch",
+        lambda: {"val_loss": 1.0, "val_f1_1": 0.5},
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_dir = Path(tmpdir)
+        classifier_trainer.train(
+            num_epochs=10,
+            checkpoint_dir=checkpoint_dir,
+            validate_frequency=1,
+            save_best=True,
+            best_metric="val_f1_1",
+            best_metric_mode="max",
+            early_stopping_patience=1,
+        )
+        # Epoch 1 sets the best; epoch 2 shows no improvement -> stop at epoch 2.
+        assert classifier_trainer._current_epoch == 2
+        assert (checkpoint_dir / "final_model.pth").exists()
+
+
+@pytest.mark.unit
+def test_early_stopping_disabled_runs_all_epochs(classifier_trainer, monkeypatch):
+    """With early_stopping_patience=None, all epochs run even without improvement."""
+    monkeypatch.setattr(
+        classifier_trainer,
+        "validate_epoch",
+        lambda: {"val_loss": 1.0, "val_f1_1": 0.5},
+    )
+    classifier_trainer.train(
+        num_epochs=3,
+        validate_frequency=1,
+        save_best=False,
+        best_metric="val_f1_1",
+        best_metric_mode="max",
+        early_stopping_patience=None,
+    )
+    assert classifier_trainer._current_epoch == 3
 
 
 @pytest.mark.unit

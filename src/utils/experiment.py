@@ -140,6 +140,26 @@ def create_experiment_logger(
     )
 
 
+def resolve_best_metric(metric: str) -> Tuple[str, str]:
+    """Map a config metric name to its validation key and optimization mode.
+
+    Validation metrics produced by the trainers are keyed with a ``val_``
+    prefix (e.g. ``val_f1_1``, ``val_loss``). Config files specify the
+    unprefixed name (e.g. ``f1_1``). This helper bridges the two and also
+    derives the optimization direction: ``loss`` is minimized, every other
+    supported metric is maximized.
+
+    Args:
+        metric: Unprefixed metric name from config (e.g. "f1_1", "loss").
+
+    Returns:
+        Tuple of (prefixed validation key, mode) where mode is "min" or "max".
+    """
+    val_key = f"val_{metric}"
+    mode = "min" if metric == "loss" else "max"
+    return val_key, mode
+
+
 def run_training(
     trainer: Any,
     metrics_logger: Any,
@@ -151,6 +171,8 @@ def run_training(
     save_latest_checkpoint: bool,
     validate_frequency: int,
     best_metric: str,
+    best_metric_mode: str = "min",
+    early_stopping_patience: Optional[int] = None,
     save_optimizer: bool = True,
 ) -> None:
     """Run trainer.train() with standard error handling and cleanup.
@@ -167,7 +189,11 @@ def run_training(
         checkpoint_frequency: How often to save checkpoints (in epochs).
         save_latest_checkpoint: Whether to save a latest checkpoint symlink.
         validate_frequency: How often to run validation (in epochs).
-        best_metric: Metric name for best-model selection.
+        best_metric: Metric name (already prefixed, e.g. "val_loss") for
+            best-model selection.
+        best_metric_mode: "min" or "max" optimization direction for best_metric.
+        early_stopping_patience: Stop training after this many consecutive
+            validations without improvement (None disables early stopping).
         save_optimizer: Whether to include optimizer state in checkpoints.
     """
     logger.info("")
@@ -182,6 +208,8 @@ def run_training(
             save_latest_checkpoint=save_latest_checkpoint,
             validate_frequency=validate_frequency,
             best_metric=best_metric,
+            best_metric_mode=best_metric_mode,
+            early_stopping_patience=early_stopping_patience,
             save_optimizer=save_optimizer,
         )
     except KeyboardInterrupt:

@@ -1078,8 +1078,56 @@ def test_synthetic_aug_max_samples(tmp_path):
 
 
 @pytest.mark.unit
+def test_synthetic_aug_max_samples_takes_first_n(tmp_path):
+    """max_samples truncation is deterministic top-N (first max_n indices).
+
+    The accepted-samples JSON is written as a quality ranking (best first), so
+    taking the first max_n entries yields the highest-quality nested subset.
+    """
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=10, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+    dataset = create_synthetic_augmentation_dataset(
+        split_file=split_file,
+        transform=transform,
+        limit_mode="max_samples",
+        max_samples=5,
+        seed=123,  # seed is irrelevant for deterministic top-N
+    )
+    assert isinstance(dataset, Subset)
+    assert dataset.indices == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.unit
+def test_synthetic_aug_max_samples_nested(tmp_path):
+    """Smaller doses are a prefix (subset) of larger doses — a nested ladder."""
+    from torchvision import transforms
+
+    split_file = _create_split_json(tmp_path, train_per_class=10, num_classes=2)
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    def _indices(n):
+        ds = create_synthetic_augmentation_dataset(
+            split_file=split_file,
+            transform=transform,
+            limit_mode="max_samples",
+            max_samples=n,
+        )
+        assert isinstance(ds, Subset)
+        return list(ds.indices)
+
+    small, large = _indices(3), _indices(7)
+    assert small == large[: len(small)]
+
+
+@pytest.mark.unit
 def test_synthetic_aug_seeded_reproducible(tmp_path):
-    """Test that subsampling is seeded and reproducible."""
+    """max_samples truncation is deterministic across calls."""
     from torchvision import transforms
 
     split_file = _create_split_json(tmp_path, train_per_class=10, num_classes=2)

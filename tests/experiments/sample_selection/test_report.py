@@ -184,6 +184,54 @@ class TestWriteAcceptedSamplesJson:
         assert data["metadata"]["selection_mode"] == "percentile"
         assert data["metadata"]["total_selected"] == 42
 
+    def test_entries_sorted_ascending_by_score(self, tmp_output_dir):
+        """With scores, entries are sorted ascending (best/lowest first)."""
+        output = tmp_output_dir / "accepted.json"
+        write_accepted_samples_json(
+            output_path=output,
+            selected_paths=["c.png", "a.png", "b.png"],
+            label=1,
+            class_name="abnormal",
+            metadata={},
+            selected_scores=[3.0, 1.0, 2.0],
+        )
+        with open(output) as f:
+            data = json.load(f)
+        paths = [e["path"] for e in data["train"]]
+        scores = [e["score"] for e in data["train"]]
+        assert paths == ["a.png", "b.png", "c.png"]
+        assert scores == [1.0, 2.0, 3.0]
+
+    def test_entries_have_score_field_when_scores_given(self, tmp_output_dir):
+        """Each entry carries a numeric 'score' when scores are provided."""
+        output = tmp_output_dir / "accepted.json"
+        write_accepted_samples_json(
+            output_path=output,
+            selected_paths=["a.png", "b.png"],
+            label=1,
+            class_name="abnormal",
+            metadata={},
+            selected_scores=[0.5, 0.9],
+        )
+        with open(output) as f:
+            data = json.load(f)
+        for entry in data["train"]:
+            assert isinstance(entry["score"], float)
+            assert entry["label"] == 1
+
+    def test_mismatched_scores_length_raises(self, tmp_output_dir):
+        """selected_scores must align with selected_paths."""
+        output = tmp_output_dir / "accepted.json"
+        with pytest.raises(ValueError):
+            write_accepted_samples_json(
+                output_path=output,
+                selected_paths=["a.png", "b.png"],
+                label=1,
+                class_name="abnormal",
+                metadata={},
+                selected_scores=[0.5],
+            )
+
 
 # ============================================================================
 # Unit Tests - write_summary

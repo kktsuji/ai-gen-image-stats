@@ -54,6 +54,7 @@ def write_accepted_samples_json(
     label: int,
     class_name: str,
     metadata: Dict[str, Any],
+    selected_scores: Optional[List[float]] = None,
 ) -> None:
     """Write accepted samples in SplitFileDataset-compatible JSON format.
 
@@ -69,7 +70,7 @@ def write_accepted_samples_json(
         "scoring": {"k": 5, "require_realism": false}
       },
       "train": [
-        {"path": "outputs/diffusion/generated/sample_0001.png", "label": 0},
+        {"path": "outputs/diffusion/generated/sample_0001.png", "label": 0, "score": 1.23},
         ...
       ]
     }
@@ -77,15 +78,39 @@ def write_accepted_samples_json(
     Uses "train" as the split key so SplitFileDataset can load it directly
     with split="train".
 
+    When ``selected_scores`` is provided, entries are sorted ascending by
+    score (lower k-NN distance = more realistic, written first) and each
+    entry carries its ``score``. This makes the accepted list a true quality
+    ranking so downstream dose-response augmentation can take a nested top-N
+    via ``max_samples`` truncation.
+
     Args:
         output_path: Path to write the JSON file.
         selected_paths: List of file paths for accepted samples.
         label: Integer class label for all samples.
         class_name: String class name.
         metadata: Additional metadata dict (selection_mode, scoring params, etc.).
+        selected_scores: Optional per-sample k-NN scores aligned with
+            selected_paths. If given, entries are score-sorted ascending and
+            include a "score" field.
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if selected_scores is not None:
+        if len(selected_scores) != len(selected_paths):
+            raise ValueError(
+                "selected_scores must be the same length as selected_paths "
+                f"({len(selected_scores)} != {len(selected_paths)})"
+            )
+        # Sort ascending by score (best/most-realistic first) for a nested top-N
+        ranked = sorted(zip(selected_paths, selected_scores), key=lambda ps: ps[1])
+        train_entries = [
+            {"path": path, "label": label, "score": float(score)}
+            for path, score in ranked
+        ]
+    else:
+        train_entries = [{"path": path, "label": label} for path in selected_paths]
 
     result = {
         "metadata": {
@@ -94,7 +119,7 @@ def write_accepted_samples_json(
             "classes": {class_name: label},
             **metadata,
         },
-        "train": [{"path": path, "label": label} for path in selected_paths],
+        "train": train_entries,
     }
 
     with open(output_path, "w", encoding="utf-8") as f:

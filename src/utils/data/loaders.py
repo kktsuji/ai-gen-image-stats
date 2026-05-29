@@ -223,6 +223,13 @@ def create_synthetic_augmentation_dataset(
     if max_n >= len(dataset):
         return dataset
 
+    if limit_mode == "max_samples":
+        # Deterministic top-N: the selection JSON is written as a quality
+        # ranking (best/most-realistic first), so the first max_n entries are
+        # the highest quality. This yields a nested dose ladder where each
+        # larger dose is a superset of the smaller ones.
+        return Subset(dataset, list(range(max_n)))
+
     rng = random.Random(seed)
     indices = rng.sample(range(len(dataset)), max_n)
     return Subset(dataset, indices)

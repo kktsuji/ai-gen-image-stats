@@ -539,6 +539,7 @@ class DiffusionTrainer:
         save_best: bool = True,
         best_metric: str = "loss",
         best_metric_mode: str = "min",
+        early_stopping_patience: Optional[int] = None,
         save_latest_checkpoint: bool = True,
         save_optimizer: bool = True,
     ) -> None:
@@ -555,6 +556,8 @@ class DiffusionTrainer:
             save_best: Whether to save the best model separately
             best_metric: Metric name to use for best model selection
             best_metric_mode: 'min' or 'max' for best metric comparison
+            early_stopping_patience: Accepted for interface parity with the shared
+                                      run_training helper; not implemented for diffusion.
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
             save_optimizer: If True, include optimizer state in checkpoints. Set False to

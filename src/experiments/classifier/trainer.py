@@ -299,6 +299,7 @@ class ClassifierTrainer:
         save_best: bool = True,
         best_metric: str = "loss",
         best_metric_mode: str = "min",
+        early_stopping_patience: Optional[int] = None,
         save_latest_checkpoint: bool = True,
         save_optimizer: bool = True,
     ) -> None:
@@ -312,8 +313,10 @@ class ClassifierTrainer:
             checkpoint_frequency: Save checkpoint every N epochs
             validate_frequency: Validate every N epochs (0 to disable)
             save_best: Whether to save the best model separately
-            best_metric: Metric name to use for best model selection
+            best_metric: Metric name to use for best model selection (e.g. "val_f1_1")
             best_metric_mode: 'min' or 'max' for best metric comparison
+            early_stopping_patience: Stop after this many consecutive validations
+                                      without improvement in best_metric (None disables).
             save_latest_checkpoint: If True, writes latest_checkpoint.pth after every epoch.
                                      If False, only periodic and best checkpoints are written.
             save_optimizer: If True, include optimizer state in checkpoints. Set False to
@@ -339,6 +342,9 @@ class ClassifierTrainer:
         # Initialize metrics before loop so they're defined even when num_epochs=0
         train_metrics: Dict[str, float] = {}
         val_metrics: Optional[Dict[str, float]] = None
+
+        # Early stopping: count consecutive validations without improvement
+        no_improve_count = 0
 
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
@@ -380,21 +386,25 @@ class ClassifierTrainer:
                         val_metrics, step=self._global_step, epoch=self._current_epoch
                     )
 
-            # Determine current metric value for best model tracking
-            current_metric_value = None
-            if save_best:
+            # Determine current metric value for best-model tracking and
+            # early stopping. Both need the monitored metric, so compute it
+            # whenever either feature is active.
+            validation_ran = val_metrics is not None
+            track_metric = save_best or early_stopping_patience is not None
+            improved = False
+            if track_metric:
                 # Try validation metrics first, then training metrics
                 metrics_to_check = val_metrics if val_metrics else train_metrics
                 current_metric_value = metrics_to_check.get(best_metric)
 
                 if current_metric_value is not None:
-                    is_best = is_best_metric(
+                    improved = is_best_metric(
                         current_metric_value, self._best_metric, best_metric_mode
                     )
 
-                    if is_best:
+                    if improved:
                         self._best_metric = current_metric_value
-                        if checkpoint_dir is not None:
+                        if save_best and checkpoint_dir is not None:
                             best_path = checkpoint_dir / "best_model.pth"
                             save_checkpoint(
                                 best_path,
@@ -412,6 +422,16 @@ class ClassifierTrainer:
                                 trainer_class=self.__class__.__name__,
                                 save_optimizer=save_optimizer,
                             )
+
+            # Early stopping accounting: only count epochs where validation ran
+            # and produced the monitored metric.
+            if (
+                early_stopping_patience is not None
+                and validation_ran
+                and val_metrics is not None
+                and best_metric in val_metrics
+            ):
+                no_improve_count = 0 if improved else no_improve_count + 1
 
             # Regular checkpoint saving
             if checkpoint_dir is not None:
@@ -454,6 +474,19 @@ class ClassifierTrainer:
                         trainer_class=self.__class__.__name__,
                         save_optimizer=save_optimizer,
                     )
+
+            # Early stopping: break after the epoch's checkpoints are written so
+            # latest/best are up to date; the post-loop final_model.pth still saves.
+            if (
+                early_stopping_patience is not None
+                and no_improve_count >= early_stopping_patience
+            ):
+                _logger.info(
+                    f"Early stopping triggered at epoch {self._current_epoch}: "
+                    f"no improvement in {best_metric} for "
+                    f"{no_improve_count} validation(s)"
+                )
+                break
 
         # Save final checkpoint after all epochs complete
         if checkpoint_dir is not None:
@@ -517,6 +550,9 @@ class ClassifierTrainer:
             metrics[f"{prefix}precision_{cls_idx}"] = float(prec_arr[cls_idx])  # type: ignore[index]
             metrics[f"{prefix}recall_{cls_idx}"] = float(rec_arr[cls_idx])  # type: ignore[index]
             metrics[f"{prefix}f1_{cls_idx}"] = float(f1_arr[cls_idx])  # type: ignore[index]
+
+        # Macro-averaged F1 (mean of per-class F1; equivalent to average="macro")
+        metrics[f"{prefix}f1_macro"] = float(np.mean(f1_arr))
 
         # ROC-AUC and PR-AUC (require at least 2 classes present in targets)
         unique_classes = np.unique(targets_arr)
@@ -668,6 +704,7 @@ class ClassifierTrainer:
             - 'val_accuracy': Validation accuracy
             - 'val_balanced_accuracy': Balanced accuracy
             - 'val_precision_N', 'val_recall_N', 'val_f1_N': Per-class metrics
+            - 'val_f1_macro': Macro-averaged F1
             - 'val_roc_auc', 'val_pr_auc': AUC metrics (when computable)
             - 'val_cm_I_J': Confusion matrix entries
 

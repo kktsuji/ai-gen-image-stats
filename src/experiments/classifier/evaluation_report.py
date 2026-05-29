@@ -45,6 +45,11 @@ KEY_METRICS = [
 ]
 
 
+# Dose ladder: number of synthetic abnormal images added per dose level.
+# Baselines add nothing (dose D0). See scripts/run_pipeline.py CLASSIFIER_VARIANTS.
+DOSE_ADDED = {"d0": 0, "d1": 42, "d2": 84, "d3": 168, "d4": 352}
+
+
 def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     """Parse experiment name into dimension components.
 
@@ -53,11 +58,12 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     See scripts/run_pipeline.py for the naming convention.
 
     Expected formats:
-        - Synthetic: {train}__{gen}__{sel}__{cls}  e.g. "ws__n100-gs3__topk__all"
-        - Baseline:  baseline__{strategy}          e.g. "baseline__vanilla"
+        - Synthetic: {train}__{gen}__{sel}__{dose}  e.g. "us__n1000-gs2__topk__d2"
+        - Baseline:  baseline__{strategy}           e.g. "baseline__vanilla" (dose D0)
 
     Returns:
-        Dictionary with keys: type, diffusion_variant, gen_config, selection, aug_limit
+        Dictionary with keys: type, diffusion_variant, gen_config, selection,
+        aug_limit, dose (number of synthetic images added; "-" if unknown).
     """
     parts = exp_name.split("__")
 
@@ -68,6 +74,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
             "gen_config": "-",
             "selection": "-",
             "aug_limit": "-",
+            "dose": "0",
             "baseline_strategy": parts[1],
         }
 
@@ -78,6 +85,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
             "gen_config": parts[1],
             "selection": parts[2],
             "aug_limit": parts[3],
+            "dose": str(DOSE_ADDED.get(parts[3], "-")),
             "baseline_strategy": "-",
         }
 
@@ -87,6 +95,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
         "gen_config": "-",
         "selection": "-",
         "aug_limit": "-",
+        "dose": "-",
         "baseline_strategy": "-",
     }
 
@@ -279,6 +288,7 @@ def build_mean_std_dataframe(
         "gen_config",
         "selection",
         "aug_limit",
+        "dose",
         "baseline_strategy",
     ]
 
