@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -36,6 +37,10 @@ RUN_SUMMARIZE = True
 
 # 完了済み run をスキップする（False にすると従来どおり全て再実行）
 SKIP_COMPLETED = True
+
+# Delete each classifier experiment's checkpoints/ dir after a successful eval
+# (the .pth files are not needed once reports/evaluation.json is written).
+DELETE_CHECKPOINTS_AFTER_EVAL = True
 
 # Random seeds for multi-seed classifier runs (for statistical testing)
 SEEDS = list(range(20))
@@ -201,6 +206,80 @@ def run(
     return subprocess.Popen(cmd)
 
 
+def _run_classifier_experiment(
+    exp_label: str, out_dir: str, train_overrides: list[str]
+) -> None:
+    """Train -> evaluate -> delete checkpoints for a single classifier experiment.
+
+    The .pth files are discarded once reports/evaluation.json is written, so the
+    completion marker is evaluation.json (not final_model.pth) to keep re-runs
+    idempotent after cleanup.
+    """
+    final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
+    eval_marker = os.path.join(out_dir, "reports", "evaluation.json")
+
+    # Already evaluated (checkpoints possibly already cleaned up): skip entirely.
+    if RUN_EVALUATION and _is_done(eval_marker):
+        print(f"[SKIP] {exp_label}: already complete")
+        return
+
+    # --- Train (skip if a checkpoint already exists from a prior attempt) ---
+    if _is_done(final_ckpt):
+        print(f"[SKIP-TRAIN] {exp_label}: checkpoint exists")
+    else:
+        overrides = [
+            "--output.base_dir",
+            out_dir,
+            *train_overrides,
+            *CLASSIFIER_CHECKPOINT_OVERRIDES,
+        ]
+        print(f"[CLS] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
+        proc = run(CLASSIFIER_CONFIG, overrides)
+        proc.wait()
+        if proc.returncode != 0:
+            print(f"[CLS] FAIL {exp_label}: training failed (rc={proc.returncode})")
+            return
+
+    if not RUN_EVALUATION:
+        return
+
+    # --- Evaluate: prefer best_model.pth, fall back to final_model.pth ---
+    checkpoint = None
+    for ckpt_name in ["best_model.pth", "final_model.pth"]:
+        candidate = os.path.join(out_dir, "checkpoints", ckpt_name)
+        if os.path.exists(candidate):
+            checkpoint = candidate
+            break
+    if checkpoint is None:
+        print(f"[EVAL] SKIP {exp_label}: no checkpoint found")
+        return
+
+    eval_overrides = [
+        "--mode",
+        "evaluate",
+        "--output.base_dir",
+        out_dir,
+        "--evaluation.checkpoint",
+        checkpoint,
+        "--data.synthetic_augmentation.enabled",
+        "false",
+    ]
+    print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(eval_overrides)}")
+    proc = run(CLASSIFIER_CONFIG, eval_overrides)
+    proc.wait()
+    if proc.returncode != 0:
+        # Keep checkpoints so the experiment can be retried.
+        print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={proc.returncode})")
+        return
+
+    # --- Cleanup: drop the now-unneeded checkpoints after a successful eval ---
+    if DELETE_CHECKPOINTS_AFTER_EVAL:
+        ckpt_dir = os.path.join(out_dir, "checkpoints")
+        if os.path.isdir(ckpt_dir):
+            shutil.rmtree(ckpt_dir)
+            print(f"[CLEANUP] {exp_label}: removed {ckpt_dir}")
+
+
 def main() -> None:
     load_dotenv()
     start = time.time()
@@ -349,7 +428,7 @@ def main() -> None:
                     proc.wait()
 
     # ------------------------------------------------------------------
-    # Classifier Training with Synthetic Augmentation (multi-seed)
+    # Classifier with Synthetic Augmentation (multi-seed): train -> eval -> cleanup
     # ------------------------------------------------------------------
     if RUN_CLASSIFIER:
         # outputs/classifier/{train}__{gen}__{sel}__{cls}/seed{N}/
@@ -366,13 +445,7 @@ def main() -> None:
                                 f"{train_name}__{gen_name}__{sel_name}__{cls_name}"
                             )
                             out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
-                            if _is_done(f"{out_dir}/checkpoints/final_model.pth"):
-                                print(f"[SKIP] {exp_name}/seed{seed}: already complete")
-                                continue
-
-                            overrides = [
-                                "--output.base_dir",
-                                out_dir,
+                            train_overrides = [
                                 "--compute.seed",
                                 str(seed),
                                 "--data.synthetic_augmentation.enabled",
@@ -380,89 +453,30 @@ def main() -> None:
                                 "--data.synthetic_augmentation.split_file",
                                 sel_split,
                                 *cls_overrides,
-                                *CLASSIFIER_CHECKPOINT_OVERRIDES,
                             ]
-                            print(
-                                f"[CLS] {exp_name}/seed{seed}:"
-                                f" {CLASSIFIER_CONFIG} {' '.join(overrides)}"
+                            _run_classifier_experiment(
+                                f"{exp_name}/seed{seed}", out_dir, train_overrides
                             )
-                            proc = run(CLASSIFIER_CONFIG, overrides)
-                            proc.wait()
 
     # ------------------------------------------------------------------
-    # Baseline Classifier Training (real data only, multi-seed)
+    # Baseline Classifier (real data only, multi-seed): train -> eval -> cleanup
     # ------------------------------------------------------------------
     if RUN_BASELINE_CLASSIFIER:
         # outputs/classifier/baseline__{strategy}/seed{N}/
         for baseline_name, baseline_overrides in BASELINE_VARIANTS:
             for seed in SEEDS:
                 out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
-                if _is_done(f"{out_dir}/checkpoints/final_model.pth"):
-                    print(f"[SKIP] {baseline_name}/seed{seed}: already complete")
-                    continue
-
-                overrides = [
-                    "--output.base_dir",
-                    out_dir,
+                train_overrides = [
                     "--compute.seed",
                     str(seed),
                     *baseline_overrides,
-                    *CLASSIFIER_CHECKPOINT_OVERRIDES,
                 ]
-                print(
-                    f"[BASELINE] {baseline_name}/seed{seed}:"
-                    f" {CLASSIFIER_CONFIG} {' '.join(overrides)}"
+                _run_classifier_experiment(
+                    f"{baseline_name}/seed{seed}", out_dir, train_overrides
                 )
-                proc = run(CLASSIFIER_CONFIG, overrides)
-                proc.wait()
 
-    # ------------------------------------------------------------------
-    # Evaluation: re-evaluate all classifier experiments with enriched metrics
-    # ------------------------------------------------------------------
-    if RUN_EVALUATION:
-        import glob
-
-        # Find all seed directories (multi-seed layout) and legacy
-        # experiment dirs that have no seed subdirectories.
-        seed_dirs = sorted(glob.glob("outputs/classifier/*/seed*/"))
-        legacy_dirs = [
-            d
-            for d in sorted(glob.glob("outputs/classifier/*/"))
-            if not glob.glob(os.path.join(d, "seed*/"))
-        ]
-
-        for exp_dir in [*seed_dirs, *legacy_dirs]:
-            exp_label = exp_dir.rstrip("/").replace("outputs/classifier/", "")
-
-            # Find best checkpoint, fall back to final
-            checkpoint = None
-            for ckpt_name in ["best_model.pth", "final_model.pth"]:
-                candidate = os.path.join(exp_dir, "checkpoints", ckpt_name)
-                if os.path.exists(candidate):
-                    checkpoint = candidate
-                    break
-
-            if checkpoint is None:
-                print(f"[EVAL] SKIP {exp_label}: no checkpoint found")
-                continue
-
-            if _is_done(os.path.join(exp_dir, "reports", "evaluation.json")):
-                print(f"[SKIP] {exp_label}: evaluation already complete")
-                continue
-
-            overrides = [
-                "--mode",
-                "evaluate",
-                "--output.base_dir",
-                exp_dir.rstrip("/"),
-                "--evaluation.checkpoint",
-                checkpoint,
-                "--data.synthetic_augmentation.enabled",
-                "false",
-            ]
-            print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
-            proc = run(CLASSIFIER_CONFIG, overrides)
-            proc.wait()
+    # Evaluation is interleaved per experiment in the classifier/baseline loops
+    # above (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
 
     # ------------------------------------------------------------------
     # Summarize: aggregate evaluation reports (CPU-only, no Docker)
