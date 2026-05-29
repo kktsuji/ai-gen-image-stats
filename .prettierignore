@@ -3,3 +3,4 @@ venv/
 outputs/
 data/
 __pycache__/
+.local-tmp/
