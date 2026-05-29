@@ -118,11 +118,29 @@ GEN_VARIANTS = [
 ]
 
 # Selection algorithm variants: (name, extra CLI overrides)
-# Fixed to top_k=400 so the dose ladder is a nested top-N of one ranking
-# (quantity decoupled from the selection method).
+# - topk: realism-greedy top-N (value=400 so the dose ladder is a nested top-N
+#   of one ranking; quantity decoupled from the selection method).
+# - random / stratified: selection ABLATION arms isolating whether the
+#   realism-greedy ranking collapses diversity (and thereby harms pr_auc). Both
+#   select exactly 352 (= dose d4, the 1:1-balance quantity) so the added count
+#   matches topk@d4; they must NOT use the d1-d4 nested ladder (a smaller dose
+#   would let the downstream max_samples truncation re-impose a realism ranking
+#   by score). See SELECTION_DOSES below.
 SELECTION_VARIANTS = [
     ("topk", ["--selection.mode", "top_k", "--selection.value", "400"]),
+    ("random", ["--selection.mode", "random", "--selection.value", "352"]),
+    ("stratified", ["--selection.mode", "stratified", "--selection.value", "352"]),
 ]
+
+# Per selection method, which classifier dose levels to run. Only topk carries a
+# meaningful nested top-N ladder; the ablation arms select exactly 352 up front,
+# so they run d4 alone (max_samples=352 truncation is a no-op, preserving the
+# random / stratified ordering instead of re-ranking by realism score).
+SELECTION_DOSES = {
+    "topk": ["d1", "d2", "d3", "d4"],
+    "random": ["d4"],
+    "stratified": ["d4"],
+}
 
 
 # Classifier dose ladder: (name, extra CLI overrides).
@@ -144,6 +162,9 @@ CLASSIFIER_VARIANTS = [
     ("d3", _dose_overrides(168)),  # 2x minority
     ("d4", _dose_overrides(352)),  # balance to 1:1 (84 + 352 = 436)
 ]
+
+# Lookup for the dose overrides selected per (selection method) via SELECTION_DOSES.
+_DOSE_OVERRIDES_BY_NAME = dict(CLASSIFIER_VARIANTS)
 
 
 # Baseline classifier variants: real data only, with different balancing strategies
@@ -499,12 +520,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     classifier_total = 0
     if RUN_CLASSIFIER:
+        doses_per_selection = sum(
+            len(SELECTION_DOSES[name]) for name, _ in SELECTION_VARIANTS
+        )
         classifier_total += (
-            len(TRAIN_VARIANTS)
-            * len(GEN_VARIANTS)
-            * len(SELECTION_VARIANTS)
-            * len(CLASSIFIER_VARIANTS)
-            * len(SEEDS)
+            len(TRAIN_VARIANTS) * len(GEN_VARIANTS) * doses_per_selection * len(SEEDS)
         )
     if RUN_BASELINE_CLASSIFIER:
         classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
@@ -518,7 +538,8 @@ def main() -> None:
         for train_name, _ in TRAIN_VARIANTS:
             for gen_name, _ in GEN_VARIANTS:
                 for sel_name, _ in SELECTION_VARIANTS:
-                    for cls_name, cls_overrides in CLASSIFIER_VARIANTS:
+                    for cls_name in SELECTION_DOSES[sel_name]:
+                        cls_overrides = _DOSE_OVERRIDES_BY_NAME[cls_name]
                         for seed in SEEDS:
                             sel_split = (
                                 f"outputs/diffusion-{train_name}/selection"
@@ -601,8 +622,12 @@ def main() -> None:
                 "outputs/evaluation_report",
                 "--selection-summary-pattern",
                 "outputs/diffusion-*/selection-eval/*/reports/evaluation.json",
+                # Compare against the strongest class-balancing baseline (weighted
+                # sampler). vanilla (no balancing) flatters synthetic augmentation
+                # because it conflates the augmentation's effect with simply
+                # addressing the class imbalance; ws isolates the former.
                 "--baseline-name",
-                "baseline__vanilla",
+                "baseline__ws",
             ],
             check=True,
         )
