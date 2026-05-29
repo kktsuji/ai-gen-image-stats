@@ -211,6 +211,16 @@ def _build_metric_fns(
 
             scalar_fns[name] = _pr_auc
 
+        elif name.startswith(("precision_", "recall_", "f1_")) and name.split("_", 1)[
+            1
+        ] in ("macro", "micro", "weighted"):
+            # Aggregate metrics (e.g. f1_macro) are valid point estimates /
+            # selection metrics, but bootstrap CIs are not computed for them
+            # yet. Skip silently so they don't trip the per-class index parser
+            # below.
+            _logger.debug(f"Skipping bootstrap CI for aggregate metric: {name}")
+            continue
+
         elif name.startswith(("precision_", "recall_", "f1_")):
             kind = name.split("_")[0]
             try:

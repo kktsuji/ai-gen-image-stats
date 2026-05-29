@@ -153,6 +153,41 @@ class TestBootstrapClassificationMetrics:
         assert "recall_1" in result
         assert "nonexistent_metric" not in result
 
+    def test_aggregate_metric_skipped_without_warning(self, binary_data, caplog):
+        """Aggregate-suffix names (f1_macro etc.) are skipped silently.
+
+        They are valid point-estimate / selection metrics, but bootstrap CIs
+        are not computed for them yet. They must not trip the per-class index
+        parser nor emit a "Cannot parse class index" warning (see #66).
+        """
+        targets, predictions, probs = binary_data
+
+        with caplog.at_level("WARNING", logger="src.utils.bootstrap"):
+            result = bootstrap_classification_metrics(
+                targets,
+                predictions,
+                probs,
+                num_classes=2,
+                metric_names=[
+                    "recall_1",
+                    "f1_macro",
+                    "precision_micro",
+                    "recall_weighted",
+                ],
+                n_bootstrap=50,
+                seed=42,
+            )
+
+        # Valid per-class metric still computed; aggregates skipped.
+        assert "recall_1" in result
+        assert "f1_macro" not in result
+        assert "precision_micro" not in result
+        assert "recall_weighted" not in result
+        # No "Cannot parse class index" warning emitted for the aggregates.
+        assert not any(
+            "Cannot parse class index" in record.message for record in caplog.records
+        )
+
     def test_handles_single_class_bootstrap_sample(self):
         """Handles degenerate bootstrap samples that contain only one class."""
         # Small dataset where some bootstrap samples will be single-class
