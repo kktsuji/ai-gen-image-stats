@@ -42,6 +42,13 @@ SKIP_COMPLETED = True
 # (the .pth files are not needed once reports/evaluation.json is written).
 DELETE_CHECKPOINTS_AFTER_EVAL = True
 
+# Cooldown (seconds) inserted between consecutive GPU container runs.
+# Launching `docker run --rm --gpus all` back-to-back at high frequency can start a
+# new CUDA init before the NVIDIA driver has released the previous CUDA context,
+# leading to crashes like "CUDA error: unknown error". This fixed pause prevents that.
+# It trades off total wall time (480 runs x N seconds), so tune it here. 0 disables it.
+GPU_COOLDOWN_SECONDS = 5
+
 # Random seeds for multi-seed classifier runs (for statistical testing)
 SEEDS = list(range(20))
 
@@ -56,6 +63,15 @@ CLASSIFIER_CHECKPOINT_OVERRIDES = [
     "false",
     "--training.checkpointing.save_frequency",
     "100",
+]
+
+# DataLoader runtime settings for the high-frequency classifier phase.
+# The classifier dataset is small (batch_size 8 / epochs 10), so fewer workers has
+# negligible performance impact while reducing worker fork/exit churn and
+# shared-memory pressure (Bus error / shm exhaustion). Use "0" for the most conservative.
+CLASSIFIER_RUNTIME_OVERRIDES = [
+    "--data.loading.num_workers",
+    "2",
 ]
 
 # Each variant: (name, extra CLI overrides for training)
@@ -206,6 +222,25 @@ def run(
     return subprocess.Popen(cmd)
 
 
+def _gpu_cooldown() -> None:
+    """Fixed pause giving the GPU driver time to release the CUDA context."""
+    if GPU_COOLDOWN_SECONDS > 0:
+        time.sleep(GPU_COOLDOWN_SECONDS)
+
+
+def run_and_wait(
+    config: str,
+    overrides: list[str],
+    *,
+    suppress_output: bool = False,
+) -> int:
+    """Launch a container, wait for it, apply the GPU cooldown, return the returncode."""
+    proc = run(config, overrides, suppress_output=suppress_output)
+    proc.wait()
+    _gpu_cooldown()
+    return proc.returncode
+
+
 def _run_classifier_experiment(
     exp_label: str, out_dir: str, train_overrides: list[str]
 ) -> None:
@@ -232,12 +267,12 @@ def _run_classifier_experiment(
             out_dir,
             *train_overrides,
             *CLASSIFIER_CHECKPOINT_OVERRIDES,
+            *CLASSIFIER_RUNTIME_OVERRIDES,
         ]
         print(f"[CLS] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
-        proc = run(CLASSIFIER_CONFIG, overrides)
-        proc.wait()
-        if proc.returncode != 0:
-            print(f"[CLS] FAIL {exp_label}: training failed (rc={proc.returncode})")
+        rc = run_and_wait(CLASSIFIER_CONFIG, overrides)
+        if rc != 0:
+            print(f"[CLS] FAIL {exp_label}: training failed (rc={rc})")
             return
 
     if not RUN_EVALUATION:
@@ -263,13 +298,13 @@ def _run_classifier_experiment(
         checkpoint,
         "--data.synthetic_augmentation.enabled",
         "false",
+        *CLASSIFIER_RUNTIME_OVERRIDES,
     ]
     print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(eval_overrides)}")
-    proc = run(CLASSIFIER_CONFIG, eval_overrides)
-    proc.wait()
-    if proc.returncode != 0:
+    rc = run_and_wait(CLASSIFIER_CONFIG, eval_overrides)
+    if rc != 0:
         # Keep checkpoints so the experiment can be retried.
-        print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={proc.returncode})")
+        print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={rc})")
         return
 
     # --- Cleanup: drop the now-unneeded checkpoints after a successful eval ---
@@ -290,12 +325,14 @@ def main() -> None:
     if RUN_DATA_PREPARATION:
         # outputs/splits-seed{N}-tr{R}/train_val_split.json
         print(f"[DATA-PREP] {DATA_PREPARATION_CONFIG}")
-        proc = run(DATA_PREPARATION_CONFIG, [])
-        proc.wait()
+        run_and_wait(DATA_PREPARATION_CONFIG, [])
 
     # ------------------------------------------------------------------
     # Training (max 2 parallel, sliding window)
     # ------------------------------------------------------------------
+    # NOTE: the GPU cooldown (run_and_wait) is intentionally NOT used here. There are
+    # only 2 TRAIN_VARIANTS, so restart frequency is low (rapid-restart crashes are low
+    # risk), and a cooldown sleep would serialize the deliberate max_parallel=2 overlap.
     if RUN_TRAINING:
         # outputs/diffusion-{train}/train/
         max_parallel = 2
@@ -362,8 +399,7 @@ def main() -> None:
                 print(
                     f"[GEN] {train_name}/{gen_name}: {DIFFUSION_CONFIG} {' '.join(overrides)}"
                 )
-                proc = run(DIFFUSION_CONFIG, overrides)
-                proc.wait()
+                run_and_wait(DIFFUSION_CONFIG, overrides)
 
     # ------------------------------------------------------------------
     # Sample Selection
@@ -390,8 +426,7 @@ def main() -> None:
                     print(
                         f"[SEL] {train_name}/{gen_name}/{sel_name}: {SELECTION_CONFIG} {' '.join(overrides)}"
                     )
-                    proc = run(SELECTION_CONFIG, overrides)
-                    proc.wait()
+                    run_and_wait(SELECTION_CONFIG, overrides)
 
     # ------------------------------------------------------------------
     # Selection Evaluation
@@ -424,8 +459,7 @@ def main() -> None:
                         f"[SEL-EVAL] {train_name}/{gen_name}/{sel_name}: "
                         f"{SELECTION_EVALUATE_CONFIG} {' '.join(overrides)}"
                     )
-                    proc = run(SELECTION_EVALUATE_CONFIG, overrides)
-                    proc.wait()
+                    run_and_wait(SELECTION_EVALUATE_CONFIG, overrides)
 
     # ------------------------------------------------------------------
     # Classifier with Synthetic Augmentation (multi-seed): train -> eval -> cleanup
