@@ -225,6 +225,62 @@ class TestSelectSamples:
         with pytest.raises(ValueError, match="Unknown selection mode"):
             select_samples(scores, mode="invalid_mode", value=1)
 
+    def test_random_selects_correct_count(self):
+        """random should select exactly value samples."""
+        scores = np.array([3.0, 1.0, 2.0, 5.0, 4.0])
+        mask = select_samples(scores, mode="random", value=3, seed=0)
+        assert mask.sum() == 3
+
+    def test_random_clamps_to_available(self):
+        """random should not select more than available samples."""
+        scores = np.array([1.0, 2.0, 3.0])
+        mask = select_samples(scores, mode="random", value=10, seed=0)
+        assert mask.sum() == 3
+
+    def test_random_is_seed_reproducible(self):
+        """Same seed yields the same draw; the draw ignores the score ranking."""
+        scores = np.array([3.0, 1.0, 2.0, 5.0, 4.0, 6.0])
+        mask_a = select_samples(scores, mode="random", value=3, seed=42)
+        mask_b = select_samples(scores, mode="random", value=3, seed=42)
+        np.testing.assert_array_equal(mask_a, mask_b)
+
+    def test_random_respects_realism_filter(self):
+        """random should draw only from realism-passing candidates."""
+        scores = np.array([1.0, 2.0, 3.0, 4.0])
+        realism_flags = np.array([True, False, True, False])
+        mask = select_samples(
+            scores,
+            mode="random",
+            value=2,
+            realism_flags=realism_flags,
+            require_realism=True,
+            seed=0,
+        )
+        assert mask.sum() == 2
+        assert not mask[1] and not mask[3]
+
+    def test_stratified_selects_correct_count(self):
+        """stratified should select exactly value distinct samples."""
+        scores = np.arange(10, dtype=float)
+        mask = select_samples(scores, mode="stratified", value=4)
+        assert mask.sum() == 4
+
+    def test_stratified_spreads_across_score_spectrum(self):
+        """stratified should cover the score range, not just the lowest scores."""
+        scores = np.arange(10, dtype=float)  # already sorted ascending
+        mask = select_samples(scores, mode="stratified", value=5)
+        selected_scores = scores[mask]
+        # Spread reaches the high end of the spectrum, unlike top_k.
+        assert selected_scores.max() >= 6.0
+        topk_mask = select_samples(scores, mode="top_k", value=5)
+        assert scores[topk_mask].max() < selected_scores.max()
+
+    def test_stratified_clamps_to_available(self):
+        """stratified should not select more than available samples."""
+        scores = np.array([1.0, 2.0, 3.0])
+        mask = select_samples(scores, mode="stratified", value=10)
+        assert mask.sum() == 3
+
 
 # ============================================================================
 # Component Tests - extract_features_from_loader

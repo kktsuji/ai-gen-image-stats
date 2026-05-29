@@ -41,7 +41,7 @@ _COMPARISON_PREFIXES = {
 }
 
 # Known selection method tokens (selection names must not contain underscores)
-_KNOWN_SELECTIONS = {"topk", "percentile", "threshold"}
+_KNOWN_SELECTIONS = {"topk", "percentile", "threshold", "random", "stratified"}
 
 
 def _parse_selection_eval_path(json_path: str) -> Dict[str, str]:
