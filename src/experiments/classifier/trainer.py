@@ -346,6 +346,24 @@ class ClassifierTrainer:
         # Early stopping: count consecutive validations without improvement
         no_improve_count = 0
 
+        # Warn about no-op configurations: both best-model tracking and early
+        # stopping depend on the monitored metric being produced by validation.
+        # When validation is disabled they silently do nothing, so surface it.
+        if validate_frequency == 0:
+            if save_best and best_metric.startswith("val_"):
+                _logger.warning(
+                    "save_best is enabled but validation is disabled "
+                    "(validate_frequency=0); best_model.pth will not be written "
+                    "because the monitored metric '%s' requires validation.",
+                    best_metric,
+                )
+            if early_stopping_patience is not None:
+                _logger.warning(
+                    "early_stopping_patience=%s is set but validation is disabled "
+                    "(validate_frequency=0); early stopping will have no effect.",
+                    early_stopping_patience,
+                )
+
         for epoch in range(num_epochs):
             self._current_epoch = epoch + 1
 

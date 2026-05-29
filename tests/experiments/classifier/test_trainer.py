@@ -506,6 +506,102 @@ def test_final_checkpoint_omits_optimizer_when_disabled(classifier_trainer):
 
 
 @pytest.mark.integration
+def test_warns_when_save_best_and_validation_disabled(
+    simple_model, simple_train_loader, simple_optimizer, simple_logger, capture_logs
+):
+    """save_best with a val_ metric + validation disabled logs a warning."""
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        train_loader=simple_train_loader,
+        optimizer=simple_optimizer,
+        logger=simple_logger,
+        val_loader=None,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_best=True,
+            best_metric="val_loss",
+            best_metric_mode="min",
+        )
+
+        # best_model.pth must not be written, and the user must be warned.
+        assert not (Path(tmpdir) / "best_model.pth").exists()
+
+    warnings = [r for r in capture_logs.records if r.levelname == "WARNING"]
+    assert any(
+        "save_best" in r.getMessage() and "validation is disabled" in r.getMessage()
+        for r in warnings
+    )
+
+
+@pytest.mark.integration
+def test_no_save_best_warning_when_train_metric_monitored(
+    simple_model, simple_train_loader, simple_optimizer, simple_logger, capture_logs
+):
+    """A train-side best_metric (e.g. 'loss') does not trigger the warning."""
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        train_loader=simple_train_loader,
+        optimizer=simple_optimizer,
+        logger=simple_logger,
+        val_loader=None,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_best=True,
+            best_metric="loss",
+            best_metric_mode="min",
+        )
+
+    warnings = [r for r in capture_logs.records if r.levelname == "WARNING"]
+    assert not any("save_best" in r.getMessage() for r in warnings)
+
+
+@pytest.mark.integration
+def test_warns_when_early_stopping_and_validation_disabled(
+    simple_model, simple_train_loader, simple_optimizer, simple_logger, capture_logs
+):
+    """early_stopping_patience + validation disabled logs a warning."""
+    trainer = ClassifierTrainer(
+        model=simple_model,
+        train_loader=simple_train_loader,
+        optimizer=simple_optimizer,
+        logger=simple_logger,
+        val_loader=None,
+        device="cpu",
+        show_progress=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer.train(
+            num_epochs=1,
+            checkpoint_dir=tmpdir,
+            validate_frequency=0,
+            save_best=False,
+            early_stopping_patience=2,
+        )
+
+    warnings = [r for r in capture_logs.records if r.levelname == "WARNING"]
+    assert any(
+        "early_stopping_patience" in r.getMessage()
+        and "validation is disabled" in r.getMessage()
+        for r in warnings
+    )
+
+
+@pytest.mark.integration
 def test_training_with_best_model_saving(classifier_trainer):
     """Test training with best model saving."""
     with tempfile.TemporaryDirectory() as tmpdir:
