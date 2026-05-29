@@ -9,7 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-from src.utils.notification import notify_success  # noqa: E402
+from src.utils.notification import (  # noqa: E402
+    _get_webhook_url,
+    _post_slack,
+    notify_success,
+)
 
 DATA_PREPARATION_CONFIG = "configs/data-preparation.yaml"
 DIFFUSION_CONFIG = "configs/diffusion.yaml"
@@ -35,7 +39,7 @@ RUN_BASELINE_CLASSIFIER = True
 RUN_EVALUATION = True
 RUN_SUMMARIZE = True
 
-# 完了済み run をスキップする（False にすると従来どおり全て再実行）
+# Skip completed runs (set to False to rerun everything as before)
 SKIP_COMPLETED = True
 
 # Delete each classifier experiment's checkpoints/ dir after a successful eval
@@ -48,6 +52,12 @@ DELETE_CHECKPOINTS_AFTER_EVAL = True
 # leading to crashes like "CUDA error: unknown error". This fixed pause prevents that.
 # It trades off total wall time (480 runs x N seconds), so tune it here. 0 disables it.
 GPU_COOLDOWN_SECONDS = 5
+
+# Per-run Slack notifications from the classifier containers are suppressed (the pipeline
+# launches 540 classifier runs x train+eval, which would flood the channel). Instead, the
+# pipeline emits a throttled "Classifier: current/total" progress message every N experiments
+# (plus one at completion). Other phases keep their normal per-run notifications.
+CLASSIFIER_NOTIFY_EVERY = 50
 
 # Random seeds for multi-seed classifier runs (for statistical testing)
 SEEDS = list(range(20))
@@ -192,6 +202,7 @@ def run(
     overrides: list[str],
     *,
     suppress_output: bool = False,
+    disable_notifications: bool = False,
 ) -> subprocess.Popen[bytes]:
     cmd = [
         "docker",
@@ -208,6 +219,13 @@ def run(
         "/work",
         "--user",
         f"{os.getuid()}:{os.getgid()}",
+    ]
+    # Suppress in-container Slack notifications by blanking the webhook env var. main.py's
+    # load_dotenv(override=False) won't overwrite an already-set var, so the empty value wins
+    # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
+    if disable_notifications:
+        cmd += ["-e", "SLACK_WEBHOOK_URL="]
+    cmd += [
         "kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04",
         "python3",
         "-m",
@@ -233,12 +251,35 @@ def run_and_wait(
     overrides: list[str],
     *,
     suppress_output: bool = False,
+    disable_notifications: bool = False,
 ) -> int:
     """Launch a container, wait for it, apply the GPU cooldown, return the returncode."""
-    proc = run(config, overrides, suppress_output=suppress_output)
+    proc = run(
+        config,
+        overrides,
+        suppress_output=suppress_output,
+        disable_notifications=disable_notifications,
+    )
     proc.wait()
     _gpu_cooldown()
     return proc.returncode
+
+
+def _notify_classifier_progress(current: int, total: int) -> None:
+    """Send a throttled "Classifier: current/total" Slack message.
+
+    Posts only every CLASSIFIER_NOTIFY_EVERY experiments and at completion. Stays silent when
+    the webhook is unset, and never lets a notification failure interrupt the pipeline.
+    """
+    if not total or (current % CLASSIFIER_NOTIFY_EVERY != 0 and current != total):
+        return
+    url = _get_webhook_url()
+    if not url:
+        return
+    try:
+        _post_slack(f"Classifier: {current}/{total}", url)
+    except Exception as e:  # noqa: BLE001 - notifications must never break the pipeline
+        print(f"[NOTIFY] failed: {e}")
 
 
 def _run_classifier_experiment(
@@ -270,7 +311,7 @@ def _run_classifier_experiment(
             *CLASSIFIER_RUNTIME_OVERRIDES,
         ]
         print(f"[CLS] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
-        rc = run_and_wait(CLASSIFIER_CONFIG, overrides)
+        rc = run_and_wait(CLASSIFIER_CONFIG, overrides, disable_notifications=True)
         if rc != 0:
             print(f"[CLS] FAIL {exp_label}: training failed (rc={rc})")
             return
@@ -301,7 +342,7 @@ def _run_classifier_experiment(
         *CLASSIFIER_RUNTIME_OVERRIDES,
     ]
     print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(eval_overrides)}")
-    rc = run_and_wait(CLASSIFIER_CONFIG, eval_overrides)
+    rc = run_and_wait(CLASSIFIER_CONFIG, eval_overrides, disable_notifications=True)
     if rc != 0:
         # Keep checkpoints so the experiment can be retried.
         print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={rc})")
@@ -462,6 +503,23 @@ def main() -> None:
                     run_and_wait(SELECTION_EVALUATE_CONFIG, overrides)
 
     # ------------------------------------------------------------------
+    # Classifier progress tracking: per-run notifications are suppressed inside the
+    # containers, so the pipeline emits a throttled "Classifier: current/total" instead.
+    # ------------------------------------------------------------------
+    classifier_total = 0
+    if RUN_CLASSIFIER:
+        classifier_total += (
+            len(TRAIN_VARIANTS)
+            * len(GEN_VARIANTS)
+            * len(SELECTION_VARIANTS)
+            * len(CLASSIFIER_VARIANTS)
+            * len(SEEDS)
+        )
+    if RUN_BASELINE_CLASSIFIER:
+        classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
+    classifier_done = 0
+
+    # ------------------------------------------------------------------
     # Classifier with Synthetic Augmentation (multi-seed): train -> eval -> cleanup
     # ------------------------------------------------------------------
     if RUN_CLASSIFIER:
@@ -491,6 +549,10 @@ def main() -> None:
                             _run_classifier_experiment(
                                 f"{exp_name}/seed{seed}", out_dir, train_overrides
                             )
+                            classifier_done += 1
+                            _notify_classifier_progress(
+                                classifier_done, classifier_total
+                            )
 
     # ------------------------------------------------------------------
     # Baseline Classifier (real data only, multi-seed): train -> eval -> cleanup
@@ -508,6 +570,8 @@ def main() -> None:
                 _run_classifier_experiment(
                     f"{baseline_name}/seed{seed}", out_dir, train_overrides
                 )
+                classifier_done += 1
+                _notify_classifier_progress(classifier_done, classifier_total)
 
     # Evaluation is interleaved per experiment in the classifier/baseline loops
     # above (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
