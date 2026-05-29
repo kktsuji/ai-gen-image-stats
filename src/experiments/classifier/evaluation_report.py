@@ -45,8 +45,12 @@ KEY_METRICS = [
 ]
 
 
-# Dose ladder: number of synthetic abnormal images added per dose level.
-# Baselines add nothing (dose D0). See scripts/run_pipeline.py CLASSIFIER_VARIANTS.
+# Dose ladder: number of synthetic abnormal images added per dose level. This
+# dict is the canonical definition of the ladder — the counts live nowhere else
+# in the repo. Each dose token (d0..d4) is encoded in the experiment name and
+# corresponds to the `--data.synthetic_augmentation.limit.max_samples` value the
+# classifier was launched with for that dose (d0/baseline adds nothing). Keep
+# this in sync with the max_samples values used to run the dose-response sweep.
 DOSE_ADDED = {"d0": 0, "d1": 42, "d2": 84, "d3": 168, "d4": 352}
 
 

@@ -16,6 +16,7 @@ import pytest
 from src.utils.experiment import (
     create_experiment_logger,
     resolve_best_metric,
+    resolve_validate_frequency,
     run_training,
     setup_experiment_common,
 )
@@ -364,3 +365,21 @@ class TestResolveBestMetric:
             "val_balanced_accuracy",
             "max",
         )
+
+
+@pytest.mark.unit
+class TestResolveValidateFrequency:
+    """Test resolve_validate_frequency: honors the `enabled` toggle."""
+
+    def test_enabled_returns_frequency(self):
+        assert resolve_validate_frequency({"enabled": True, "frequency": 3}) == 3
+
+    def test_disabled_returns_zero(self):
+        # frequency is ignored when validation is disabled.
+        assert resolve_validate_frequency({"enabled": False, "frequency": 5}) == 0
+
+    def test_missing_enabled_defaults_to_on(self):
+        assert resolve_validate_frequency({"frequency": 2}) == 2
+
+    def test_missing_frequency_defaults_to_one(self):
+        assert resolve_validate_frequency({"enabled": True}) == 1

@@ -52,6 +52,7 @@ from src.utils.cli import validate_config as validate_cli_config
 from src.utils.experiment import (
     create_experiment_logger,
     resolve_best_metric,
+    resolve_validate_frequency,
     run_training,
     setup_experiment_common,
 )
@@ -445,7 +446,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             "save_latest", True
         ),
         save_optimizer=training_config["checkpointing"].get("save_optimizer", True),
-        validate_frequency=training_config["validation"].get("frequency", 1),
+        validate_frequency=resolve_validate_frequency(training_config["validation"]),
         best_metric=best_metric_key,
         best_metric_mode=best_metric_mode,
         early_stopping_patience=training_config["validation"].get(
@@ -909,7 +910,7 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             checkpoint_frequency=checkpointing_config["save_frequency"],
             save_latest_checkpoint=checkpointing_config.get("save_latest", True),
             save_optimizer=checkpointing_config.get("save_optimizer", True),
-            validate_frequency=validation_config["frequency"],
+            validate_frequency=resolve_validate_frequency(validation_config),
             best_metric=validation_config["metric"],
         )
 

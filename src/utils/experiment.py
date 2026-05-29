@@ -160,6 +160,26 @@ def resolve_best_metric(metric: str) -> Tuple[str, str]:
     return val_key, mode
 
 
+def resolve_validate_frequency(validation_config: Dict[str, Any]) -> int:
+    """Resolve how often to validate, honoring the ``enabled`` toggle.
+
+    The config exposes ``validation.enabled`` as the documented switch for
+    turning validation on/off, while ``validation.frequency`` controls how often
+    it runs when on. The trainers gate validation on ``validate_frequency > 0``,
+    so disabling maps to a frequency of 0.
+
+    Args:
+        validation_config: The ``training.validation`` config section.
+
+    Returns:
+        0 when ``enabled`` is False (validation disabled); otherwise the
+        configured ``frequency`` (default 1).
+    """
+    if not validation_config.get("enabled", True):
+        return 0
+    return validation_config.get("frequency", 1)
+
+
 def run_training(
     trainer: Any,
     metrics_logger: Any,
