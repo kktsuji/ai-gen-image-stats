@@ -139,7 +139,7 @@ def run_sample_selection(config: Dict[str, Any], device: str, log_dir: Path) -> 
         value=selection_config["value"],
         realism_flags=realism_flags,
         require_realism=require_realism,
-        seed=config["compute"]["seed"],
+        seed=config["compute"].get("seed"),
     )
     num_selected = int(np.sum(selected_mask))
     logger.info(
