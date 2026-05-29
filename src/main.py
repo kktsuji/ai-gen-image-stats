@@ -431,7 +431,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Resolve the config metric name to its prefixed validation key and
     # optimization direction (fixes best-checkpoint selection + mode wiring).
     best_metric_key, best_metric_mode = resolve_best_metric(
-        training_config["validation"].get("metric", "f1_1")
+        training_config["validation"]["metric"]
     )
 
     # Run training with standard error handling
@@ -900,6 +900,14 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             class_weights=class_weight_tensor,
         )
 
+        # Resolve the config metric name to its prefixed validation key and
+        # optimization direction so best-checkpoint selection uses the validation
+        # metric (e.g. "loss" -> "val_loss"/"min") instead of falling back to
+        # the like-named training metric.
+        best_metric_key, best_metric_mode = resolve_best_metric(
+            validation_config["metric"]
+        )
+
         # Run training with standard error handling
         run_training(
             trainer,
@@ -911,7 +919,8 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             save_latest_checkpoint=checkpointing_config.get("save_latest", True),
             save_optimizer=checkpointing_config.get("save_optimizer", True),
             validate_frequency=resolve_validate_frequency(validation_config),
-            best_metric=validation_config["metric"],
+            best_metric=best_metric_key,
+            best_metric_mode=best_metric_mode,
         )
 
 

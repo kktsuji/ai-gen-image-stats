@@ -103,8 +103,11 @@ def write_accepted_samples_json(
                 "selected_scores must be the same length as selected_paths "
                 f"({len(selected_scores)} != {len(selected_paths)})"
             )
-        # Sort ascending by score (best/most-realistic first) for a nested top-N
-        ranked = sorted(zip(selected_paths, selected_scores), key=lambda ps: ps[1])
+        # Sort ascending by score (best/most-realistic first) for a nested top-N.
+        # Use path as a secondary key so equal scores rank deterministically.
+        ranked = sorted(
+            zip(selected_paths, selected_scores), key=lambda ps: (ps[1], ps[0])
+        )
         train_entries = [
             {"path": path, "label": label, "score": float(score)}
             for path, score in ranked

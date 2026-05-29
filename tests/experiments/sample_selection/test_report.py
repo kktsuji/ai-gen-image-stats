@@ -202,6 +202,22 @@ class TestWriteAcceptedSamplesJson:
         assert paths == ["a.png", "b.png", "c.png"]
         assert scores == [1.0, 2.0, 3.0]
 
+    def test_equal_scores_break_ties_by_path(self, tmp_output_dir):
+        """Equal scores rank deterministically, ordered by path."""
+        output = tmp_output_dir / "accepted.json"
+        write_accepted_samples_json(
+            output_path=output,
+            selected_paths=["c.png", "a.png", "b.png"],
+            label=1,
+            class_name="abnormal",
+            metadata={},
+            selected_scores=[1.0, 1.0, 1.0],
+        )
+        with open(output) as f:
+            data = json.load(f)
+        paths = [e["path"] for e in data["train"]]
+        assert paths == ["a.png", "b.png", "c.png"]
+
     def test_entries_have_score_field_when_scores_given(self, tmp_output_dir):
         """Each entry carries a numeric 'score' when scores are provided."""
         output = tmp_output_dir / "accepted.json"

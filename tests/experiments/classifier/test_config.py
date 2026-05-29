@@ -337,6 +337,34 @@ class TestValidateValidationSection:
         with pytest.raises(ValueError, match="frequency must be a positive integer"):
             validate_config(config)
 
+    def test_missing_validation_section_raises(self):
+        config = get_v2_default_config()
+        del config["training"]["validation"]
+        with pytest.raises(KeyError, match="training.validation"):
+            validate_config(config)
+
+    @pytest.mark.parametrize(
+        "field", ["enabled", "metric", "frequency", "early_stopping_patience"]
+    )
+    def test_missing_required_field_raises(self, field):
+        config = get_v2_default_config()
+        del config["training"]["validation"][field]
+        with pytest.raises(KeyError, match=f"training.validation.{field}"):
+            validate_config(config)
+
+    @pytest.mark.parametrize("bad", ["false", "true", 1, 0, None])
+    def test_enabled_non_bool_raises(self, bad):
+        config = get_v2_default_config()
+        config["training"]["validation"]["enabled"] = bad
+        with pytest.raises(ValueError, match="enabled must be a boolean"):
+            validate_config(config)
+
+    def test_frequency_null_raises(self):
+        config = get_v2_default_config()
+        config["training"]["validation"]["frequency"] = None
+        with pytest.raises(ValueError, match="frequency must be a positive integer"):
+            validate_config(config)
+
 
 @pytest.mark.unit
 class TestValidateConfigErrorPaths:
