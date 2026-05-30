@@ -372,12 +372,22 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     # Apply synthetic augmentation if configured
     syn_aug_config = data_config.get("synthetic_augmentation", {})
     if syn_aug_config.get("enabled"):
+        # "replace_minority" mode (TSTR) drops the real samples of replace_class
+        # so the synthetic data substitutes for that class; "augment" (default)
+        # keeps all real data.
+        aug_mode = syn_aug_config.get("mode", "augment")
+        replace_class = (
+            syn_aug_config.get("replace_class")
+            if aug_mode == "replace_minority"
+            else None
+        )
         train_loader = create_augmented_train_loader(
             train_loader=train_loader,
             synthetic_augmentation_config=syn_aug_config,
             transform=train_transform,
             shuffle=shuffle_train,
             seed=seed,
+            replace_class=replace_class,
         )
 
     # Initialize optimizer

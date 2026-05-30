@@ -381,6 +381,54 @@ def test_create_augmented_train_loader_basic(tmp_path):
 
 
 @pytest.mark.unit
+def test_create_augmented_train_loader_replace_minority(tmp_path):
+    """replace_class drops the real samples of that class before concatenating.
+
+    TSTR mode: the synthetic data substitutes for the replaced class while the
+    other real classes are kept.
+    """
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+        replace_class=1,
+    )
+
+    # Real: 4 (label0) + 4 (label1). Dropping label1 leaves 4 real, + 6 synthetic.
+    assert len(combined_loader.dataset) == 10  # type: ignore[arg-type]
+
+    # Class 1 is now sourced only from the 3 synthetic samples; the 4 real label-1
+    # samples were dropped. Class 0 keeps 4 real + 3 synthetic = 7.
+    labels = [int(label) for _, label in combined_loader.dataset]
+    assert labels.count(1) == 3
+    assert labels.count(0) == 7
+
+
+@pytest.mark.unit
 def test_create_val_loader_returns_dataloader(tmp_path):
     """Test that create_val_loader returns a DataLoader for valid val split."""
     from torchvision import transforms

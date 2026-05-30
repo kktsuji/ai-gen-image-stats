@@ -241,6 +241,7 @@ def create_augmented_train_loader(
     transform: transforms.Compose,
     shuffle: bool = True,
     seed: Optional[int] = None,
+    replace_class: Optional[int] = None,
 ) -> DataLoader:
     """Combine an existing training DataLoader with synthetic augmentation data.
 
@@ -254,23 +255,42 @@ def create_augmented_train_loader(
         transform: Transform to apply to synthetic images
         shuffle: Whether to shuffle the combined dataset
         seed: Random seed for reproducibility
+        replace_class: When set (TSTR "replace_minority" mode), the real samples
+            of this class label are dropped before concatenating the synthetic
+            data, so the synthetic images fully substitute for that class while
+            the other real classes are kept. None (default) keeps all real data
+            ("augment" mode).
 
     Returns:
         New DataLoader over the combined (real + synthetic) dataset
     """
     limit_config = synthetic_augmentation_config.get("limit", {})
+
+    real_dataset = train_loader.dataset
+    if replace_class is not None:
+        # Drop the real samples of replace_class so the synthetic data substitutes
+        # for it. Balancing is mutually exclusive with synthetic_augmentation (config
+        # validation), so train_loader.dataset is the raw SplitFileDataset and exposes
+        # .targets aligned with sample order.
+        keep_indices = [
+            i
+            for i, target in enumerate(real_dataset.targets)  # type: ignore[attr-defined]
+            if int(target) != replace_class
+        ]
+        real_dataset = Subset(real_dataset, keep_indices)
+
     gen_dataset = create_synthetic_augmentation_dataset(
         split_file=synthetic_augmentation_config["split_file"],
         transform=transform,
         limit_mode=limit_config.get("mode"),
         max_ratio=limit_config.get("max_ratio"),
         max_samples=limit_config.get("max_samples"),
-        # Note: mutual exclusion of balancing + synthetic_augmentation is
-        # enforced by config validation, so this reflects original real data size.
-        real_train_size=len(train_loader.dataset),  # type: ignore[arg-type]
+        # max_ratio is computed against the real data actually used for training
+        # (after any replace_class removal).
+        real_train_size=len(real_dataset),  # type: ignore[arg-type]
         seed=seed,
     )
-    combined_dataset = ConcatDataset([train_loader.dataset, gen_dataset])
+    combined_dataset = ConcatDataset([real_dataset, gen_dataset])
 
     # Reuse the same seeding logic as create_train_loader
     generator = None

@@ -665,6 +665,60 @@ class TestValidateSyntheticAugmentation:
         with pytest.raises(ValueError, match="max_samples must be a positive integer"):
             validate_config(config)
 
+    def test_mode_replace_minority_valid(self):
+        """mode = replace_minority with a valid replace_class passes."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "mode": "replace_minority",
+            "replace_class": 1,
+            "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+        }
+        validate_config(config)  # should not raise
+
+    def test_invalid_mode(self):
+        """Invalid synthetic_augmentation.mode raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "mode": "bogus",
+            "limit": {"mode": None},
+        }
+        with pytest.raises(ValueError, match="Invalid synthetic_augmentation.mode"):
+            validate_config(config)
+
+    def test_replace_minority_missing_replace_class(self):
+        """mode = replace_minority without replace_class raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "mode": "replace_minority",
+            "replace_class": None,
+            "limit": {"mode": None},
+        }
+        with pytest.raises(
+            ValueError, match="replace_class must be a non-negative integer"
+        ):
+            validate_config(config)
+
+    def test_replace_minority_negative_replace_class(self):
+        """mode = replace_minority with a negative replace_class raises ValueError."""
+        config = get_v2_default_config()
+        config["data"]["synthetic_augmentation"] = {
+            "enabled": True,
+            "split_file": "outputs/selected.json",
+            "mode": "replace_minority",
+            "replace_class": -1,
+            "limit": {"mode": None},
+        }
+        with pytest.raises(
+            ValueError, match="replace_class must be a non-negative integer"
+        ):
+            validate_config(config)
+
     def test_balancing_and_augmentation_mutual_exclusion(self):
         """enabled augmentation + enabled balancing raises ValueError."""
         config = get_v2_default_config()
