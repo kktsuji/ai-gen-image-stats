@@ -311,7 +311,16 @@ def create_augmented_train_loader(
         # Drop the real samples of replace_class so the synthetic data substitutes
         # for it. Balancing is mutually exclusive with synthetic_augmentation (config
         # validation), so train_loader.dataset is the raw SplitFileDataset and exposes
-        # .targets aligned with sample order.
+        # .targets aligned with sample order. Guard the invariant explicitly so a
+        # bypassing caller (e.g. a pre-filtered Subset) gets a clear error instead of
+        # a cryptic AttributeError.
+        if not hasattr(real_dataset, "targets"):
+            raise TypeError(
+                "replace_minority mode requires train_loader.dataset to expose "
+                ".targets (a raw SplitFileDataset); got "
+                f"{type(real_dataset).__name__}, which does not. Synthetic "
+                "augmentation and balancing are mutually exclusive in config."
+            )
         real_targets = real_dataset.targets  # type: ignore[attr-defined]
         keep_indices = _class_filter_indices(real_targets, replace_class, keep=False)
         if len(keep_indices) == len(real_targets):
@@ -369,11 +378,27 @@ def create_augmented_train_loader(
     )
 
     real_size = len(combined_dataset) - len(gen_dataset)
-    _logger.info(
-        "Synthetic augmentation: added %d generated images to %d real images",
-        len(gen_dataset),
-        real_size,
-    )
+    if replace_class is not None:
+        # In replace_minority mode the real samples of replace_class were dropped,
+        # so real_size counts only the kept (non-replaced) real classes. Log the
+        # replacement explicitly, including the cap that max_ratio derived from the
+        # post-removal real size, so a surprising synthetic count is diagnosable.
+        removed = len(train_loader.dataset) - real_size  # type: ignore[arg-type]
+        _logger.info(
+            "Synthetic augmentation (replace_minority): replaced real class %d "
+            "(%d real samples removed) with %d synthetic samples; %d real samples "
+            "of other classes kept (max_ratio is relative to this size)",
+            replace_class,
+            removed,
+            len(gen_dataset),
+            real_size,
+        )
+    else:
+        _logger.info(
+            "Synthetic augmentation: added %d generated images to %d real images",
+            len(gen_dataset),
+            real_size,
+        )
 
     return new_loader
 
