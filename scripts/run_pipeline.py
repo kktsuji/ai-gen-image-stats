@@ -695,6 +695,20 @@ def main() -> None:
     # ------------------------------------------------------------------
     classifier_jobs: list[tuple[str, str, list[str]]] = []
 
+    if RUN_BASELINE_CLASSIFIER:
+        # outputs/classifier/baseline__{strategy}/seed{N}/
+        for baseline_name, baseline_overrides in BASELINE_VARIANTS:
+            for seed in SEEDS:
+                out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
+                train_overrides = [
+                    "--compute.seed",
+                    str(seed),
+                    *baseline_overrides,
+                ]
+                classifier_jobs.append(
+                    (f"{baseline_name}/seed{seed}", out_dir, train_overrides)
+                )
+
     if RUN_CLASSIFIER:
         # outputs/classifier/{train}__{gen}__{sel}__{cls}/seed{N}/
         for train_name, _ in TRAIN_VARIANTS:
@@ -750,20 +764,6 @@ def main() -> None:
                     classifier_jobs.append(
                         (f"{exp_name}/seed{seed}", out_dir, train_overrides)
                     )
-
-    if RUN_BASELINE_CLASSIFIER:
-        # outputs/classifier/baseline__{strategy}/seed{N}/
-        for baseline_name, baseline_overrides in BASELINE_VARIANTS:
-            for seed in SEEDS:
-                out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
-                train_overrides = [
-                    "--compute.seed",
-                    str(seed),
-                    *baseline_overrides,
-                ]
-                classifier_jobs.append(
-                    (f"{baseline_name}/seed{seed}", out_dir, train_overrides)
-                )
 
     # Evaluation is interleaved per experiment inside _run_classifier_experiment
     # (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
