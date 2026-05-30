@@ -2,7 +2,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -60,6 +62,16 @@ GPU_COOLDOWN_SECONDS = 5
 # keep their normal per-run notifications. Keep N small relative to the experiment matrix size
 # so progress stays visible early instead of leaving a multi-hour dead zone at the start.
 CLASSIFIER_NOTIFY_EVERY = 10
+
+# Number of classifier experiments (train -> eval -> cleanup units) to run
+# concurrently, each in its own GPU container. The classifier is head-only
+# (InceptionV3 frozen backbone, batch_size 16, AMP), so a single run uses a small
+# fraction of the GPU and several can time-share it. Each job writes to its own
+# out_dir/seed, so they never contend on shared state. Lower this if you hit CUDA
+# OOM; set to 1 to fall back to fully sequential behavior. Container launches are
+# still staggered by GPU_COOLDOWN_SECONDS (see _throttled_run_and_wait) to avoid
+# back-to-back CUDA-init crashes.
+CLASSIFIER_MAX_PARALLEL = 3
 
 # Random seeds for multi-seed classifier runs (for statistical testing).
 # Bump to range(30) if the head-only f1_1 std stays large after the first batch.
@@ -274,6 +286,50 @@ def run_and_wait(
     return proc.returncode
 
 
+# Serializes only the GPU-context *initialization* window across parallel classifier
+# workers: a worker waits until GPU_COOLDOWN_SECONDS have elapsed since the previous
+# launch, starts its container, then releases the gate so runs overlap. This staggers
+# launches (preventing the back-to-back CUDA-init crashes) without serializing the runs.
+_launch_lock = threading.Lock()
+_last_launch_monotonic = [0.0]
+# Guards the shared progress counter / Slack notifications across worker threads.
+_progress_lock = threading.Lock()
+# Single "foreground" slot: at most one running classifier job streams its container
+# stdout/stderr to the console; the rest run suppressed (their detail still lands in
+# each run's own logs/ dir). A job acquires this non-blocking at start and holds it for
+# its whole train -> eval, so the console shows one coherent run at a time.
+_foreground_lock = threading.Lock()
+
+
+def _throttled_run_and_wait(
+    config: str,
+    overrides: list[str],
+    *,
+    suppress_output: bool = False,
+    disable_notifications: bool = False,
+) -> int:
+    """run_and_wait variant for parallel use: stagger the launch, then wait.
+
+    Unlike run_and_wait (which sleeps *after* the run to let the driver release the
+    CUDA context — pointless under parallelism, where peers keep using the GPU), this
+    gates only the launch instant so concurrent workers don't init CUDA simultaneously.
+    """
+    if GPU_COOLDOWN_SECONDS > 0:
+        with _launch_lock:
+            wait = _last_launch_monotonic[0] + GPU_COOLDOWN_SECONDS - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _last_launch_monotonic[0] = time.monotonic()
+    proc = run(
+        config,
+        overrides,
+        suppress_output=suppress_output,
+        disable_notifications=disable_notifications,
+    )
+    proc.wait()
+    return proc.returncode
+
+
 def _notify_classifier_progress(current: int, total: int) -> None:
     """Send a throttled "Classifier: current/total" Slack message.
 
@@ -295,13 +351,21 @@ def _notify_classifier_progress(current: int, total: int) -> None:
 
 
 def _run_classifier_experiment(
-    exp_label: str, out_dir: str, train_overrides: list[str]
+    exp_label: str,
+    out_dir: str,
+    train_overrides: list[str],
+    *,
+    suppress_output: bool = True,
 ) -> None:
     """Train -> evaluate -> delete checkpoints for a single classifier experiment.
 
     The .pth files are discarded once reports/evaluation.json is written, so the
     completion marker is evaluation.json (not final_model.pth) to keep re-runs
     idempotent after cleanup.
+
+    Runs as one unit on a worker thread (see _run_classifier_jobs). Container stdout
+    is suppressed by default so concurrent runs don't interleave; per-run detail is
+    still written to each run's own logs/ dir.
     """
     final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
     eval_marker = os.path.join(out_dir, "reports", "evaluation.json")
@@ -323,7 +387,12 @@ def _run_classifier_experiment(
             *CLASSIFIER_RUNTIME_OVERRIDES,
         ]
         print(f"[CLS] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
-        rc = run_and_wait(CLASSIFIER_CONFIG, overrides, disable_notifications=True)
+        rc = _throttled_run_and_wait(
+            CLASSIFIER_CONFIG,
+            overrides,
+            disable_notifications=True,
+            suppress_output=suppress_output,
+        )
         if rc != 0:
             print(f"[CLS] FAIL {exp_label}: training failed (rc={rc})")
             return
@@ -354,7 +423,12 @@ def _run_classifier_experiment(
         *CLASSIFIER_RUNTIME_OVERRIDES,
     ]
     print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(eval_overrides)}")
-    rc = run_and_wait(CLASSIFIER_CONFIG, eval_overrides, disable_notifications=True)
+    rc = _throttled_run_and_wait(
+        CLASSIFIER_CONFIG,
+        eval_overrides,
+        disable_notifications=True,
+        suppress_output=suppress_output,
+    )
     if rc != 0:
         # Keep checkpoints so the experiment can be retried.
         print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={rc})")
@@ -366,6 +440,52 @@ def _run_classifier_experiment(
         if os.path.isdir(ckpt_dir):
             shutil.rmtree(ckpt_dir)
             print(f"[CLEANUP] {exp_label}: removed {ckpt_dir}")
+
+
+def _run_classifier_job(
+    exp_label: str, out_dir: str, train_overrides: list[str]
+) -> None:
+    """Worker entrypoint: claim the single console (foreground) slot if free, run the job.
+
+    Exactly one concurrent job streams its container output to the console; the others
+    run suppressed. The slot is grabbed non-blocking and held for the whole train -> eval
+    so the streamed log stays coherent, then released for the next job to pick up.
+    """
+    is_foreground = _foreground_lock.acquire(blocking=False)
+    if is_foreground:
+        print(f"[CLS][FG] streaming console output for: {exp_label}")
+    try:
+        _run_classifier_experiment(
+            exp_label, out_dir, train_overrides, suppress_output=not is_foreground
+        )
+    finally:
+        if is_foreground:
+            _foreground_lock.release()
+
+
+def _run_classifier_jobs(jobs: list[tuple[str, str, list[str]]], total: int) -> None:
+    """Run classifier experiments through a bounded thread pool.
+
+    Each job is an independent (label, out_dir, train_overrides) train -> eval ->
+    cleanup unit. Up to CLASSIFIER_MAX_PARALLEL run concurrently, sharing the GPU;
+    container launches are staggered by _throttled_run_and_wait. At most one job at a
+    time streams its container output to the console (see _run_classifier_job). The
+    throttled progress notification is emitted in completion order under _progress_lock.
+    """
+    done = 0
+    with ThreadPoolExecutor(max_workers=CLASSIFIER_MAX_PARALLEL) as executor:
+        futures = {
+            executor.submit(_run_classifier_job, label, out_dir, overrides): label
+            for label, out_dir, overrides in jobs
+        }
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:  # noqa: BLE001 - one failed run must not abort the rest
+                print(f"[CLS] ERROR {futures[future]}: {e}")
+            with _progress_lock:
+                done += 1
+                _notify_classifier_progress(done, total)
 
 
 def main() -> None:
@@ -528,11 +648,14 @@ def main() -> None:
         )
     if RUN_BASELINE_CLASSIFIER:
         classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
-    classifier_done = 0
+    # ------------------------------------------------------------------
+    # Classifier (synthetic-augmentation + baseline, multi-seed): collect every
+    # train -> eval -> cleanup unit into one job list, then run them through a
+    # bounded thread pool (CLASSIFIER_MAX_PARALLEL concurrent GPU containers).
+    # Each job writes to its own out_dir/seed, so they never contend.
+    # ------------------------------------------------------------------
+    classifier_jobs: list[tuple[str, str, list[str]]] = []
 
-    # ------------------------------------------------------------------
-    # Classifier with Synthetic Augmentation (multi-seed): train -> eval -> cleanup
-    # ------------------------------------------------------------------
     if RUN_CLASSIFIER:
         # outputs/classifier/{train}__{gen}__{sel}__{cls}/seed{N}/
         for train_name, _ in TRAIN_VARIANTS:
@@ -558,17 +681,10 @@ def main() -> None:
                                 sel_split,
                                 *cls_overrides,
                             ]
-                            _run_classifier_experiment(
-                                f"{exp_name}/seed{seed}", out_dir, train_overrides
-                            )
-                            classifier_done += 1
-                            _notify_classifier_progress(
-                                classifier_done, classifier_total
+                            classifier_jobs.append(
+                                (f"{exp_name}/seed{seed}", out_dir, train_overrides)
                             )
 
-    # ------------------------------------------------------------------
-    # Baseline Classifier (real data only, multi-seed): train -> eval -> cleanup
-    # ------------------------------------------------------------------
     if RUN_BASELINE_CLASSIFIER:
         # outputs/classifier/baseline__{strategy}/seed{N}/
         for baseline_name, baseline_overrides in BASELINE_VARIANTS:
@@ -579,14 +695,14 @@ def main() -> None:
                     str(seed),
                     *baseline_overrides,
                 ]
-                _run_classifier_experiment(
-                    f"{baseline_name}/seed{seed}", out_dir, train_overrides
+                classifier_jobs.append(
+                    (f"{baseline_name}/seed{seed}", out_dir, train_overrides)
                 )
-                classifier_done += 1
-                _notify_classifier_progress(classifier_done, classifier_total)
 
-    # Evaluation is interleaved per experiment in the classifier/baseline loops
-    # above (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
+    # Evaluation is interleaved per experiment inside _run_classifier_experiment
+    # (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
+    if classifier_jobs:
+        _run_classifier_jobs(classifier_jobs, classifier_total)
 
     # ------------------------------------------------------------------
     # Summarize: aggregate evaluation reports (CPU-only, no Docker)
