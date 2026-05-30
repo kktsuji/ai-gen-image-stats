@@ -124,7 +124,9 @@ data:
     # training set. "replace_minority" (TSTR) drops the real samples of
     # replace_class first, so the synthetic images fully substitute for that
     # class while the other real classes are kept — used to measure the
-    # generator ceiling across a guidance-scale sweep.
+    # generator ceiling across a guidance-scale sweep. In "replace_minority"
+    # mode only the replaced class's synthetic samples are used; synthetic
+    # samples of any other class in split_file are ignored.
     mode: augment # "augment" or "replace_minority"
     replace_class: null # int class label to replace; required when mode is "replace_minority"
     limit:

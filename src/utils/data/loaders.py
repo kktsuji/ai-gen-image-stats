@@ -156,6 +156,7 @@ def create_synthetic_augmentation_dataset(
     max_samples: Optional[int] = None,
     real_train_size: int = 0,
     seed: Optional[int] = None,
+    keep_class: Optional[int] = None,
 ) -> Union[SplitFileDataset, Subset]:
     """Create a dataset of synthetic (generated) images for augmentation.
 
@@ -171,21 +172,36 @@ def create_synthetic_augmentation_dataset(
         max_samples: Max absolute number of generated images
         real_train_size: Number of real training samples (used with max_ratio)
         seed: Random seed for reproducible subsampling
+        keep_class: When set (TSTR "replace_minority" mode), only synthetic
+            samples whose label equals this class are kept; samples of other
+            classes are dropped before any limiting is applied, so the synthetic
+            data substitutes for exactly one class. None (default) keeps all
+            classes.
 
     Returns:
-        Full dataset or a Subset if limiting is applied
+        Full dataset or a Subset if limiting (or class filtering) is applied
     """
     if not Path(split_file).exists():
         raise FileNotFoundError(
             f"Synthetic augmentation split file not found: {split_file}"
         )
 
-    dataset = SplitFileDataset(
+    dataset: Union[SplitFileDataset, Subset] = SplitFileDataset(
         split_file=str(split_file),
         split="train",
         transform=transform,
         return_labels=return_labels,
     )
+
+    if keep_class is not None:
+        # Restrict the synthetic data to a single class before limiting, so the
+        # generated images substitute for exactly that class and never augment
+        # the other (kept) classes. The subsequent limiting logic composes with
+        # this nested Subset.
+        class_indices = [
+            i for i, target in enumerate(dataset.targets) if int(target) == keep_class
+        ]
+        dataset = Subset(dataset, class_indices)
 
     if limit_mode is None or len(dataset) == 0:
         return dataset
@@ -256,10 +272,11 @@ def create_augmented_train_loader(
         shuffle: Whether to shuffle the combined dataset
         seed: Random seed for reproducibility
         replace_class: When set (TSTR "replace_minority" mode), the real samples
-            of this class label are dropped before concatenating the synthetic
-            data, so the synthetic images fully substitute for that class while
-            the other real classes are kept. None (default) keeps all real data
-            ("augment" mode).
+            of this class label are dropped, and the synthetic data is restricted
+            to this same class (synthetic samples of other classes are ignored),
+            so the synthetic images fully substitute for that class while the
+            other real classes are kept untouched. None (default) keeps all real
+            data and all synthetic classes ("augment" mode).
 
     Returns:
         New DataLoader over the combined (real + synthetic) dataset
@@ -272,11 +289,26 @@ def create_augmented_train_loader(
         # for it. Balancing is mutually exclusive with synthetic_augmentation (config
         # validation), so train_loader.dataset is the raw SplitFileDataset and exposes
         # .targets aligned with sample order.
+        real_targets = real_dataset.targets  # type: ignore[attr-defined]
         keep_indices = [
-            i
-            for i, target in enumerate(real_dataset.targets)  # type: ignore[attr-defined]
-            if int(target) != replace_class
+            i for i, target in enumerate(real_targets) if int(target) != replace_class
         ]
+        if len(keep_indices) == len(real_targets):
+            # replace_class matched no real sample: a no-op removal would silently
+            # degrade replace_minority into plain augmentation. Fail loudly instead.
+            available = sorted({int(target) for target in real_targets})
+            raise ValueError(
+                f"synthetic_augmentation.replace_class={replace_class} does not "
+                f"match any real training sample; available labels are {available}."
+            )
+        if not keep_indices:
+            # Every real sample belongs to replace_class: there would be no real
+            # data left to train on. Surface a clear error rather than a cryptic
+            # downstream failure (e.g. real_train_size=0 with max_ratio).
+            raise ValueError(
+                f"synthetic_augmentation.replace_class={replace_class} would remove "
+                "all real training samples; at least one other real class is required."
+            )
         real_dataset = Subset(real_dataset, keep_indices)
 
     gen_dataset = create_synthetic_augmentation_dataset(
@@ -289,6 +321,9 @@ def create_augmented_train_loader(
         # (after any replace_class removal).
         real_train_size=len(real_dataset),  # type: ignore[arg-type]
         seed=seed,
+        # In replace_minority mode, only the replaced class's synthetic samples
+        # substitute for it; synthetic samples of other classes are ignored.
+        keep_class=replace_class,
     )
     combined_dataset = ConcatDataset([real_dataset, gen_dataset])
 
