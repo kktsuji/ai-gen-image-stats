@@ -27,16 +27,18 @@ CLASSIFIER_CONFIG = "configs/classifier.yaml"
 #   Dimension separator: "__" (double underscore)
 #   Within-dimension separator: "-" (hyphen) or "_" (single underscore)
 #
-#   Synthetic:  {train}__{gen}__{sel}__{dose}  e.g. us__n1000-gs2__topk__d2
+#   Synthetic:  {train}__{gen}__{sel}__{dose}  e.g. us-cd20__n1000-gs2__topk__d2
+#   TSTR:       {train}__{gen}__topk__tstr     e.g. us-cd20__n1000-gs2__topk__tstr
 #   Baseline:   baseline__{strategy}           e.g. baseline__vanilla (acts as dose D0)
 
 # ON/OFF switches for each experiment phase
 RUN_DATA_PREPARATION = False
-RUN_TRAINING = False
+RUN_TRAINING = True
 RUN_GENERATION = True
 RUN_SELECTION = True
 RUN_SELECTION_EVALUATE = True
 RUN_CLASSIFIER = True
+RUN_TSTR = True
 RUN_BASELINE_CLASSIFIER = True
 RUN_EVALUATION = True
 RUN_SUMMARIZE = True
@@ -100,24 +102,52 @@ CLASSIFIER_RUNTIME_OVERRIDES = [
 ]
 
 # Each variant: (name, extra CLI overrides for training)
-# Dose-response experiment: a single diffusion variant (upsampling) is the
-# fixed generator, so quantity is the only thing that varies downstream.
+# Generator-ceiling experiment (exp5): retrain the diffusion generator with
+# reconsidered hyperparameters, then sweep guidance scale and run TSTR downstream.
+# The source images are natively 40x40, so resolution is not a useful lever; the
+# bottleneck is the 84 real abnormal training images. The reconsidered knobs are
+# class_dropout_prob 0.1 -> 0.2 (a stronger unconditional path widens the usable
+# guidance-scale range) and a small weight_decay (light regularization against
+# memorizing the 84 minority images, the source of off-manifold "diversity").
 TRAIN_VARIANTS = [
     (
-        "us",
+        "us-cd20",
         [
             "--data.balancing.upsampling.enabled",
             "true",
             "--training.epochs",
             "1000",
+            "--model.conditioning.class_dropout_prob",
+            "0.2",
+            "--training.optimizer.weight_decay",
+            "1e-4",
         ],
     ),
 ]
 
 # Generation parameter variants: (name, extra CLI overrides)
-# Single best generation config (guidance 2.0); large pool (~1000) so the
-# top_k=400 selection can feed the full dose ladder (D4 needs +352).
+# Guidance-scale sweep {1.0, 1.5, 2.0} from the same checkpoint (regeneration).
+# Lower guidance -> more diversity; higher guidance -> sharper, less diverse.
+# Each pool is ~1000 so the top_k=400 selection feeds the full dose ladder.
 GEN_VARIANTS = [
+    (
+        "n1000-gs1",
+        [
+            "--generation.sampling.num_samples",
+            "1000",
+            "--generation.sampling.guidance_scale",
+            "1.0",
+        ],
+    ),
+    (
+        "n1000-gs15",
+        [
+            "--generation.sampling.num_samples",
+            "1000",
+            "--generation.sampling.guidance_scale",
+            "1.5",
+        ],
+    ),
     (
         "n1000-gs2",
         [
@@ -130,28 +160,17 @@ GEN_VARIANTS = [
 ]
 
 # Selection algorithm variants: (name, extra CLI overrides)
-# - topk: realism-greedy top-N (value=400 so the dose ladder is a nested top-N
-#   of one ranking; quantity decoupled from the selection method).
-# - random / stratified: selection ABLATION arms isolating whether the
-#   realism-greedy ranking collapses diversity (and thereby harms pr_auc). Both
-#   select exactly 352 (= dose d4, the 1:1-balance quantity) so the added count
-#   matches topk@d4; they must NOT use the d1-d4 nested ladder (a smaller dose
-#   would let the downstream max_samples truncation re-impose a realism ranking
-#   by score). See SELECTION_DOSES below.
+# Only realism-greedy top_k (value=400 so the dose ladder is a nested top-N of one
+# ranking). The random / stratified selection ablation was settled in exp4 (cause
+# is the generator, not the selection), so it is dropped here.
 SELECTION_VARIANTS = [
     ("topk", ["--selection.mode", "top_k", "--selection.value", "400"]),
-    ("random", ["--selection.mode", "random", "--selection.value", "352"]),
-    ("stratified", ["--selection.mode", "stratified", "--selection.value", "352"]),
 ]
 
-# Per selection method, which classifier dose levels to run. Only topk carries a
-# meaningful nested top-N ladder; the ablation arms select exactly 352 up front,
-# so they run d4 alone (max_samples=352 truncation is a no-op, preserving the
-# random / stratified ordering instead of re-ranking by realism score).
+# Per selection method, which classifier dose levels to run. topk carries the
+# nested top-N ladder d1-d4.
 SELECTION_DOSES = {
     "topk": ["d1", "d2", "d3", "d4"],
-    "random": ["d4"],
-    "stratified": ["d4"],
 }
 
 
@@ -177,6 +196,23 @@ CLASSIFIER_VARIANTS = [
 
 # Lookup for the dose overrides selected per (selection method) via SELECTION_DOSES.
 _DOSE_OVERRIDES_BY_NAME = dict(CLASSIFIER_VARIANTS)
+
+
+# TSTR (Train on Synthetic, Test on Real) arm: replace the real minority class
+# (abnormal, label 1) with synthetic abnormal images and keep the real majority,
+# then evaluate on the real val set. This measures the generator ceiling directly:
+# if pr_auc stays far below the real-data baselines, the synthetic abnormal images
+# cannot substitute for real ones (generator-limited). limit.mode=null uses all
+# selected samples (~top_k value), giving roughly real-normal vs synthetic-abnormal
+# 1:1. The dose token is "tstr" so the report parser tags it as its own arm.
+TSTR_OVERRIDES = [
+    "--data.synthetic_augmentation.mode",
+    "replace_minority",
+    "--data.synthetic_augmentation.replace_class",
+    "1",
+    "--data.synthetic_augmentation.limit.mode",
+    "null",
+]
 
 
 # Baseline classifier variants: real data only, with different balancing strategies
@@ -646,6 +682,9 @@ def main() -> None:
         classifier_total += (
             len(TRAIN_VARIANTS) * len(GEN_VARIANTS) * doses_per_selection * len(SEEDS)
         )
+    if RUN_TSTR:
+        # One TSTR arm per (train, gen) over the top_k selection.
+        classifier_total += len(TRAIN_VARIANTS) * len(GEN_VARIANTS) * len(SEEDS)
     if RUN_BASELINE_CLASSIFIER:
         classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
     # ------------------------------------------------------------------
@@ -684,6 +723,33 @@ def main() -> None:
                             classifier_jobs.append(
                                 (f"{exp_name}/seed{seed}", out_dir, train_overrides)
                             )
+
+    if RUN_TSTR:
+        # outputs/classifier/{train}__{gen}__topk__tstr/seed{N}/
+        # TSTR replaces the real abnormal class with synthetic abnormal images
+        # (from the top_k selection), keeping the real normal class, and tests on
+        # the real val set. The "tstr" dose token marks this arm in the report.
+        for train_name, _ in TRAIN_VARIANTS:
+            for gen_name, _ in GEN_VARIANTS:
+                for seed in SEEDS:
+                    sel_split = (
+                        f"outputs/diffusion-{train_name}/selection"
+                        f"/{gen_name}__topk/reports/accepted_samples.json"
+                    )
+                    exp_name = f"{train_name}__{gen_name}__topk__tstr"
+                    out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
+                    train_overrides = [
+                        "--compute.seed",
+                        str(seed),
+                        "--data.synthetic_augmentation.enabled",
+                        "true",
+                        "--data.synthetic_augmentation.split_file",
+                        sel_split,
+                        *TSTR_OVERRIDES,
+                    ]
+                    classifier_jobs.append(
+                        (f"{exp_name}/seed{seed}", out_dir, train_overrides)
+                    )
 
     if RUN_BASELINE_CLASSIFIER:
         # outputs/classifier/baseline__{strategy}/seed{N}/
