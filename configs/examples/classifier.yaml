@@ -120,6 +120,15 @@ data:
   synthetic_augmentation:
     enabled: false
     split_file: null # path to sample selection output JSON (SplitFileDataset format)
+    # mode: "augment" (default) concatenates synthetic data onto the full real
+    # training set. "replace_minority" (TSTR) drops the real samples of
+    # replace_class first, so the synthetic images fully substitute for that
+    # class while the other real classes are kept — used to measure the
+    # generator ceiling across a guidance-scale sweep. In "replace_minority"
+    # mode only the replaced class's synthetic samples are used; synthetic
+    # samples of any other class in split_file are ignored.
+    mode: augment # "augment" or "replace_minority"
+    replace_class: null # int class label to replace; required when mode is "replace_minority"
     limit:
       mode: null # null (use all), "max_ratio", or "max_samples"
       max_ratio: null # max generated images as ratio of real training samples (e.g., 0.5)

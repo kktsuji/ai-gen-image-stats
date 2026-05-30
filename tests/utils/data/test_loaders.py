@@ -381,6 +381,276 @@ def test_create_augmented_train_loader_basic(tmp_path):
 
 
 @pytest.mark.unit
+def test_create_augmented_train_loader_replace_minority(tmp_path):
+    """replace_class drops the real samples of that class and substitutes synthetic.
+
+    TSTR mode: the synthetic data substitutes for the replaced class only, while
+    the other real classes are kept untouched. Synthetic samples of any other
+    class are ignored.
+    """
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+        replace_class=1,
+    )
+
+    # Real: 4 (label0) + 4 (label1). Dropping label1 leaves 4 real class-0 samples.
+    # Synthetic is filtered to class 1 only (3 samples); the 3 synthetic class-0
+    # samples are ignored. Total = 4 + 3 = 7.
+    assert len(combined_loader.dataset) == 7  # type: ignore[arg-type]
+
+    # Class 1 is sourced only from the 3 synthetic samples; class 0 keeps its 4
+    # real samples untouched (no synthetic class-0 leakage).
+    labels = [int(label) for _, label in combined_loader.dataset]
+    assert labels.count(1) == 3
+    assert labels.count(0) == 4
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_replace_minority_class_zero(tmp_path):
+    """replace_class=0 is a valid case (guards against class-0 off-by-one bugs).
+
+    Filtering by label 0 is the easy case to get wrong (falsy label), so verify
+    real class 0 is fully dropped and substituted by synthetic class-0 samples,
+    while the other real class is untouched.
+    """
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+        replace_class=0,
+    )
+
+    # Real: 4 (label0) + 4 (label1). Dropping label0 leaves 4 real class-1 samples.
+    # Synthetic is filtered to class 0 only (3 samples). Total = 4 + 3 = 7.
+    assert len(combined_loader.dataset) == 7  # type: ignore[arg-type]
+
+    # Class 0 is sourced only from the 3 synthetic samples; class 1 keeps its 4
+    # real samples untouched.
+    labels = [int(label) for _, label in combined_loader.dataset]
+    assert labels.count(0) == 3
+    assert labels.count(1) == 4
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_replace_minority_with_limit(tmp_path):
+    """Limiting applies to the class-filtered synthetic pool in replace_minority."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=5, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": "max_samples", "max_ratio": None, "max_samples": 2},
+    }
+    combined_loader = create_augmented_train_loader(
+        train_loader=train_loader,
+        synthetic_augmentation_config=syn_config,
+        transform=transform,
+        seed=42,
+        replace_class=1,
+    )
+
+    # Real class-0 (4) kept; synthetic filtered to class 1 (5 available) then
+    # capped at 2. Total = 4 + 2 = 6.
+    assert len(combined_loader.dataset) == 6  # type: ignore[arg-type]
+    labels = [int(label) for _, label in combined_loader.dataset]
+    assert labels.count(0) == 4
+    assert labels.count(1) == 2
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_replace_class_not_present(tmp_path):
+    """replace_class that matches no real sample raises a clear ValueError."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=2
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    with pytest.raises(ValueError, match="does not match any real training sample"):
+        create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_config,
+            transform=transform,
+            seed=42,
+            replace_class=5,
+        )
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_replace_class_removes_all(tmp_path):
+    """replace_class that removes every real sample raises a clear ValueError."""
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=1
+    )
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=1
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    with pytest.raises(ValueError, match="would remove all real training samples"):
+        create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_config,
+            transform=transform,
+            seed=42,
+            replace_class=0,
+        )
+
+
+@pytest.mark.unit
+def test_create_augmented_train_loader_replace_class_absent_in_synthetic(tmp_path):
+    """replace_class present in real data but absent in synthetic data raises.
+
+    The real samples of replace_class are dropped, so if the synthetic split has
+    no samples of that class the replaced class would end up with zero training
+    data. Surface a clear error instead of silently degrading.
+    """
+    from torchvision import transforms
+
+    real_split = _create_split_json(
+        tmp_path / "real", train_per_class=4, val_per_class=0, num_classes=2
+    )
+    # Synthetic split has only class 0; class 1 (the replaced class) is missing.
+    syn_split = _create_split_json(
+        tmp_path / "syn", train_per_class=3, val_per_class=0, num_classes=1
+    )
+    transform = transforms.Compose(
+        [transforms.Resize(16), transforms.CenterCrop(16), transforms.ToTensor()]
+    )
+
+    train_loader = create_train_loader(
+        split_file=real_split,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        pin_memory=False,
+    )
+    syn_config = {
+        "split_file": syn_split,
+        "limit": {"mode": None, "max_ratio": None, "max_samples": None},
+    }
+    with pytest.raises(ValueError, match="has no synthetic samples"):
+        create_augmented_train_loader(
+            train_loader=train_loader,
+            synthetic_augmentation_config=syn_config,
+            transform=transform,
+            seed=42,
+            replace_class=1,
+        )
+
+
+@pytest.mark.unit
+def test_class_filter_indices_keep_and_drop():
+    """_class_filter_indices keeps or drops indices by label, empty when no match."""
+    from src.utils.data.loaders import _class_filter_indices
+
+    targets = [0, 1, 0, 2, 1]
+    assert _class_filter_indices(targets, 1, keep=True) == [1, 4]
+    assert _class_filter_indices(targets, 1, keep=False) == [0, 2, 3]
+    # No match -> empty (keep) / all (drop)
+    assert _class_filter_indices(targets, 9, keep=True) == []
+    assert _class_filter_indices(targets, 9, keep=False) == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.unit
 def test_create_val_loader_returns_dataloader(tmp_path):
     """Test that create_val_loader returns a DataLoader for valid val split."""
     from torchvision import transforms

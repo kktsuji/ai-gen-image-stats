@@ -287,6 +287,29 @@ def validate_config(config: Dict[str, Any]) -> None:
                     "Disable one of them."
                 )
 
+            # Augmentation mode: "augment" (default) concatenates synthetic data
+            # onto the full real training set; "replace_minority" drops the real
+            # samples of replace_class first (TSTR: train on synthetic minority,
+            # keep the real majority, test on real).
+            aug_mode = syn_aug.get("mode", "augment")
+            valid_aug_modes = ["augment", "replace_minority"]
+            if aug_mode not in valid_aug_modes:
+                raise ValueError(
+                    f"Invalid synthetic_augmentation.mode: {aug_mode}. "
+                    f"Must be one of {valid_aug_modes}"
+                )
+            if aug_mode == "replace_minority":
+                replace_class = syn_aug.get("replace_class")
+                if (
+                    isinstance(replace_class, bool)
+                    or not isinstance(replace_class, int)
+                    or replace_class < 0
+                ):
+                    raise ValueError(
+                        "synthetic_augmentation.replace_class must be a "
+                        "non-negative integer when mode is 'replace_minority'"
+                    )
+
             limit = syn_aug.get("limit", {})
             limit_mode = limit.get("mode")
             valid_limit_modes = [None, "max_ratio", "max_samples"]
