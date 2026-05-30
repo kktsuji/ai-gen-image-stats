@@ -36,6 +36,20 @@ def _make_worker_init_fn(seed: int) -> Callable[[int], None]:
     return _worker_init_fn
 
 
+def _class_filter_indices(targets: List[int], label: int, *, keep: bool) -> List[int]:
+    """Return indices into ``targets`` selected by class label.
+
+    Args:
+        targets: Per-sample class labels (ints or anything castable via int()).
+        label: Class label to compare against.
+        keep: When True, keep indices whose label equals ``label``; when False,
+            keep indices whose label differs from ``label``.
+    """
+    if keep:
+        return [i for i, target in enumerate(targets) if int(target) == label]
+    return [i for i, target in enumerate(targets) if int(target) != label]
+
+
 def create_train_loader(
     split_file: str,
     batch_size: int,
@@ -198,9 +212,18 @@ def create_synthetic_augmentation_dataset(
         # generated images substitute for exactly that class and never augment
         # the other (kept) classes. The subsequent limiting logic composes with
         # this nested Subset.
-        class_indices = [
-            i for i, target in enumerate(dataset.targets) if int(target) == keep_class
-        ]
+        class_indices = _class_filter_indices(dataset.targets, keep_class, keep=True)
+        if not class_indices:
+            # No synthetic samples for the class being replaced: the real samples
+            # of this class are dropped upstream, so a silent empty result would
+            # leave the class with zero training data. Fail loudly, symmetric with
+            # the real-side guards in create_augmented_train_loader.
+            available = sorted({int(target) for target in dataset.targets})
+            raise ValueError(
+                f"synthetic_augmentation.replace_class={keep_class} has no synthetic "
+                f"samples in split_file '{split_file}'; cannot substitute for the "
+                f"removed real class. Available synthetic labels are {available}."
+            )
         dataset = Subset(dataset, class_indices)
 
     if limit_mode is None or len(dataset) == 0:
@@ -290,9 +313,7 @@ def create_augmented_train_loader(
         # validation), so train_loader.dataset is the raw SplitFileDataset and exposes
         # .targets aligned with sample order.
         real_targets = real_dataset.targets  # type: ignore[attr-defined]
-        keep_indices = [
-            i for i, target in enumerate(real_targets) if int(target) != replace_class
-        ]
+        keep_indices = _class_filter_indices(real_targets, replace_class, keep=False)
         if len(keep_indices) == len(real_targets):
             # replace_class matched no real sample: a no-op removal would silently
             # degrade replace_minority into plain augmentation. Fail loudly instead.
