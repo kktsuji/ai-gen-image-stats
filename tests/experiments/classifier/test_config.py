@@ -268,6 +268,20 @@ class TestValidateConfig:
         ):
             validate_config(config)
 
+    def test_evaluate_mode_accepts_valid_split(self):
+        """Test that a valid evaluation.split passes validation."""
+        config = _make_evaluate_config()
+        config["evaluation"]["split"] = "test"
+        validate_config(config)  # Should not raise
+
+    def test_evaluate_mode_rejects_invalid_split(self):
+        """Test that an unsupported evaluation.split raises ValueError."""
+        config = _make_evaluate_config()
+        config["evaluation"]["split"] = "holdout"
+
+        with pytest.raises(ValueError, match="evaluation.split must be one of"):
+            validate_config(config)
+
     def test_save_latest_valid_true(self):
         """save_latest: true is accepted."""
         config = get_v2_default_config()

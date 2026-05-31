@@ -410,10 +410,11 @@ def create_val_loader(
     num_workers: int = 4,
     pin_memory: bool = True,
     return_labels: bool = True,
+    split: str = "val",
 ) -> Optional[DataLoader]:
-    """Create a validation DataLoader from a split JSON file.
+    """Create an evaluation DataLoader from a split JSON file.
 
-    Returns None if the val split is empty.
+    Returns None if the requested split is empty.
 
     Args:
         split_file: Path to split JSON file
@@ -422,9 +423,11 @@ def create_val_loader(
         num_workers: Number of worker processes for data loading
         pin_memory: Whether to pin memory for faster GPU transfer
         return_labels: Whether to return class labels
+        split: Which split to load ("val" by default, "test" for held-out
+            evaluation)
 
     Returns:
-        DataLoader for validation data, or None if val split is empty
+        DataLoader for the requested split, or None if the split is empty
 
     Raises:
         FileNotFoundError: If split file doesn't exist
@@ -435,7 +438,7 @@ def create_val_loader(
     try:
         val_dataset = SplitFileDataset(
             split_file=str(split_file),
-            split="val",
+            split=split,
             transform=transform,
             return_labels=return_labels,
         )

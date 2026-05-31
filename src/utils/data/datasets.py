@@ -363,8 +363,10 @@ class SplitFileDataset(BaseDataset):
         self.return_labels = return_labels
 
         # Validate split key
-        if split not in ("train", "val"):
-            raise ValueError(f"Invalid split: '{split}'. Must be 'train' or 'val'")
+        if split not in ("train", "val", "test"):
+            raise ValueError(
+                f"Invalid split: '{split}'. Must be 'train', 'val', or 'test'"
+            )
 
         # Load and parse JSON
         split_path = Path(split_file)

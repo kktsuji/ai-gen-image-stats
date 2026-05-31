@@ -1,8 +1,8 @@
 """Data Preparation - Split Generation Logic
 
-This module implements the core logic for creating reproducible train/val splits
-from class directories. It scans image files, performs stratified splitting with
-a configurable seed, and saves the result as a JSON file with metadata.
+This module implements the core logic for creating reproducible train/val/test
+splits from class directories. It scans image files, performs stratified splitting
+with a configurable seed, and saves the result as a JSON file with metadata.
 """
 
 import json
@@ -62,32 +62,44 @@ def _scan_image_files(directory: str) -> List[str]:
     return relative_paths
 
 
-def _split_list(items: List[str], train_ratio: float, rng: random.Random) -> tuple:
-    """Split a list into train and val portions.
+def _split_list(
+    items: List[str], train_ratio: float, val_ratio: float, rng: random.Random
+) -> tuple[list[str], list[str], list[str]]:
+    """Split a list into train, val, and test portions.
 
     Args:
         items: List of items to split
         train_ratio: Fraction of items for training
+        val_ratio: Fraction of items for validation (test gets the remainder)
         rng: Random number generator instance
 
     Returns:
-        Tuple of (train_items, val_items)
+        Tuple of (train_items, val_items, test_items)
+
+    Notes:
+        Splits are stratified per-class when this function is applied per class.
+        For very small lists the train and val portions are guaranteed at least
+        one item each when possible, but the test portion may be empty.
     """
     shuffled = items.copy()
     rng.shuffle(shuffled)
 
-    split_idx = int(len(shuffled) * train_ratio)
-    # Ensure at least 1 item in each split if possible
-    if split_idx == 0 and len(shuffled) > 1:
-        split_idx = 1
-    elif split_idx == len(shuffled) and len(shuffled) > 1:
-        split_idx = len(shuffled) - 1
+    n = len(shuffled)
+    train_idx = int(n * train_ratio)
+    val_idx = train_idx + int(n * val_ratio)
 
-    return shuffled[:split_idx], shuffled[split_idx:]
+    # Ensure at least 1 item in train and val if possible (test takes remainder)
+    if n > 1:
+        if train_idx == 0:
+            train_idx = 1
+        if val_idx <= train_idx:
+            val_idx = min(train_idx + 1, n)
+
+    return shuffled[:train_idx], shuffled[train_idx:val_idx], shuffled[val_idx:]
 
 
 def prepare_split(config: Dict[str, Any]) -> str:
-    """Generate a train/val split from class directories.
+    """Generate a train/val/test split from class directories.
 
     Scans each class directory for image files, performs a stratified split
     with the configured seed, and saves the result as a JSON file.
@@ -108,6 +120,8 @@ def prepare_split(config: Dict[str, Any]) -> str:
 
     seed = split_config.get("seed")
     train_ratio = split_config["train_ratio"]
+    val_ratio = split_config["val_ratio"]
+    test_ratio = split_config["test_ratio"]
     save_dir = split_config["save_dir"]
     split_file = split_config["split_file"]
     force = split_config.get("force", False)
@@ -134,15 +148,18 @@ def prepare_split(config: Dict[str, Any]) -> str:
     sorted_class_names = sorted(classes_config.keys(), key=lambda n: class_to_label[n])
 
     logger.info("=" * 60)
-    logger.info("DATA PREPARATION - Train/Val Split")
+    logger.info("DATA PREPARATION - Train/Val/Test Split")
     logger.info("=" * 60)
     logger.info(f"Seed: {seed}")
     logger.info(f"Train ratio: {train_ratio}")
+    logger.info(f"Val ratio: {val_ratio}")
+    logger.info(f"Test ratio: {test_ratio}")
     logger.info(f"Classes: {sorted_class_names}")
 
     # Scan and split each class
     all_train = []
     all_val = []
+    all_test = []
     class_samples = {}
     source_paths = {}
 
@@ -158,13 +175,26 @@ def prepare_split(config: Dict[str, Any]) -> str:
         logger.info(f"  Found {len(image_files)} images")
 
         # Split this class
-        train_files, val_files = _split_list(image_files, train_ratio, rng)
+        train_files, val_files, test_files = _split_list(
+            image_files, train_ratio, val_ratio, rng
+        )
+
+        # Warn when a non-zero test fraction was requested but the class had
+        # too few samples to populate it (the min-guarantee for train/val
+        # consumes the remainder). Otherwise the empty "test" entries are silent.
+        if test_ratio > 0 and len(test_files) == 0:
+            logger.warning(
+                f"  Class '{class_name}' has too few samples "
+                f"({len(image_files)}) to populate the test split; "
+                "its 'test' entries will be empty despite test_ratio > 0"
+            )
 
         # Record per-class statistics
         class_samples[class_name] = {
             "total": len(image_files),
             "train": len(train_files),
             "val": len(val_files),
+            "test": len(test_files),
         }
 
         # Add to combined lists with labels
@@ -172,25 +202,34 @@ def prepare_split(config: Dict[str, Any]) -> str:
             all_train.append({"path": path, "label": label})
         for path in val_files:
             all_val.append({"path": path, "label": label})
+        for path in test_files:
+            all_test.append({"path": path, "label": label})
 
-        logger.info(f"  Train: {len(train_files)}, Val: {len(val_files)}")
+        logger.info(
+            f"  Train: {len(train_files)}, Val: {len(val_files)}, "
+            f"Test: {len(test_files)}"
+        )
 
     # Build JSON structure
-    total_samples = len(all_train) + len(all_val)
+    total_samples = len(all_train) + len(all_val) + len(all_test)
     split_data = {
         "metadata": {
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "seed": seed,
             "train_ratio": train_ratio,
+            "val_ratio": val_ratio,
+            "test_ratio": test_ratio,
             "total_samples": total_samples,
             "train_samples": len(all_train),
             "val_samples": len(all_val),
+            "test_samples": len(all_test),
             "classes": class_to_label,
             "class_samples": class_samples,
             "source_paths": source_paths,
         },
         "train": all_train,
         "val": all_val,
+        "test": all_test,
     }
 
     # Write JSON file
@@ -202,6 +241,7 @@ def prepare_split(config: Dict[str, Any]) -> str:
     logger.info(f"Total samples: {total_samples}")
     logger.info(f"Train samples: {len(all_train)}")
     logger.info(f"Val samples: {len(all_val)}")
+    logger.info(f"Test samples: {len(all_test)}")
     logger.info("=" * 60)
 
     return str(output_path)

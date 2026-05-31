@@ -28,11 +28,14 @@ from src.utils.data.transforms import get_train_transforms, get_val_transforms
 # ==============================================================================
 
 
-def _create_split_json(tmp_path, train_per_class=4, val_per_class=4, num_classes=2):
+def _create_split_json(
+    tmp_path, train_per_class=4, val_per_class=4, test_per_class=0, num_classes=2
+):
     """Create mock images and a split JSON file."""
     class_names = [f"{i}.Class{i}" for i in range(num_classes)]
     train_entries = []
     val_entries = []
+    test_entries = []
     classes_dict = {name: idx for idx, name in enumerate(class_names)}
 
     images_dir = tmp_path / "images"
@@ -55,13 +58,21 @@ def _create_split_json(tmp_path, train_per_class=4, val_per_class=4, num_classes
             ).save(img_path)
             val_entries.append({"path": str(img_path), "label": idx})
 
+        for i in range(test_per_class):
+            img_path = class_dir / f"test_{i}.jpg"
+            Image.fromarray(
+                np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            ).save(img_path)
+            test_entries.append({"path": str(img_path), "label": idx})
+
     split_data = {
         "metadata": {
             "classes": classes_dict,
-            "total_samples": len(train_entries) + len(val_entries),
+            "total_samples": len(train_entries) + len(val_entries) + len(test_entries),
         },
         "train": train_entries,
         "val": val_entries,
+        "test": test_entries,
     }
 
     split_file = tmp_path / "split.json"
@@ -822,6 +833,26 @@ def test_create_val_loader_basic(mock_split_file):
     assert loader is not None
     assert isinstance(loader, DataLoader)
     assert loader.batch_size == 2
+
+
+@pytest.mark.component
+def test_create_val_loader_test_split(tmp_path):
+    """Test loading a held-out test split via the split argument."""
+    split_file = _create_split_json(
+        tmp_path, train_per_class=3, val_per_class=2, test_per_class=2
+    )
+    transform = get_val_transforms(image_size=32, crop_size=32)
+    loader = create_val_loader(
+        split_file=split_file,
+        batch_size=2,
+        transform=transform,
+        num_workers=0,
+        split="test",
+    )
+
+    assert loader is not None
+    assert isinstance(loader, DataLoader)
+    assert len(loader.dataset) == 4  # 2 per class * 2 classes  # type: ignore[arg-type]
 
 
 @pytest.mark.component

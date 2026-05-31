@@ -18,7 +18,7 @@ from src.utils.data.datasets import SplitFileDataset, get_dataset
 # ============================================================================
 
 
-def _create_split_json(tmp_path, image_dir, num_train=4, num_val=2):
+def _create_split_json(tmp_path, image_dir, num_train=4, num_val=2, num_test=0):
     """Create a mock split JSON file with matching images.
 
     Args:
@@ -26,6 +26,7 @@ def _create_split_json(tmp_path, image_dir, num_train=4, num_val=2):
         image_dir: Directory to create mock images in
         num_train: Number of training samples per class
         num_val: Number of validation samples per class
+        num_test: Number of test samples per class
 
     Returns:
         Path to the split JSON file
@@ -38,48 +39,50 @@ def _create_split_json(tmp_path, image_dir, num_train=4, num_val=2):
 
     train_entries = []
     val_entries = []
+    test_entries = []
 
-    # Create class 0 images
-    for i in range(num_train):
-        img_path = class0_dir / f"img_{i:03d}.png"
-        Image.new("RGB", (32, 32), color="green").save(img_path)
-        train_entries.append({"path": str(img_path), "label": 0})
+    for label, (class_dir, color) in enumerate(
+        [(class0_dir, "green"), (class1_dir, "red")]
+    ):
+        for i in range(num_train):
+            img_path = class_dir / f"img_{i:03d}.png"
+            Image.new("RGB", (32, 32), color=color).save(img_path)
+            train_entries.append({"path": str(img_path), "label": label})
 
-    for i in range(num_val):
-        img_path = class0_dir / f"val_img_{i:03d}.png"
-        Image.new("RGB", (32, 32), color="green").save(img_path)
-        val_entries.append({"path": str(img_path), "label": 0})
+        for i in range(num_val):
+            img_path = class_dir / f"val_img_{i:03d}.png"
+            Image.new("RGB", (32, 32), color=color).save(img_path)
+            val_entries.append({"path": str(img_path), "label": label})
 
-    # Create class 1 images
-    for i in range(num_train):
-        img_path = class1_dir / f"img_{i:03d}.png"
-        Image.new("RGB", (32, 32), color="red").save(img_path)
-        train_entries.append({"path": str(img_path), "label": 1})
-
-    for i in range(num_val):
-        img_path = class1_dir / f"val_img_{i:03d}.png"
-        Image.new("RGB", (32, 32), color="red").save(img_path)
-        val_entries.append({"path": str(img_path), "label": 1})
+        for i in range(num_test):
+            img_path = class_dir / f"test_img_{i:03d}.png"
+            Image.new("RGB", (32, 32), color=color).save(img_path)
+            test_entries.append({"path": str(img_path), "label": label})
 
     split_data = {
         "metadata": {
             "created_at": "2026-02-21T12:00:00",
             "seed": 42,
-            "train_ratio": 0.8,
-            "total_samples": len(train_entries) + len(val_entries),
+            "train_ratio": 0.7,
+            "val_ratio": 0.15,
+            "test_ratio": 0.15,
+            "total_samples": len(train_entries) + len(val_entries) + len(test_entries),
             "train_samples": len(train_entries),
             "val_samples": len(val_entries),
+            "test_samples": len(test_entries),
             "classes": {"class0": 0, "class1": 1},
             "class_samples": {
                 "class0": {
-                    "total": num_train + num_val,
+                    "total": num_train + num_val + num_test,
                     "train": num_train,
                     "val": num_val,
+                    "test": num_test,
                 },
                 "class1": {
-                    "total": num_train + num_val,
+                    "total": num_train + num_val + num_test,
                     "train": num_train,
                     "val": num_val,
+                    "test": num_test,
                 },
             },
             "source_paths": {
@@ -89,6 +92,7 @@ def _create_split_json(tmp_path, image_dir, num_train=4, num_val=2):
         },
         "train": train_entries,
         "val": val_entries,
+        "test": test_entries,
     }
 
     split_file = tmp_path / "split.json"
@@ -108,7 +112,7 @@ class TestSplitFileDatasetInit:
     """Test SplitFileDataset initialization."""
 
     def test_invalid_split_key_raises(self, tmp_path):
-        """Test that invalid split key raises ValueError."""
+        """Test that an unsupported split key raises ValueError."""
         # Create a minimal split JSON
         split_file = tmp_path / "split.json"
         split_data = {
@@ -120,7 +124,7 @@ class TestSplitFileDatasetInit:
             json.dump(split_data, f)
 
         with pytest.raises(ValueError, match="Invalid split"):
-            SplitFileDataset(split_file=str(split_file), split="test")
+            SplitFileDataset(split_file=str(split_file), split="holdout")
 
     def test_missing_file_raises(self):
         """Test that missing split file raises FileNotFoundError."""
@@ -168,6 +172,15 @@ class TestSplitFileDatasetLoading:
         dataset = SplitFileDataset(split_file=split_file, split="val")
 
         assert len(dataset) == 4  # 2 per class * 2 classes
+
+    def test_load_test_split(self, tmp_path):
+        """Test loading the held-out test split."""
+        split_file = _create_split_json(
+            tmp_path, tmp_path / "images", num_train=3, num_val=2, num_test=1
+        )
+        dataset = SplitFileDataset(split_file=split_file, split="test")
+
+        assert len(dataset) == 2  # 1 per class * 2 classes
 
     def test_getitem_returns_image_and_label(self, tmp_path):
         """Test that __getitem__ returns (image, label) tuple."""
