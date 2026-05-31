@@ -137,7 +137,7 @@ outputs/<experiment_name>/
 
 ### Pipeline (`scripts/run_pipeline.py`)
 
-The pipeline script orchestrates the full synthetic augmentation workflow. Phases are toggled via `RUN_*` flags at the top of the script:
+The pipeline script orchestrates the full synthetic augmentation workflow. All experiment configuration (phase flags, runner/infra settings, seeds, global classifier overrides, and the baseline/fine-tune variant matrix) lives in a YAML config — `configs/pipeline.yaml` by default (gitignored, like other `configs/*.yaml`; template at `configs/examples/pipeline.yaml`). Run with `python -m scripts.run_pipeline [configs/pipeline.yaml]`. The driver (`scripts/run_pipeline.py`) keeps only the generic orchestration; `scripts/pipeline_config.py` strictly validates the config. Phases are toggled via the `phases.*` flags in the config:
 
 - **Train** — train diffusion model variants (GPU/Docker)
 - **Generate** — generate synthetic images from trained models (GPU/Docker)

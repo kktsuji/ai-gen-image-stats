@@ -1,0 +1,121 @@
+# ------------------------------------------------------------------------------
+# PIPELINE CONFIGURATION
+# ------------------------------------------------------------------------------
+# Example template for scripts/run_pipeline.py. Copy to configs/pipeline.yaml (the
+# default path, gitignored) and edit freely — changing *what runs* is a config edit,
+# not a code change, so day-to-day experiment tweaks need no commit.
+#
+# All experiment configuration lives here: phase flags, runner / infra settings, seeds,
+# the global classifier overrides, and the baseline / fine-tune variant matrix. Override
+# values are written as native YAML types (bool / list / null / number) under flat
+# dot-notation keys; the driver serializes them to `--dotted.key value` CLI args.
+# ------------------------------------------------------------------------------
+experiment: pipeline
+
+# ON/OFF switches for each pipeline phase.
+phases:
+  data_preparation: false
+  baseline_classifier: true # head-only baselines (D0 reference)
+  ft_classifier: true # frozen-depth sweep (ft-* variants)
+  evaluation: true
+  summarize: true
+
+runner:
+  # Skip runs whose completion marker (reports/evaluation.json) already exists.
+  skip_completed: true
+  # Delete each experiment's checkpoints/ dir after a successful eval (the .pth files
+  # are not needed once reports/evaluation.json is written).
+  delete_checkpoints_after_eval: true
+  # Cooldown (seconds) staggering consecutive GPU container launches to avoid
+  # back-to-back CUDA-init crashes. 0 disables it.
+  gpu_cooldown_seconds: 5
+  # Emit a throttled "Classifier: current/total" Slack message every N experiments.
+  classifier_notify_every: 10
+  # Number of classifier experiments to run concurrently (each its own GPU container).
+  # Lower this if you hit CUDA OOM; set to 1 for fully sequential.
+  classifier_max_parallel: 3
+  # Root under which per-variant/per-seed classifier output dirs are created.
+  classifier_output_root: outputs/classifier
+
+# Base experiment configs passed to `python -m src.main`.
+configs:
+  data_preparation: configs/data-preparation.yaml
+  classifier: configs/classifier.yaml
+
+docker:
+  image: kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04
+  shm_size: 4g
+
+# Random seeds for multi-seed classifier runs (statistical testing).
+# Use `range: [start, stop]` (stop exclusive) or `list: [...]` for non-contiguous sets.
+seeds:
+  range: [0, 20]
+
+# Overrides applied to every classifier run (in addition to per-variant overrides).
+classifier_overrides:
+  # Keep only final_model.pth (weights only) per seed: evaluation reads
+  # best_model.pth -> final_model.pth, so periodic/latest checkpoints and optimizer
+  # state are redundant for evaluation-only reuse.
+  checkpoint:
+    training.checkpointing.save_optimizer: false
+    training.checkpointing.save_latest: false
+    training.checkpointing.save_frequency: 100
+  # The classifier dataset is small, so fewer DataLoader workers has negligible
+  # performance impact while reducing fork/exit churn and shared-memory pressure.
+  runtime:
+    data.loading.num_workers: 2
+
+# Baseline classifier variants: real data only, head-only backbone, different balancing
+# strategies. The depth-D0 reference for the frozen-depth sweep.
+baselines:
+  - name: baseline__vanilla
+    overrides:
+      data.synthetic_augmentation.enabled: false
+  - name: baseline__ws
+    overrides:
+      data.synthetic_augmentation.enabled: false
+      data.balancing.weighted_sampler.enabled: true
+  - name: baseline__us
+    overrides:
+      data.synthetic_augmentation.enabled: false
+      data.balancing.upsampling.enabled: true
+
+# Frozen-depth ladder (InceptionV3). The optimizer uses a single global LR over the
+# trainable parameters, so deeper unfreezing uses a lower LR to mitigate overfitting the
+# minority images. trainable_layers patterns are matched by fnmatch (fc/dropout stay
+# trainable automatically). Experiment names are {depth}__{balancing}, e.g. ft-mixed7__ws.
+ft:
+  # Injected into every ft run on top of the per-depth/per-balancing overrides.
+  common:
+    data.synthetic_augmentation.enabled: false
+  depths:
+    - name: ft-mixed7 # unfreeze top inception block
+      learning_rate: 0.0001
+      overrides:
+        model.initialization.freeze_backbone: true
+        model.initialization.trainable_layers: ["Mixed_7*"]
+    - name: ft-mixed67 # unfreeze top two inception blocks
+      learning_rate: 0.0001
+      overrides:
+        model.initialization.freeze_backbone: true
+        model.initialization.trainable_layers: ["Mixed_6*", "Mixed_7*"]
+    - name: ft-full # full fine-tune
+      learning_rate: 0.00001
+      overrides:
+        model.initialization.freeze_backbone: false
+        model.initialization.trainable_layers: null
+  balancing:
+    - name: ws
+      overrides:
+        data.balancing.weighted_sampler.enabled: true
+    - name: us
+      overrides:
+        data.balancing.upsampling.enabled: true
+
+summarize:
+  base_dir: outputs/classifier
+  output_dir: outputs/evaluation_report
+  # Compare against the strongest class-balancing baseline (weighted sampler). vanilla
+  # (no balancing) flatters any variant by conflating its effect with simply addressing
+  # the class imbalance; ws isolates the representation effect.
+  baseline_name: baseline__ws

@@ -1,3 +1,22 @@
+"""Synthetic-augmentation pipeline driver.
+
+Generic orchestrator: Docker invocation, GPU-launch staggering, the bounded thread
+pool, skip-completed, checkpoint cleanup, and throttled progress notifications all live
+here. Every piece of *experiment configuration* (phase flags, runner/infra settings,
+seeds, global classifier overrides, and the baseline/fine-tune variant matrix) is read
+from a YAML config (default configs/pipeline.yaml) via scripts/pipeline_config.py, so
+changing what runs is a config edit, not a code change.
+
+Usage:
+    python -m scripts.run_pipeline [configs/pipeline.yaml]
+
+Naming convention:
+    Dimension separator: "__" (double underscore)
+    Within-dimension separator: "-" (hyphen) or "_" (single underscore)
+    Transfer (frozen-depth sweep): {depth}__{balancing}  e.g. ft-mixed7__ws
+    Baseline:                      baseline__{strategy}   e.g. baseline__ws (head-only, D0)
+"""
+
 import os
 import shutil
 import subprocess
@@ -6,188 +25,98 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-from src.utils.notification import (
-    _get_webhook_url,  # noqa: E402
+from scripts.pipeline_config import load_pipeline_config  # noqa: E402
+from src.utils.cli import serialize_overrides  # noqa: E402
+from src.utils.notification import (  # noqa: E402
+    _get_webhook_url,
     _post_slack,
     notify_success,
 )
 
-DATA_PREPARATION_CONFIG = "configs/data-preparation.yaml"
-CLASSIFIER_CONFIG = "configs/classifier.yaml"
+DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 
-# Naming convention:
-#   Dimension separator: "__" (double underscore)
-#   Within-dimension separator: "-" (hyphen) or "_" (single underscore)
-#
-#   Transfer (frozen-depth sweep): {depth}__{balancing}  e.g. ft-mixed7__ws
-#   Baseline:                      baseline__{strategy}   e.g. baseline__ws (head-only, D0)
+# Set once in main() before any worker thread spawns, then read-only. Holds the
+# validated pipeline config so the orchestration helpers can read runner/docker/phase
+# settings without threading them through every call (same load-once/read-only
+# thread-safety model the previous module-global constants had).
+CFG: Dict[str, Any] = {}
 
-# ------------------------------------------------------------------------------
-# Step 1: Transfer-learning frozen-depth sweep (real data only).
-#
-# exp5 confirmed the bottleneck is the generator (a diffusion model trained on 84
-# minority images cannot capture the real manifold). The minority data is fixed, so
-# leverage moves to the classifier's representation: the backbone is a frozen ImageNet
-# InceptionV3 (head-only), which caps pr_auc (the discrimination metric) regardless of
-# class-balancing (ws/us). This experiment progressively unfreezes the backbone and
-# measures whether a richer, domain-adapted representation lifts pr_auc over the
-# ws/us baselines. No diffusion, no synthetic augmentation, no TSTR.
-# ------------------------------------------------------------------------------
-
-# ON/OFF switches for each experiment phase
-RUN_DATA_PREPARATION = False
-RUN_BASELINE_CLASSIFIER = True  # head-only baselines (D0 reference)
-RUN_FT_CLASSIFIER = True  # frozen-depth sweep (ft-* variants)
-RUN_EVALUATION = True
-RUN_SUMMARIZE = True
-
-# Skip completed runs (set to False to rerun everything as before)
-SKIP_COMPLETED = True
-
-# Delete each classifier experiment's checkpoints/ dir after a successful eval
-# (the .pth files are not needed once reports/evaluation.json is written).
-DELETE_CHECKPOINTS_AFTER_EVAL = True
-
-# Cooldown (seconds) inserted between consecutive GPU container runs.
-# Launching `docker run --rm --gpus all` back-to-back at high frequency can start a
-# new CUDA init before the NVIDIA driver has released the previous CUDA context,
-# leading to crashes like "CUDA error: unknown error". This fixed pause prevents that.
-# It trades off total wall time (runs x N seconds), so tune it here. 0 disables it.
-GPU_COOLDOWN_SECONDS = 5
-
-# Per-run Slack notifications from the classifier containers are suppressed (the pipeline
-# launches many classifier runs x train+eval, which would flood the channel). Instead, the
-# pipeline emits a throttled "Classifier: current/total" progress message on the first
-# experiment (a "phase started" signal), every N experiments, and at completion.
-CLASSIFIER_NOTIFY_EVERY = 10
-
-# Number of classifier experiments (train -> eval -> cleanup units) to run
-# concurrently, each in its own GPU container. The head-only baselines use a small
-# fraction of the GPU; the ft-* variants train more parameters, so lower this if you hit
-# CUDA OOM (set to 1 for fully sequential). Each job writes to its own out_dir/seed, so
-# they never contend on shared state. Container launches are still staggered by
-# GPU_COOLDOWN_SECONDS (see _throttled_run_and_wait) to avoid back-to-back CUDA crashes.
-CLASSIFIER_MAX_PARALLEL = 3
-
-# Random seeds for multi-seed classifier runs (for statistical testing).
-SEEDS = list(range(20))
-
-# Checkpoint-slimming overrides for classifier runs.
-# Keep only final_model.pth (weights only) per seed: the evaluation phase reads
-# best_model.pth -> final_model.pth, so the periodic and latest checkpoints are
-# redundant, and optimizer state is not needed for evaluation-only reuse.
-CLASSIFIER_CHECKPOINT_OVERRIDES = [
-    "--training.checkpointing.save_optimizer",
-    "false",
-    "--training.checkpointing.save_latest",
-    "false",
-    "--training.checkpointing.save_frequency",
-    "100",
-]
-
-# DataLoader runtime settings for the high-frequency classifier phase.
-# The classifier dataset is small, so fewer workers has negligible performance impact
-# while reducing worker fork/exit churn and shared-memory pressure.
-CLASSIFIER_RUNTIME_OVERRIDES = [
-    "--data.loading.num_workers",
-    "2",
-]
-
-
-# Frozen-depth ladder (InceptionV3): (name, depth overrides, learning_rate).
-# head-only (D0) is covered by the baselines below. The optimizer uses a single global
-# LR over the trainable parameters (no differential LR), so deeper unfreezing uses a
-# lower LR to mitigate overfitting the 84 minority images. trainable_layers patterns are
-# matched by fnmatch in InceptionV3Classifier.set_trainable_layers (fc/dropout stay
-# trainable automatically). LRs are a tunable starting point.
-FT_DEPTH_VARIANTS = [
-    (
-        "ft-mixed7",  # unfreeze top inception block
-        [
-            "--model.initialization.freeze_backbone",
-            "true",
-            "--model.initialization.trainable_layers",
-            "['Mixed_7*']",
-        ],
-        "1e-4",
-    ),
-    (
-        "ft-mixed67",  # unfreeze top two inception blocks
-        [
-            "--model.initialization.freeze_backbone",
-            "true",
-            "--model.initialization.trainable_layers",
-            "['Mixed_6*', 'Mixed_7*']",
-        ],
-        "1e-4",
-    ),
-    (
-        "ft-full",  # full fine-tune
-        [
-            "--model.initialization.freeze_backbone",
-            "false",
-            "--model.initialization.trainable_layers",
-            "null",
-        ],
-        "1e-5",
-    ),
-]
-
-# Class-balancing arms applied on top of each depth (real data only).
-FT_BALANCING = [
-    ("ws", ["--data.balancing.weighted_sampler.enabled", "true"]),
-    ("us", ["--data.balancing.upsampling.enabled", "true"]),
-]
-
-
-# Baseline classifier variants: real data only, head-only backbone, different balancing
-# strategies. These are the depth-D0 reference for the frozen-depth sweep.
-BASELINE_VARIANTS = [
-    (
-        "baseline__vanilla",
-        [
-            "--data.synthetic_augmentation.enabled",
-            "false",
-        ],
-    ),
-    (
-        "baseline__ws",
-        [
-            "--data.synthetic_augmentation.enabled",
-            "false",
-            "--data.balancing.weighted_sampler.enabled",
-            "true",
-        ],
-    ),
-    (
-        "baseline__us",
-        [
-            "--data.synthetic_augmentation.enabled",
-            "false",
-            "--data.balancing.upsampling.enabled",
-            "true",
-        ],
-    ),
-]
+# A classifier job: (label, out_dir, train_overrides).
+Job = Tuple[str, str, List[str]]
 
 
 def _is_done(*markers: str) -> bool:
-    """SKIP_COMPLETED 有効かつ全マーカーが存在すれば True。"""
-    return SKIP_COMPLETED and all(os.path.exists(m) for m in markers)
+    """True if skip_completed is enabled and every marker file exists."""
+    return CFG["runner"]["skip_completed"] and all(os.path.exists(m) for m in markers)
+
+
+def build_classifier_jobs(cfg: Dict[str, Any]) -> List[Job]:
+    """Expand the variant matrix into a flat list of classifier jobs.
+
+    Pure (no I/O): mirrors the former hardcoded nested loops. Each job carries only its
+    per-variant train_overrides (seed + variant flags + per-depth LR); the global
+    checkpoint/runtime overrides are appended later in _run_classifier_experiment so they
+    are applied uniformly at a single point.
+
+    Args:
+        cfg: The validated pipeline config (seeds already normalized to a list).
+
+    Returns:
+        List of (label, out_dir, train_overrides) tuples.
+    """
+    root = cfg["runner"]["classifier_output_root"]
+    seeds = cfg["seeds"]["list"]
+    jobs: List[Job] = []
+
+    if cfg["phases"]["baseline_classifier"]:
+        # outputs/<root>/baseline__{strategy}/seed{N}/
+        for baseline in cfg["baselines"]:
+            name = baseline["name"]
+            for seed in seeds:
+                out_dir = f"{root}/{name}/seed{seed}"
+                train_overrides = [
+                    "--compute.seed",
+                    str(seed),
+                    *serialize_overrides(baseline["overrides"]),
+                ]
+                jobs.append((f"{name}/seed{seed}", out_dir, train_overrides))
+
+    if cfg["phases"]["ft_classifier"]:
+        # outputs/<root>/{depth}__{balancing}/seed{N}/
+        ft = cfg["ft"]
+        for depth in ft["depths"]:
+            for bal in ft["balancing"]:
+                exp_name = f"{depth['name']}__{bal['name']}"
+                for seed in seeds:
+                    out_dir = f"{root}/{exp_name}/seed{seed}"
+                    train_overrides = [
+                        "--compute.seed",
+                        str(seed),
+                        *serialize_overrides(ft["common"]),
+                        *serialize_overrides(bal["overrides"]),
+                        *serialize_overrides(depth["overrides"]),
+                        *serialize_overrides(
+                            {"training.optimizer.learning_rate": depth["learning_rate"]}
+                        ),
+                    ]
+                    jobs.append((f"{exp_name}/seed{seed}", out_dir, train_overrides))
+
+    return jobs
 
 
 def run(
     config: str,
-    overrides: list[str],
+    overrides: List[str],
     *,
     suppress_output: bool = False,
     disable_notifications: bool = False,
-) -> subprocess.Popen[bytes]:
+) -> "subprocess.Popen[bytes]":
     cmd = [
         "docker",
         "run",
@@ -196,7 +125,7 @@ def run(
         "--gpus",
         "all",
         "--network=host",
-        "--shm-size=4g",
+        f"--shm-size={CFG['docker']['shm_size']}",
         "-v",
         f"{os.getcwd()}:/work",
         "-w",
@@ -210,7 +139,7 @@ def run(
     if disable_notifications:
         cmd += ["-e", "SLACK_WEBHOOK_URL="]
     cmd += [
-        "kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04",
+        CFG["docker"]["image"],
         "python3",
         "-m",
         "src.main",
@@ -226,13 +155,14 @@ def run(
 
 def _gpu_cooldown() -> None:
     """Fixed pause giving the GPU driver time to release the CUDA context."""
-    if GPU_COOLDOWN_SECONDS > 0:
-        time.sleep(GPU_COOLDOWN_SECONDS)
+    cooldown = CFG["runner"]["gpu_cooldown_seconds"]
+    if cooldown > 0:
+        time.sleep(cooldown)
 
 
 def run_and_wait(
     config: str,
-    overrides: list[str],
+    overrides: List[str],
     *,
     suppress_output: bool = False,
     disable_notifications: bool = False,
@@ -250,7 +180,7 @@ def run_and_wait(
 
 
 # Serializes only the GPU-context *initialization* window across parallel classifier
-# workers: a worker waits until GPU_COOLDOWN_SECONDS have elapsed since the previous
+# workers: a worker waits until gpu_cooldown_seconds have elapsed since the previous
 # launch, starts its container, then releases the gate so runs overlap. This staggers
 # launches (preventing the back-to-back CUDA-init crashes) without serializing the runs.
 _launch_lock = threading.Lock()
@@ -266,7 +196,7 @@ _foreground_lock = threading.Lock()
 
 def _throttled_run_and_wait(
     config: str,
-    overrides: list[str],
+    overrides: List[str],
     *,
     suppress_output: bool = False,
     disable_notifications: bool = False,
@@ -277,9 +207,10 @@ def _throttled_run_and_wait(
     CUDA context — pointless under parallelism, where peers keep using the GPU), this
     gates only the launch instant so concurrent workers don't init CUDA simultaneously.
     """
-    if GPU_COOLDOWN_SECONDS > 0:
+    cooldown = CFG["runner"]["gpu_cooldown_seconds"]
+    if cooldown > 0:
         with _launch_lock:
-            wait = _last_launch_monotonic[0] + GPU_COOLDOWN_SECONDS - time.monotonic()
+            wait = _last_launch_monotonic[0] + cooldown - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
             _last_launch_monotonic[0] = time.monotonic()
@@ -296,13 +227,12 @@ def _throttled_run_and_wait(
 def _notify_classifier_progress(current: int, total: int) -> None:
     """Send a throttled "Classifier: current/total" Slack message.
 
-    Posts on the first experiment (a "phase started" signal), every CLASSIFIER_NOTIFY_EVERY
-    experiments, and at completion. Stays silent when the webhook is unset, and never lets a
-    notification failure interrupt the pipeline.
+    Posts on the first experiment (a "phase started" signal), every
+    runner.classifier_notify_every experiments, and at completion. Stays silent when the
+    webhook is unset, and never lets a notification failure interrupt the pipeline.
     """
-    if not total or (
-        current != 1 and current % CLASSIFIER_NOTIFY_EVERY != 0 and current != total
-    ):
+    notify_every = CFG["runner"]["classifier_notify_every"]
+    if not total or (current != 1 and current % notify_every != 0 and current != total):
         return
     url = _get_webhook_url()
     if not url:
@@ -316,7 +246,7 @@ def _notify_classifier_progress(current: int, total: int) -> None:
 def _run_classifier_experiment(
     exp_label: str,
     out_dir: str,
-    train_overrides: list[str],
+    train_overrides: List[str],
     *,
     suppress_output: bool = True,
 ) -> None:
@@ -330,11 +260,13 @@ def _run_classifier_experiment(
     is suppressed by default so concurrent runs don't interleave; per-run detail is
     still written to each run's own logs/ dir.
     """
+    classifier_config = CFG["configs"]["classifier"]
+    run_evaluation = CFG["phases"]["evaluation"]
     final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
     eval_marker = os.path.join(out_dir, "reports", "evaluation.json")
 
     # Already evaluated (checkpoints possibly already cleaned up): skip entirely.
-    if RUN_EVALUATION and _is_done(eval_marker):
+    if run_evaluation and _is_done(eval_marker):
         print(f"[SKIP] {exp_label}: already complete")
         return
 
@@ -346,12 +278,12 @@ def _run_classifier_experiment(
             "--output.base_dir",
             out_dir,
             *train_overrides,
-            *CLASSIFIER_CHECKPOINT_OVERRIDES,
-            *CLASSIFIER_RUNTIME_OVERRIDES,
+            *serialize_overrides(CFG["classifier_overrides"]["checkpoint"]),
+            *serialize_overrides(CFG["classifier_overrides"]["runtime"]),
         ]
-        print(f"[CLS] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(overrides)}")
+        print(f"[CLS] {exp_label}: {classifier_config} {' '.join(overrides)}")
         rc = _throttled_run_and_wait(
-            CLASSIFIER_CONFIG,
+            classifier_config,
             overrides,
             disable_notifications=True,
             suppress_output=suppress_output,
@@ -360,7 +292,7 @@ def _run_classifier_experiment(
             print(f"[CLS] FAIL {exp_label}: training failed (rc={rc})")
             return
 
-    if not RUN_EVALUATION:
+    if not run_evaluation:
         return
 
     # --- Evaluate: prefer best_model.pth, fall back to final_model.pth ---
@@ -383,11 +315,11 @@ def _run_classifier_experiment(
         checkpoint,
         "--data.synthetic_augmentation.enabled",
         "false",
-        *CLASSIFIER_RUNTIME_OVERRIDES,
+        *serialize_overrides(CFG["classifier_overrides"]["runtime"]),
     ]
-    print(f"[EVAL] {exp_label}: {CLASSIFIER_CONFIG} {' '.join(eval_overrides)}")
+    print(f"[EVAL] {exp_label}: {classifier_config} {' '.join(eval_overrides)}")
     rc = _throttled_run_and_wait(
-        CLASSIFIER_CONFIG,
+        classifier_config,
         eval_overrides,
         disable_notifications=True,
         suppress_output=suppress_output,
@@ -398,7 +330,7 @@ def _run_classifier_experiment(
         return
 
     # --- Cleanup: drop the now-unneeded checkpoints after a successful eval ---
-    if DELETE_CHECKPOINTS_AFTER_EVAL:
+    if CFG["runner"]["delete_checkpoints_after_eval"]:
         ckpt_dir = os.path.join(out_dir, "checkpoints")
         if os.path.isdir(ckpt_dir):
             shutil.rmtree(ckpt_dir)
@@ -406,7 +338,7 @@ def _run_classifier_experiment(
 
 
 def _run_classifier_job(
-    exp_label: str, out_dir: str, train_overrides: list[str]
+    exp_label: str, out_dir: str, train_overrides: List[str]
 ) -> None:
     """Worker entrypoint: claim the single console (foreground) slot if free, run the job.
 
@@ -426,17 +358,18 @@ def _run_classifier_job(
             _foreground_lock.release()
 
 
-def _run_classifier_jobs(jobs: list[tuple[str, str, list[str]]], total: int) -> None:
+def _run_classifier_jobs(jobs: List[Job], total: int) -> None:
     """Run classifier experiments through a bounded thread pool.
 
     Each job is an independent (label, out_dir, train_overrides) train -> eval ->
-    cleanup unit. Up to CLASSIFIER_MAX_PARALLEL run concurrently, sharing the GPU;
+    cleanup unit. Up to runner.classifier_max_parallel run concurrently, sharing the GPU;
     container launches are staggered by _throttled_run_and_wait. At most one job at a
     time streams its container output to the console (see _run_classifier_job). The
     throttled progress notification is emitted in completion order under _progress_lock.
     """
     done = 0
-    with ThreadPoolExecutor(max_workers=CLASSIFIER_MAX_PARALLEL) as executor:
+    max_parallel = CFG["runner"]["classifier_max_parallel"]
+    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
         futures = {
             executor.submit(_run_classifier_job, label, out_dir, overrides): label
             for label, out_dir, overrides in jobs
@@ -453,80 +386,41 @@ def _run_classifier_jobs(jobs: list[tuple[str, str, list[str]]], total: int) -> 
 
 def main() -> None:
     load_dotenv()
+    config_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PIPELINE_CONFIG
+    cfg = load_pipeline_config(config_path)
+
+    global CFG
+    CFG = cfg
+
     start = time.time()
+    phases = cfg["phases"]
 
     # ------------------------------------------------------------------
     # Data Preparation: create train/val split
     # ------------------------------------------------------------------
-    if RUN_DATA_PREPARATION:
-        # outputs/splits-seed{N}-tr{R}/train_val_split.json
-        print(f"[DATA-PREP] {DATA_PREPARATION_CONFIG}")
-        run_and_wait(DATA_PREPARATION_CONFIG, [])
+    if phases["data_preparation"]:
+        data_prep_config = cfg["configs"]["data_preparation"]
+        print(f"[DATA-PREP] {data_prep_config}")
+        run_and_wait(data_prep_config, [])
 
     # ------------------------------------------------------------------
-    # Classifier progress tracking: per-run notifications are suppressed inside the
-    # containers, so the pipeline emits a throttled "Classifier: current/total" instead.
+    # Classifier (head-only baselines + frozen-depth sweep, multi-seed): expand the
+    # variant matrix into one job list, then run them through a bounded thread pool
+    # (runner.classifier_max_parallel concurrent GPU containers). Each job writes to its
+    # own out_dir/seed, so they never contend. Evaluation is interleaved per experiment
+    # inside _run_classifier_experiment (train -> eval -> cleanup), gated by phases.evaluation.
+    # Per-run notifications are suppressed inside the containers; the pipeline emits a
+    # throttled "Classifier: current/total" instead.
     # ------------------------------------------------------------------
-    classifier_total = 0
-    if RUN_BASELINE_CLASSIFIER:
-        classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
-    if RUN_FT_CLASSIFIER:
-        classifier_total += len(FT_DEPTH_VARIANTS) * len(FT_BALANCING) * len(SEEDS)
-
-    # ------------------------------------------------------------------
-    # Classifier (head-only baselines + frozen-depth sweep, multi-seed): collect every
-    # train -> eval -> cleanup unit into one job list, then run them through a bounded
-    # thread pool (CLASSIFIER_MAX_PARALLEL concurrent GPU containers). Each job writes to
-    # its own out_dir/seed, so they never contend.
-    # ------------------------------------------------------------------
-    classifier_jobs: list[tuple[str, str, list[str]]] = []
-
-    if RUN_BASELINE_CLASSIFIER:
-        # outputs/classifier/baseline__{strategy}/seed{N}/
-        for baseline_name, baseline_overrides in BASELINE_VARIANTS:
-            for seed in SEEDS:
-                out_dir = f"outputs/classifier/{baseline_name}/seed{seed}"
-                train_overrides = [
-                    "--compute.seed",
-                    str(seed),
-                    *baseline_overrides,
-                ]
-                classifier_jobs.append(
-                    (f"{baseline_name}/seed{seed}", out_dir, train_overrides)
-                )
-
-    if RUN_FT_CLASSIFIER:
-        # outputs/classifier/{depth}__{balancing}/seed{N}/
-        for depth_name, depth_overrides, lr in FT_DEPTH_VARIANTS:
-            for bal_name, bal_overrides in FT_BALANCING:
-                exp_name = f"{depth_name}__{bal_name}"
-                for seed in SEEDS:
-                    out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
-                    train_overrides = [
-                        "--compute.seed",
-                        str(seed),
-                        "--data.synthetic_augmentation.enabled",
-                        "false",
-                        *bal_overrides,
-                        *depth_overrides,
-                        "--training.optimizer.learning_rate",
-                        lr,
-                    ]
-                    classifier_jobs.append(
-                        (f"{exp_name}/seed{seed}", out_dir, train_overrides)
-                    )
-
-    # Evaluation is interleaved per experiment inside _run_classifier_experiment
-    # (train -> eval -> checkpoint cleanup), gated by RUN_EVALUATION.
+    classifier_jobs = build_classifier_jobs(cfg)
     if classifier_jobs:
-        _run_classifier_jobs(classifier_jobs, classifier_total)
+        _run_classifier_jobs(classifier_jobs, len(classifier_jobs))
 
     # ------------------------------------------------------------------
     # Summarize: aggregate classifier evaluation reports (CPU-only, no Docker).
-    # No selection-eval aggregation (this experiment has no generation/selection).
     # ------------------------------------------------------------------
-    if RUN_SUMMARIZE:
-        # outputs/evaluation_report/classifier_evaluation_summary.json
+    if phases["summarize"]:
+        summarize = cfg["summarize"]
         print("[SUMMARIZE] Generating classifier evaluation report")
         subprocess.run(
             [
@@ -534,15 +428,11 @@ def main() -> None:
                 "-m",
                 "src.experiments.classifier.evaluation_report",
                 "--base-dir",
-                "outputs/classifier",
+                summarize["base_dir"],
                 "--output-dir",
-                "outputs/evaluation_report",
-                # Compare against the strongest class-balancing baseline (weighted
-                # sampler). vanilla (no balancing) flatters any variant because it
-                # conflates the variant's effect with simply addressing the class
-                # imbalance; ws isolates the representation effect.
+                summarize["output_dir"],
                 "--baseline-name",
-                "baseline__ws",
+                summarize["baseline_name"],
             ],
             check=True,
         )
