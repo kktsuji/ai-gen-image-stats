@@ -1,8 +1,8 @@
 """Data Preparation - Split Generation Logic
 
-This module implements the core logic for creating reproducible train/val splits
-from class directories. It scans image files, performs stratified splitting with
-a configurable seed, and saves the result as a JSON file with metadata.
+This module implements the core logic for creating reproducible train/val/test
+splits from class directories. It scans image files, performs stratified splitting
+with a configurable seed, and saves the result as a JSON file with metadata.
 """
 
 import json
@@ -64,7 +64,7 @@ def _scan_image_files(directory: str) -> List[str]:
 
 def _split_list(
     items: List[str], train_ratio: float, val_ratio: float, rng: random.Random
-) -> tuple:
+) -> tuple[list[str], list[str], list[str]]:
     """Split a list into train, val, and test portions.
 
     Args:
@@ -99,7 +99,7 @@ def _split_list(
 
 
 def prepare_split(config: Dict[str, Any]) -> str:
-    """Generate a train/val split from class directories.
+    """Generate a train/val/test split from class directories.
 
     Scans each class directory for image files, performs a stratified split
     with the configured seed, and saves the result as a JSON file.
