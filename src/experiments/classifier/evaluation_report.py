@@ -360,10 +360,11 @@ def generate_statistical_comparison_table(
     correction_method: str = "benjamini-hochberg",
     baseline_name: Optional[str] = None,
 ) -> str:
-    """Generate table of paired t-test results comparing baselines to synthetics.
+    """Generate table of paired t-test results comparing baselines to variants.
 
-    For each baseline, compares against all synthetic experiments across key
-    metrics using paired t-test (paired by seed) and Cohen's d effect size.
+    For each baseline, compares against all non-baseline variants (synthetic
+    augmentation and transfer-learning frozen-depth) across key metrics using
+    paired t-test (paired by seed) and Cohen's d effect size.
 
     Args:
         df: DataFrame with multi-seed evaluation results (must have "seed" column).
@@ -738,6 +739,7 @@ def generate_report(
     n_experiments = len(display_df)
     n_baselines = len(display_df[display_df["type"] == "baseline"])
     n_synthetic = len(display_df[display_df["type"] == "synthetic"])
+    n_transfer = len(display_df[display_df["type"] == "transfer"])
 
     report_lines = [
         "# Evaluation Report: Synthetic Augmentation Effectiveness",
@@ -745,6 +747,7 @@ def generate_report(
         f"Total experiments: {n_experiments}",
         f"Baselines: {n_baselines}",
         f"Synthetic augmentation: {n_synthetic}",
+        f"Transfer (frozen-depth): {n_transfer}",
     ]
     if is_multi_seed and "n_seeds" in display_df.columns:
         seed_min = int(display_df["n_seeds"].min())  # type: ignore[arg-type]

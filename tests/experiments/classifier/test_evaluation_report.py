@@ -1033,6 +1033,23 @@ def test_generate_report_single_seed(tmp_path):
 
 
 @pytest.mark.unit
+def test_generate_report_counts_transfer_in_header(tmp_path):
+    """Report header reports transfer experiments separately from synthetics."""
+    reports_dir = tmp_path / "ft-mixed7__ws" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump({"recall_1": 0.78, "balanced_accuracy": 0.82}, f)
+
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Transfer (frozen-depth): 1" in report
+    # Transfer experiments must not be miscounted as synthetic augmentation.
+    assert "Synthetic augmentation: 0" in report
+
+
+@pytest.mark.unit
 def test_generate_report_multi_seed(tmp_path):
     """generate_report with multi-seed data includes aggregation and stat table."""
     for seed, bl, syn in [(0, 0.70, 0.80), (1, 0.72, 0.82), (2, 0.74, 0.84)]:
