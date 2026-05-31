@@ -14,6 +14,7 @@ Strict validation: all parameters must be explicitly specified, mirroring the
 """
 
 import logging
+import math
 import os
 from typing import Any, Dict, List
 
@@ -89,11 +90,12 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     Args:
         config: Configuration dictionary to validate.
 
-    As a side effect, override values and learning rates that arrive as numeric
-    *strings* (e.g. the YAML 1.1 scientific-notation literal ``1e-4``, which PyYAML
-    does not parse as a float) are normalized in place via ``infer_type``, so the value
-    validated here is identical to the one ``serialize_override`` later sends to the
-    container.
+    As a side effect, scientific-notation numbers that arrive as *strings* (e.g. the
+    YAML 1.1 literal ``1e-4``, which PyYAML does not parse as a float) — both in override
+    maps and in ``ft.depths[].learning_rate`` — are normalized in place to floats, so the
+    value validated here is identical to the one ``serialize_override`` later sends to the
+    container. Strings the user quoted to force a string type (``"0"``, ``"true"``) are
+    left untouched.
 
     Raises:
         ValueError: If the configuration is invalid.
@@ -256,13 +258,31 @@ def _validate_seeds(config: Dict[str, Any]) -> None:
         raise ValueError("seed values must be non-negative")
 
 
+def _is_yaml_unparsed_number(value: str) -> bool:
+    """True if ``value`` is a scientific-notation number YAML 1.1 leaves as a string.
+
+    PyYAML's 1.1 resolver natively parses plain ints, decimal floats, bools, ``null``,
+    and lists; the one numeric form it leaves unparsed is scientific notation without an
+    explicit decimal point/sign (e.g. ``1e-4``). Those are the only string overrides we
+    coerce — so a value the user intentionally quoted to *force* a string (e.g. ``"0"``
+    or ``"true"`` for a string-typed config key) is preserved as-is, not silently re-typed.
+    """
+    if "e" not in value and "E" not in value:
+        return False
+    try:
+        return math.isfinite(float(value))
+    except ValueError:
+        return False
+
+
 def _validate_override_map(name: str, mapping: Any) -> None:
     """Validate a dot-notation override map; reject driver-owned keys.
 
-    String values are normalized in place via ``infer_type`` so the stored value matches
-    the canonical CLI interpretation (e.g. the YAML 1.1 string ``"1e-4"`` becomes the
-    float ``0.0001``). Without this, ``serialize_override`` would quote-force the raw
-    string and the container would receive ``"1e-4"`` instead of a number.
+    Scientific-notation numeric strings that PyYAML leaves unparsed (e.g. the YAML 1.1
+    literal ``1e-4``) are normalized in place to floats via ``infer_type`` so they later
+    serialize as numbers, not quoted strings. Other strings are left untouched — any value
+    quoted to force a string type (``"0"``, ``"true"``) keeps that type. See
+    :func:`_is_yaml_unparsed_number`.
     """
     if not isinstance(mapping, dict):
         raise ValueError(f"{name} must be a dictionary")
@@ -279,7 +299,7 @@ def _validate_override_map(name: str, mapping: Any) -> None:
                 f"{name}.{key} must be a scalar, list, or null (use flat dot-notation "
                 "keys, not nested dicts)"
             )
-        if isinstance(value, str):
+        if isinstance(value, str) and _is_yaml_unparsed_number(value):
             mapping[key] = infer_type(value)
 
 
@@ -391,10 +411,27 @@ def _validate_summarize(config: Dict[str, Any]) -> None:
         if not _non_empty_str(summarize[key]):
             raise ValueError(f"summarize.{key} must be a non-empty string")
 
+    # The summarize step reads classifier reports from summarize.base_dir, but the
+    # classifier jobs write them under runner.classifier_output_root. If a classifier
+    # phase runs in the same pipeline, the two must point at the same directory or
+    # summarize would aggregate a stale/empty location after the GPU work completes.
+    # (When no classifier phase runs, base_dir may legitimately be a pre-existing dir
+    # distinct from classifier_output_root, so the check is scoped to that case.)
+    phases = config.get("phases", {})
+    classifier_phase = phases.get("baseline_classifier") or phases.get("ft_classifier")
+    if phases.get("summarize") and classifier_phase:
+        output_root = config["runner"]["classifier_output_root"]
+        if summarize["base_dir"] != output_root:
+            raise ValueError(
+                f"summarize.base_dir '{summarize['base_dir']}' must equal "
+                f"runner.classifier_output_root '{output_root}' when a classifier phase "
+                "runs in the same pipeline (summarize reads the directory the classifier "
+                "jobs write to)"
+            )
+
     # The summarize step compares every variant against summarize.baseline_name, which
     # must therefore be one of the baseline experiment names produced by the pipeline.
     # Enforce this only when both phases run (otherwise the baseline may be pre-existing).
-    phases = config.get("phases", {})
     baseline_names = {
         b["name"] for b in config.get("baselines", []) if isinstance(b, dict)
     }

@@ -288,6 +288,19 @@ class TestScientificNotationNormalization:
             1e-5
         )
 
+    @pytest.mark.parametrize(
+        "raw", ["0", "007", "true", "false", "null", "42", "3.14", "[1, 2]"]
+    )
+    def test_force_string_override_values_are_preserved(self, raw):
+        # A string value YAML parses correctly (or that the user quoted to force a string)
+        # for a string-typed config key must NOT be silently re-typed; only the YAML 1.1
+        # scientific-notation quirk (e.g. "1e-4") is coerced.
+        cfg = _valid_config()
+        cfg["baselines"][0]["overrides"]["data.label"] = raw
+        validate_pipeline_config(cfg)
+        assert cfg["baselines"][0]["overrides"]["data.label"] == raw
+        assert isinstance(cfg["baselines"][0]["overrides"]["data.label"], str)
+
     def test_scientific_notation_lr_serializes_as_number(self):
         # End-to-end: a string "1e-4" must reach build_classifier_jobs as a numeric token
         # that infer_type parses back to the float, not the quoted string "'1e-4'".
@@ -353,3 +366,39 @@ class TestConfigFileExistence:
         cfg["phases"]["data_preparation"] = True
         with pytest.raises(ValueError, match="non-existent file"):
             validate_pipeline_config(cfg)
+
+
+@pytest.mark.unit
+class TestSummarizeBaseDirMatchesOutputRoot:
+    """Fix #2: classifier jobs write under runner.classifier_output_root; the summarize
+    phase reads from summarize.base_dir. When a classifier phase runs alongside summarize,
+    the two must point at the same directory or summarize aggregates an empty/stale dir.
+    """
+
+    def test_mismatch_raises_when_classifier_phase_runs(self):
+        cfg = _valid_config()
+        cfg["summarize"]["base_dir"] = "outputs/other-dir"
+        with pytest.raises(ValueError, match="must equal"):
+            validate_pipeline_config(cfg)
+
+    def test_mismatch_raises_when_only_ft_phase_runs(self):
+        cfg = _valid_config()
+        cfg["phases"]["baseline_classifier"] = False
+        cfg["summarize"]["base_dir"] = "outputs/other-dir"
+        with pytest.raises(ValueError, match="must equal"):
+            validate_pipeline_config(cfg)
+
+    def test_mismatch_allowed_when_no_classifier_phase_runs(self):
+        # Summarize-only over a pre-existing dir: base_dir may differ from the (unused)
+        # classifier_output_root.
+        cfg = _valid_config()
+        cfg["phases"]["baseline_classifier"] = False
+        cfg["phases"]["ft_classifier"] = False
+        cfg["summarize"]["base_dir"] = "outputs/preexisting"
+        validate_pipeline_config(cfg)
+
+    def test_match_passes_with_classifier_phase(self):
+        cfg = _valid_config()
+        cfg["runner"]["classifier_output_root"] = "outputs/cls-v2"
+        cfg["summarize"]["base_dir"] = "outputs/cls-v2"
+        validate_pipeline_config(cfg)
