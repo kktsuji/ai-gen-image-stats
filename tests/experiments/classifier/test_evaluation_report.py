@@ -246,6 +246,26 @@ def test_load_evaluation_results(tmp_path):
 
 
 @pytest.mark.component
+def test_load_evaluation_results_preserves_split_field(tmp_path):
+    """Test that the 'split' field (val vs test) is surfaced as its own column.
+
+    main.py records which split was evaluated in evaluation.json so the report
+    can distinguish val-based from held-out test metrics instead of mixing them.
+    """
+    for exp_name, split in [("baseline__vanilla", "val"), ("ft-head__ws", "test")]:
+        reports_dir = tmp_path / exp_name / "reports"
+        reports_dir.mkdir(parents=True)
+        metrics = {"accuracy": 80.0, "recall_1": 0.5, "split": split}
+        with open(reports_dir / "evaluation.json", "w") as f:
+            json.dump(metrics, f)
+
+    results = load_evaluation_results(str(tmp_path))
+    by_exp = {r["experiment"]: r for r in results}
+    assert by_exp["baseline__vanilla"]["split"] == "val"
+    assert by_exp["ft-head__ws"]["split"] == "test"
+
+
+@pytest.mark.component
 def test_load_evaluation_results_skips_reserved_keys(tmp_path):
     """Test that reserved metadata keys in evaluation.json are skipped."""
     reports_dir = tmp_path / "baseline__vanilla" / "reports"

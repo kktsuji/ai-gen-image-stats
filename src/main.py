@@ -343,10 +343,14 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             except (ValueError, OverflowError):
                 logger.info(f"  {key}: {value}")
 
-        # Save full results (including non-scalars) to reports directory
+        # Save full results (including non-scalars) to reports directory.
+        # Record which split was evaluated ("val" vs held-out "test") so the
+        # downstream evaluation report can distinguish them instead of mixing
+        # val-based and test-based metrics in the same columns.
         report_path = reports_dir / "evaluation.json"
+        report_payload = {**eval_metrics, "split": eval_split}
         with open(report_path, "w") as f:
-            json.dump(eval_metrics, f, indent=2)
+            json.dump(report_payload, f, indent=2)
         logger.info(f"Evaluation report saved to: {report_path}")
 
         # Log scalar metrics to CSV
