@@ -264,3 +264,92 @@ class TestLoadPipelineConfig:
         path.write_text(yaml.safe_dump(cfg))
         loaded = load_pipeline_config(str(path))
         assert loaded["baselines"] == expected_baselines
+
+
+@pytest.mark.unit
+class TestScientificNotationNormalization:
+    """Fix #1: YAML 1.1 leaves "1e-4" as a string; the validator must normalize numeric
+    string overrides/LRs in place so they later serialize as numbers, not quoted strings.
+    """
+
+    def test_ft_learning_rate_string_normalized_to_float(self):
+        cfg = _valid_config()
+        cfg["ft"]["depths"][0]["learning_rate"] = "1e-4"
+        validate_pipeline_config(cfg)
+        lr = cfg["ft"]["depths"][0]["learning_rate"]
+        assert isinstance(lr, float)
+        assert lr == pytest.approx(1e-4)
+
+    def test_override_string_numeric_value_normalized(self):
+        cfg = _valid_config()
+        cfg["ft"]["common"]["training.optimizer.weight_decay"] = "1e-5"
+        validate_pipeline_config(cfg)
+        assert cfg["ft"]["common"]["training.optimizer.weight_decay"] == pytest.approx(
+            1e-5
+        )
+
+    def test_scientific_notation_lr_serializes_as_number(self):
+        # End-to-end: a string "1e-4" must reach build_classifier_jobs as a numeric token
+        # that infer_type parses back to the float, not the quoted string "'1e-4'".
+        from scripts.run_pipeline import build_classifier_jobs
+        from src.utils.cli import infer_type
+
+        cfg = _valid_config()
+        cfg["ft"]["depths"][0]["learning_rate"] = "1e-4"
+        cfg["seeds"] = {"list": [0]}
+        validate_pipeline_config(cfg)
+
+        jobs = build_classifier_jobs(cfg)
+        ft_jobs = [j for j in jobs if "ft-mixed7" in j[0]]
+        assert ft_jobs
+        for _, _, overrides in ft_jobs:
+            idx = overrides.index("--training.optimizer.learning_rate")
+            assert infer_type(overrides[idx + 1]) == pytest.approx(1e-4)
+
+
+@pytest.mark.unit
+class TestMissingOverridesKey:
+    """Fix #3: a variant/depth omitting `overrides` must raise a clear KeyError naming the
+    missing field, not a misleading "must be a dictionary" type error.
+    """
+
+    def test_baseline_missing_overrides_raises_keyerror(self):
+        cfg = _valid_config()
+        del cfg["baselines"][0]["overrides"]
+        with pytest.raises(KeyError, match="missing required field: overrides"):
+            validate_pipeline_config(cfg)
+
+    def test_ft_depth_missing_overrides_raises_keyerror(self):
+        cfg = _valid_config()
+        del cfg["ft"]["depths"][0]["overrides"]
+        with pytest.raises(KeyError, match="missing required field: overrides"):
+            validate_pipeline_config(cfg)
+
+    def test_ft_balancing_missing_overrides_raises_keyerror(self):
+        cfg = _valid_config()
+        del cfg["ft"]["balancing"][0]["overrides"]
+        with pytest.raises(KeyError, match="missing required field: overrides"):
+            validate_pipeline_config(cfg)
+
+
+@pytest.mark.unit
+class TestConfigFileExistence:
+    """Fix #4: config paths that will actually be consumed must exist (fail fast), while
+    an unused data_preparation config is not checked.
+    """
+
+    def test_classifier_config_missing_file_raises(self):
+        cfg = _valid_config()
+        cfg["configs"]["classifier"] = "configs/does-not-exist-xyz.yaml"
+        with pytest.raises(ValueError, match="non-existent file"):
+            validate_pipeline_config(cfg)
+
+    def test_data_preparation_config_checked_only_when_phase_on(self):
+        cfg = _valid_config()
+        cfg["configs"]["data_preparation"] = "configs/missing-dataprep-xyz.yaml"
+        # Phase off -> the unused config path is not checked for existence.
+        validate_pipeline_config(cfg)
+        # Phase on -> the now-consumed config path must exist.
+        cfg["phases"]["data_preparation"] = True
+        with pytest.raises(ValueError, match="non-existent file"):
+            validate_pipeline_config(cfg)

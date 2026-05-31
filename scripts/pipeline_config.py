@@ -14,6 +14,7 @@ Strict validation: all parameters must be explicitly specified, mirroring the
 """
 
 import logging
+import os
 from typing import Any, Dict, List
 
 from src.utils.cli import dot_notation_to_dict, infer_type, validate_override_keys
@@ -87,6 +88,12 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
 
     Args:
         config: Configuration dictionary to validate.
+
+    As a side effect, override values and learning rates that arrive as numeric
+    *strings* (e.g. the YAML 1.1 scientific-notation literal ``1e-4``, which PyYAML
+    does not parse as a float) are normalized in place via ``infer_type``, so the value
+    validated here is identical to the one ``serialize_override`` later sends to the
+    container.
 
     Raises:
         ValueError: If the configuration is invalid.
@@ -175,6 +182,15 @@ def _validate_configs_section(config: Dict[str, Any]) -> None:
     configs = _require(config, "configs")
     if not isinstance(configs, dict):
         raise ValueError("'configs' must be a dictionary")
+    # The classifier config is always consumed (classifier phase + override preflight);
+    # the data_preparation config is only consumed when that phase runs. Require the file
+    # to exist for any config that will actually be used, so a typo'd path fails fast here
+    # instead of deep inside a Docker container after other phases may have run.
+    phases = config.get("phases", {})
+    file_required = {
+        "data_preparation": bool(phases.get("data_preparation")),
+        "classifier": True,
+    }
     for key in ("data_preparation", "classifier"):
         if key not in configs:
             raise KeyError(f"Missing required field: configs.{key}")
@@ -183,6 +199,8 @@ def _validate_configs_section(config: Dict[str, Any]) -> None:
             raise ValueError(f"configs.{key} must be a non-empty string")
         if not value.endswith(".yaml"):
             raise ValueError(f"configs.{key} must end with '.yaml'")
+        if file_required[key] and not os.path.isfile(value):
+            raise ValueError(f"configs.{key} points to a non-existent file: {value}")
 
 
 def _validate_docker(config: Dict[str, Any]) -> None:
@@ -239,7 +257,13 @@ def _validate_seeds(config: Dict[str, Any]) -> None:
 
 
 def _validate_override_map(name: str, mapping: Any) -> None:
-    """Validate a dot-notation override map; reject driver-owned keys."""
+    """Validate a dot-notation override map; reject driver-owned keys.
+
+    String values are normalized in place via ``infer_type`` so the stored value matches
+    the canonical CLI interpretation (e.g. the YAML 1.1 string ``"1e-4"`` becomes the
+    float ``0.0001``). Without this, ``serialize_override`` would quote-force the raw
+    string and the container would receive ``"1e-4"`` instead of a number.
+    """
     if not isinstance(mapping, dict):
         raise ValueError(f"{name} must be a dictionary")
     for key, value in mapping.items():
@@ -255,6 +279,8 @@ def _validate_override_map(name: str, mapping: Any) -> None:
                 f"{name}.{key} must be a scalar, list, or null (use flat dot-notation "
                 "keys, not nested dicts)"
             )
+        if isinstance(value, str):
+            mapping[key] = infer_type(value)
 
 
 def _validate_classifier_overrides(config: Dict[str, Any]) -> None:
@@ -277,8 +303,12 @@ def _validate_variant_list(name: str, variants: Any) -> List[str]:
             raise ValueError(f"{name}[{i}] must be a dict with 'name' and 'overrides'")
         if not _non_empty_str(variant.get("name")):
             raise ValueError(f"{name}[{i}].name must be a non-empty string")
+        if "overrides" not in variant:
+            raise KeyError(
+                f"{name}[{variant['name']}] missing required field: overrides"
+            )
         _validate_override_map(
-            f"{name}[{variant['name']}].overrides", variant.get("overrides")
+            f"{name}[{variant['name']}].overrides", variant["overrides"]
         )
         names.append(variant["name"])
     if len(set(names)) != len(names):
@@ -290,8 +320,13 @@ def _validate_baselines(config: Dict[str, Any]) -> None:
     _validate_variant_list("baselines", _require(config, "baselines"))
 
 
-def _coerce_positive_float(name: str, value: Any) -> None:
-    """Raise unless ``value`` is (or parses to) a positive float."""
+def _coerce_positive_float(name: str, value: Any) -> float:
+    """Validate and return ``value`` as a positive float.
+
+    Numeric strings (e.g. the YAML 1.1 scientific-notation literal ``"1e-4"``) are parsed
+    via ``infer_type``. Returning the parsed float lets the caller store the normalized
+    value back so it serializes as a number, not a quoted string.
+    """
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a positive number")
     if isinstance(value, (int, float)):
@@ -304,6 +339,7 @@ def _coerce_positive_float(name: str, value: Any) -> None:
         raise ValueError(f"{name} must be a positive number")
     if float(parsed) <= 0.0:
         raise ValueError(f"{name} must be positive, got {value!r}")
+    return float(parsed)
 
 
 def _validate_ft(config: Dict[str, Any]) -> None:
@@ -328,11 +364,15 @@ def _validate_ft(config: Dict[str, Any]) -> None:
             raise KeyError(
                 f"ft.depths[{depth['name']}] missing required field: learning_rate"
             )
-        _coerce_positive_float(
+        depth["learning_rate"] = _coerce_positive_float(
             f"ft.depths[{depth['name']}].learning_rate", depth["learning_rate"]
         )
+        if "overrides" not in depth:
+            raise KeyError(
+                f"ft.depths[{depth['name']}] missing required field: overrides"
+            )
         _validate_override_map(
-            f"ft.depths[{depth['name']}].overrides", depth.get("overrides")
+            f"ft.depths[{depth['name']}].overrides", depth["overrides"]
         )
         depth_names.append(depth["name"])
     if len(set(depth_names)) != len(depth_names):

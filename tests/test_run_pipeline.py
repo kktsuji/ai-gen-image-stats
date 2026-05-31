@@ -7,6 +7,7 @@ requires no test changes. build_classifier_jobs is pure (no GPU/Docker/filesyste
 
 import pytest
 
+import scripts.run_pipeline as rp
 from scripts.run_pipeline import build_classifier_jobs
 
 
@@ -147,3 +148,150 @@ def test_build_classifier_jobs_runs_without_docker_or_gpu():
     """
     jobs = build_classifier_jobs(_single())
     assert isinstance(jobs, list) and jobs
+
+
+# ---------------------------------------------------------------------------
+# Fix #2: orchestration-layer coverage (skip gate + train -> eval -> cleanup).
+# All Docker/subprocess/filesystem I/O is mocked; no GPU or containers involved.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestIsDone:
+    def test_false_when_skip_disabled(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"skip_completed": False}})
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+        # All markers present, but skip_completed=False means never "done".
+        assert rp._is_done("a", "b") is False
+
+    def test_true_when_all_markers_exist(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"skip_completed": True}})
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+        assert rp._is_done("a", "b") is True
+
+    def test_false_when_any_marker_missing(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"skip_completed": True}})
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: p != "b")
+        assert rp._is_done("a", "b") is False
+
+
+def _exp_cfg():
+    """Minimal CFG slice consumed by _run_classifier_experiment."""
+    return {
+        "configs": {"classifier": "configs/classifier.yaml"},
+        "phases": {"evaluation": True},
+        "runner": {"skip_completed": False, "delete_checkpoints_after_eval": True},
+        "classifier_overrides": {"checkpoint": {}, "runtime": {}},
+    }
+
+
+@pytest.mark.unit
+class TestRunClassifierExperiment:
+    def test_training_failure_skips_eval(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", _exp_cfg())
+        calls = []
+        monkeypatch.setattr(
+            rp,
+            "_throttled_run_and_wait",
+            lambda config, overrides, **kw: (calls.append(overrides), 1)[1],
+        )
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: False)
+
+        rp._run_classifier_experiment("lbl", "out", ["--compute.seed", "0"])
+        # Training rc != 0 -> early return; evaluation never launched.
+        assert len(calls) == 1
+
+    def test_train_eval_cleanup(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", _exp_cfg())
+        calls = []
+        monkeypatch.setattr(
+            rp,
+            "_throttled_run_and_wait",
+            lambda config, overrides, **kw: (calls.append(overrides), 0)[1],
+        )
+        # best_model.pth "exists" so eval discovers it; nothing else exists.
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("best_model.pth")
+        )
+        monkeypatch.setattr(rp.os.path, "isdir", lambda p: True)
+        removed = []
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: removed.append(p))
+
+        rp._run_classifier_experiment("lbl", "out", [])
+
+        assert len(calls) == 2  # train + eval
+        eval_call = calls[1]
+        assert "--mode" in eval_call and "evaluate" in eval_call
+        assert any("best_model.pth" in tok for tok in eval_call)
+        # Successful eval -> checkpoints cleaned up.
+        assert removed == ["out/checkpoints"]
+
+    def test_eval_failure_keeps_checkpoints(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", _exp_cfg())
+
+        def fake_run(config, overrides, **kw):
+            # Training (no --mode) succeeds; evaluation (--mode) fails.
+            return 1 if "--mode" in overrides else 0
+
+        monkeypatch.setattr(rp, "_throttled_run_and_wait", fake_run)
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("best_model.pth")
+        )
+        monkeypatch.setattr(rp.os.path, "isdir", lambda p: True)
+        removed = []
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: removed.append(p))
+
+        rp._run_classifier_experiment("lbl", "out", [])
+        # Eval failed -> checkpoints retained for retry.
+        assert removed == []
+
+    def test_skips_when_already_complete(self, monkeypatch):
+        cfg = _exp_cfg()
+        cfg["runner"]["skip_completed"] = True
+        monkeypatch.setattr(rp, "CFG", cfg)
+        calls = []
+        monkeypatch.setattr(
+            rp, "_throttled_run_and_wait", lambda *a, **k: calls.append(1) or 0
+        )
+        # eval marker present -> fully skip (no container launched).
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+
+        rp._run_classifier_experiment("lbl", "out", [])
+        assert calls == []
+
+    def test_no_eval_phase_trains_only(self, monkeypatch):
+        cfg = _exp_cfg()
+        cfg["phases"]["evaluation"] = False
+        monkeypatch.setattr(rp, "CFG", cfg)
+        calls = []
+        monkeypatch.setattr(
+            rp,
+            "_throttled_run_and_wait",
+            lambda config, overrides, **kw: (calls.append(overrides), 0)[1],
+        )
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: False)
+        removed = []
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: removed.append(p))
+
+        rp._run_classifier_experiment("lbl", "out", [])
+        assert len(calls) == 1  # train only, no eval
+        assert removed == []  # no cleanup without a successful eval
+
+    def test_falls_back_to_final_model(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", _exp_cfg())
+        calls = []
+        monkeypatch.setattr(
+            rp,
+            "_throttled_run_and_wait",
+            lambda config, overrides, **kw: (calls.append(overrides), 0)[1],
+        )
+        # No best_model.pth; only final_model.pth exists -> eval uses the fallback.
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("final_model.pth")
+        )
+        monkeypatch.setattr(rp.os.path, "isdir", lambda p: True)
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: None)
+
+        rp._run_classifier_experiment("lbl", "out", [])
+        eval_call = calls[1]
+        assert any("final_model.pth" in tok for tok in eval_call)
