@@ -418,6 +418,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     valid_experiments = [
         "classifier",
         "diffusion",
+        "diffusion_pretrained",
         "gan",
         "data_preparation",
         "sample_selection",

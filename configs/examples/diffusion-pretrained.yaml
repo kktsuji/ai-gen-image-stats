@@ -1,0 +1,210 @@
+# ------------------------------------------------------------------------------
+# PRETRAINED-TRANSFER DIFFUSION CONFIGURATION (ADM / guided-diffusion)
+# ------------------------------------------------------------------------------
+# Fine-tunes OpenAI's class-conditional ImageNet-64 ADM checkpoint onto a small,
+# domain-specific dataset (e.g. 40x40 grayscale medical images stored as RGB).
+# The backbone is built with the public ImageNet-64 flags and loaded from the
+# public checkpoint; the class-embedding head is re-initialized for this task
+# and (by default) only the head + output block are trained.
+#
+# Run:
+#   python -m src.main configs/examples/diffusion-pretrained.yaml
+#   python -m src.main configs/examples/diffusion-pretrained.yaml --mode generate \
+#       --generation.checkpoint outputs/diffusion-pretrained/checkpoints/best_model.pth
+# ------------------------------------------------------------------------------
+
+experiment: diffusion_pretrained
+mode: train # Options: train, generate
+
+compute:
+  device: cuda # Options: cuda, cpu, auto
+  seed: 0 # Random seed for reproducibility (null to disable)
+
+logging:
+  console_level: INFO
+  file_level: DEBUG
+  format: "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  timezone: local
+  metrics:
+    csv:
+      enabled: true
+    tensorboard:
+      enabled: true
+      flush_secs: 30
+      log_images: true
+      log_histograms: false
+      log_graph: false
+
+# ------------------------------------------------------------------------------
+# MODEL CONFIGURATION (ADM transfer)
+# ------------------------------------------------------------------------------
+model:
+  # Architecture: target/runtime resolution and channels. The ADM backbone
+  # hyper-parameters (model_channels=192, channel_mult, attention, etc.) are
+  # fixed by the checkpoint and live in model.py; only image_size/in_channels
+  # are configurable here. The U-Net runs at image_size even though it was
+  # pretrained at 64 (it is fully convolutional with flattened-HW attention).
+  architecture:
+    image_size: 40 # Target/runtime square image size
+    in_channels: 3 # Must be 3 (ADM is RGB; grayscale -> replicate to 3ch)
+
+  # Pretrained source: which public checkpoint to transfer from.
+  pretrained:
+    source: adm_imagenet64 # Class-conditional ImageNet-64 ADM
+    checkpoint_url: "https://openaipublic.blob.core.windows.net/diffusion/jul-2021/64x64_diffusion.pt"
+    checkpoint_path: null # Optional explicit local file (overrides url/cache)
+    cache_path: "models/adm/64x64_diffusion.pt" # Download/cache target
+
+  # Diffusion process (matches the ADM ImageNet-64 training settings).
+  diffusion:
+    num_timesteps: 1000 # Training diffusion steps
+    noise_schedule: cosine # ADM ImageNet-64 uses cosine
+    sample_timestep_respacing: "250" # Sampling steps ("" = full 1000 chain)
+
+  # Conditioning: class-conditional generation with classifier-free guidance.
+  # The model is built with num_classes + 1 label embeddings (the extra index
+  # is the unconditional token).
+  conditioning:
+    type: class
+    num_classes: 2
+    class_dropout_prob: 0.1 # Label dropout enabling CFG at sampling time
+
+  # Initialization: freeze/unfreeze policy for transfer learning.
+  initialization:
+    freeze_backbone: true # Train only the re-initialized head + output block...
+    trainable_layers: null # ...unless patterns are given (fnmatch over unet
+      # param names), e.g. ["label_emb*", "out.*", "output_blocks.*"] for staged
+      # unfreezing of the top decoder blocks.
+
+# ------------------------------------------------------------------------------
+# DATA CONFIGURATION
+# ------------------------------------------------------------------------------
+data:
+  split_file: "outputs/splits/train_val_split.json"
+
+  loading:
+    batch_size: 8
+    num_workers: 4
+    pin_memory: true
+    shuffle_train: true
+    drop_last: false
+
+  # Prefer data-level balancing for this slice (the ADM hybrid loss path does
+  # not use class-weighted epsilon MSE). Enable one strategy at a time.
+  balancing:
+    weighted_sampler:
+      enabled: true
+      method: inverse_frequency
+      beta: 0.999
+      manual_weights: null
+      replacement: true
+      num_samples: null
+
+    downsampling:
+      enabled: false
+      target_ratio: 1.0
+
+    upsampling:
+      enabled: false
+      target_ratio: 1.0
+
+    class_weights:
+      enabled: false
+      method: inverse_frequency
+      beta: 0.999
+      manual_weights: null
+      normalize: true
+
+  augmentation:
+    horizontal_flip: true
+    rotation_degrees: 15
+    color_jitter:
+      enabled: false
+      strength: 0.1
+
+# ------------------------------------------------------------------------------
+# OUTPUT CONFIGURATION
+# ------------------------------------------------------------------------------
+output:
+  base_dir: outputs/diffusion-pretrained
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    samples: samples
+    generated: generated
+    tensorboard: tensorboard
+
+# ------------------------------------------------------------------------------
+# TRAINING MODE CONFIGURATION
+# ------------------------------------------------------------------------------
+training:
+  epochs: 200
+
+  # Low LR: only a small re-initialized head is trained on top of a frozen
+  # 296M-param backbone; a low LR mitigates overfitting on the minority class.
+  optimizer:
+    type: adamw
+    learning_rate: 1.0e-5
+    weight_decay: 0.0
+    betas: [0.9, 0.999]
+    gradient_clip_norm: 1.0
+
+  scheduler:
+    type: cosine
+    T_max: auto
+    eta_min: 1.0e-7
+
+  ema:
+    enabled: true
+    decay: 0.9999
+
+  checkpointing:
+    save_frequency: 25
+    save_optimizer: true
+    save_best_only: false
+    save_latest: true
+
+  validation:
+    enabled: true
+    frequency: 25
+    metric: loss
+
+  visualization:
+    enabled: true
+    num_samples: 8
+    guidance_scale: 3.0
+    log_images_interval: 25
+    log_denoising_interval: 25
+
+  performance:
+    use_amp: true
+    use_tf32: true
+    cudnn_benchmark: true
+    compile_model: false # torch.compile is disabled: the CFG sampling closure
+      # and vendored diffusion loops are not compile-friendly.
+
+  resume:
+    enabled: false
+    checkpoint: null
+    reset_optimizer: false
+    reset_scheduler: false
+
+# ------------------------------------------------------------------------------
+# GENERATION MODE CONFIGURATION
+# ------------------------------------------------------------------------------
+generation:
+  checkpoint: null # Path to fine-tuned checkpoint (required for generate mode)
+
+  sampling:
+    num_samples: 100
+    batch_size: 50
+    guidance_scale: 3.0
+    use_ema: true
+    ema_decay: 0.9999
+    class_selection: null
+
+  output:
+    save_individual: true
+    save_grid: true
+    grid_nrow: 10

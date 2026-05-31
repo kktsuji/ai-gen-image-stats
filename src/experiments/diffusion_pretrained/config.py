@@ -1,0 +1,228 @@
+"""Configuration validation for the pretrained-transfer diffusion experiment.
+
+This slice fine-tunes a public ADM (guided-diffusion) checkpoint, so its model
+section differs from the from-scratch diffusion slice: instead of a U-Net
+architecture spec (channel multipliers, beta schedule, ...), it specifies the
+pretrained source and a freeze/unfreeze policy. The model-agnostic sections
+(data, training, generation, output, compute, cross-parameter consistency) are
+reused verbatim from the diffusion slice to avoid duplication.
+"""
+
+import logging
+from typing import Any, Dict
+
+# Reuse the model-agnostic validators from the diffusion slice (shared logic;
+# only the model section is specific to pretrained transfer).
+from src.experiments.diffusion.config import (
+    _validate_compute_config,
+    _validate_config_consistency,
+    _validate_data_config,
+    _validate_generation_config,
+    _validate_output_config,
+    _validate_training_config,
+)
+from src.utils.config import validate_experiment_section
+
+_logger = logging.getLogger(__name__)
+
+# The vendored guided-diffusion engine (get_named_beta_schedule) only implements
+# "linear" and "cosine"; anything else raises NotImplementedError at build time.
+_VALID_NOISE_SCHEDULES = ["linear", "cosine"]
+_VALID_PRETRAINED_SOURCES = ["adm_imagenet64"]
+
+
+def validate_config(config: Dict[str, Any]) -> None:
+    """Validate pretrained-transfer diffusion configuration (strict).
+
+    Args:
+        config: Configuration dictionary to validate.
+
+    Raises:
+        ValueError: If configuration is invalid.
+        KeyError: If required fields are missing.
+    """
+    validate_experiment_section(config, "diffusion_pretrained", ["train", "generate"])
+    mode = config.get("mode", "train")
+
+    _validate_compute_config(config)
+    _validate_model_config(config)
+    _validate_data_config(config)
+    _validate_balancing_unsupported(config)
+    _validate_output_config(config)
+
+    if mode == "train":
+        _validate_training_config(config)
+    elif mode == "generate":
+        _validate_generation_config(config)
+
+    _validate_config_consistency(config)
+
+
+def _validate_balancing_unsupported(config: Dict[str, Any]) -> None:
+    """Reject loss-level class weighting for this slice.
+
+    The ADM model owns a learned-variance hybrid objective. The shared trainer's
+    class-weighted path bypasses ``compute_loss`` and applies a plain MSE over
+    the epsilon channels only (``AdmDdpmModel.forward`` returns just the epsilon
+    prediction), silently dropping the variance/VLB term the pretrained head
+    needs. Class balancing must therefore be done at the data level.
+    """
+    balancing = config.get("data", {}).get("balancing") or {}
+    class_weights = balancing.get("class_weights") or {}
+    if class_weights.get("enabled"):
+        raise ValueError(
+            "data.balancing.class_weights is not supported for the "
+            "diffusion_pretrained slice: the class-weighted loss path applies "
+            "plain epsilon-MSE and bypasses the ADM learned-variance objective. "
+            "Use data.balancing.weighted_sampler or upsampling instead."
+        )
+
+
+def _validate_model_config(config: Dict[str, Any]) -> None:
+    """Validate the ADM-transfer model section."""
+    if "model" not in config:
+        raise KeyError("Missing required config key: model")
+    model = config["model"]
+
+    _validate_architecture(model)
+    _validate_pretrained(model)
+    _validate_diffusion(model)
+    _validate_conditioning(model)
+    _validate_initialization(model)
+
+
+def _validate_architecture(model: Dict[str, Any]) -> None:
+    if "architecture" not in model:
+        raise KeyError("Missing required config key: model.architecture")
+    arch = model["architecture"]
+    for field in ["image_size", "in_channels"]:
+        if field not in arch:
+            raise KeyError(f"Missing required field: model.architecture.{field}")
+        if not isinstance(arch[field], int) or arch[field] < 1:
+            raise ValueError(f"model.architecture.{field} must be a positive integer")
+    # The ADM ImageNet-64 backbone is RGB; grayscale data must be stored as 3ch.
+    if arch["in_channels"] != 3:
+        raise ValueError(
+            "model.architecture.in_channels must be 3 for the ADM backbone "
+            "(grayscale inputs should be replicated to 3 channels)"
+        )
+
+
+def _validate_pretrained(model: Dict[str, Any]) -> None:
+    if "pretrained" not in model:
+        raise KeyError("Missing required config key: model.pretrained")
+    pre = model["pretrained"]
+
+    if pre.get("source") not in _VALID_PRETRAINED_SOURCES:
+        raise ValueError(
+            f"model.pretrained.source must be one of {_VALID_PRETRAINED_SOURCES}, "
+            f"got {pre.get('source')!r}"
+        )
+
+    has_path = bool(pre.get("checkpoint_path"))
+    has_cache = bool(pre.get("cache_path"))
+    has_url = bool(pre.get("checkpoint_url"))
+    # Either an explicit local checkpoint, or an explicit download spec
+    # (checkpoint_url -> cache_path). There is no implicit default download URL:
+    # when no local checkpoint_path is given, both the download source and its
+    # cache target must be specified in the config.
+    if not has_path:
+        if not has_cache:
+            raise ValueError(
+                "model.pretrained requires either checkpoint_path (local file) "
+                "or cache_path (download target)"
+            )
+        if not has_url:
+            raise ValueError(
+                "model.pretrained.checkpoint_url is required when checkpoint_path "
+                "is not set (no implicit default download URL)"
+            )
+
+
+def _validate_diffusion(model: Dict[str, Any]) -> None:
+    if "diffusion" not in model:
+        raise KeyError("Missing required config key: model.diffusion")
+    diff = model["diffusion"]
+
+    if not isinstance(diff.get("num_timesteps"), int) or diff["num_timesteps"] < 1:
+        raise ValueError("model.diffusion.num_timesteps must be a positive integer")
+
+    if diff.get("noise_schedule") not in _VALID_NOISE_SCHEDULES:
+        raise ValueError(
+            f"model.diffusion.noise_schedule must be one of {_VALID_NOISE_SCHEDULES}, "
+            f"got {diff.get('noise_schedule')!r}"
+        )
+
+    respacing = diff.get("sample_timestep_respacing")
+    if not isinstance(respacing, str):
+        raise ValueError(
+            "model.diffusion.sample_timestep_respacing must be a string "
+            "(e.g. '250', 'ddim250', or '' for the full chain)"
+        )
+    # Validate semantically so invalid specs fail here rather than deep inside
+    # space_timesteps() at model-construction time. Allowed: '' (full chain),
+    # 'ddimN' (N>=1), or a comma-separated list of positive integers.
+    _respacing_error = ValueError(
+        "model.diffusion.sample_timestep_respacing must be '' (full chain), "
+        "'ddimN' with N >= 1, or a comma-separated list of positive integers, "
+        f"got {respacing!r}"
+    )
+    if respacing.startswith("ddim"):
+        count = respacing.removeprefix("ddim")
+        if not count.isdigit() or int(count) < 1:
+            raise _respacing_error
+    elif respacing:
+        parts = respacing.split(",")
+        if not all(part.isdigit() and int(part) >= 1 for part in parts):
+            raise _respacing_error
+
+
+def _validate_conditioning(model: Dict[str, Any]) -> None:
+    if "conditioning" not in model:
+        raise KeyError("Missing required config key: model.conditioning")
+    cond = model["conditioning"]
+
+    for field in ["type", "num_classes", "class_dropout_prob"]:
+        if field not in cond:
+            raise KeyError(f"Missing required field: model.conditioning.{field}")
+
+    # The ADM transfer model is always class-conditional (it always builds a
+    # label-embedding head with a CFG unconditional token), so unlike the
+    # from-scratch DDPM it does not support an unconditional (None) mode.
+    if cond["type"] != "class":
+        raise ValueError(
+            f"model.conditioning.type must be 'class' for the diffusion_pretrained "
+            f"slice, got {cond['type']!r}"
+        )
+
+    # Unlike the from-scratch DDPM, the ADM transfer model always builds a
+    # class-embedding head (the unconditional CFG token lives at index
+    # ``num_classes``), so num_classes must be a concrete positive integer.
+    if not isinstance(cond["num_classes"], int) or cond["num_classes"] < 1:
+        raise ValueError(
+            "model.conditioning.num_classes must be a positive integer "
+            "(unconditional/None is not supported by the diffusion_pretrained slice)"
+        )
+
+    cdp = cond["class_dropout_prob"]
+    if not isinstance(cdp, (int, float)) or cdp < 0 or cdp > 1:
+        raise ValueError(
+            "model.conditioning.class_dropout_prob must be a number between 0 and 1"
+        )
+
+
+def _validate_initialization(model: Dict[str, Any]) -> None:
+    if "initialization" not in model:
+        raise KeyError("Missing required config key: model.initialization")
+    init = model["initialization"]
+
+    if "freeze_backbone" not in init or not isinstance(init["freeze_backbone"], bool):
+        raise ValueError("model.initialization.freeze_backbone must be a boolean")
+
+    layers = init.get("trainable_layers")
+    if layers is not None:
+        if not isinstance(layers, list) or not all(isinstance(p, str) for p in layers):
+            raise ValueError(
+                "model.initialization.trainable_layers must be a list of strings "
+                "(fnmatch patterns) or null"
+            )
