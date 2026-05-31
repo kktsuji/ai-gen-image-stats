@@ -5,6 +5,7 @@ parameter overrides (top-level or dot-notation).
 """
 
 import argparse
+import ast
 import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,11 +16,16 @@ from src.utils.config import load_config, merge_configs
 def infer_type(value: str) -> Any:
     """Convert a CLI string value to the appropriate Python type.
 
-    Conversion order: quoted string > bool > None > int > float > str.
+    Conversion order: quoted string > bool > None > int > float > list/dict > str.
 
     Values wrapped in matching quotes (single or double) are always treated
     as strings with the quotes stripped. This allows forcing string type for
     values that would otherwise be inferred as another type.
+
+    Values that look like a Python list or dict literal (start with ``[`` or
+    ``{``) are parsed with ``ast.literal_eval``; if parsing fails they fall back
+    to the raw string. This allows passing list-valued config keys as overrides
+    (e.g. ``--model.initialization.trainable_layers "['Mixed_7*']"``).
 
     Args:
         value: String value from CLI argument
@@ -42,6 +48,8 @@ def infer_type(value: str) -> Any:
         '42'
         >>> infer_type('"true"')
         'true'
+        >>> infer_type("['Mixed_7*', 'Mixed_6*']")
+        ['Mixed_7*', 'Mixed_6*']
     """
     # Quoted string — strip quotes and return as-is
     if len(value) >= 2 and (
@@ -74,6 +82,14 @@ def infer_type(value: str) -> Any:
         return f
     except ValueError:
         pass
+
+    # List/dict literal — parse with ast.literal_eval, fall back to raw string
+    stripped = value.strip()
+    if stripped[:1] in ("[", "{"):
+        try:
+            return ast.literal_eval(stripped)
+        except (ValueError, SyntaxError):
+            pass
 
     # String (default)
     return value

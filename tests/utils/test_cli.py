@@ -159,6 +159,42 @@ class TestInferType:
         assert infer_type("NaN") == "NaN"
         assert infer_type("NAN") == "NAN"
 
+    def test_infer_type_list_of_strings(self):
+        """A list literal is parsed into a Python list."""
+        result = infer_type("['Mixed_7*', 'Mixed_6*']")
+        assert result == ["Mixed_7*", "Mixed_6*"]
+        assert isinstance(result, list)
+
+    def test_infer_type_list_single_element(self):
+        """A single-element list literal is parsed into a list."""
+        assert infer_type("['Mixed_7*']") == ["Mixed_7*"]
+
+    def test_infer_type_empty_list(self):
+        """An empty list literal is parsed into an empty list."""
+        assert infer_type("[]") == []
+
+    def test_infer_type_list_of_numbers(self):
+        """A list of numbers is parsed with element types preserved."""
+        assert infer_type("[1, 2, 3]") == [1, 2, 3]
+
+    def test_infer_type_list_with_surrounding_whitespace(self):
+        """Surrounding whitespace does not prevent list parsing."""
+        assert infer_type("  ['a', 'b']  ") == ["a", "b"]
+
+    def test_infer_type_dict_literal(self):
+        """A dict literal is parsed into a Python dict."""
+        assert infer_type("{'a': 1}") == {"a": 1}
+
+    def test_infer_type_malformed_list_falls_back_to_string(self):
+        """A malformed list literal falls back to the raw string."""
+        result = infer_type("['Mixed_7*'")
+        assert result == "['Mixed_7*'"
+        assert isinstance(result, str)
+
+    def test_infer_type_quoted_list_forces_string(self):
+        """A quoted list literal is treated as a string (quotes win first)."""
+        assert infer_type("\"['a', 'b']\"") == "['a', 'b']"
+
     def test_infer_type_empty_string(self):
         assert infer_type("") == ""
         assert isinstance(infer_type(""), str)

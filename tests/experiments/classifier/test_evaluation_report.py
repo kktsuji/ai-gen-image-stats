@@ -43,6 +43,16 @@ def test_parse_experiment_name_synthetic():
 
 
 @pytest.mark.unit
+def test_parse_experiment_name_transfer():
+    """Test parsing transfer-learning frozen-depth experiment names."""
+    result = _parse_experiment_name("ft-mixed7__ws")
+    assert result["type"] == "transfer"
+    assert result["diffusion_variant"] == "ft-mixed7"
+    assert result["baseline_strategy"] == "ws"
+    assert result["dose"] == "-"
+
+
+@pytest.mark.unit
 def test_parse_experiment_name_unknown():
     """Test parsing unknown experiment name format."""
     result = _parse_experiment_name("something")
@@ -508,6 +518,52 @@ def test_generate_statistical_comparison_table():
     assert "ws__n100-gs3__topk__all" in result
     assert "cohens_d" in result
     assert "p_corrected" in result
+
+
+@pytest.mark.unit
+def test_generate_statistical_comparison_table_includes_transfer():
+    """Transfer-learning variants are paired-tested against the baseline."""
+    import pandas as pd
+
+    baseline_vals = [0.72, 0.68, 0.75, 0.70, 0.66]
+    transfer_vals = [0.78, 0.75, 0.77, 0.76, 0.71]
+
+    rows = []
+    for seed, (bl, tr) in enumerate(zip(baseline_vals, transfer_vals)):
+        rows.append(
+            {
+                "experiment": "baseline__ws",
+                "type": "baseline",
+                "seed": seed,
+                "recall_1": bl,
+                "diffusion_variant": "-",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "ws",
+            }
+        )
+        rows.append(
+            {
+                "experiment": "ft-mixed7__ws",
+                "type": "transfer",
+                "seed": seed,
+                "recall_1": tr,
+                "diffusion_variant": "ft-mixed7",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "ws",
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    result = generate_statistical_comparison_table(
+        df, alpha=0.05, baseline_name="baseline__ws"
+    )
+
+    assert "ft-mixed7__ws" in result
+    assert "baseline__ws" in result
 
 
 @pytest.mark.unit

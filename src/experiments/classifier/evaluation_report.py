@@ -64,6 +64,7 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
     Expected formats:
         - Synthetic: {train}__{gen}__{sel}__{dose}  e.g. "us__n1000-gs2__topk__d2"
         - Baseline:  baseline__{strategy}           e.g. "baseline__vanilla" (dose D0)
+        - Transfer:  ft-{depth}__{balancing}        e.g. "ft-mixed7__ws" (frozen-depth sweep)
 
     Returns:
         Dictionary with keys: type, diffusion_variant, gen_config, selection,
@@ -79,6 +80,21 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
             "selection": "-",
             "aug_limit": "-",
             "dose": "0",
+            "baseline_strategy": parts[1],
+        }
+
+    # Transfer-learning frozen-depth sweep (real data only): the first dimension
+    # encodes the unfreeze depth (ft-head / ft-mixed7 / ...) and the second the
+    # balancing strategy. Tagged "transfer" so it is paired-tested against the
+    # baseline like synthetic experiments.
+    if len(parts) == 2 and parts[0].startswith("ft-"):
+        return {
+            "type": "transfer",
+            "diffusion_variant": parts[0],
+            "gen_config": "-",
+            "selection": "-",
+            "aug_limit": "-",
+            "dose": "-",
             "baseline_strategy": parts[1],
         }
 
@@ -385,7 +401,7 @@ def generate_statistical_comparison_table(
     synthetics = {
         name: vals
         for name, vals in aggregated.items()
-        if _parse_experiment_name(name)["type"] == "synthetic"
+        if _parse_experiment_name(name)["type"] in ("synthetic", "transfer")
     }
 
     if not baselines or not synthetics:
@@ -786,9 +802,9 @@ def generate_report(
     report_lines.append(generate_best_per_metric(display_df))
     report_lines.append("")
 
-    # Key comparisons
+    # Key comparisons (best baseline vs best non-baseline variant: synthetic or transfer)
     baselines = display_df[display_df["type"] == "baseline"]
-    synthetics = display_df[display_df["type"] == "synthetic"]
+    synthetics = display_df[display_df["type"].isin(["synthetic", "transfer"])]
 
     if not baselines.empty and not synthetics.empty:
         report_lines.append("## Key Comparisons")
@@ -842,7 +858,7 @@ def generate_report(
             report_lines.append(
                 f"- **{metric}**: best baseline={bl_str} "
                 f"({best_baseline_name}), "
-                f"best synthetic={syn_str} "
+                f"best variant={syn_str} "
                 f"({best_synthetic_name}), delta={sign}{delta:.4f}"
             )
 
