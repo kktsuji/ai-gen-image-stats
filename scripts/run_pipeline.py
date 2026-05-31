@@ -18,28 +18,31 @@ from src.utils.notification import (
 )
 
 DATA_PREPARATION_CONFIG = "configs/data-preparation.yaml"
-DIFFUSION_CONFIG = "configs/diffusion.yaml"
-SELECTION_CONFIG = "configs/sample-selection.yaml"
-SELECTION_EVALUATE_CONFIG = "configs/sample-selection-evaluate.yaml"
 CLASSIFIER_CONFIG = "configs/classifier.yaml"
 
 # Naming convention:
 #   Dimension separator: "__" (double underscore)
 #   Within-dimension separator: "-" (hyphen) or "_" (single underscore)
 #
-#   Synthetic:  {train}__{gen}__{sel}__{dose}  e.g. us-cd20__n1000-gs2__topk__d2
-#   TSTR:       {train}__{gen}__topk__tstr     e.g. us-cd20__n1000-gs2__topk__tstr
-#   Baseline:   baseline__{strategy}           e.g. baseline__vanilla (acts as dose D0)
+#   Transfer (frozen-depth sweep): {depth}__{balancing}  e.g. ft-mixed7__ws
+#   Baseline:                      baseline__{strategy}   e.g. baseline__ws (head-only, D0)
+
+# ------------------------------------------------------------------------------
+# Step 1: Transfer-learning frozen-depth sweep (real data only).
+#
+# exp5 confirmed the bottleneck is the generator (a diffusion model trained on 84
+# minority images cannot capture the real manifold). The minority data is fixed, so
+# leverage moves to the classifier's representation: the backbone is a frozen ImageNet
+# InceptionV3 (head-only), which caps pr_auc (the discrimination metric) regardless of
+# class-balancing (ws/us). This experiment progressively unfreezes the backbone and
+# measures whether a richer, domain-adapted representation lifts pr_auc over the
+# ws/us baselines. No diffusion, no synthetic augmentation, no TSTR.
+# ------------------------------------------------------------------------------
 
 # ON/OFF switches for each experiment phase
 RUN_DATA_PREPARATION = False
-RUN_TRAINING = True
-RUN_GENERATION = True
-RUN_SELECTION = True
-RUN_SELECTION_EVALUATE = True
-RUN_CLASSIFIER = True
-RUN_TSTR = True
-RUN_BASELINE_CLASSIFIER = True
+RUN_BASELINE_CLASSIFIER = True  # head-only baselines (D0 reference)
+RUN_FT_CLASSIFIER = True  # frozen-depth sweep (ft-* variants)
 RUN_EVALUATION = True
 RUN_SUMMARIZE = True
 
@@ -60,23 +63,18 @@ GPU_COOLDOWN_SECONDS = 5
 # Per-run Slack notifications from the classifier containers are suppressed (the pipeline
 # launches many classifier runs x train+eval, which would flood the channel). Instead, the
 # pipeline emits a throttled "Classifier: current/total" progress message on the first
-# experiment (a "phase started" signal), every N experiments, and at completion. Other phases
-# keep their normal per-run notifications. Keep N small relative to the experiment matrix size
-# so progress stays visible early instead of leaving a multi-hour dead zone at the start.
+# experiment (a "phase started" signal), every N experiments, and at completion.
 CLASSIFIER_NOTIFY_EVERY = 10
 
 # Number of classifier experiments (train -> eval -> cleanup units) to run
-# concurrently, each in its own GPU container. The classifier is head-only
-# (InceptionV3 frozen backbone, batch_size 16, AMP), so a single run uses a small
-# fraction of the GPU and several can time-share it. Each job writes to its own
-# out_dir/seed, so they never contend on shared state. Lower this if you hit CUDA
-# OOM; set to 1 to fall back to fully sequential behavior. Container launches are
-# still staggered by GPU_COOLDOWN_SECONDS (see _throttled_run_and_wait) to avoid
-# back-to-back CUDA-init crashes.
+# concurrently, each in its own GPU container. The head-only baselines use a small
+# fraction of the GPU; the ft-* variants train more parameters, so lower this if you hit
+# CUDA OOM (set to 1 for fully sequential). Each job writes to its own out_dir/seed, so
+# they never contend on shared state. Container launches are still staggered by
+# GPU_COOLDOWN_SECONDS (see _throttled_run_and_wait) to avoid back-to-back CUDA crashes.
 CLASSIFIER_MAX_PARALLEL = 3
 
 # Random seeds for multi-seed classifier runs (for statistical testing).
-# Bump to range(30) if the head-only f1_1 std stays large after the first batch.
 SEEDS = list(range(20))
 
 # Checkpoint-slimming overrides for classifier runs.
@@ -93,129 +91,62 @@ CLASSIFIER_CHECKPOINT_OVERRIDES = [
 ]
 
 # DataLoader runtime settings for the high-frequency classifier phase.
-# The classifier dataset is small (head-only, batch_size 16 / epochs 40), so fewer workers has
-# negligible performance impact while reducing worker fork/exit churn and
-# shared-memory pressure (Bus error / shm exhaustion). Use "0" for the most conservative.
+# The classifier dataset is small, so fewer workers has negligible performance impact
+# while reducing worker fork/exit churn and shared-memory pressure.
 CLASSIFIER_RUNTIME_OVERRIDES = [
     "--data.loading.num_workers",
     "2",
 ]
 
-# Each variant: (name, extra CLI overrides for training)
-# Generator-ceiling experiment (exp5): retrain the diffusion generator with
-# reconsidered hyperparameters, then sweep guidance scale and run TSTR downstream.
-# The source images are natively 40x40, so resolution is not a useful lever; the
-# bottleneck is the 84 real abnormal training images. The reconsidered knobs are
-# class_dropout_prob 0.1 -> 0.2 (a stronger unconditional path widens the usable
-# guidance-scale range) and a small weight_decay (light regularization against
-# memorizing the 84 minority images, the source of off-manifold "diversity").
-TRAIN_VARIANTS = [
+
+# Frozen-depth ladder (InceptionV3): (name, depth overrides, learning_rate).
+# head-only (D0) is covered by the baselines below. The optimizer uses a single global
+# LR over the trainable parameters (no differential LR), so deeper unfreezing uses a
+# lower LR to mitigate overfitting the 84 minority images. trainable_layers patterns are
+# matched by fnmatch in InceptionV3Classifier.set_trainable_layers (fc/dropout stay
+# trainable automatically). LRs are a tunable starting point.
+FT_DEPTH_VARIANTS = [
     (
-        "us-cd20",
+        "ft-mixed7",  # unfreeze top inception block
         [
-            "--data.balancing.upsampling.enabled",
+            "--model.initialization.freeze_backbone",
             "true",
-            "--training.epochs",
-            "1000",
-            "--model.conditioning.class_dropout_prob",
-            "0.2",
-            "--training.optimizer.weight_decay",
-            "1e-4",
+            "--model.initialization.trainable_layers",
+            "['Mixed_7*']",
         ],
-    ),
-]
-
-# Generation parameter variants: (name, extra CLI overrides)
-# Guidance-scale sweep {1.0, 1.5, 2.0} from the same checkpoint (regeneration).
-# Lower guidance -> more diversity; higher guidance -> sharper, less diverse.
-# Each pool is ~1000 so the top_k=400 selection feeds the full dose ladder.
-GEN_VARIANTS = [
-    (
-        "n1000-gs1",
-        [
-            "--generation.sampling.num_samples",
-            "1000",
-            "--generation.sampling.guidance_scale",
-            "1.0",
-        ],
+        "1e-4",
     ),
     (
-        "n1000-gs15",
+        "ft-mixed67",  # unfreeze top two inception blocks
         [
-            "--generation.sampling.num_samples",
-            "1000",
-            "--generation.sampling.guidance_scale",
-            "1.5",
+            "--model.initialization.freeze_backbone",
+            "true",
+            "--model.initialization.trainable_layers",
+            "['Mixed_6*', 'Mixed_7*']",
         ],
+        "1e-4",
     ),
     (
-        "n1000-gs2",
+        "ft-full",  # full fine-tune
         [
-            "--generation.sampling.num_samples",
-            "1000",
-            "--generation.sampling.guidance_scale",
-            "2.0",
+            "--model.initialization.freeze_backbone",
+            "false",
+            "--model.initialization.trainable_layers",
+            "null",
         ],
+        "1e-5",
     ),
 ]
 
-# Selection algorithm variants: (name, extra CLI overrides)
-# Only realism-greedy top_k (value=400 so the dose ladder is a nested top-N of one
-# ranking). The random / stratified selection ablation was settled in exp4 (cause
-# is the generator, not the selection), so it is dropped here.
-SELECTION_VARIANTS = [
-    ("topk", ["--selection.mode", "top_k", "--selection.value", "400"]),
-]
-
-# Per selection method, which classifier dose levels to run. topk carries the
-# nested top-N ladder d1-d4.
-SELECTION_DOSES = {
-    "topk": ["d1", "d2", "d3", "d4"],
-}
-
-
-# Classifier dose ladder: (name, extra CLI overrides).
-# Quality is fixed (same top_k=400 ranking); only the number of added abnormal
-# images varies via max_samples (deterministic top-N truncation). Real abnormal
-# train = 84, so d2 doubles it and d4 reaches 1:1 balance (84 + 352 = 436).
-def _dose_overrides(n: int) -> list[str]:
-    return [
-        "--data.synthetic_augmentation.limit.mode",
-        "max_samples",
-        "--data.synthetic_augmentation.limit.max_samples",
-        str(n),
-    ]
-
-
-CLASSIFIER_VARIANTS = [
-    ("d1", _dose_overrides(42)),  # 0.5x minority
-    ("d2", _dose_overrides(84)),  # 1x (double minority)
-    ("d3", _dose_overrides(168)),  # 2x minority
-    ("d4", _dose_overrides(352)),  # balance to 1:1 (84 + 352 = 436)
-]
-
-# Lookup for the dose overrides selected per (selection method) via SELECTION_DOSES.
-_DOSE_OVERRIDES_BY_NAME = dict(CLASSIFIER_VARIANTS)
-
-
-# TSTR (Train on Synthetic, Test on Real) arm: replace the real minority class
-# (abnormal, label 1) with synthetic abnormal images and keep the real majority,
-# then evaluate on the real val set. This measures the generator ceiling directly:
-# if pr_auc stays far below the real-data baselines, the synthetic abnormal images
-# cannot substitute for real ones (generator-limited). limit.mode=null uses all
-# selected samples (~top_k value), giving roughly real-normal vs synthetic-abnormal
-# 1:1. The dose token is "tstr" so the report parser tags it as its own arm.
-TSTR_OVERRIDES = [
-    "--data.synthetic_augmentation.mode",
-    "replace_minority",
-    "--data.synthetic_augmentation.replace_class",
-    "1",
-    "--data.synthetic_augmentation.limit.mode",
-    "null",
+# Class-balancing arms applied on top of each depth (real data only).
+FT_BALANCING = [
+    ("ws", ["--data.balancing.weighted_sampler.enabled", "true"]),
+    ("us", ["--data.balancing.upsampling.enabled", "true"]),
 ]
 
 
-# Baseline classifier variants: real data only, with different balancing strategies
+# Baseline classifier variants: real data only, head-only backbone, different balancing
+# strategies. These are the depth-D0 reference for the frozen-depth sweep.
 BASELINE_VARIANTS = [
     (
         "baseline__vanilla",
@@ -248,10 +179,6 @@ BASELINE_VARIANTS = [
 def _is_done(*markers: str) -> bool:
     """SKIP_COMPLETED 有効かつ全マーカーが存在すれば True。"""
     return SKIP_COMPLETED and all(os.path.exists(m) for m in markers)
-
-
-def _dir_nonempty(path: str) -> bool:
-    return os.path.isdir(path) and any(os.scandir(path))
 
 
 def run(
@@ -537,161 +464,20 @@ def main() -> None:
         run_and_wait(DATA_PREPARATION_CONFIG, [])
 
     # ------------------------------------------------------------------
-    # Training (max 2 parallel, sliding window)
-    # ------------------------------------------------------------------
-    # NOTE: the GPU cooldown (run_and_wait) is intentionally NOT used here. There are
-    # only 2 TRAIN_VARIANTS, so restart frequency is low (rapid-restart crashes are low
-    # risk), and a cooldown sleep would serialize the deliberate max_parallel=2 overlap.
-    if RUN_TRAINING:
-        # outputs/diffusion-{train}/train/
-        max_parallel = 2
-        active: list[subprocess.Popen[bytes]] = []
-
-        for name, overrides in TRAIN_VARIANTS:
-            marker = f"outputs/diffusion-{name}/train/checkpoints/final_model.pth"
-            if _is_done(marker):
-                print(f"[SKIP] {name}: training already complete")
-                continue
-
-            # Wait for a slot to free up
-            while len(active) >= max_parallel:
-                for proc in active:
-                    if proc.poll() is not None:
-                        active.remove(proc)
-                        break
-                else:
-                    # No process finished yet; wait for any one
-                    os.wait()
-                    active = [p for p in active if p.poll() is None]
-
-            train_overrides = [
-                "--output.base_dir",
-                f"outputs/diffusion-{name}/train",
-                *overrides,
-            ]
-            suppress = len(active) > 0
-            tag = "BG" if suppress else "FG"
-            print(f"[{tag}] {name}: {DIFFUSION_CONFIG} {' '.join(train_overrides)}")
-            active.append(
-                run(DIFFUSION_CONFIG, train_overrides, suppress_output=suppress)
-            )
-
-        # Wait for all remaining training processes
-        for proc in active:
-            proc.wait()
-
-    # ------------------------------------------------------------------
-    # Generation
-    # ------------------------------------------------------------------
-    if RUN_GENERATION:
-        # outputs/diffusion-{train}/gen/{gen}/
-        for train_name, train_overrides in TRAIN_VARIANTS:
-            for gen_name, gen_overrides in GEN_VARIANTS:
-                if SKIP_COMPLETED and _dir_nonempty(
-                    f"outputs/diffusion-{train_name}/gen/{gen_name}/generated"
-                ):
-                    print(
-                        f"[SKIP] {train_name}/{gen_name}: generation already complete"
-                    )
-                    continue
-
-                overrides = [
-                    "--mode",
-                    "generate",
-                    "--output.base_dir",
-                    f"outputs/diffusion-{train_name}/gen/{gen_name}",
-                    "--generation.checkpoint",
-                    f"outputs/diffusion-{train_name}/train/checkpoints/final_model.pth",
-                    *train_overrides,
-                    *gen_overrides,
-                ]
-                print(
-                    f"[GEN] {train_name}/{gen_name}: {DIFFUSION_CONFIG} {' '.join(overrides)}"
-                )
-                run_and_wait(DIFFUSION_CONFIG, overrides)
-
-    # ------------------------------------------------------------------
-    # Sample Selection
-    # ------------------------------------------------------------------
-    if RUN_SELECTION:
-        # outputs/diffusion-{train}/selection/{gen}_{algo}/
-        for train_name, _ in TRAIN_VARIANTS:
-            for gen_name, _ in GEN_VARIANTS:
-                for sel_name, sel_overrides in SELECTION_VARIANTS:
-                    sel_base = f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}"
-                    if _is_done(f"{sel_base}/reports/accepted_samples.json"):
-                        print(
-                            f"[SKIP] {train_name}/{gen_name}/{sel_name}: selection already complete"
-                        )
-                        continue
-
-                    overrides = [
-                        "--output.base_dir",
-                        sel_base,
-                        "--data.generated.directory",
-                        f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
-                        *sel_overrides,
-                    ]
-                    print(
-                        f"[SEL] {train_name}/{gen_name}/{sel_name}: {SELECTION_CONFIG} {' '.join(overrides)}"
-                    )
-                    run_and_wait(SELECTION_CONFIG, overrides)
-
-    # ------------------------------------------------------------------
-    # Selection Evaluation
-    # ------------------------------------------------------------------
-    if RUN_SELECTION_EVALUATE:
-        # outputs/diffusion-{train}/selection-eval/{gen}_{sel}/
-        for train_name, _ in TRAIN_VARIANTS:
-            for gen_name, _ in GEN_VARIANTS:
-                for sel_name, _ in SELECTION_VARIANTS:
-                    eval_base = (
-                        f"outputs/diffusion-{train_name}/selection-eval/"
-                        f"{gen_name}__{sel_name}"
-                    )
-                    if _is_done(f"{eval_base}/reports/evaluation.json"):
-                        print(
-                            f"[SKIP] {train_name}/{gen_name}/{sel_name}: "
-                            "selection-eval already complete"
-                        )
-                        continue
-
-                    overrides = [
-                        "--output.base_dir",
-                        eval_base,
-                        "--data.generated.directory",
-                        f"outputs/diffusion-{train_name}/gen/{gen_name}/generated",
-                        "--data.selected.split_file",
-                        f"outputs/diffusion-{train_name}/selection/{gen_name}__{sel_name}/reports/accepted_samples.json",
-                    ]
-                    print(
-                        f"[SEL-EVAL] {train_name}/{gen_name}/{sel_name}: "
-                        f"{SELECTION_EVALUATE_CONFIG} {' '.join(overrides)}"
-                    )
-                    run_and_wait(SELECTION_EVALUATE_CONFIG, overrides)
-
-    # ------------------------------------------------------------------
     # Classifier progress tracking: per-run notifications are suppressed inside the
     # containers, so the pipeline emits a throttled "Classifier: current/total" instead.
     # ------------------------------------------------------------------
     classifier_total = 0
-    if RUN_CLASSIFIER:
-        doses_per_selection = sum(
-            len(SELECTION_DOSES[name]) for name, _ in SELECTION_VARIANTS
-        )
-        classifier_total += (
-            len(TRAIN_VARIANTS) * len(GEN_VARIANTS) * doses_per_selection * len(SEEDS)
-        )
-    if RUN_TSTR:
-        # One TSTR arm per (train, gen) over the top_k selection.
-        classifier_total += len(TRAIN_VARIANTS) * len(GEN_VARIANTS) * len(SEEDS)
     if RUN_BASELINE_CLASSIFIER:
         classifier_total += len(BASELINE_VARIANTS) * len(SEEDS)
+    if RUN_FT_CLASSIFIER:
+        classifier_total += len(FT_DEPTH_VARIANTS) * len(FT_BALANCING) * len(SEEDS)
+
     # ------------------------------------------------------------------
-    # Classifier (synthetic-augmentation + baseline, multi-seed): collect every
-    # train -> eval -> cleanup unit into one job list, then run them through a
-    # bounded thread pool (CLASSIFIER_MAX_PARALLEL concurrent GPU containers).
-    # Each job writes to its own out_dir/seed, so they never contend.
+    # Classifier (head-only baselines + frozen-depth sweep, multi-seed): collect every
+    # train -> eval -> cleanup unit into one job list, then run them through a bounded
+    # thread pool (CLASSIFIER_MAX_PARALLEL concurrent GPU containers). Each job writes to
+    # its own out_dir/seed, so they never contend.
     # ------------------------------------------------------------------
     classifier_jobs: list[tuple[str, str, list[str]]] = []
 
@@ -709,57 +495,22 @@ def main() -> None:
                     (f"{baseline_name}/seed{seed}", out_dir, train_overrides)
                 )
 
-    if RUN_CLASSIFIER:
-        # outputs/classifier/{train}__{gen}__{sel}__{cls}/seed{N}/
-        for train_name, _ in TRAIN_VARIANTS:
-            for gen_name, _ in GEN_VARIANTS:
-                for sel_name, _ in SELECTION_VARIANTS:
-                    for cls_name in SELECTION_DOSES[sel_name]:
-                        cls_overrides = _DOSE_OVERRIDES_BY_NAME[cls_name]
-                        for seed in SEEDS:
-                            sel_split = (
-                                f"outputs/diffusion-{train_name}/selection"
-                                f"/{gen_name}__{sel_name}/reports/accepted_samples.json"
-                            )
-                            exp_name = (
-                                f"{train_name}__{gen_name}__{sel_name}__{cls_name}"
-                            )
-                            out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
-                            train_overrides = [
-                                "--compute.seed",
-                                str(seed),
-                                "--data.synthetic_augmentation.enabled",
-                                "true",
-                                "--data.synthetic_augmentation.split_file",
-                                sel_split,
-                                *cls_overrides,
-                            ]
-                            classifier_jobs.append(
-                                (f"{exp_name}/seed{seed}", out_dir, train_overrides)
-                            )
-
-    if RUN_TSTR:
-        # outputs/classifier/{train}__{gen}__topk__tstr/seed{N}/
-        # TSTR replaces the real abnormal class with synthetic abnormal images
-        # (from the top_k selection), keeping the real normal class, and tests on
-        # the real val set. The "tstr" dose token marks this arm in the report.
-        for train_name, _ in TRAIN_VARIANTS:
-            for gen_name, _ in GEN_VARIANTS:
+    if RUN_FT_CLASSIFIER:
+        # outputs/classifier/{depth}__{balancing}/seed{N}/
+        for depth_name, depth_overrides, lr in FT_DEPTH_VARIANTS:
+            for bal_name, bal_overrides in FT_BALANCING:
+                exp_name = f"{depth_name}__{bal_name}"
                 for seed in SEEDS:
-                    sel_split = (
-                        f"outputs/diffusion-{train_name}/selection"
-                        f"/{gen_name}__topk/reports/accepted_samples.json"
-                    )
-                    exp_name = f"{train_name}__{gen_name}__topk__tstr"
                     out_dir = f"outputs/classifier/{exp_name}/seed{seed}"
                     train_overrides = [
                         "--compute.seed",
                         str(seed),
                         "--data.synthetic_augmentation.enabled",
-                        "true",
-                        "--data.synthetic_augmentation.split_file",
-                        sel_split,
-                        *TSTR_OVERRIDES,
+                        "false",
+                        *bal_overrides,
+                        *depth_overrides,
+                        "--training.optimizer.learning_rate",
+                        lr,
                     ]
                     classifier_jobs.append(
                         (f"{exp_name}/seed{seed}", out_dir, train_overrides)
@@ -771,26 +522,10 @@ def main() -> None:
         _run_classifier_jobs(classifier_jobs, classifier_total)
 
     # ------------------------------------------------------------------
-    # Summarize: aggregate evaluation reports (CPU-only, no Docker)
+    # Summarize: aggregate classifier evaluation reports (CPU-only, no Docker).
+    # No selection-eval aggregation (this experiment has no generation/selection).
     # ------------------------------------------------------------------
     if RUN_SUMMARIZE:
-        # Selection-eval aggregation
-        # outputs/evaluation_report/selection_evaluation_summary.json
-        print("[SUMMARIZE] Generating selection-eval report")
-        subprocess.run(
-            [
-                "python3",
-                "-m",
-                "src.experiments.sample_selection.evaluation_report",
-                "--base-dir",
-                "outputs",
-                "--output-dir",
-                "outputs/evaluation_report",
-            ],
-            check=True,
-        )
-
-        # Classifier aggregation
         # outputs/evaluation_report/classifier_evaluation_summary.json
         print("[SUMMARIZE] Generating classifier evaluation report")
         subprocess.run(
@@ -802,12 +537,10 @@ def main() -> None:
                 "outputs/classifier",
                 "--output-dir",
                 "outputs/evaluation_report",
-                "--selection-summary-pattern",
-                "outputs/diffusion-*/selection-eval/*/reports/evaluation.json",
                 # Compare against the strongest class-balancing baseline (weighted
-                # sampler). vanilla (no balancing) flatters synthetic augmentation
-                # because it conflates the augmentation's effect with simply
-                # addressing the class imbalance; ws isolates the former.
+                # sampler). vanilla (no balancing) flatters any variant because it
+                # conflates the variant's effect with simply addressing the class
+                # imbalance; ws isolates the representation effect.
                 "--baseline-name",
                 "baseline__ws",
             ],
