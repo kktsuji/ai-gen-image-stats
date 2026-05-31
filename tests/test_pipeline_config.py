@@ -36,9 +36,12 @@ def _valid_config():
             "classifier_max_parallel": 3,
             "classifier_output_root": "outputs/classifier",
         },
+        # Point at the committed example configs (configs/*.yaml are gitignored and
+        # absent in CI). The validator requires the consumed classifier config to exist,
+        # so these paths must resolve in every environment.
         "configs": {
-            "data_preparation": "configs/data-preparation.yaml",
-            "classifier": "configs/classifier.yaml",
+            "data_preparation": "configs/examples/data-preparation.yaml",
+            "classifier": "configs/examples/classifier.yaml",
         },
         "docker": {
             "image": "example/image:tag",
