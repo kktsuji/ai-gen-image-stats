@@ -75,3 +75,22 @@ def test_pretrained_requires_path_or_cache(example_config):
     example_config["model"]["pretrained"]["cache_path"] = None
     with pytest.raises(ValueError, match="checkpoint_path|cache_path"):
         validate_config(example_config)
+
+
+@pytest.mark.unit
+def test_rejects_none_num_classes(example_config):
+    # The ADM model always builds a class head, so None is unsupported even
+    # though the from-scratch DDPM permits it.
+    example_config["model"]["conditioning"]["num_classes"] = None
+    with pytest.raises(ValueError, match="num_classes"):
+        validate_config(example_config)
+
+
+@pytest.mark.unit
+def test_rejects_loss_level_class_weights(example_config):
+    # Loss-level class weighting bypasses the ADM learned-variance objective.
+    example_config.setdefault("data", {}).setdefault("balancing", {})[
+        "class_weights"
+    ] = {"enabled": True, "method": "inverse_frequency"}
+    with pytest.raises(ValueError, match="class_weights is not supported"):
+        validate_config(example_config)

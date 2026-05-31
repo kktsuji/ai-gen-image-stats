@@ -55,6 +55,20 @@ def test_get_trainable_parameters_matches_requires_grad(tiny_adm_model):
     assert len(got) == len(expected)
 
 
+@pytest.mark.unit
+def test_set_trainable_layers_zero_match_raises(tiny_adm_model):
+    # A typo'd pattern must fail fast rather than silently freeze everything and
+    # crash later with an empty-optimizer error.
+    with pytest.raises(ValueError, match="matched no parameters"):
+        tiny_adm_model.set_trainable_layers(["does_not_exist.*"])
+
+
+@pytest.mark.unit
+def test_in_channels_tracks_built_unet(tiny_adm_model):
+    # in_channels is derived from the built U-Net flags, not hardcoded.
+    assert tiny_adm_model.in_channels == 3
+
+
 # ----- component: forward / loss / sampling ----------------------------------
 
 
@@ -82,6 +96,11 @@ def test_compute_loss_is_scalar_and_backprops(tiny_adm_model):
         p.grad for p in tiny_adm_model.get_trainable_parameters() if p.grad is not None
     ]
     assert grads, "expected gradients on trainable params"
+    # The frozen backbone must receive NO gradient (this is the whole point of
+    # the transfer slice: 296M params stay fixed).
+    frozen = [p for p in tiny_adm_model.parameters() if not p.requires_grad]
+    assert frozen, "expected a frozen backbone after freeze_backbone()"
+    assert all(p.grad is None for p in frozen)
 
 
 @pytest.mark.component
@@ -110,6 +129,7 @@ def test_sample_return_intermediates(tiny_adm_model):
     )
     # (T, N, C, H, W); final frame is the sample. T == respaced steps (5).
     assert seq.ndim == 5
+    assert seq.shape[0] == 5
     assert seq.shape[1:] == (2, 3, 16, 16)
 
 

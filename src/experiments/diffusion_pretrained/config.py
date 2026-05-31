@@ -45,6 +45,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     _validate_compute_config(config)
     _validate_model_config(config)
     _validate_data_config(config)
+    _validate_balancing_unsupported(config)
     _validate_output_config(config)
 
     if mode == "train":
@@ -53,6 +54,26 @@ def validate_config(config: Dict[str, Any]) -> None:
         _validate_generation_config(config)
 
     _validate_config_consistency(config)
+
+
+def _validate_balancing_unsupported(config: Dict[str, Any]) -> None:
+    """Reject loss-level class weighting for this slice.
+
+    The ADM model owns a learned-variance hybrid objective. The shared trainer's
+    class-weighted path bypasses ``compute_loss`` and applies a plain MSE over
+    the epsilon channels only (``AdmDdpmModel.forward`` returns just the epsilon
+    prediction), silently dropping the variance/VLB term the pretrained head
+    needs. Class balancing must therefore be done at the data level.
+    """
+    balancing = config.get("data", {}).get("balancing") or {}
+    class_weights = balancing.get("class_weights") or {}
+    if class_weights.get("enabled"):
+        raise ValueError(
+            "data.balancing.class_weights is not supported for the "
+            "diffusion_pretrained slice: the class-weighted loss path applies "
+            "plain epsilon-MSE and bypasses the ADM learned-variance objective. "
+            "Use data.balancing.weighted_sampler or upsampling instead."
+        )
 
 
 def _validate_model_config(config: Dict[str, Any]) -> None:
@@ -97,18 +118,14 @@ def _validate_pretrained(model: Dict[str, Any]) -> None:
         )
 
     has_path = bool(pre.get("checkpoint_path"))
-    has_url = bool(pre.get("checkpoint_url"))
     has_cache = bool(pre.get("cache_path"))
-    # Either an explicit local checkpoint, or a cache target to download into.
+    # Either an explicit local checkpoint, or a cache target to download into. A
+    # cache miss falls back to the source's default URL, so checkpoint_url is
+    # optional.
     if not has_path and not has_cache:
         raise ValueError(
             "model.pretrained requires either checkpoint_path (local file) or "
             "cache_path (download target)"
-        )
-    if not has_path and not has_url and not has_cache:
-        raise ValueError(
-            "model.pretrained needs checkpoint_url to download when no local "
-            "checkpoint_path/cache_path exists"
         )
 
 
@@ -148,11 +165,14 @@ def _validate_conditioning(model: Dict[str, Any]) -> None:
             f"model.conditioning.type must be None or 'class', got {cond['type']!r}"
         )
 
-    if cond["num_classes"] is not None:
-        if not isinstance(cond["num_classes"], int) or cond["num_classes"] < 1:
-            raise ValueError(
-                "model.conditioning.num_classes must be a positive integer or None"
-            )
+    # Unlike the from-scratch DDPM, the ADM transfer model always builds a
+    # class-embedding head (the unconditional CFG token lives at index
+    # ``num_classes``), so num_classes must be a concrete positive integer.
+    if not isinstance(cond["num_classes"], int) or cond["num_classes"] < 1:
+        raise ValueError(
+            "model.conditioning.num_classes must be a positive integer "
+            "(unconditional/None is not supported by the diffusion_pretrained slice)"
+        )
 
     cdp = cond["class_dropout_prob"]
     if not isinstance(cdp, (int, float)) or cdp < 0 or cdp > 1:

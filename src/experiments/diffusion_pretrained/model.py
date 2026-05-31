@@ -163,7 +163,6 @@ class AdmDdpmModel(nn.Module):
     ):
         super().__init__()
         self.image_size = image_size
-        self.in_channels = 3
         # Semantic classes (0..num_classes-1); the unconditional token is the
         # index ``num_classes`` (matches the project-wide DDPM convention).
         self.num_classes = num_classes
@@ -176,6 +175,9 @@ class AdmDdpmModel(nn.Module):
         flags: Dict[str, Any] = dict(IMAGENET64_ADM_FLAGS)
         if arch:
             flags.update(arch)
+        # Tie the channel count to the actually-built U-Net (single source of
+        # truth) rather than hardcoding 3.
+        self.in_channels = flags["in_channels"]
         self.time_embed_dim = flags["model_channels"] * 4
 
         # Build with the checkpoint's label space so weights load cleanly; when
@@ -212,10 +214,21 @@ class AdmDdpmModel(nn.Module):
     @staticmethod
     def _load_pretrained_backbone(unet: UNetModel, pretrained: Dict[str, Any]) -> None:
         path = _resolve_checkpoint(pretrained)
-        state_dict = torch.load(path, map_location="cpu")
+        state_dict = torch.load(path, map_location="cpu", weights_only=True)
         missing, unexpected = unet.load_state_dict(state_dict, strict=False)
         # The ADM checkpoint is a plain state dict that matches the architecture
-        # exactly; tolerate nothing surprising beyond that.
+        # exactly. Guard against a wrong/wrapped checkpoint (e.g. a nested
+        # {"state_dict": ...} or mismatched flags) silently leaving the backbone
+        # at random init: almost every parameter must be filled.
+        total = len(unet.state_dict())
+        loaded = total - len(missing)
+        if loaded < 0.5 * total:
+            raise RuntimeError(
+                f"ADM checkpoint at {path} matched only {loaded}/{total} model "
+                f"parameters ({len(missing)} missing, {len(unexpected)} unexpected); "
+                f"it does not match the ADM ImageNet-64 architecture. Refusing to "
+                f"fine-tune a randomly-initialized backbone."
+            )
         if missing or unexpected:
             _logger.warning(
                 "ADM checkpoint load: %d missing, %d unexpected keys",
@@ -315,8 +328,14 @@ class AdmDdpmModel(nn.Module):
             )
 
             def model_fn(x: torch.Tensor, ts: torch.Tensor, **__: Any) -> torch.Tensor:
-                cond = self.unet(x, ts, y=y_cond)
-                uncond = self.unet(x, ts, y=y_uncond)
+                # Batch the conditional and unconditional predictions into a
+                # single forward over a doubled batch (one U-Net call per step
+                # instead of two).
+                combined_x = torch.cat([x, x], dim=0)
+                combined_ts = torch.cat([ts, ts], dim=0)
+                combined_y = torch.cat([y_cond, y_uncond], dim=0)
+                combined = self.unet(combined_x, combined_ts, y=combined_y)
+                cond, uncond = torch.chunk(combined, 2, dim=0)
                 cond_eps, cond_var = torch.split(cond, self.in_channels, dim=1)
                 uncond_eps, _ = torch.split(uncond, self.in_channels, dim=1)
                 eps = uncond_eps + guidance_scale * (cond_eps - uncond_eps)
@@ -369,9 +388,12 @@ class AdmDdpmModel(nn.Module):
                 matched += 1
 
         if matched == 0:
-            _logger.warning(
-                "set_trainable_layers matched no parameters for patterns: %s",
-                list(layer_patterns),
+            raise ValueError(
+                "set_trainable_layers matched no parameters for patterns: "
+                f"{list(layer_patterns)}. Check the fnmatch patterns against the "
+                "unet parameter names (e.g. 'label_emb*', 'out.*', "
+                "'output_blocks.*', 'middle_block.*', 'input_blocks.*', "
+                "'time_embed.*')."
             )
         _logger.info(
             "Trainable parameters: %d tensors match %s",
