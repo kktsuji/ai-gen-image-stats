@@ -63,15 +63,17 @@ from src.utils.training import create_optimizer, create_scheduler
 logger = logging.getLogger(__name__)
 
 
-def _validate_split_file_has_val(split_file: str) -> None:
-    """Validate that a split file exists on disk and contains a non-empty val split.
+def _validate_split_file_has_split(split_file: str, split: str = "val") -> None:
+    """Validate that a split file exists and contains a non-empty given split.
 
     Args:
         split_file: Path to the JSON split file.
+        split: Which split key to require ("val" by default, "test" for
+            held-out evaluation).
 
     Raises:
         FileNotFoundError: If the split file does not exist.
-        ValueError: If the file is not valid JSON or has no val entries.
+        ValueError: If the file is not valid JSON or has no entries for `split`.
     """
     split_path = Path(split_file)
     if not split_path.exists():
@@ -84,10 +86,10 @@ def _validate_split_file_has_val(split_file: str) -> None:
             split_data = json.load(f)
     except json.JSONDecodeError as e:
         raise ValueError(f"split_file '{split_file}' is not valid JSON: {e}") from e
-    if "val" not in split_data or not split_data["val"]:
+    if split not in split_data or not split_data[split]:
         raise ValueError(
-            f"split_file '{split_file}' has no 'val' entries. "
-            "A non-empty val split is required for evaluate mode."
+            f"split_file '{split_file}' has no '{split}' entries. "
+            f"A non-empty '{split}' split is required for evaluate mode."
         )
 
 
@@ -163,13 +165,17 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         normalize=normalize_str,
     )
 
-    # Validate split file has val data before reading it
-    # (gives a clear error instead of a confusing loader/JSON failure)
+    # Determine which split to evaluate on. Training always validates on "val";
+    # evaluate mode may target a held-out "test" split via evaluation.split.
     mode = config.get("mode", "train")
+    eval_split = "val"
     if mode == "evaluate":
-        _validate_split_file_has_val(split_file)
+        eval_split = config.get("evaluation", {}).get("split", "val")
+        # Validate the evaluation split has data before reading it
+        # (gives a clear error instead of a confusing loader/JSON failure)
+        _validate_split_file_has_split(split_file, eval_split)
 
-    # Create val loader (needed for both train and evaluate modes)
+    # Create eval loader (needed for both train and evaluate modes)
     compute_config = config.get("compute", {})
     seed = compute_config.get("seed")
     val_loader = create_val_loader(
@@ -178,6 +184,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         transform=val_transform,
         num_workers=num_workers,
         pin_memory=pin_memory,
+        split=eval_split,
     )
 
     # Get class names from split file
@@ -249,10 +256,13 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         trainer.load_checkpoint(checkpoint_path, load_optimizer=False)
 
         # Run evaluation
-        logger.warning(
-            "Evaluating on the validation split. For unbiased comparison, "
-            "consider using a held-out test set."
-        )
+        if eval_split == "val":
+            logger.warning(
+                "Evaluating on the validation split. For unbiased comparison, "
+                "consider using a held-out test set (evaluation.split: test)."
+            )
+        else:
+            logger.info(f"Evaluating on the '{eval_split}' split.")
         eval_metrics, inference = trainer.evaluate_with_predictions(val_loader)
 
         # Save predictions and compute bootstrap CIs

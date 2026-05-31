@@ -44,7 +44,9 @@ class TestDataPreparationPipeline:
         - Downstream: DataLoader iterates one batch successfully
         """
         # Build config matching data_preparation schema
-        train_ratio = 0.8
+        train_ratio = 0.6
+        val_ratio = 0.2
+        test_ratio = 0.2
         config = {
             "experiment": "data_preparation",
             "classes": {
@@ -60,8 +62,10 @@ class TestDataPreparationPipeline:
             "split": {
                 "seed": 42,
                 "train_ratio": train_ratio,
+                "val_ratio": val_ratio,
+                "test_ratio": test_ratio,
                 "save_dir": str(tmp_path / "splits"),
-                "split_file": "train_val_split.json",
+                "split_file": "train_val_test_split.json",
                 "force": True,
             },
         }
@@ -80,11 +84,14 @@ class TestDataPreparationPipeline:
         assert "metadata" in split_data, "Missing 'metadata' key"
         assert "train" in split_data, "Missing 'train' key"
         assert "val" in split_data, "Missing 'val' key"
+        assert "test" in split_data, "Missing 'test' key"
 
         metadata = split_data["metadata"]
         assert "classes" in metadata, "Missing 'classes' in metadata"
         assert "train_ratio" in metadata
         assert metadata["train_ratio"] == train_ratio
+        assert metadata["val_ratio"] == val_ratio
+        assert metadata["test_ratio"] == test_ratio
 
         # Step 4: Validate class mappings
         classes = metadata["classes"]
@@ -94,10 +101,11 @@ class TestDataPreparationPipeline:
         # Labels should match explicit config (non-alphabetical)
         assert classes == {"normal": 1, "abnormal": 0}
 
-        # Step 5: Validate train/val counts match train_ratio
+        # Step 5: Validate train/val/test counts match the configured ratios
         train_entries = split_data["train"]
         val_entries = split_data["val"]
-        total = len(train_entries) + len(val_entries)
+        test_entries = split_data["test"]
+        total = len(train_entries) + len(val_entries) + len(test_entries)
 
         # Count actual images per class from the fixture directory
         num_classes = len(list(d for d in mock_dataset_medium.iterdir() if d.is_dir()))
@@ -106,11 +114,16 @@ class TestDataPreparationPipeline:
             f"Uneven class distribution: {total} images across {num_classes} classes"
         )
 
-        # prepare_split() uses floor-based splitting, so math.floor matches
+        # prepare_split() uses floor-based index math: train takes floor(n*train),
+        # val takes floor(n*val), test takes the remainder.
         expected_train_per_class = math.floor(images_per_class * train_ratio)
-        expected_val_per_class = images_per_class - expected_train_per_class
+        expected_val_per_class = math.floor(images_per_class * val_ratio)
+        expected_test_per_class = (
+            images_per_class - expected_train_per_class - expected_val_per_class
+        )
         expected_train = expected_train_per_class * num_classes
         expected_val = expected_val_per_class * num_classes
+        expected_test = expected_test_per_class * num_classes
 
         assert len(train_entries) == expected_train, (
             f"Expected {expected_train} train samples, got {len(train_entries)}"
@@ -118,9 +131,12 @@ class TestDataPreparationPipeline:
         assert len(val_entries) == expected_val, (
             f"Expected {expected_val} val samples, got {len(val_entries)}"
         )
+        assert len(test_entries) == expected_test, (
+            f"Expected {expected_test} test samples, got {len(test_entries)}"
+        )
 
         # Step 6: Verify all paths in JSON exist on disk and labels match config
-        for entry in train_entries + val_entries:
+        for entry in train_entries + val_entries + test_entries:
             assert "path" in entry, "Entry missing 'path' key"
             assert "label" in entry, "Entry missing 'label' key"
             assert Path(entry["path"]).exists(), (
@@ -161,6 +177,14 @@ class TestDataPreparationPipeline:
             return_labels=True,
         )
         assert len(val_dataset) == expected_val
+
+        test_dataset = SplitFileDataset(
+            split_file=output_path,
+            split="test",
+            transform=transform,
+            return_labels=True,
+        )
+        assert len(test_dataset) == expected_test
 
         # Verify class metadata propagated correctly
         assert len(train_dataset.get_classes()) == 2

@@ -15,9 +15,13 @@ classes:
     label: 1
 
 # Split configuration
+# train_ratio, val_ratio and test_ratio must all be specified and sum to 1.0.
+# Set test_ratio to 0.0 for a train/val-only split.
 split:
-  seed: 42 # Random seed for reproducible train/val splitting
-  train_ratio: 0.8 # Fraction of data to use for training (rest goes to validation)
+  seed: 42 # Random seed for reproducible train/val/test splitting
+  train_ratio: 0.7 # Fraction of data to use for training
+  val_ratio: 0.15 # Fraction of data to use for validation (model selection)
+  test_ratio: 0.15 # Fraction of data to hold out for unbiased test evaluation
   save_dir: "outputs/splits" # Directory where the split file will be saved
-  split_file: "train_val_split.json" # Filename for the JSON file storing train/val indices
+  split_file: "train_val_test_split.json" # Filename for the JSON file storing the splits
   force: false # If true, overwrite existing split file even if it already exists

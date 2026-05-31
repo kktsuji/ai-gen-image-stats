@@ -12,7 +12,11 @@ import pytest
 import torch.nn as nn
 import yaml
 
-from src.main import _validate_split_file_has_val, main, setup_experiment_classifier
+from src.main import (
+    _validate_split_file_has_split,
+    main,
+    setup_experiment_classifier,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -2004,8 +2008,8 @@ class TestLoggingRedirectTqdmHandlerLevel:
 
 
 @pytest.mark.unit
-class TestValidateSplitFileHasVal:
-    """Tests for _validate_split_file_has_val filesystem validation."""
+class TestValidateSplitFileHasSplit:
+    """Tests for _validate_split_file_has_split filesystem validation."""
 
     def test_valid_split_file(self, tmp_path):
         """Test that a valid split file with val entries passes."""
@@ -2020,19 +2024,35 @@ class TestValidateSplitFileHasVal:
                 }
             )
         )
-        _validate_split_file_has_val(str(split_file))  # should not raise
+        _validate_split_file_has_split(str(split_file))  # should not raise
+
+    def test_valid_test_split(self, tmp_path):
+        """Test that requiring a non-empty test split passes when present."""
+        import json
+
+        split_file = tmp_path / "split.json"
+        split_file.write_text(
+            json.dumps(
+                {
+                    "train": [{"path": "a.png", "label": 0}],
+                    "val": [{"path": "b.png", "label": 1}],
+                    "test": [{"path": "c.png", "label": 1}],
+                }
+            )
+        )
+        _validate_split_file_has_split(str(split_file), "test")  # should not raise
 
     def test_missing_split_file(self, tmp_path):
         """Test that a nonexistent split file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="not found"):
-            _validate_split_file_has_val(str(tmp_path / "nonexistent.json"))
+            _validate_split_file_has_split(str(tmp_path / "nonexistent.json"))
 
     def test_malformed_json(self, tmp_path):
         """Test that a malformed JSON file raises ValueError."""
         split_file = tmp_path / "split.json"
         split_file.write_text("not valid json {{{")
         with pytest.raises(ValueError, match="not valid JSON"):
-            _validate_split_file_has_val(str(split_file))
+            _validate_split_file_has_split(str(split_file))
 
     def test_empty_val_split(self, tmp_path):
         """Test that an empty val split raises ValueError."""
@@ -2043,7 +2063,7 @@ class TestValidateSplitFileHasVal:
             json.dumps({"train": [{"path": "a.png", "label": 0}], "val": []})
         )
         with pytest.raises(ValueError, match="no 'val' entries"):
-            _validate_split_file_has_val(str(split_file))
+            _validate_split_file_has_split(str(split_file))
 
     def test_missing_val_key(self, tmp_path):
         """Test that a split file with no val key raises ValueError."""
@@ -2052,4 +2072,20 @@ class TestValidateSplitFileHasVal:
         split_file = tmp_path / "split.json"
         split_file.write_text(json.dumps({"train": [{"path": "a.png", "label": 0}]}))
         with pytest.raises(ValueError, match="no 'val' entries"):
-            _validate_split_file_has_val(str(split_file))
+            _validate_split_file_has_split(str(split_file))
+
+    def test_missing_test_split_raises(self, tmp_path):
+        """Test that requiring a missing test split raises ValueError."""
+        import json
+
+        split_file = tmp_path / "split.json"
+        split_file.write_text(
+            json.dumps(
+                {
+                    "train": [{"path": "a.png", "label": 0}],
+                    "val": [{"path": "b.png", "label": 1}],
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="no 'test' entries"):
+            _validate_split_file_has_split(str(split_file), "test")

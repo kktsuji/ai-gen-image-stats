@@ -85,17 +85,47 @@ def validate_config(config: Dict[str, Any]) -> None:
         if not isinstance(split["seed"], int):
             raise ValueError("split.seed must be an integer or null")
 
-    # Validate train_ratio
+    # Validate train_ratio (must be > 0, samples are required for training)
     if "train_ratio" not in split:
         raise KeyError("Missing required field: split.train_ratio")
-
     train_ratio = split["train_ratio"]
-    if not isinstance(train_ratio, (int, float)):
+    if not isinstance(train_ratio, (int, float)) or isinstance(train_ratio, bool):
         raise ValueError("split.train_ratio must be a number")
     if train_ratio <= 0.0 or train_ratio >= 1.0:
         raise ValueError(
             f"split.train_ratio must be between 0.0 and 1.0 (exclusive), "
             f"got {train_ratio}"
+        )
+
+    # Validate val_ratio (must be > 0, samples are required for validation)
+    if "val_ratio" not in split:
+        raise KeyError("Missing required field: split.val_ratio")
+    val_ratio = split["val_ratio"]
+    if not isinstance(val_ratio, (int, float)) or isinstance(val_ratio, bool):
+        raise ValueError("split.val_ratio must be a number")
+    if val_ratio <= 0.0 or val_ratio >= 1.0:
+        raise ValueError(
+            f"split.val_ratio must be between 0.0 and 1.0 (exclusive), got {val_ratio}"
+        )
+
+    # Validate test_ratio (may be 0.0 to fall back to a train/val-only split)
+    if "test_ratio" not in split:
+        raise KeyError("Missing required field: split.test_ratio")
+    test_ratio = split["test_ratio"]
+    if not isinstance(test_ratio, (int, float)) or isinstance(test_ratio, bool):
+        raise ValueError("split.test_ratio must be a number")
+    if test_ratio < 0.0 or test_ratio >= 1.0:
+        raise ValueError(
+            f"split.test_ratio must be between 0.0 (inclusive) and 1.0 "
+            f"(exclusive), got {test_ratio}"
+        )
+
+    # The three ratios must sum to 1.0 (small floating-point tolerance allowed)
+    ratio_sum = train_ratio + val_ratio + test_ratio
+    if abs(ratio_sum - 1.0) > 1e-6:
+        raise ValueError(
+            "split.train_ratio + split.val_ratio + split.test_ratio must sum "
+            f"to 1.0, got {ratio_sum}"
         )
 
     # Validate save_dir

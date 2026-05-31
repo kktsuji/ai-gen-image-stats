@@ -362,6 +362,15 @@ def validate_config(config: Dict[str, Any]) -> None:
         if not isinstance(checkpoint, str) or not checkpoint.strip():
             raise ValueError("evaluation.checkpoint is required for evaluate mode")
 
+        # Validate optional evaluation split (defaults to "val")
+        if "split" in evaluation:
+            eval_split = evaluation["split"]
+            if eval_split not in ("train", "val", "test"):
+                raise ValueError(
+                    f"evaluation.split must be one of 'train', 'val', 'test'; "
+                    f"got {eval_split!r}"
+                )
+
         # Validate reports subdir for evaluate mode
         subdirs = config.get("output", {}).get("subdirs", {})
         if "reports" not in subdirs or subdirs["reports"] is None:

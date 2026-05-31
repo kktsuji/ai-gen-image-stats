@@ -96,6 +96,65 @@ class TestValidateConfig:
         with pytest.raises(ValueError, match="train_ratio"):
             validate_config(config)
 
+    def test_missing_val_ratio_raises(self):
+        """Test that missing val_ratio raises KeyError."""
+        config = _make_valid_config()
+        del config["split"]["val_ratio"]
+        with pytest.raises(KeyError, match="val_ratio"):
+            validate_config(config)
+
+    def test_invalid_val_ratio_zero_raises(self):
+        """Test that val_ratio=0 raises ValueError."""
+        config = _make_valid_config()
+        config["split"]["val_ratio"] = 0.0
+        with pytest.raises(ValueError, match="val_ratio"):
+            validate_config(config)
+
+    def test_invalid_val_ratio_negative_raises(self):
+        """Test that negative val_ratio raises ValueError."""
+        config = _make_valid_config()
+        config["split"]["val_ratio"] = -0.1
+        with pytest.raises(ValueError, match="val_ratio"):
+            validate_config(config)
+
+    def test_missing_test_ratio_raises(self):
+        """Test that missing test_ratio raises KeyError."""
+        config = _make_valid_config()
+        del config["split"]["test_ratio"]
+        with pytest.raises(KeyError, match="test_ratio"):
+            validate_config(config)
+
+    def test_invalid_test_ratio_negative_raises(self):
+        """Test that negative test_ratio raises ValueError."""
+        config = _make_valid_config()
+        config["split"]["test_ratio"] = -0.1
+        with pytest.raises(ValueError, match="test_ratio"):
+            validate_config(config)
+
+    def test_invalid_test_ratio_one_raises(self):
+        """Test that test_ratio=1 raises ValueError."""
+        config = _make_valid_config()
+        config["split"]["test_ratio"] = 1.0
+        with pytest.raises(ValueError, match="test_ratio"):
+            validate_config(config)
+
+    def test_test_ratio_zero_is_valid(self):
+        """Test that test_ratio=0 (train/val-only split) passes validation."""
+        config = _make_valid_config()
+        config["split"]["train_ratio"] = 0.8
+        config["split"]["val_ratio"] = 0.2
+        config["split"]["test_ratio"] = 0.0
+        validate_config(config)  # Should not raise
+
+    def test_ratios_not_summing_to_one_raises(self):
+        """Test that ratios not summing to 1.0 raise ValueError."""
+        config = _make_valid_config()
+        config["split"]["train_ratio"] = 0.7
+        config["split"]["val_ratio"] = 0.2
+        config["split"]["test_ratio"] = 0.2  # sums to 1.1
+        with pytest.raises(ValueError, match="sum"):
+            validate_config(config)
+
     def test_missing_split_file_raises(self):
         """Test that missing split_file raises KeyError."""
         config = _make_valid_config()

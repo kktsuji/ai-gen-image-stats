@@ -116,15 +116,16 @@ class TestSplitList:
     """Test list splitting logic."""
 
     def test_basic_split(self):
-        """Test basic 80/20 split."""
+        """Test basic 70/15/15 split."""
         import random
 
-        items = [f"item_{i}" for i in range(10)]
+        items = [f"item_{i}" for i in range(20)]
         rng = random.Random(42)
-        train, val = _split_list(items, 0.8, rng)
+        train, val, test = _split_list(items, 0.7, 0.15, rng)
 
-        assert len(train) == 8
-        assert len(val) == 2
+        assert len(train) == 14
+        assert len(val) == 3
+        assert len(test) == 3
 
     def test_all_items_present(self):
         """Test that all items appear in exactly one split."""
@@ -132,46 +133,63 @@ class TestSplitList:
 
         items = [f"item_{i}" for i in range(20)]
         rng = random.Random(42)
-        train, val = _split_list(items, 0.7, rng)
+        train, val, test = _split_list(items, 0.7, 0.15, rng)
 
-        combined = set(train) | set(val)
+        combined = set(train) | set(val) | set(test)
         assert combined == set(items)
-        assert len(train) + len(val) == len(items)
+        assert len(train) + len(val) + len(test) == len(items)
 
     def test_no_overlap(self):
-        """Test that train and val have no overlap."""
+        """Test that train, val and test have no overlap."""
         import random
 
         items = [f"item_{i}" for i in range(15)]
         rng = random.Random(42)
-        train, val = _split_list(items, 0.6, rng)
+        train, val, test = _split_list(items, 0.6, 0.2, rng)
 
         assert set(train).isdisjoint(set(val))
+        assert set(train).isdisjoint(set(test))
+        assert set(val).isdisjoint(set(test))
+
+    def test_zero_test_ratio_falls_back_to_two_way(self):
+        """Test that test_ratio=0.0 yields an empty test split."""
+        import random
+
+        items = [f"item_{i}" for i in range(10)]
+        rng = random.Random(42)
+        train, val, test = _split_list(items, 0.8, 0.2, rng)
+
+        assert len(train) == 8
+        assert len(val) == 2
+        assert len(test) == 0
 
     def test_deterministic_with_same_seed(self):
         """Test that same seed produces same split."""
         import random
 
-        items = [f"item_{i}" for i in range(10)]
+        items = [f"item_{i}" for i in range(20)]
         rng1 = random.Random(42)
         rng2 = random.Random(42)
 
-        train1, val1 = _split_list(items, 0.8, rng1)
-        train2, val2 = _split_list(items, 0.8, rng2)
+        train1, val1, test1 = _split_list(items, 0.7, 0.15, rng1)
+        train2, val2, test2 = _split_list(items, 0.7, 0.15, rng2)
 
         assert train1 == train2
         assert val1 == val2
+        assert test1 == test2
 
     def test_small_list_at_least_one_each(self):
-        """Test that a 2-item list has at least 1 in each split."""
+        """Test that a 2-item list has at least 1 in train and val."""
         import random
 
         items = ["a", "b"]
         rng = random.Random(42)
-        train, val = _split_list(items, 0.9, rng)
+        train, val, test = _split_list(items, 0.8, 0.1, rng)
 
         assert len(train) >= 1
         assert len(val) >= 1
+        # test may be empty for very small lists
+        assert len(train) + len(val) + len(test) == 2
 
 
 # ============================================================================
@@ -197,6 +215,8 @@ class TestPrepareSplit:
         split_config = {
             "seed": 42,
             "train_ratio": 0.8,
+            "val_ratio": 0.1,
+            "test_ratio": 0.1,
             "save_dir": save_dir,
             "split_file": "split.json",
             "force": False,
@@ -228,12 +248,21 @@ class TestPrepareSplit:
         assert "metadata" in data
         assert "train" in data
         assert "val" in data
+        assert "test" in data
 
         metadata = data["metadata"]
         assert "created_at" in metadata
         assert metadata["seed"] == 42
         assert metadata["train_ratio"] == 0.8
+        assert metadata["val_ratio"] == 0.1
+        assert metadata["test_ratio"] == 0.1
         assert metadata["total_samples"] == 15
+        assert (
+            metadata["train_samples"]
+            + metadata["val_samples"]
+            + metadata["test_samples"]
+            == 15
+        )
         assert "classes" in metadata
         assert "class_samples" in metadata
         assert "source_paths" in metadata
@@ -253,28 +282,34 @@ class TestPrepareSplit:
         with open(output_path2) as f:
             data2 = json.load(f)
 
-        # Train/val lists should be identical (ignore created_at timestamp)
+        # Train/val/test lists should be identical (ignore created_at timestamp)
         assert data1["train"] == data2["train"]
         assert data1["val"] == data2["val"]
+        assert data1["test"] == data2["test"]
 
-    def test_train_val_ratio(self, tmp_path):
-        """Test that train/val ratio is approximately correct."""
+    def test_train_val_test_ratio(self, tmp_path):
+        """Test that train/val/test ratios are approximately correct."""
         config = self._make_config(
-            tmp_path, {"normal": 50, "abnormal": 50}, train_ratio=0.7
+            tmp_path,
+            {"normal": 50, "abnormal": 50},
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2,
         )
         output_path = prepare_split(config)
 
         with open(output_path) as f:
             data = json.load(f)
 
-        total = len(data["train"]) + len(data["val"])
+        total = len(data["train"]) + len(data["val"]) + len(data["test"])
         assert total == 100
-        # Each class: 50 * 0.7 = 35 train, 15 val => total train=70, val=30
-        assert len(data["train"]) == 70
-        assert len(data["val"]) == 30
+        # Each class (50): 30 train, 10 val, 10 test => 60 / 20 / 20 overall
+        assert len(data["train"]) == 60
+        assert len(data["val"]) == 20
+        assert len(data["test"]) == 20
 
     def test_all_images_appear_once(self, tmp_path):
-        """Test that every image appears exactly once in train+val."""
+        """Test that every image appears exactly once in train+val+test."""
         config = self._make_config(tmp_path, {"normal": 10, "abnormal": 10})
         output_path = prepare_split(config)
 
@@ -283,11 +318,14 @@ class TestPrepareSplit:
 
         train_paths = {entry["path"] for entry in data["train"]}
         val_paths = {entry["path"] for entry in data["val"]}
+        test_paths = {entry["path"] for entry in data["test"]}
 
-        # No overlap
+        # No overlap between any pair of splits
         assert train_paths.isdisjoint(val_paths)
+        assert train_paths.isdisjoint(test_paths)
+        assert val_paths.isdisjoint(test_paths)
         # All images present
-        assert len(train_paths) + len(val_paths) == 20
+        assert len(train_paths) + len(val_paths) + len(test_paths) == 20
 
     def test_labels_correct(self, tmp_path):
         """Test that labels correspond to the correct class."""
@@ -298,7 +336,7 @@ class TestPrepareSplit:
             data = json.load(f)
 
         classes = data["metadata"]["classes"]
-        for entry in data["train"] + data["val"]:
+        for entry in data["train"] + data["val"] + data["test"]:
             # The label should match the class that the path belongs to
             path = entry["path"]
             label = entry["label"]
@@ -353,6 +391,8 @@ class TestPrepareSplit:
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
+                "val_ratio": 0.1,
+                "test_ratio": 0.1,
                 "save_dir": str(tmp_path / "output"),
                 "split_file": "split.json",
                 "force": False,
@@ -372,6 +412,8 @@ class TestPrepareSplit:
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
+                "val_ratio": 0.1,
+                "test_ratio": 0.1,
                 "save_dir": str(tmp_path / "output"),
                 "split_file": "split.json",
                 "force": False,
@@ -393,8 +435,11 @@ class TestPrepareSplit:
 
         assert cs["normal"]["total"] == 8
         assert cs["abnormal"]["total"] == 4
-        assert cs["normal"]["train"] + cs["normal"]["val"] == 8
-        assert cs["abnormal"]["train"] + cs["abnormal"]["val"] == 4
+        assert cs["normal"]["train"] + cs["normal"]["val"] + cs["normal"]["test"] == 8
+        assert (
+            cs["abnormal"]["train"] + cs["abnormal"]["val"] + cs["abnormal"]["test"]
+            == 4
+        )
 
     def test_null_seed(self, tmp_path):
         """Test that null seed produces valid output (non-deterministic)."""
@@ -407,7 +452,7 @@ class TestPrepareSplit:
             data = json.load(f)
 
         assert data["metadata"]["seed"] is None
-        assert len(data["train"]) + len(data["val"]) == 10
+        assert len(data["train"]) + len(data["val"]) + len(data["test"]) == 10
 
     def test_creates_output_directory(self, tmp_path):
         """Test that output directory is created if it doesn't exist."""
@@ -435,6 +480,8 @@ class TestPrepareSplitUnit:
         split_config = {
             "seed": 42,
             "train_ratio": 0.8,
+            "val_ratio": 0.1,
+            "test_ratio": 0.1,
             "save_dir": save_dir,
             "split_file": "split.json",
             "force": False,
@@ -459,10 +506,13 @@ class TestPrepareSplitUnit:
         assert "metadata" in data
         assert "train" in data
         assert "val" in data
+        assert "test" in data
 
         metadata = data["metadata"]
         assert metadata["seed"] == 42
         assert metadata["train_ratio"] == 0.8
+        assert metadata["val_ratio"] == 0.1
+        assert metadata["test_ratio"] == 0.1
         assert metadata["total_samples"] == 10
         assert "classes" in metadata
         assert "class_samples" in metadata
@@ -470,7 +520,7 @@ class TestPrepareSplitUnit:
         assert "created_at" in metadata
 
         # Every entry has path and label
-        for entry in data["train"] + data["val"]:
+        for entry in data["train"] + data["val"] + data["test"]:
             assert "path" in entry
             assert "label" in entry
 
@@ -521,7 +571,7 @@ class TestPrepareSplitUnit:
             data = json.load(f)
 
         assert data["metadata"]["seed"] is None
-        assert len(data["train"]) + len(data["val"]) == 8
+        assert len(data["train"]) + len(data["val"]) + len(data["test"]) == 8
 
     def test_class_label_ordering(self, tmp_path):
         """Test that class_to_label mapping uses explicit labels from config."""
@@ -547,6 +597,8 @@ class TestPrepareSplitUnit:
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
+                "val_ratio": 0.1,
+                "test_ratio": 0.1,
                 "save_dir": str(tmp_path / "output"),
                 "split_file": "split.json",
                 "force": False,
@@ -557,7 +609,7 @@ class TestPrepareSplitUnit:
             data = json.load(f)
 
         assert data["metadata"]["classes"] == {"cat": 1, "dog": 0}
-        for entry in data["train"] + data["val"]:
+        for entry in data["train"] + data["val"] + data["test"]:
             if "cat" in entry["path"]:
                 assert entry["label"] == 1
             elif "dog" in entry["path"]:
@@ -573,6 +625,8 @@ class TestPrepareSplitUnit:
             "split": {
                 "seed": 42,
                 "train_ratio": 0.8,
+                "val_ratio": 0.1,
+                "test_ratio": 0.1,
                 "save_dir": str(tmp_path / "output"),
                 "split_file": "split.json",
                 "force": False,
