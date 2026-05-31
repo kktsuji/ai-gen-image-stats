@@ -14,7 +14,7 @@ python -m src.main configs/diffusion.yaml            # train diffusion model
 python -m src.main configs/diffusion-ws-gen.yaml     # generate images (mode: generate)
 python -m src.main configs/examples/sample-selection.yaml     # select high-quality generated samples
 python -m src.main configs/classifier.yaml --mode evaluate --evaluation.checkpoint path/to/model.pth  # evaluate trained classifier
-python scripts/run_pipeline.py                               # run full synthetic augmentation pipeline
+python -m scripts.run_pipeline [configs/pipeline.yaml]       # run full synthetic augmentation pipeline
 python -m src.experiments.sample_selection.evaluation_report  # aggregate selection-eval reports
 
 # Override config values with dot-notation

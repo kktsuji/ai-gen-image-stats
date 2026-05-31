@@ -851,7 +851,8 @@ This project is undergoing active refactoring according to the plan in [docs/res
 
 ```bash
 # Run the full synthetic augmentation research pipeline
-python scripts/run_pipeline.py
+# (config defaults to configs/pipeline.yaml; pass a path to override)
+python -m scripts.run_pipeline [configs/pipeline.yaml]
 
 # Aggregate selection-eval reports across experiments
 python -m src.experiments.sample_selection.evaluation_report
