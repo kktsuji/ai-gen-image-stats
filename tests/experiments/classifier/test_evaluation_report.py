@@ -43,6 +43,16 @@ def test_parse_experiment_name_synthetic():
 
 
 @pytest.mark.unit
+def test_parse_experiment_name_transfer():
+    """Test parsing transfer-learning frozen-depth experiment names."""
+    result = _parse_experiment_name("ft-mixed7__ws")
+    assert result["type"] == "transfer"
+    assert result["diffusion_variant"] == "ft-mixed7"
+    assert result["baseline_strategy"] == "ws"
+    assert result["dose"] == "-"
+
+
+@pytest.mark.unit
 def test_parse_experiment_name_unknown():
     """Test parsing unknown experiment name format."""
     result = _parse_experiment_name("something")
@@ -511,6 +521,52 @@ def test_generate_statistical_comparison_table():
 
 
 @pytest.mark.unit
+def test_generate_statistical_comparison_table_includes_transfer():
+    """Transfer-learning variants are paired-tested against the baseline."""
+    import pandas as pd
+
+    baseline_vals = [0.72, 0.68, 0.75, 0.70, 0.66]
+    transfer_vals = [0.78, 0.75, 0.77, 0.76, 0.71]
+
+    rows = []
+    for seed, (bl, tr) in enumerate(zip(baseline_vals, transfer_vals)):
+        rows.append(
+            {
+                "experiment": "baseline__ws",
+                "type": "baseline",
+                "seed": seed,
+                "recall_1": bl,
+                "diffusion_variant": "-",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "ws",
+            }
+        )
+        rows.append(
+            {
+                "experiment": "ft-mixed7__ws",
+                "type": "transfer",
+                "seed": seed,
+                "recall_1": tr,
+                "diffusion_variant": "ft-mixed7",
+                "gen_config": "-",
+                "selection": "-",
+                "aug_limit": "-",
+                "baseline_strategy": "ws",
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    result = generate_statistical_comparison_table(
+        df, alpha=0.05, baseline_name="baseline__ws"
+    )
+
+    assert "ft-mixed7__ws" in result
+    assert "baseline__ws" in result
+
+
+@pytest.mark.unit
 def test_generate_statistical_comparison_table_no_seed():
     """Test that statistical table returns empty for single-seed data."""
     import pandas as pd
@@ -974,6 +1030,23 @@ def test_generate_report_single_seed(tmp_path):
     report = (output_dir / "evaluation_report.md").read_text()
     assert "Evaluation Report" in report
     assert "baseline__vanilla" in report
+
+
+@pytest.mark.unit
+def test_generate_report_counts_transfer_in_header(tmp_path):
+    """Report header reports transfer experiments separately from synthetics."""
+    reports_dir = tmp_path / "ft-mixed7__ws" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation.json", "w") as f:
+        json.dump({"recall_1": 0.78, "balanced_accuracy": 0.82}, f)
+
+    output_dir = tmp_path / "output"
+    generate_report(base_dir=str(tmp_path), output_dir=str(output_dir))
+
+    report = (output_dir / "evaluation_report.md").read_text()
+    assert "Transfer (frozen-depth): 1" in report
+    # Transfer experiments must not be miscounted as synthetic augmentation.
+    assert "Synthetic augmentation: 0" in report
 
 
 @pytest.mark.unit
