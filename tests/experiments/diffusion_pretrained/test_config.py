@@ -35,6 +35,27 @@ def test_rejects_unknown_pretrained_source(example_config):
 
 
 @pytest.mark.unit
+def test_rejects_download_without_checkpoint_url(example_config):
+    # No local checkpoint_path -> the download URL must be explicit in the
+    # config; relying on a hidden default URL is rejected.
+    pre = example_config["model"]["pretrained"]
+    pre["checkpoint_path"] = None
+    pre["checkpoint_url"] = None
+    with pytest.raises(ValueError, match="checkpoint_url is required"):
+        validate_config(example_config)
+
+
+@pytest.mark.unit
+def test_accepts_local_checkpoint_path_without_url(example_config):
+    # An explicit local checkpoint needs no download URL.
+    pre = example_config["model"]["pretrained"]
+    pre["checkpoint_path"] = "models/adm/64x64_diffusion.pt"
+    pre["checkpoint_url"] = None
+    pre["cache_path"] = None
+    validate_config(example_config)  # should not raise
+
+
+@pytest.mark.unit
 def test_rejects_bad_noise_schedule(example_config):
     example_config["model"]["diffusion"]["noise_schedule"] = "bogus"
     with pytest.raises(ValueError, match="noise_schedule"):

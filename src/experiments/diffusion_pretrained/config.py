@@ -121,14 +121,22 @@ def _validate_pretrained(model: Dict[str, Any]) -> None:
 
     has_path = bool(pre.get("checkpoint_path"))
     has_cache = bool(pre.get("cache_path"))
-    # Either an explicit local checkpoint, or a cache target to download into. A
-    # cache miss falls back to the source's default URL, so checkpoint_url is
-    # optional.
-    if not has_path and not has_cache:
-        raise ValueError(
-            "model.pretrained requires either checkpoint_path (local file) or "
-            "cache_path (download target)"
-        )
+    has_url = bool(pre.get("checkpoint_url"))
+    # Either an explicit local checkpoint, or an explicit download spec
+    # (checkpoint_url -> cache_path). There is no implicit default download URL:
+    # when no local checkpoint_path is given, both the download source and its
+    # cache target must be specified in the config.
+    if not has_path:
+        if not has_cache:
+            raise ValueError(
+                "model.pretrained requires either checkpoint_path (local file) "
+                "or cache_path (download target)"
+            )
+        if not has_url:
+            raise ValueError(
+                "model.pretrained.checkpoint_url is required when checkpoint_path "
+                "is not set (no implicit default download URL)"
+            )
 
 
 def _validate_diffusion(model: Dict[str, Any]) -> None:

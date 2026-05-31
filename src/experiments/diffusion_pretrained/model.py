@@ -121,7 +121,9 @@ def _resolve_checkpoint(pretrained: Dict[str, Any]) -> Path:
         _logger.info("Using cached ADM checkpoint at %s", cache_path)
         return cache_path
 
-    url = pretrained.get("checkpoint_url") or ADM_IMAGENET64_CHECKPOINT_URL
+    # checkpoint_url is required by config validation when no checkpoint_path is
+    # given, so it is always present here (no implicit default fallback).
+    url = pretrained["checkpoint_url"]
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     _logger.info("Downloading ADM checkpoint from %s -> %s", url, cache_path)
     torch.hub.download_url_to_file(url, str(cache_path))
