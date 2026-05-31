@@ -179,6 +179,16 @@ def prepare_split(config: Dict[str, Any]) -> str:
             image_files, train_ratio, val_ratio, rng
         )
 
+        # Warn when a non-zero test fraction was requested but the class had
+        # too few samples to populate it (the min-guarantee for train/val
+        # consumes the remainder). Otherwise the empty "test" entries are silent.
+        if test_ratio > 0 and len(test_files) == 0:
+            logger.warning(
+                f"  Class '{class_name}' has too few samples "
+                f"({len(image_files)}) to populate the test split; "
+                "its 'test' entries will be empty despite test_ratio > 0"
+            )
+
         # Record per-class statistics
         class_samples[class_name] = {
             "total": len(image_files),

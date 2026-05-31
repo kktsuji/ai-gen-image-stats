@@ -308,6 +308,47 @@ class TestPrepareSplit:
         assert len(data["val"]) == 20
         assert len(data["test"]) == 20
 
+    def test_warns_when_test_split_empty_despite_ratio(self, tmp_path, caplog):
+        """Warn per-class when test_ratio > 0 but too few samples for a test split."""
+        # 3 samples with the min-guarantee for train/val leaves nothing for test.
+        config = self._make_config(
+            tmp_path,
+            {"normal": 3},
+            train_ratio=0.7,
+            val_ratio=0.15,
+            test_ratio=0.15,
+        )
+        with caplog.at_level("WARNING"):
+            output_path = prepare_split(config)
+
+        with open(output_path) as f:
+            data = json.load(f)
+
+        assert len(data["test"]) == 0
+        assert any(
+            "test split" in rec.message and "normal" in rec.message
+            for rec in caplog.records
+            if rec.levelname == "WARNING"
+        )
+
+    def test_no_test_warning_when_ratio_zero(self, tmp_path, caplog):
+        """No empty-test warning is emitted when test_ratio is 0."""
+        config = self._make_config(
+            tmp_path,
+            {"normal": 3},
+            train_ratio=0.8,
+            val_ratio=0.2,
+            test_ratio=0.0,
+        )
+        with caplog.at_level("WARNING"):
+            prepare_split(config)
+
+        assert not any(
+            "test split" in rec.message
+            for rec in caplog.records
+            if rec.levelname == "WARNING"
+        )
+
     def test_all_images_appear_once(self, tmp_path):
         """Test that every image appears exactly once in train+val+test."""
         config = self._make_config(tmp_path, {"normal": 10, "abnormal": 10})
