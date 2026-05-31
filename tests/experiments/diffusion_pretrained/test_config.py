@@ -42,9 +42,41 @@ def test_rejects_bad_noise_schedule(example_config):
 
 
 @pytest.mark.unit
+def test_rejects_engine_unsupported_noise_schedule(example_config):
+    # "quadratic"/"sigmoid" pass a naive check but the vendored engine only
+    # implements linear/cosine, so they must be rejected at validation time.
+    example_config["model"]["diffusion"]["noise_schedule"] = "quadratic"
+    with pytest.raises(ValueError, match="noise_schedule"):
+        validate_config(example_config)
+
+
+@pytest.mark.unit
 def test_rejects_non_string_respacing(example_config):
     example_config["model"]["diffusion"]["sample_timestep_respacing"] = 250
     with pytest.raises(ValueError, match="sample_timestep_respacing"):
+        validate_config(example_config)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", ["0", "ddim0", "foo", "250,0", "ddim"])
+def test_rejects_semantically_invalid_respacing(example_config, bad):
+    example_config["model"]["diffusion"]["sample_timestep_respacing"] = bad
+    with pytest.raises(ValueError, match="sample_timestep_respacing"):
+        validate_config(example_config)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("good", ["", "250", "ddim250", "100,150,200"])
+def test_accepts_valid_respacing(example_config, good):
+    example_config["model"]["diffusion"]["sample_timestep_respacing"] = good
+    validate_config(example_config)  # should not raise
+
+
+@pytest.mark.unit
+def test_rejects_non_class_conditioning_type(example_config):
+    # The ADM slice is always class-conditional; unconditional (None) is rejected.
+    example_config["model"]["conditioning"]["type"] = None
+    with pytest.raises(ValueError, match="conditioning.type must be 'class'"):
         validate_config(example_config)
 
 

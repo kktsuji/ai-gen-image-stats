@@ -25,7 +25,9 @@ from src.utils.config import validate_experiment_section
 
 _logger = logging.getLogger(__name__)
 
-_VALID_NOISE_SCHEDULES = ["linear", "cosine", "quadratic", "sigmoid"]
+# The vendored guided-diffusion engine (get_named_beta_schedule) only implements
+# "linear" and "cosine"; anything else raises NotImplementedError at build time.
+_VALID_NOISE_SCHEDULES = ["linear", "cosine"]
 _VALID_PRETRAINED_SOURCES = ["adm_imagenet64"]
 
 
@@ -149,6 +151,22 @@ def _validate_diffusion(model: Dict[str, Any]) -> None:
             "model.diffusion.sample_timestep_respacing must be a string "
             "(e.g. '250', 'ddim250', or '' for the full chain)"
         )
+    # Validate semantically so invalid specs fail here rather than deep inside
+    # space_timesteps() at model-construction time. Allowed: '' (full chain),
+    # 'ddimN' (N>=1), or a comma-separated list of positive integers.
+    _respacing_error = ValueError(
+        "model.diffusion.sample_timestep_respacing must be '' (full chain), "
+        "'ddimN' with N >= 1, or a comma-separated list of positive integers, "
+        f"got {respacing!r}"
+    )
+    if respacing.startswith("ddim"):
+        count = respacing.removeprefix("ddim")
+        if not count.isdigit() or int(count) < 1:
+            raise _respacing_error
+    elif respacing:
+        parts = respacing.split(",")
+        if not all(part.isdigit() and int(part) >= 1 for part in parts):
+            raise _respacing_error
 
 
 def _validate_conditioning(model: Dict[str, Any]) -> None:
@@ -160,9 +178,13 @@ def _validate_conditioning(model: Dict[str, Any]) -> None:
         if field not in cond:
             raise KeyError(f"Missing required field: model.conditioning.{field}")
 
-    if cond["type"] is not None and cond["type"] != "class":
+    # The ADM transfer model is always class-conditional (it always builds a
+    # label-embedding head with a CFG unconditional token), so unlike the
+    # from-scratch DDPM it does not support an unconditional (None) mode.
+    if cond["type"] != "class":
         raise ValueError(
-            f"model.conditioning.type must be None or 'class', got {cond['type']!r}"
+            f"model.conditioning.type must be 'class' for the diffusion_pretrained "
+            f"slice, got {cond['type']!r}"
         )
 
     # Unlike the from-scratch DDPM, the ADM transfer model always builds a

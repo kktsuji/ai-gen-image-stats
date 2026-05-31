@@ -2,7 +2,7 @@
 target-version = "py311"
 line-length = 88
 # guided_diffusion is vendored verbatim from openai/guided-diffusion (MIT) and is
-# not linted/formatted by this repo — see its NOTICE for provenance.
+# not linted/formatted by this repo — see its LICENSE for provenance.
 extend-exclude = [".local-tmp", "src/experiments/diffusion_pretrained/guided_diffusion"]
 
 [tool.ruff.lint]

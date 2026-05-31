@@ -80,7 +80,9 @@ def _create_gaussian_diffusion(
 
     Mirrors ``guided_diffusion.script_util.create_gaussian_diffusion`` for the
     flags used by the ImageNet-64 model (epsilon mean, learned-range variance,
-    hybrid MSE+VLB loss, no timestep rescaling).
+    rescaled hybrid MSE+VLB loss, no timestep input rescaling). ``RESCALED_MSE``
+    (not plain ``MSE``) is required for learned-range models so the VLB term is
+    scaled by ``num_timesteps / 1000`` and does not swamp the epsilon MSE.
     """
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
     respacing: Sequence[int] | str = (
@@ -95,7 +97,7 @@ def _create_gaussian_diffusion(
             if learn_sigma
             else gd.ModelVarType.FIXED_LARGE
         ),
-        loss_type=gd.LossType.MSE,
+        loss_type=gd.LossType.RESCALED_MSE,
         rescale_timesteps=False,
     )
 
@@ -170,7 +172,6 @@ class AdmDdpmModel(nn.Module):
         self.uncond_index = num_classes
         self.class_dropout_prob = class_dropout_prob
         self.num_timesteps = num_timesteps
-        self.device = device
 
         flags: Dict[str, Any] = dict(IMAGENET64_ADM_FLAGS)
         if arch:
@@ -309,6 +310,12 @@ class AdmDdpmModel(nn.Module):
         With ``guidance_scale > 0`` classifier-free guidance is applied by
         combining conditional and unconditional epsilon predictions
         (``uncond + scale * (cond - uncond)``), matching the project convention.
+
+        Note: ``return_intermediates=True`` keeps every denoising frame
+        (one per respaced timestep) in memory before stacking, so peak memory
+        scales with the number of sampling steps × batch size. Prefer a small
+        batch / coarse ``sample_timestep_respacing`` when collecting frames for
+        the full chain.
         """
         del progress_desc  # ADM progress bar is a simple flag
         device = next(self.parameters()).device
@@ -321,7 +328,7 @@ class AdmDdpmModel(nn.Module):
                 (batch_size,), self.uncond_index, device=device, dtype=torch.long
             )
 
-        use_cfg = guidance_scale is not None and guidance_scale > 0.0
+        use_cfg = guidance_scale > 0.0
         if use_cfg:
             y_uncond = torch.full(
                 (batch_size,), self.uncond_index, device=device, dtype=torch.long

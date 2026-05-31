@@ -8,8 +8,8 @@
 # and (by default) only the head + output block are trained.
 #
 # Run:
-#   python -m src.main configs/diffusion-pretrained.yaml
-#   python -m src.main configs/diffusion-pretrained.yaml --mode generate \
+#   python -m src.main configs/examples/diffusion-pretrained.yaml
+#   python -m src.main configs/examples/diffusion-pretrained.yaml --mode generate \
 #       --generation.checkpoint outputs/diffusion-pretrained/checkpoints/best_model.pth
 # ------------------------------------------------------------------------------
 
