@@ -1,7 +1,9 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 88
-extend-exclude = [".local-tmp"]
+# guided_diffusion is vendored verbatim from openai/guided-diffusion (MIT) and is
+# not linted/formatted by this repo — see its NOTICE for provenance.
+extend-exclude = [".local-tmp", "src/experiments/diffusion_pretrained/guided_diffusion"]
 
 [tool.ruff.lint]
 select = [
@@ -19,9 +21,17 @@ ignore = [
 quote-style = "double"
 indent-style = "space"
 
+[tool.coverage.run]
+# guided_diffusion is vendored verbatim from openai/guided-diffusion (MIT); it is
+# not part of this repo's coverage target (also excluded from ruff/pyright).
+omit = ["src/experiments/diffusion_pretrained/guided_diffusion/*"]
+
 [tool.pyright]
 pythonVersion = "3.11"
 include = ["src", "tests"]
+# guided_diffusion is vendored verbatim from openai/guided-diffusion (MIT); its
+# upstream style does not satisfy this repo's type checks, so it is not analyzed.
+ignore = ["src/experiments/diffusion_pretrained/guided_diffusion"]
 typeCheckingMode = "basic"
 # torch's type stubs omit many public functions (e.g. torch.max, torch.cat) from
 # __all__, so pyright >=1.1.409 flags them as private imports. These are false

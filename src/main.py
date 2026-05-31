@@ -502,9 +502,6 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         FileNotFoundError: If checkpoint file not found in generation mode
         RuntimeError: If experiment execution fails
     """
-    from src.experiments.diffusion.config import (
-        validate_config as validate_diffusion_config,
-    )
     from src.experiments.diffusion.model import create_ddpm
     from src.experiments.diffusion.trainer import DiffusionTrainer
     from src.utils.config import (
@@ -519,7 +516,21 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
         get_diffusion_val_transforms,
     )
 
-    # Validate diffusion config (strict mode - no defaults)
+    # This engine serves both the from-scratch diffusion slice and the
+    # pretrained-transfer (ADM) slice; validation and model construction
+    # dispatch on the experiment type, the rest of the pipeline is shared.
+    experiment_type = config["experiment"]
+    is_pretrained_transfer = experiment_type == "diffusion_pretrained"
+
+    # Validate config (strict mode - no defaults)
+    if is_pretrained_transfer:
+        from src.experiments.diffusion_pretrained.config import (
+            validate_config as validate_diffusion_config,
+        )
+    else:
+        from src.experiments.diffusion.config import (
+            validate_config as validate_diffusion_config,
+        )
     validate_diffusion_config(config)
 
     # Get mode (train or generate)
@@ -538,22 +549,29 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
     diff_config = model_config["diffusion"]
     cond_config = model_config["conditioning"]
 
-    model = create_ddpm(
-        image_size=arch_config["image_size"],
-        in_channels=arch_config["in_channels"],
-        model_channels=arch_config["model_channels"],
-        channel_multipliers=tuple(arch_config["channel_multipliers"]),
-        num_classes=cond_config["num_classes"],
-        num_timesteps=diff_config["num_timesteps"],
-        beta_schedule=diff_config["beta_schedule"],
-        beta_start=diff_config["beta_start"],
-        beta_end=diff_config["beta_end"],
-        class_dropout_prob=cond_config["class_dropout_prob"],
-        use_attention=tuple(arch_config["use_attention"]),
-        device=device,
-    )
+    if is_pretrained_transfer:
+        from src.experiments.diffusion_pretrained.model import build_adm_model
 
-    logger.info("Model: DDPM")
+        # In generate mode the architecture is built without downloading the ADM
+        # checkpoint; weights are restored from the fine-tuned checkpoint below.
+        model = build_adm_model(config, device, load_pretrained=(mode == "train"))
+        logger.info("Model: ADM (pretrained transfer)")
+    else:
+        model = create_ddpm(
+            image_size=arch_config["image_size"],
+            in_channels=arch_config["in_channels"],
+            model_channels=arch_config["model_channels"],
+            channel_multipliers=tuple(arch_config["channel_multipliers"]),
+            num_classes=cond_config["num_classes"],
+            num_timesteps=diff_config["num_timesteps"],
+            beta_schedule=diff_config["beta_schedule"],
+            beta_start=diff_config["beta_start"],
+            beta_end=diff_config["beta_end"],
+            class_dropout_prob=cond_config["class_dropout_prob"],
+            use_attention=tuple(arch_config["use_attention"]),
+            device=device,
+        )
+        logger.info("Model: DDPM")
     logger.info(f"Image size: {arch_config['image_size']}")
     logger.info(f"Num classes: {cond_config['num_classes']}")
     logger.info(f"Num timesteps: {diff_config['num_timesteps']}")
@@ -865,10 +883,16 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             },
         )
 
-        # Initialize optimizer
+        # Initialize optimizer. Transfer models expose get_trainable_parameters()
+        # so that frozen backbone weights are excluded from optimization; the
+        # from-scratch DDPM has no such method and optimizes all parameters.
         optimizer_config = training_config["optimizer"]
+        get_trainable = getattr(model, "get_trainable_parameters", None)
+        optimizer_params = (
+            get_trainable() if callable(get_trainable) else model.parameters()
+        )
         optimizer = create_optimizer(
-            model.parameters(),
+            optimizer_params,
             optimizer_config,
             valid_types=["adam", "adamw"],
         )
@@ -946,6 +970,20 @@ def setup_experiment_diffusion(config: Dict[str, Any]) -> None:
             best_metric=best_metric_key,
             best_metric_mode=best_metric_mode,
         )
+
+
+def setup_experiment_diffusion_pretrained(config: Dict[str, Any]) -> None:
+    """Setup and run the pretrained-transfer (ADM) diffusion experiment.
+
+    Thin wrapper around :func:`setup_experiment_diffusion`, which is a shared
+    engine that dispatches model construction and validation on the experiment
+    type (``diffusion`` vs ``diffusion_pretrained``). Both train and generate
+    modes are handled there.
+
+    Args:
+        config: Merged configuration dictionary.
+    """
+    setup_experiment_diffusion(config)
 
 
 def setup_experiment_gan(config: Dict[str, Any]) -> None:
@@ -1067,6 +1105,8 @@ def main(args: Optional[list] = None) -> None:
             setup_experiment_classifier(config)
         elif experiment == "diffusion":
             setup_experiment_diffusion(config)
+        elif experiment == "diffusion_pretrained":
+            setup_experiment_diffusion_pretrained(config)
         elif experiment == "gan":
             setup_experiment_gan(config)
         elif experiment == "sample_selection":
@@ -1076,8 +1116,8 @@ def main(args: Optional[list] = None) -> None:
         else:
             raise ValueError(
                 f"Unknown experiment type: {experiment}. "
-                f"Supported experiments: classifier, diffusion, gan, "
-                f"sample_selection, data_preparation"
+                f"Supported experiments: classifier, diffusion, "
+                f"diffusion_pretrained, gan, sample_selection, data_preparation"
             )
 
         # Notify on success
