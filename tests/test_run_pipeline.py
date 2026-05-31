@@ -295,3 +295,41 @@ class TestRunClassifierExperiment:
         rp._run_classifier_experiment("lbl", "out", [])
         eval_call = calls[1]
         assert any("final_model.pth" in tok for tok in eval_call)
+
+
+@pytest.mark.unit
+class TestRunOutputStreams:
+    """run() stream wiring: suppressed runs hide stdout but keep stderr for crashes."""
+
+    def _cfg(self):
+        return {"docker": {"shm_size": "4g", "image": "img"}}
+
+    def _capture_popen(self, monkeypatch):
+        captured = {}
+
+        class _FakeProc:
+            pass
+
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+            return _FakeProc()
+
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(rp.subprocess, "Popen", fake_popen)
+        return captured
+
+    def test_suppressed_keeps_stderr_drops_stdout(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], suppress_output=True)
+        # stdout silenced to avoid interleaving concurrent runs...
+        assert captured["kwargs"]["stdout"] is rp.subprocess.DEVNULL
+        # ...but stderr is kept so a container crash still surfaces.
+        assert captured["kwargs"]["stderr"] is rp.sys.stderr
+
+    def test_unsuppressed_inherits_both_streams(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], suppress_output=False)
+        # Foreground run streams both stdout and stderr (no redirection kwargs).
+        assert "stdout" not in captured["kwargs"]
+        assert "stderr" not in captured["kwargs"]

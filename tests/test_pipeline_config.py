@@ -143,6 +143,12 @@ class TestValidateRejects:
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 
+    def test_seeds_range_negative_step(self):
+        cfg = _valid_config()
+        cfg["seeds"] = {"range": [10, 0, -1]}
+        with pytest.raises(ValueError, match="step must be positive"):
+            validate_pipeline_config(cfg)
+
     def test_seeds_negative(self):
         cfg = _valid_config()
         cfg["seeds"] = {"list": [-1, 0]}

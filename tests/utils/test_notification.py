@@ -6,6 +6,7 @@ Tests cover:
 - _format_duration() function
 - notify_success() function
 - notify_error() function
+- notify_progress() function
 """
 
 import json
@@ -18,6 +19,7 @@ from src.utils.notification import (
     _get_webhook_url,
     _post_slack,
     notify_error,
+    notify_progress,
     notify_success,
 )
 
@@ -154,6 +156,40 @@ class TestNotifySuccess:
 
             text = mock_post.call_args[0][0]
             assert "Mode" not in text
+
+
+@pytest.mark.unit
+class TestNotifyProgress:
+    """Tests for notify_progress() function."""
+
+    def test_notify_progress_sends_text_verbatim(self, monkeypatch):
+        """Test that the message is posted exactly as given (no formatting)."""
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+
+        with patch("src.utils.notification._post_slack") as mock_post:
+            notify_progress("Classifier: 3/12")
+
+            mock_post.assert_called_once()
+            assert mock_post.call_args[0][0] == "Classifier: 3/12"
+
+    def test_notify_progress_skips_when_no_url(self, monkeypatch):
+        """Test that progress notification is skipped when no webhook URL is set."""
+        monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+
+        with patch("src.utils.notification._post_slack") as mock_post:
+            notify_progress("Classifier: 1/12")
+            mock_post.assert_not_called()
+
+    def test_notify_progress_does_not_raise_on_request_failure(self, monkeypatch):
+        """Test that _post_slack exceptions are caught in notify_progress."""
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/test")
+
+        with patch(
+            "src.utils.notification._post_slack",
+            side_effect=ConnectionError("network error"),
+        ):
+            # Should not raise
+            notify_progress("Classifier: 1/12")
 
 
 @pytest.mark.unit

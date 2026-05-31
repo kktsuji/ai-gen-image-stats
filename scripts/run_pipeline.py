@@ -34,8 +34,7 @@ from dotenv import load_dotenv  # noqa: E402
 from scripts.pipeline_config import load_pipeline_config  # noqa: E402
 from src.utils.cli import serialize_overrides  # noqa: E402
 from src.utils.notification import (  # noqa: E402
-    _get_webhook_url,
-    _post_slack,
+    notify_progress,
     notify_success,
 )
 
@@ -147,9 +146,11 @@ def run(
         *overrides,
     ]
     if suppress_output:
-        return subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        # Drop normal stdout (the in-container logger streams INFO to stdout; concurrent
+        # runs would interleave) but keep stderr so a container crash — OOM kill, import
+        # error, traceback — still surfaces on the console instead of vanishing. stderr
+        # is quiet during normal runs, so this doesn't reintroduce the interleaving.
+        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr)
     return subprocess.Popen(cmd)
 
 
@@ -234,13 +235,7 @@ def _notify_classifier_progress(current: int, total: int) -> None:
     notify_every = CFG["runner"]["classifier_notify_every"]
     if not total or (current != 1 and current % notify_every != 0 and current != total):
         return
-    url = _get_webhook_url()
-    if not url:
-        return
-    try:
-        _post_slack(f"Classifier: {current}/{total}", url)
-    except Exception as e:  # noqa: BLE001 - notifications must never break the pipeline
-        print(f"[NOTIFY] failed: {e}")
+    notify_progress(f"Classifier: {current}/{total}")
 
 
 def _run_classifier_experiment(
@@ -435,6 +430,9 @@ def main() -> None:
                 summarize["baseline_name"],
             ],
             check=True,
+            # Report aggregation is pure filesystem I/O; cap it so a hung read can't
+            # stall the pipeline indefinitely after all GPU work has finished.
+            timeout=1800,
         )
 
     notify_success(

@@ -239,6 +239,11 @@ def _validate_seeds(config: Dict[str, Any]) -> None:
         step = spec[2] if len(spec) == 3 else 1
         if step == 0:
             raise ValueError("seeds.range step must be non-zero")
+        if step < 0:
+            raise ValueError(
+                "seeds.range step must be positive "
+                "(descending seed ranges are not supported)"
+            )
         if stop <= start:
             raise ValueError(
                 f"seeds.range stop ({stop}) must be greater than start ({start})"

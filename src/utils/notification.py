@@ -82,6 +82,26 @@ def notify_success(config: Dict[str, Any], duration_seconds: float) -> None:
         logger.warning(f"Failed to send Slack notification: {e}")
 
 
+def notify_progress(text: str) -> None:
+    """Send a raw progress message to Slack, silent if the webhook is unset.
+
+    Unlike notify_success/notify_error this posts ``text`` verbatim (no formatting),
+    for lightweight progress pings such as the pipeline's "Classifier: N/total". Never
+    raises: a notification failure must not interrupt the caller.
+
+    Args:
+        text: Message text to send.
+    """
+    webhook_url = _get_webhook_url()
+    if not webhook_url:
+        return
+    try:
+        _post_slack(text, webhook_url)
+        logger.debug("Slack notification sent (progress)")
+    except Exception as e:
+        logger.warning(f"Failed to send Slack notification: {e}")
+
+
 def notify_error(config: Dict[str, Any], error: Exception) -> None:
     """Send a Slack notification when an experiment fails.
 
