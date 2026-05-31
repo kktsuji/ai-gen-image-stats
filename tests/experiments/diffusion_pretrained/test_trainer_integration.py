@@ -48,7 +48,7 @@ def _loader(num_samples=8, batch_size=4):
     return DataLoader(TensorDataset(images, labels), batch_size=batch_size)
 
 
-@pytest.mark.component
+@pytest.mark.integration
 def test_train_epoch_runs_and_reports_loss():
     model = _tiny_adm()
     model.freeze_backbone()
@@ -68,7 +68,7 @@ def test_train_epoch_runs_and_reports_loss():
     assert torch.isfinite(torch.tensor(metrics["loss"]))
 
 
-@pytest.mark.component
+@pytest.mark.integration
 def test_ema_tracks_only_trainable_params():
     model = _tiny_adm()
     model.freeze_backbone()
