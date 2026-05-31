@@ -456,6 +456,27 @@ class TestClassifierExperimentSetup:
             setup_experiment_classifier(config)
 
     @pytest.mark.integration
+    def test_setup_classifier_train_missing_val_split(self, tmp_path):
+        """Test that training mode raises a clean ValueError (not KeyError) when
+        the split file has no 'val' entries."""
+        import json
+
+        split_file = tmp_path / "no_val_split.json"
+        split_file.write_text(
+            json.dumps(
+                {
+                    "train": [{"path": "a.png", "label": 0}],
+                    "metadata": {"classes": {"0": "a", "1": "b"}},
+                }
+            )
+        )
+        config = _base_classifier_config(tmp_path)
+        config["data"]["split_file"] = str(split_file)
+
+        with pytest.raises(ValueError, match="no 'val' entries"):
+            setup_experiment_classifier(config)
+
+    @pytest.mark.integration
     def test_setup_classifier_full_execution_mini(self, tmp_path):
         """Test full execution of classifier training with tiny dataset.
 

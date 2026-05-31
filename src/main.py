@@ -171,9 +171,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     eval_split = "val"
     if mode == "evaluate":
         eval_split = config.get("evaluation", {}).get("split", "val")
-        # Validate the evaluation split has data before reading it
-        # (gives a clear error instead of a confusing loader/JSON failure)
-        _validate_split_file_has_split(split_file, eval_split)
+    # Validate the split has data before reading it (gives a clear error instead
+    # of a confusing loader/JSON failure on a malformed or legacy split file).
+    _validate_split_file_has_split(split_file, eval_split)
 
     # Create eval loader (needed for both train and evaluate modes)
     compute_config = config.get("compute", {})
