@@ -195,6 +195,14 @@ class TestInferType:
         """A quoted list literal is treated as a string (quotes win first)."""
         assert infer_type("\"['a', 'b']\"") == "['a', 'b']"
 
+    def test_infer_type_semantically_invalid_literal_falls_back_to_string(self):
+        """A syntactically valid but semantically invalid literal (unhashable
+        dict key) raises TypeError in literal_eval and falls back to the raw
+        string."""
+        result = infer_type("{[1]: 2}")
+        assert result == "{[1]: 2}"
+        assert isinstance(result, str)
+
     def test_infer_type_empty_string(self):
         assert infer_type("") == ""
         assert isinstance(infer_type(""), str)

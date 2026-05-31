@@ -85,10 +85,10 @@ def infer_type(value: str) -> Any:
 
     # List/dict literal — parse with ast.literal_eval, fall back to raw string
     stripped = value.strip()
-    if stripped[:1] in ("[", "{"):
+    if stripped.startswith(("[", "{")):
         try:
             return ast.literal_eval(stripped)
-        except (ValueError, SyntaxError):
+        except (ValueError, TypeError, SyntaxError):
             pass
 
     # String (default)

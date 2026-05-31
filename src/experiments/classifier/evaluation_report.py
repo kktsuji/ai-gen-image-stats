@@ -483,7 +483,7 @@ def generate_statistical_comparison_table(
                 "experiment": syn_name,
                 "metric": r.metric,
                 "baseline": f"{r.baseline_mean:.4f} +/- {r.baseline_std:.4f}",
-                "synthetic": f"{r.treatment_mean:.4f} +/- {r.treatment_std:.4f}",
+                "variant": f"{r.treatment_mean:.4f} +/- {r.treatment_std:.4f}",
                 "diff": f"{r.mean_diff:+.4f}",
                 "cohens_d": (
                     f"{r.cohens_d:.3f} ({r.effect_size_interpretation})"
