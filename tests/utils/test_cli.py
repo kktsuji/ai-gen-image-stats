@@ -17,6 +17,8 @@ from src.utils.cli import (
     infer_type,
     parse_args,
     parse_override_args,
+    serialize_override,
+    serialize_overrides,
     validate_config,
     validate_override_keys,
 )
@@ -834,3 +836,90 @@ class TestEndToEndCLIWorkflow:
 
         assert config["experiment"] == "classifier"
         assert "model" not in config
+
+
+@pytest.mark.unit
+class TestSerializeOverride:
+    """Test serialize_override / serialize_overrides (inverse of infer_type)."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            True,
+            False,
+            None,
+            7,
+            0,
+            0.0001,
+            1e-05,
+            ["Mixed_7*"],
+            ["Mixed_6*", "Mixed_7*"],
+            {"a": 1},
+            "plain",
+            "data/splits/x.json",
+            "true",
+            "false",
+            "null",
+            "42",
+            "3.14",
+            "[1, 2]",
+        ],
+    )
+    def test_round_trip(self, value):
+        """infer_type(serialize_override(v)) reproduces v for every override type."""
+        assert infer_type(serialize_override(value)) == value
+
+    def test_bool_serialized_before_int(self):
+        """Booleans must serialize to true/false, not 1/0 (bool is an int subclass)."""
+        assert serialize_override(True) == "true"
+        assert serialize_override(False) == "false"
+
+    def test_none_serializes_to_null(self):
+        assert serialize_override(None) == "null"
+
+    def test_int_and_float(self):
+        assert serialize_override(7) == "7"
+        assert serialize_override(0.0001) == "0.0001"
+        assert serialize_override(1e-05) == "1e-05"
+
+    def test_list_serializes_to_python_literal(self):
+        assert serialize_override(["Mixed_7*"]) == "['Mixed_7*']"
+        # A space-containing multi-element list round-trips (single argv element).
+        assert (
+            serialize_override(["Mixed_6*", "Mixed_7*"]) == "['Mixed_6*', 'Mixed_7*']"
+        )
+
+    def test_quote_forces_ambiguous_strings(self):
+        """Strings that would otherwise be re-typed are wrapped in quotes."""
+        assert serialize_override("true") == "'true'"
+        assert serialize_override("42") == "'42'"
+        assert serialize_override("null") == "'null'"
+        assert serialize_override("[1]") == "'[1]'"
+
+    def test_plain_string_passthrough(self):
+        assert serialize_override("plain") == "plain"
+        assert serialize_override("data/splits/x.json") == "data/splits/x.json"
+
+    def test_serialize_overrides_flattens_to_cli_tokens(self):
+        assert serialize_overrides({"a.b": True, "c": ["x"]}) == [
+            "--a.b",
+            "true",
+            "--c",
+            "['x']",
+        ]
+
+    def test_serialize_overrides_empty(self):
+        assert serialize_overrides({}) == []
+
+    def test_serialize_overrides_round_trips_via_parse(self):
+        """The flattened tokens parse back to the original nested override dict."""
+        overrides = {
+            "data.balancing.weighted_sampler.enabled": True,
+            "model.initialization.trainable_layers": ["Mixed_7*"],
+            "training.optimizer.learning_rate": 0.0001,
+        }
+        tokens = serialize_overrides(overrides)
+        parsed = parse_override_args(tokens)
+        assert parsed["data"]["balancing"]["weighted_sampler"]["enabled"] is True
+        assert parsed["model"]["initialization"]["trainable_layers"] == ["Mixed_7*"]
+        assert parsed["training"]["optimizer"]["learning_rate"] == 0.0001

@@ -95,6 +95,75 @@ def infer_type(value: str) -> Any:
     return value
 
 
+def serialize_override(value: Any) -> str:
+    """Serialize a Python value into the CLI string form ``infer_type`` expects.
+
+    This is the inverse of :func:`infer_type`: ``infer_type(serialize_override(v))``
+    returns a value equal to ``v`` for every type used as a config override
+    (bool, None, int, float, list/dict, str). It lets a YAML-native override value
+    be passed to ``src.main`` as a CLI argument and parsed back to the same value.
+
+    The branch order matters: ``bool`` must be checked before ``int`` because
+    ``isinstance(True, int)`` is ``True``. Lists/dicts are emitted as Python literals
+    (via ``repr``) so ``infer_type`` can restore them with ``ast.literal_eval``.
+    A plain string that would otherwise be re-typed (e.g. ``"true"``, ``"42"``,
+    ``"[1]"``) is wrapped in single quotes to force string interpretation.
+
+    Args:
+        value: Python value to serialize.
+
+    Returns:
+        CLI string form that ``infer_type`` parses back into ``value``.
+
+    Example:
+        >>> serialize_override(True)
+        'true'
+        >>> serialize_override(None)
+        'null'
+        >>> serialize_override(["Mixed_7*"])
+        "['Mixed_7*']"
+        >>> serialize_override("true")
+        "'true'"
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, (list, dict)):
+        return repr(value)
+    # Plain string: force-quote if it would otherwise be inferred as another type.
+    if infer_type(value) != value:
+        return f"'{value}'"
+    return value
+
+
+def serialize_overrides(overrides: Dict[str, Any]) -> List[str]:
+    """Flatten a dot-notation override mapping into CLI argument tokens.
+
+    Each ``"dotted.key": value`` pair becomes ``["--dotted.key", serialized_value]``,
+    suitable for appending to a ``python -m src.main <config>`` invocation.
+
+    Args:
+        overrides: Mapping of dot-notation config keys to Python values.
+
+    Returns:
+        Flat list of ``["--key", "value", ...]`` CLI tokens.
+
+    Example:
+        >>> serialize_overrides({"a.b": True, "c": ["x"]})
+        ['--a.b', 'true', '--c', "['x']"]
+    """
+    args: List[str] = []
+    for key, value in overrides.items():
+        args.append(f"--{key}")
+        args.append(serialize_override(value))
+    return args
+
+
 def dot_notation_to_dict(key: str, value: Any) -> Dict[str, Any]:
     """Convert a dot-notation key and value into a nested dictionary.
 

@@ -14,7 +14,7 @@ python -m src.main configs/diffusion.yaml            # train diffusion model
 python -m src.main configs/diffusion-ws-gen.yaml     # generate images (mode: generate)
 python -m src.main configs/examples/sample-selection.yaml     # select high-quality generated samples
 python -m src.main configs/classifier.yaml --mode evaluate --evaluation.checkpoint path/to/model.pth  # evaluate trained classifier
-python scripts/run_pipeline.py                               # run full synthetic augmentation pipeline
+python -m scripts.run_pipeline [configs/pipeline.yaml]       # run full synthetic augmentation pipeline
 python -m src.experiments.sample_selection.evaluation_report  # aggregate selection-eval reports
 
 # Override config values with dot-notation
@@ -137,13 +137,13 @@ outputs/<experiment_name>/
 
 ### Pipeline (`scripts/run_pipeline.py`)
 
-The pipeline script orchestrates the full synthetic augmentation workflow. Phases are toggled via `RUN_*` flags at the top of the script:
+The pipeline script orchestrates the full synthetic augmentation workflow. All experiment configuration (phase flags, runner/infra settings, seeds, global classifier overrides, and the baseline/fine-tune variant matrix) lives in a YAML config — `configs/pipeline.yaml` by default (gitignored, like other `configs/*.yaml`; template at `configs/examples/pipeline.yaml`). Run with `python -m scripts.run_pipeline [configs/pipeline.yaml]`. The driver (`scripts/run_pipeline.py`) keeps only the generic orchestration; `scripts/pipeline_config.py` strictly validates the config. Phases are toggled via the `phases.*` flags in the config:
 
-- **Train** — train diffusion model variants (GPU/Docker)
-- **Generate** — generate synthetic images from trained models (GPU/Docker)
-- **Select** — quality-filter generated samples (GPU/Docker)
-- **Evaluate** — train and evaluate classifiers with augmented data (GPU/Docker)
-- **Summarize** — aggregate evaluation reports (CPU-only, no Docker). Runs `src.experiments.sample_selection.evaluation_report` and `src.experiments.classifier.evaluation_report` to produce cross-experiment comparison tables
+- **data_preparation** — prepare the train/val split (GPU/Docker)
+- **baseline_classifier** — train head-only baseline classifiers, the D0 reference (GPU/Docker)
+- **ft_classifier** — train the fine-tuned frozen-depth sweep variants (GPU/Docker)
+- **evaluation** — evaluate each trained classifier, interleaved per experiment (GPU/Docker)
+- **summarize** — aggregate classifier evaluation reports (CPU-only, no Docker). Runs `src.experiments.classifier.evaluation_report` to produce cross-experiment comparison tables
 
 ### Notifications
 
