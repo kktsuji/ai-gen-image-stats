@@ -70,7 +70,7 @@ model:
     type: cross_entropy # Options: cross_entropy, focal, class_balanced
     gamma: 2.0 # focal: focusing parameter (>= 0); also used by class_balanced base=focal
     alpha: null # focal: per-class weight list of length num_classes, or null
-    beta: 0.999 # class_balanced: effective-number beta in [0, 1)
+    beta: 0.999 # class_balanced: effective-number beta in (0, 1)
     base: cross_entropy # class_balanced: loss to reweight (cross_entropy or focal)
 
 # ------------------------------------------------------------------------------

@@ -123,8 +123,15 @@ def validate_loss_section(loss: Any, num_classes: int) -> None:
         if "beta" not in loss:
             raise KeyError("Missing required field: model.loss.beta (class_balanced)")
         beta = loss["beta"]
-        if not isinstance(beta, (int, float)) or not (0 <= beta < 1):
-            raise ValueError("model.loss.beta must be a number in [0, 1)")
+        # Open interval (0, 1): the reused compute_effective_num_weights rejects
+        # beta <= 0, so accepting 0 here would pass validation then crash at model
+        # build time. Cui et al. use beta in {0.9, 0.99, 0.999, 0.9999}.
+        if (
+            isinstance(beta, bool)
+            or not isinstance(beta, (int, float))
+            or not (0 < beta < 1)
+        ):
+            raise ValueError("model.loss.beta must be a number in (0, 1)")
         if "base" not in loss:
             raise KeyError("Missing required field: model.loss.base (class_balanced)")
         if loss["base"] not in ["cross_entropy", "focal"]:

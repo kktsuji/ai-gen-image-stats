@@ -1050,6 +1050,14 @@ class TestValidateLossSection:
                 {"type": "class_balanced", "beta": 1.0, "base": "cross_entropy"}, 2
             )
 
+    def test_class_balanced_beta_zero_rejected(self):
+        # beta=0 is rejected by compute_effective_num_weights at build time, so
+        # validation must reject it too rather than accept a config that crashes.
+        with pytest.raises(ValueError):
+            validate_loss_section(
+                {"type": "class_balanced", "beta": 0, "base": "cross_entropy"}, 2
+            )
+
     def test_class_balanced_missing_base_rejected(self):
         with pytest.raises(KeyError):
             validate_loss_section({"type": "class_balanced", "beta": 0.99}, 2)
