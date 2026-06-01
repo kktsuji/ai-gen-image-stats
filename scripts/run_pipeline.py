@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -53,6 +54,16 @@ Job = Tuple[str, str, List[str]]
 def _is_done(*markers: str) -> bool:
     """True if skip_completed is enabled and every marker file exists."""
     return CFG["runner"]["skip_completed"] and all(os.path.exists(m) for m in markers)
+
+
+def _eval_report_name(split: str) -> str:
+    """Report filename main.py writes for a split (canonical for test).
+
+    Mirrors src/main.py: the held-out test report keeps the canonical
+    "evaluation.json" (what evaluation_report aggregates); other splits are
+    written split-tagged so a val pass doesn't clobber the test report.
+    """
+    return "evaluation.json" if split == "test" else f"evaluation_{split}.json"
 
 
 def build_classifier_jobs(cfg: Dict[str, Any]) -> List[Job]:
@@ -257,11 +268,16 @@ def _run_classifier_experiment(
     """
     classifier_config = CFG["configs"]["classifier"]
     run_evaluation = CFG["phases"]["evaluation"]
+    eval_splits = CFG["runner"]["evaluation_splits"]
     final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
-    eval_marker = os.path.join(out_dir, "reports", "evaluation.json")
+    # One report marker per evaluated split; the run is "done" only when every
+    # split has been evaluated (so a half-finished two-pass run re-runs the rest).
+    eval_markers = [
+        os.path.join(out_dir, "reports", _eval_report_name(s)) for s in eval_splits
+    ]
 
     # Already evaluated (checkpoints possibly already cleaned up): skip entirely.
-    if run_evaluation and _is_done(eval_marker):
+    if run_evaluation and _is_done(*eval_markers):
         print(f"[SKIP] {exp_label}: already complete")
         return
 
@@ -301,30 +317,43 @@ def _run_classifier_experiment(
         print(f"[EVAL] SKIP {exp_label}: no checkpoint found")
         return
 
-    eval_overrides = [
-        "--mode",
-        "evaluate",
-        "--output.base_dir",
-        out_dir,
-        "--evaluation.checkpoint",
-        checkpoint,
-        "--data.synthetic_augmentation.enabled",
-        "false",
-        *serialize_overrides(CFG["classifier_overrides"]["runtime"]),
-    ]
-    print(f"[EVAL] {exp_label}: {classifier_config} {' '.join(eval_overrides)}")
-    rc = _throttled_run_and_wait(
-        classifier_config,
-        eval_overrides,
-        disable_notifications=True,
-        suppress_output=suppress_output,
-    )
-    if rc != 0:
-        # Keep checkpoints so the experiment can be retried.
-        print(f"[EVAL] FAIL {exp_label}: evaluation failed (rc={rc})")
-        return
+    # Evaluate each configured split (e.g. val then test) reusing the same
+    # checkpoint. The per-pass --evaluation.split is appended last so it wins over
+    # any evaluation.split left in classifier_overrides.runtime. Predictions are
+    # written split-tagged (predictions_{split}.npz) for post-hoc threshold
+    # analysis; checkpoints are kept until ALL splits succeed.
+    for split in eval_splits:
+        eval_overrides = [
+            "--mode",
+            "evaluate",
+            "--output.base_dir",
+            out_dir,
+            "--evaluation.checkpoint",
+            checkpoint,
+            "--data.synthetic_augmentation.enabled",
+            "false",
+            *serialize_overrides(CFG["classifier_overrides"]["runtime"]),
+            "--evaluation.split",
+            split,
+        ]
+        print(
+            f"[EVAL] {exp_label} (split={split}): "
+            f"{classifier_config} {' '.join(eval_overrides)}"
+        )
+        rc = _throttled_run_and_wait(
+            classifier_config,
+            eval_overrides,
+            disable_notifications=True,
+            suppress_output=suppress_output,
+        )
+        if rc != 0:
+            # Keep checkpoints so the experiment can be retried from where it stopped.
+            print(
+                f"[EVAL] FAIL {exp_label} (split={split}): evaluation failed (rc={rc})"
+            )
+            return
 
-    # --- Cleanup: drop the now-unneeded checkpoints after a successful eval ---
+    # --- Cleanup: drop the now-unneeded checkpoints after all splits evaluated ---
     if CFG["runner"]["delete_checkpoints_after_eval"]:
         ckpt_dir = os.path.join(out_dir, "checkpoints")
         if os.path.isdir(ckpt_dir):
@@ -434,6 +463,44 @@ def main() -> None:
             # stall the pipeline indefinitely after all GPU work has finished.
             timeout=1800,
         )
+
+        # Post-hoc decision-threshold analysis (CPU-only). Only meaningful for the
+        # leak-free val->test protocol, i.e. when both splits were evaluated.
+        eval_splits = cfg["runner"]["evaluation_splits"]
+        if "val" in eval_splits and "test" in eval_splits:
+            # The analysis reads predictions_{split}.npz, which main.py only writes
+            # when evaluation.bootstrap.save_predictions is enabled. If those artifacts
+            # are absent (flag off, or all eval passes failed), skip with a clear
+            # message rather than letting the subprocess die on missing files after all
+            # GPU work has finished.
+            base_dir = summarize["base_dir"]
+            has_val = bool(glob(f"{base_dir}/**/predictions_val.npz", recursive=True))
+            has_test = bool(glob(f"{base_dir}/**/predictions_test.npz", recursive=True))
+            if has_val and has_test:
+                print("[SUMMARIZE] Generating decision-threshold analysis")
+                subprocess.run(
+                    [
+                        "python3",
+                        "-m",
+                        "src.experiments.classifier.threshold_analysis",
+                        "--base-dir",
+                        base_dir,
+                        "--output-dir",
+                        summarize["threshold_output_dir"],
+                        "--criterion",
+                        summarize["threshold_criterion"],
+                        "--target-recall",
+                        str(summarize["threshold_target_recall"]),
+                    ],
+                    check=True,
+                    timeout=1800,
+                )
+            else:
+                print(
+                    "[SUMMARIZE] Skipping decision-threshold analysis: no saved "
+                    f"predictions_val/test.npz under {base_dir} "
+                    "(enable evaluation.bootstrap.save_predictions to produce them)"
+                )
 
     notify_success(
         {"experiment": "pipeline", "output": {"base_dir": "outputs"}},

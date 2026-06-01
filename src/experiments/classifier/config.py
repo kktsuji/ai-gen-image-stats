@@ -81,6 +81,93 @@ def get_model_specific_config(model_name: str) -> Dict[str, Any]:
     return model_configs[model_name]
 
 
+def _is_non_negative_number(value: Any) -> bool:
+    """True for a real, non-negative int/float. Rejects bool (a subclass of int)."""
+    return (
+        not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
+    )
+
+
+def validate_loss_section(loss: Any, num_classes: int) -> None:
+    """Validate the optional model.loss section (strict when present).
+
+    Args:
+        loss: The model.loss config mapping.
+        num_classes: Number of classes (used to validate focal alpha length).
+
+    Raises:
+        KeyError: If a required type-specific field is missing.
+        ValueError: If a value is invalid.
+    """
+    if not isinstance(loss, dict):
+        raise ValueError("model.loss must be a mapping")
+
+    if "type" not in loss:
+        raise KeyError("Missing required field: model.loss.type")
+
+    loss_type = loss["type"]
+    valid_types = ["cross_entropy", "focal", "class_balanced"]
+    if loss_type not in valid_types:
+        raise ValueError(
+            f"Invalid model.loss.type: {loss_type}. Must be one of {valid_types}"
+        )
+
+    # Strict: reject unexpected keys so typos (e.g. "alphaa") fail instead of being
+    # silently ignored, consistent with the project's no-implicit-config convention.
+    allowed_keys = {
+        "cross_entropy": {"type"},
+        "focal": {"type", "gamma", "alpha"},
+        "class_balanced": {"type", "beta", "base", "gamma"},
+    }
+    unexpected = set(loss) - allowed_keys[loss_type]
+    if unexpected:
+        raise ValueError(
+            f"Unexpected model.loss fields for {loss_type}: {sorted(unexpected)}"
+        )
+
+    if loss_type == "focal":
+        if "gamma" not in loss:
+            raise KeyError("Missing required field: model.loss.gamma (focal)")
+        if not _is_non_negative_number(loss["gamma"]):
+            raise ValueError("model.loss.gamma must be a non-negative number")
+        alpha = loss.get("alpha")
+        if alpha is not None:
+            if not isinstance(alpha, list) or len(alpha) != num_classes:
+                raise ValueError(
+                    "model.loss.alpha must be null or a list of length num_classes"
+                )
+            # Reject bool (a subclass of int) so e.g. alpha=[true, false] fails.
+            if not all(
+                not isinstance(a, bool) and isinstance(a, (int, float)) for a in alpha
+            ):
+                raise ValueError("model.loss.alpha entries must be numbers")
+
+    elif loss_type == "class_balanced":
+        if "beta" not in loss:
+            raise KeyError("Missing required field: model.loss.beta (class_balanced)")
+        beta = loss["beta"]
+        # Open interval (0, 1): the reused compute_effective_num_weights rejects
+        # beta <= 0, so accepting 0 here would pass validation then crash at model
+        # build time. Cui et al. use beta in {0.9, 0.99, 0.999, 0.9999}.
+        if (
+            isinstance(beta, bool)
+            or not isinstance(beta, (int, float))
+            or not (0 < beta < 1)
+        ):
+            raise ValueError("model.loss.beta must be a number in (0, 1)")
+        if "base" not in loss:
+            raise KeyError("Missing required field: model.loss.base (class_balanced)")
+        if loss["base"] not in ["cross_entropy", "focal"]:
+            raise ValueError("model.loss.base must be 'cross_entropy' or 'focal'")
+        if loss["base"] == "focal":
+            if "gamma" not in loss:
+                raise KeyError(
+                    "Missing required field: model.loss.gamma (class_balanced base=focal)"
+                )
+            if not _is_non_negative_number(loss["gamma"]):
+                raise ValueError("model.loss.gamma must be a non-negative number")
+
+
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate classifier configuration.
 
@@ -137,6 +224,11 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError("initialization.pretrained must be a boolean")
         if "freeze_backbone" in init and not isinstance(init["freeze_backbone"], bool):
             raise ValueError("initialization.freeze_backbone must be a boolean")
+
+    # Validate loss configuration (optional; defaults to cross_entropy when absent
+    # for backward compatibility). When present, it is validated strictly.
+    if "loss" in model:
+        validate_loss_section(model["loss"], architecture["num_classes"])
 
     # Validate data configuration
     data = config["data"]

@@ -64,6 +64,18 @@ model:
   regularization:
     dropout: 0.5 # Only for InceptionV3
 
+  # Classification loss. Optional: omit for plain cross_entropy. focal /
+  # class_balanced address the minority-class recall gap on imbalanced data.
+  # Validated strictly when present: only the keys for the chosen `type` are
+  # allowed (unknown keys are rejected). Omit the whole block to default to
+  # cross_entropy. Type-specific fields (uncomment for the chosen type):
+  #   focal:          gamma (>= 0), alpha (per-class weight list of length
+  #                   num_classes, or null)
+  #   class_balanced: beta (effective-number beta in (0, 1)), base
+  #                   (cross_entropy or focal), gamma (>= 0, only when base=focal)
+  loss:
+    type: cross_entropy # Options: cross_entropy, focal, class_balanced
+
 # ------------------------------------------------------------------------------
 # DATA CONFIGURATION
 # ------------------------------------------------------------------------------
@@ -203,6 +215,7 @@ training:
 
 evaluation:
   checkpoint: null # Path to checkpoint for evaluate mode (required when mode=evaluate)
+  split: val # Split to score in evaluate mode: train/val/test. The pipeline overrides this per runner.evaluation_splits (e.g. [val, test] runs an evaluate pass for each, val first then test).
   bootstrap:
     enabled: true # Compute bootstrap confidence intervals for evaluation metrics
     n_bootstrap: 10000 # Number of bootstrap iterations

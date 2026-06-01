@@ -431,6 +431,35 @@ class TestInceptionV3Loss:
         assert loss.dim() == 0  # Scalar
         assert loss.dtype == torch.float32
 
+    def test_focal_loss_config_flows_through(self):
+        """A focal loss_config is wired into compute_loss via build_loss."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            pretrained=False,
+            loss_config={"type": "focal", "gamma": 2.0, "alpha": None},
+        )
+        predictions = torch.randn(4, 2)
+        targets = torch.tensor([0, 1, 0, 1])
+        loss = model.compute_loss(predictions, targets)
+        assert loss.dim() == 0 and torch.isfinite(loss)
+
+    def test_class_balanced_loss_config_flows_through(self):
+        """A class_balanced loss_config with class_counts is wired through."""
+        model = InceptionV3Classifier(
+            num_classes=2,
+            pretrained=False,
+            loss_config={
+                "type": "class_balanced",
+                "beta": 0.99,
+                "base": "cross_entropy",
+            },
+            class_counts=[90, 10],
+        )
+        predictions = torch.randn(4, 2)
+        targets = torch.tensor([0, 1, 0, 1])
+        loss = model.compute_loss(predictions, targets)
+        assert loss.dim() == 0 and torch.isfinite(loss)
+
     def test_compute_loss_positive(self):
         """Test that loss is positive."""
         model = InceptionV3Classifier(num_classes=2, pretrained=False)

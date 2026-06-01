@@ -175,12 +175,16 @@ class TestIsDone:
         assert rp._is_done("a", "b") is False
 
 
-def _exp_cfg():
+def _exp_cfg(evaluation_splits=None):
     """Minimal CFG slice consumed by _run_classifier_experiment."""
     return {
         "configs": {"classifier": "configs/classifier.yaml"},
         "phases": {"evaluation": True},
-        "runner": {"skip_completed": False, "delete_checkpoints_after_eval": True},
+        "runner": {
+            "skip_completed": False,
+            "delete_checkpoints_after_eval": True,
+            "evaluation_splits": evaluation_splits or ["test"],
+        },
         "classifier_overrides": {"checkpoint": {}, "runtime": {}},
     }
 
@@ -295,6 +299,59 @@ class TestRunClassifierExperiment:
         rp._run_classifier_experiment("lbl", "out", [])
         eval_call = calls[1]
         assert any("final_model.pth" in tok for tok in eval_call)
+
+    def test_two_pass_val_test_eval(self, monkeypatch):
+        # evaluation_splits=[val, test] -> train + one eval per split, each with its
+        # own --evaluation.split appended last, then cleanup once both succeed.
+        monkeypatch.setattr(rp, "CFG", _exp_cfg(evaluation_splits=["val", "test"]))
+        calls = []
+        monkeypatch.setattr(
+            rp,
+            "_throttled_run_and_wait",
+            lambda config, overrides, **kw: (calls.append(overrides), 0)[1],
+        )
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("best_model.pth")
+        )
+        monkeypatch.setattr(rp.os.path, "isdir", lambda p: True)
+        removed = []
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: removed.append(p))
+
+        rp._run_classifier_experiment("lbl", "out", [])
+
+        assert len(calls) == 3  # train + val eval + test eval
+        # Each eval pass ends with its own --evaluation.split (appended last so it
+        # wins over any runtime evaluation.split).
+        assert calls[1][-2:] == ["--evaluation.split", "val"]
+        assert calls[2][-2:] == ["--evaluation.split", "test"]
+        # Cleanup happens only after BOTH splits succeed.
+        assert removed == ["out/checkpoints"]
+
+    def test_two_pass_first_split_failure_keeps_checkpoints(self, monkeypatch):
+        # If the val pass fails, the test pass is not attempted and checkpoints are
+        # retained for a retry.
+        monkeypatch.setattr(rp, "CFG", _exp_cfg(evaluation_splits=["val", "test"]))
+        calls = []
+
+        def fake_run(config, overrides, **kw):
+            calls.append(overrides)
+            # Training (no --mode) succeeds; the first eval (val) fails.
+            if "--mode" in overrides:
+                return 1
+            return 0
+
+        monkeypatch.setattr(rp, "_throttled_run_and_wait", fake_run)
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("best_model.pth")
+        )
+        monkeypatch.setattr(rp.os.path, "isdir", lambda p: True)
+        removed = []
+        monkeypatch.setattr(rp.shutil, "rmtree", lambda p: removed.append(p))
+
+        rp._run_classifier_experiment("lbl", "out", [])
+
+        assert len(calls) == 2  # train + val eval (which failed); test never attempted
+        assert removed == []
 
 
 @pytest.mark.unit

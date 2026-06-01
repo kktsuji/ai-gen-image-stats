@@ -201,6 +201,18 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     freeze_backbone = model_config["initialization"].get("freeze_backbone", False)
     trainable_layers = model_config["initialization"].get("trainable_layers")
 
+    # Loss configuration (optional; defaults to cross_entropy). Class-balanced loss
+    # needs per-class training counts; source them from the train split (always
+    # present), independent of mode, so train/eval build identical models.
+    loss_config = model_config.get("loss")
+    class_counts = None
+    if loss_config is not None and loss_config.get("type") == "class_balanced":
+        from src.utils.data.datasets import SplitFileDataset
+
+        train_targets = SplitFileDataset(split_file=split_file, split="train").targets
+        class_counts = [train_targets.count(c) for c in range(num_classes)]
+        logger.info("Class counts for class_balanced loss: %s", class_counts)
+
     if model_name == "inceptionv3":
         dropout = model_config.get("regularization", {}).get("dropout", 0.5)
         model = InceptionV3Classifier(
@@ -209,13 +221,20 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             freeze_backbone=freeze_backbone,
             trainable_layers=trainable_layers,
             dropout=dropout,
+            loss_config=loss_config,
+            class_counts=class_counts,
         )
     elif model_name in ["resnet50", "resnet101", "resnet152"]:
+        dropout = model_config.get("regularization", {}).get("dropout", 0.0)
         model = ResNetClassifier(
             variant=model_name,
             num_classes=num_classes,
             pretrained=pretrained,
             freeze_backbone=freeze_backbone,
+            trainable_layers=trainable_layers,
+            dropout=dropout,
+            loss_config=loss_config,
+            class_counts=class_counts,
         )
     else:
         raise ValueError(
@@ -274,7 +293,11 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         save_predictions = bootstrap_config["save_predictions"]
 
         if save_predictions and inference["total"] > 0:
-            predictions_path = reports_dir / "predictions.npz"
+            # Split-suffix the filename so a val pass and a test pass can coexist in
+            # the same reports/ dir (post-hoc threshold analysis selects on val and
+            # reports on test). threshold_analysis.py falls back to the unsuffixed
+            # name for legacy single-split runs.
+            predictions_path = reports_dir / f"predictions_{eval_split}.npz"
             np.savez_compressed(
                 predictions_path,
                 targets=np.array(inference["all_targets"]),
@@ -347,8 +370,18 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         # Record which split was evaluated ("val" vs held-out "test") so the
         # downstream evaluation report can distinguish them instead of mixing
         # val-based and test-based metrics in the same columns.
-        report_path = reports_dir / "evaluation.json"
+        #
+        # The canonical "evaluation.json" name is reserved for the held-out TEST
+        # report (what classifier evaluation_report aggregates). Non-test splits
+        # are written split-tagged (e.g. "evaluation_val.json") so a val pass in a
+        # two-pass val->test pipeline does not clobber the test report.
         report_payload = {**eval_metrics, "split": eval_split}
+        report_name = (
+            "evaluation.json"
+            if eval_split == "test"
+            else f"evaluation_{eval_split}.json"
+        )
+        report_path = reports_dir / report_name
         with open(report_path, "w") as f:
             json.dump(report_payload, f, indent=2)
         logger.info(f"Evaluation report saved to: {report_path}")

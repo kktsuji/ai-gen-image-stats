@@ -179,6 +179,23 @@ def _validate_runner(config: Dict[str, Any]) -> None:
     if not _non_empty_str(runner.get("classifier_output_root")):
         raise ValueError("runner.classifier_output_root must be a non-empty string")
 
+    # Optional: which splits to evaluate per experiment. Defaults to the held-out
+    # test report only (prior behavior). [val, test] additionally evaluates val,
+    # enabling post-hoc threshold analysis (select tau on val, report on test).
+    splits = runner.get("evaluation_splits", ["test"])
+    valid_splits = ("train", "val", "test")
+    if not isinstance(splits, list) or len(splits) == 0:
+        raise ValueError("runner.evaluation_splits must be a non-empty list")
+    for s in splits:
+        if s not in valid_splits:
+            raise ValueError(
+                f"runner.evaluation_splits entries must be in {list(valid_splits)}, "
+                f"got {s!r}"
+            )
+    if len(set(splits)) != len(splits):
+        raise ValueError(f"runner.evaluation_splits must be unique, got {splits}")
+    runner["evaluation_splits"] = splits
+
 
 def _validate_configs_section(config: Dict[str, Any]) -> None:
     configs = _require(config, "configs")
@@ -415,6 +432,22 @@ def _validate_summarize(config: Dict[str, Any]) -> None:
             raise KeyError(f"Missing required field: summarize.{key}")
         if not _non_empty_str(summarize[key]):
             raise ValueError(f"summarize.{key} must be a non-empty string")
+
+    # Optional post-summary decision-threshold analysis. Runs after the evaluation
+    # report when both 'val' and 'test' are evaluated (val->test protocol). Keys
+    # default so existing configs need no changes.
+    summarize.setdefault("threshold_output_dir", "outputs/threshold_analysis")
+    if not _non_empty_str(summarize["threshold_output_dir"]):
+        raise ValueError("summarize.threshold_output_dir must be a non-empty string")
+    summarize.setdefault("threshold_criterion", "max_f1_1")
+    if summarize["threshold_criterion"] not in ("max_f1_1", "precision_at_recall"):
+        raise ValueError(
+            "summarize.threshold_criterion must be 'max_f1_1' or 'precision_at_recall'"
+        )
+    summarize.setdefault("threshold_target_recall", 0.9)
+    tr = summarize["threshold_target_recall"]
+    if isinstance(tr, bool) or not isinstance(tr, (int, float)) or not (0 < tr <= 1):
+        raise ValueError("summarize.threshold_target_recall must be a number in (0, 1]")
 
     # The summarize step reads classifier reports from summarize.base_dir, but the
     # classifier jobs write them under runner.classifier_output_root. If a classifier

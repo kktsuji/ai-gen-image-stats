@@ -104,6 +104,25 @@ class TestValidateAccepts:
         # Warns but does not raise.
         validate_pipeline_config(cfg)
 
+    def test_evaluation_splits_defaults_to_test(self):
+        cfg = _valid_config()
+        assert "evaluation_splits" not in cfg["runner"]
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["evaluation_splits"] == ["test"]
+
+    def test_evaluation_splits_val_test_accepted(self):
+        cfg = _valid_config()
+        cfg["runner"]["evaluation_splits"] = ["val", "test"]
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["evaluation_splits"] == ["val", "test"]
+
+    def test_summarize_threshold_defaults_applied(self):
+        cfg = _valid_config()
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["threshold_criterion"] == "max_f1_1"
+        assert cfg["summarize"]["threshold_target_recall"] == 0.9
+        assert cfg["summarize"]["threshold_output_dir"] == "outputs/threshold_analysis"
+
 
 @pytest.mark.unit
 class TestValidateRejects:
@@ -170,6 +189,36 @@ class TestValidateRejects:
     def test_runner_zero_parallel(self):
         cfg = _valid_config()
         cfg["runner"]["classifier_max_parallel"] = 0
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_evaluation_splits_invalid_value(self):
+        cfg = _valid_config()
+        cfg["runner"]["evaluation_splits"] = ["val", "holdout"]
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_evaluation_splits_duplicate(self):
+        cfg = _valid_config()
+        cfg["runner"]["evaluation_splits"] = ["test", "test"]
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_evaluation_splits_empty(self):
+        cfg = _valid_config()
+        cfg["runner"]["evaluation_splits"] = []
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_threshold_criterion_invalid(self):
+        cfg = _valid_config()
+        cfg["summarize"]["threshold_criterion"] = "max_recall"
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_threshold_target_recall_out_of_range(self):
+        cfg = _valid_config()
+        cfg["summarize"]["threshold_target_recall"] = 1.5
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 

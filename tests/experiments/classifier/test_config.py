@@ -13,6 +13,7 @@ import yaml
 from src.experiments.classifier.config import (
     get_model_specific_config,
     validate_config,
+    validate_loss_section,
 )
 
 # Resolve project root so config file tests work regardless of working directory
@@ -990,6 +991,111 @@ class TestValidateBootstrapConfig:
             match="evaluation.bootstrap.save_predictions must be a boolean",
         ):
             validate_config(config)
+
+
+@pytest.mark.unit
+class TestValidateLossSection:
+    """Tests for the optional model.loss config section."""
+
+    def test_missing_loss_section_is_allowed(self):
+        # Backward compatibility: omitting model.loss defaults to cross_entropy.
+        config = get_v2_default_config()
+        del config["model"]["loss"]
+        validate_config(config)
+
+    def test_cross_entropy_valid(self):
+        validate_loss_section({"type": "cross_entropy"}, num_classes=2)
+
+    def test_focal_valid(self):
+        validate_loss_section({"type": "focal", "gamma": 2.0, "alpha": None}, 2)
+
+    def test_focal_alpha_list_valid(self):
+        validate_loss_section({"type": "focal", "gamma": 1.0, "alpha": [0.25, 0.75]}, 2)
+
+    def test_class_balanced_valid(self):
+        validate_loss_section(
+            {"type": "class_balanced", "beta": 0.999, "base": "cross_entropy"}, 2
+        )
+
+    def test_class_balanced_focal_base_valid(self):
+        validate_loss_section(
+            {"type": "class_balanced", "beta": 0.99, "base": "focal", "gamma": 2.0}, 2
+        )
+
+    def test_unknown_type_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section({"type": "hinge"}, 2)
+
+    def test_focal_missing_gamma_rejected(self):
+        with pytest.raises(KeyError):
+            validate_loss_section({"type": "focal", "alpha": None}, 2)
+
+    def test_focal_negative_gamma_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section({"type": "focal", "gamma": -1.0}, 2)
+
+    def test_focal_alpha_wrong_length_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section({"type": "focal", "gamma": 2.0, "alpha": [0.5]}, 2)
+
+    def test_class_balanced_missing_beta_rejected(self):
+        with pytest.raises(KeyError):
+            validate_loss_section(
+                {"type": "class_balanced", "base": "cross_entropy"}, 2
+            )
+
+    def test_class_balanced_beta_out_of_range_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section(
+                {"type": "class_balanced", "beta": 1.0, "base": "cross_entropy"}, 2
+            )
+
+    def test_class_balanced_beta_zero_rejected(self):
+        # beta=0 is rejected by compute_effective_num_weights at build time, so
+        # validation must reject it too rather than accept a config that crashes.
+        with pytest.raises(ValueError):
+            validate_loss_section(
+                {"type": "class_balanced", "beta": 0, "base": "cross_entropy"}, 2
+            )
+
+    def test_class_balanced_missing_base_rejected(self):
+        with pytest.raises(KeyError):
+            validate_loss_section({"type": "class_balanced", "beta": 0.99}, 2)
+
+    def test_class_balanced_focal_base_missing_gamma_rejected(self):
+        with pytest.raises(KeyError):
+            validate_loss_section(
+                {"type": "class_balanced", "beta": 0.99, "base": "focal"}, 2
+            )
+
+    def test_invalid_focal_in_full_config_rejected(self):
+        config = get_v2_default_config()
+        config["model"]["loss"] = {"type": "focal", "gamma": -2.0}
+        with pytest.raises(ValueError):
+            validate_config(config)
+
+    def test_cross_entropy_extra_keys_rejected(self):
+        # Strict: cross_entropy only allows "type"; stray keys are a typo signal.
+        with pytest.raises(ValueError, match="Unexpected model.loss fields"):
+            validate_loss_section({"type": "cross_entropy", "gamma": 2.0}, 2)
+
+    def test_focal_unknown_key_rejected(self):
+        # A typo like "alphaa" must fail rather than be silently ignored.
+        with pytest.raises(ValueError, match="Unexpected model.loss fields"):
+            validate_loss_section(
+                {"type": "focal", "gamma": 2.0, "alphaa": [0.25, 0.75]}, 2
+            )
+
+    def test_focal_bool_gamma_rejected(self):
+        # bool is a subclass of int; gamma=True must not pass as a number.
+        with pytest.raises(ValueError):
+            validate_loss_section({"type": "focal", "gamma": True}, 2)
+
+    def test_focal_bool_alpha_entry_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section(
+                {"type": "focal", "gamma": 2.0, "alpha": [True, False]}, 2
+            )
 
 
 @pytest.mark.component
