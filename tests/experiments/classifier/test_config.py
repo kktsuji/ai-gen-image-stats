@@ -1074,6 +1074,29 @@ class TestValidateLossSection:
         with pytest.raises(ValueError):
             validate_config(config)
 
+    def test_cross_entropy_extra_keys_rejected(self):
+        # Strict: cross_entropy only allows "type"; stray keys are a typo signal.
+        with pytest.raises(ValueError, match="Unexpected model.loss fields"):
+            validate_loss_section({"type": "cross_entropy", "gamma": 2.0}, 2)
+
+    def test_focal_unknown_key_rejected(self):
+        # A typo like "alphaa" must fail rather than be silently ignored.
+        with pytest.raises(ValueError, match="Unexpected model.loss fields"):
+            validate_loss_section(
+                {"type": "focal", "gamma": 2.0, "alphaa": [0.25, 0.75]}, 2
+            )
+
+    def test_focal_bool_gamma_rejected(self):
+        # bool is a subclass of int; gamma=True must not pass as a number.
+        with pytest.raises(ValueError):
+            validate_loss_section({"type": "focal", "gamma": True}, 2)
+
+    def test_focal_bool_alpha_entry_rejected(self):
+        with pytest.raises(ValueError):
+            validate_loss_section(
+                {"type": "focal", "gamma": 2.0, "alpha": [True, False]}, 2
+            )
+
 
 @pytest.mark.component
 class TestConfigFiles:

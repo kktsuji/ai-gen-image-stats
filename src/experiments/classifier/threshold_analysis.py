@@ -182,16 +182,18 @@ def _load_npz(path: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     Returns None on error or if the data is not a binary-probability array.
     """
     try:
-        data = np.load(path)
+        with np.load(path) as data:
+            if "targets" not in data or "probs" not in data:
+                _logger.warning("Skipping %s: missing 'targets'/'probs' arrays", path)
+                return None
+            probs = np.asarray(data["probs"])
+            targets = np.asarray(data["targets"]).astype(int)
     except (OSError, ValueError) as e:
         _logger.warning("Skipping unreadable predictions %s: %s", path, e)
         return None
-    if "targets" not in data or "probs" not in data:
-        _logger.warning("Skipping %s: missing 'targets'/'probs' arrays", path)
-        return None
-    probs = np.asarray(data["probs"])
-    targets = np.asarray(data["targets"]).astype(int)
-    if probs.ndim != 2 or probs.shape[1] < 2:
+    # Strictly binary: this module only reports the positive (minority) class, so a
+    # 1-class or >2-class probability array would yield misleading metrics.
+    if probs.ndim != 2 or probs.shape[1] != 2:
         _logger.warning("Skipping %s: probs shape %s is not binary", path, probs.shape)
         return None
     return targets, probs[:, POSITIVE_CLASS]

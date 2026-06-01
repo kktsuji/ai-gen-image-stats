@@ -60,7 +60,11 @@ def focal_loss(
         return loss.mean()
     if reduction == "sum":
         return loss.sum()
-    return loss
+    if reduction == "none":
+        return loss
+    raise ValueError(
+        f"Invalid reduction: {reduction!r}. Must be 'mean', 'sum', or 'none'"
+    )
 
 
 def class_balanced_loss(
@@ -202,7 +206,9 @@ def build_loss(
                 f"training sample; got class_counts={class_counts}"
             )
         beta = float(loss_config["beta"])
-        base = loss_config.get("base", "cross_entropy")
+        # validate_loss_section requires "base" for class_balanced, so it is always
+        # present here (no default needed).
+        base = loss_config["base"]
         gamma = float(loss_config.get("gamma", 0.0))
         weights = _effective_num_weight_tensor(class_counts, beta, num_classes)
 

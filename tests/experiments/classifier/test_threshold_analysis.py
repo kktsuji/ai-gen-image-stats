@@ -30,6 +30,17 @@ class TestSelectThreshold:
         recall = ta.metrics_at_threshold(probs, targets, tau)["recall_1"]
         assert recall >= 0.9
 
+    def test_precision_at_recall_falls_back_to_max_recall(self):
+        # No positive samples => recall_1 is 0 at every threshold (zero_division=0),
+        # so the recall floor is never met and select_threshold must degrade to the
+        # max-recall threshold (the lowest tau, grid[0] == 0.0) instead of erroring.
+        probs = np.linspace(0.0, 1.0, 20)
+        targets = np.zeros(20, dtype=int)
+        tau = ta.select_threshold(
+            probs, targets, criterion="precision_at_recall", target_recall=0.9
+        )
+        assert tau == 0.0
+
     def test_invalid_criterion_raises(self):
         with pytest.raises(ValueError):
             ta.select_threshold(np.array([0.5]), np.array([1]), criterion="bogus")

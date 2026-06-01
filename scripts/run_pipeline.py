@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -467,24 +468,39 @@ def main() -> None:
         # leak-free val->test protocol, i.e. when both splits were evaluated.
         eval_splits = cfg["runner"]["evaluation_splits"]
         if "val" in eval_splits and "test" in eval_splits:
-            print("[SUMMARIZE] Generating decision-threshold analysis")
-            subprocess.run(
-                [
-                    "python3",
-                    "-m",
-                    "src.experiments.classifier.threshold_analysis",
-                    "--base-dir",
-                    summarize["base_dir"],
-                    "--output-dir",
-                    summarize["threshold_output_dir"],
-                    "--criterion",
-                    summarize["threshold_criterion"],
-                    "--target-recall",
-                    str(summarize["threshold_target_recall"]),
-                ],
-                check=True,
-                timeout=1800,
-            )
+            # The analysis reads predictions_{split}.npz, which main.py only writes
+            # when evaluation.bootstrap.save_predictions is enabled. If those artifacts
+            # are absent (flag off, or all eval passes failed), skip with a clear
+            # message rather than letting the subprocess die on missing files after all
+            # GPU work has finished.
+            base_dir = summarize["base_dir"]
+            has_val = bool(glob(f"{base_dir}/**/predictions_val.npz", recursive=True))
+            has_test = bool(glob(f"{base_dir}/**/predictions_test.npz", recursive=True))
+            if has_val and has_test:
+                print("[SUMMARIZE] Generating decision-threshold analysis")
+                subprocess.run(
+                    [
+                        "python3",
+                        "-m",
+                        "src.experiments.classifier.threshold_analysis",
+                        "--base-dir",
+                        base_dir,
+                        "--output-dir",
+                        summarize["threshold_output_dir"],
+                        "--criterion",
+                        summarize["threshold_criterion"],
+                        "--target-recall",
+                        str(summarize["threshold_target_recall"]),
+                    ],
+                    check=True,
+                    timeout=1800,
+                )
+            else:
+                print(
+                    "[SUMMARIZE] Skipping decision-threshold analysis: no saved "
+                    f"predictions_val/test.npz under {base_dir} "
+                    "(enable evaluation.bootstrap.save_predictions to produce them)"
+                )
 
     notify_success(
         {"experiment": "pipeline", "output": {"base_dir": "outputs"}},

@@ -53,6 +53,12 @@ class TestFocalLoss:
         expected = alpha[targets] * unweighted
         assert torch.allclose(weighted, expected, atol=1e-6)
 
+    def test_unknown_reduction_rejected(self, logits_targets):
+        # A typo like "mea" must raise, not silently fall through to per-sample loss.
+        logits, targets = logits_targets
+        with pytest.raises(ValueError, match="Invalid reduction"):
+            focal_loss(logits, targets, gamma=2.0, reduction="mea")
+
 
 @pytest.mark.unit
 class TestClassBalancedLoss:

@@ -81,6 +81,13 @@ def get_model_specific_config(model_name: str) -> Dict[str, Any]:
     return model_configs[model_name]
 
 
+def _is_non_negative_number(value: Any) -> bool:
+    """True for a real, non-negative int/float. Rejects bool (a subclass of int)."""
+    return (
+        not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
+    )
+
+
 def validate_loss_section(loss: Any, num_classes: int) -> None:
     """Validate the optional model.loss section (strict when present).
 
@@ -105,10 +112,23 @@ def validate_loss_section(loss: Any, num_classes: int) -> None:
             f"Invalid model.loss.type: {loss_type}. Must be one of {valid_types}"
         )
 
+    # Strict: reject unexpected keys so typos (e.g. "alphaa") fail instead of being
+    # silently ignored, consistent with the project's no-implicit-config convention.
+    allowed_keys = {
+        "cross_entropy": {"type"},
+        "focal": {"type", "gamma", "alpha"},
+        "class_balanced": {"type", "beta", "base", "gamma"},
+    }
+    unexpected = set(loss) - allowed_keys[loss_type]
+    if unexpected:
+        raise ValueError(
+            f"Unexpected model.loss fields for {loss_type}: {sorted(unexpected)}"
+        )
+
     if loss_type == "focal":
         if "gamma" not in loss:
             raise KeyError("Missing required field: model.loss.gamma (focal)")
-        if not isinstance(loss["gamma"], (int, float)) or loss["gamma"] < 0:
+        if not _is_non_negative_number(loss["gamma"]):
             raise ValueError("model.loss.gamma must be a non-negative number")
         alpha = loss.get("alpha")
         if alpha is not None:
@@ -116,7 +136,10 @@ def validate_loss_section(loss: Any, num_classes: int) -> None:
                 raise ValueError(
                     "model.loss.alpha must be null or a list of length num_classes"
                 )
-            if not all(isinstance(a, (int, float)) for a in alpha):
+            # Reject bool (a subclass of int) so e.g. alpha=[true, false] fails.
+            if not all(
+                not isinstance(a, bool) and isinstance(a, (int, float)) for a in alpha
+            ):
                 raise ValueError("model.loss.alpha entries must be numbers")
 
     elif loss_type == "class_balanced":
@@ -141,7 +164,7 @@ def validate_loss_section(loss: Any, num_classes: int) -> None:
                 raise KeyError(
                     "Missing required field: model.loss.gamma (class_balanced base=focal)"
                 )
-            if not isinstance(loss["gamma"], (int, float)) or loss["gamma"] < 0:
+            if not _is_non_negative_number(loss["gamma"]):
                 raise ValueError("model.loss.gamma must be a non-negative number")
 
 

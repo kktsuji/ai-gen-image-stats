@@ -225,11 +225,14 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             class_counts=class_counts,
         )
     elif model_name in ["resnet50", "resnet101", "resnet152"]:
+        dropout = model_config.get("regularization", {}).get("dropout", 0.0)
         model = ResNetClassifier(
             variant=model_name,
             num_classes=num_classes,
             pretrained=pretrained,
             freeze_backbone=freeze_backbone,
+            trainable_layers=trainable_layers,
+            dropout=dropout,
             loss_config=loss_config,
             class_counts=class_counts,
         )
