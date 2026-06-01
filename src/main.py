@@ -211,7 +211,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
 
         train_targets = SplitFileDataset(split_file=split_file, split="train").targets
         class_counts = [train_targets.count(c) for c in range(num_classes)]
-        logger.info(f"Class counts for class_balanced loss: {class_counts}")
+        logger.info("Class counts for class_balanced loss: %s", class_counts)
 
     if model_name == "inceptionv3":
         dropout = model_config.get("regularization", {}).get("dropout", 0.5)

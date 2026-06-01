@@ -117,6 +117,10 @@ def _effective_num_weight_tensor(
     targets) by reconstructing a minimal targets list from the counts, so the
     Cui et al. formula is not duplicated here. Weights are normalized to sum to
     num_classes (a class with the average count gets weight ~1).
+
+    The reconstructed ``targets`` list costs O(N) memory where N is the total
+    number of training samples. This runs once at model build time (not per
+    batch), so the cost is acceptable for the deduplication it buys.
     """
     targets: List[int] = []
     for cls_idx, count in enumerate(class_counts):
