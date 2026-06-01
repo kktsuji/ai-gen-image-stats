@@ -192,6 +192,15 @@ def build_loss(
                 "class_balanced loss requires class_counts (per-class training "
                 "sample counts)"
             )
+        # A class with zero training samples gets effective-number weight 0 (it is
+        # absent from compute_effective_num_weights' output), which silently zeroes
+        # its loss contribution. Fail loudly instead of training a model that is
+        # never penalized for misclassifying that class.
+        if any(c <= 0 for c in class_counts):
+            raise ValueError(
+                "class_balanced loss requires every class to have at least one "
+                f"training sample; got class_counts={class_counts}"
+            )
         beta = float(loss_config["beta"])
         base = loss_config.get("base", "cross_entropy")
         gamma = float(loss_config.get("gamma", 0.0))

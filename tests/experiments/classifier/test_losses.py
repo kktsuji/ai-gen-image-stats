@@ -116,6 +116,16 @@ class TestBuildLoss:
                 num_classes=2,
             )
 
+    def test_class_balanced_rejects_zero_count_class(self):
+        # A class with no training samples would silently get weight 0 (zeroing its
+        # loss); build_loss must reject it instead of training a degenerate model.
+        with pytest.raises(ValueError):
+            build_loss(
+                {"type": "class_balanced", "beta": 0.99, "base": "cross_entropy"},
+                class_counts=[100, 0],
+                num_classes=2,
+            )
+
     def test_unknown_type_raises(self):
         with pytest.raises(ValueError):
             build_loss({"type": "hinge"}, None, 2)

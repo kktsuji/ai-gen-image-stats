@@ -152,7 +152,6 @@ def select_threshold(
     # precision_at_recall
     best_tau = float(grid[0])
     best_precision = -1.0
-    best_recall = -1.0
     # Fallback bookkeeping when no threshold reaches the recall floor.
     fallback_tau = float(grid[0])
     fallback_recall = -1.0
@@ -164,7 +163,6 @@ def select_threshold(
             fallback_tau = float(tau)
         if recall >= target_recall and precision > best_precision:
             best_precision = precision
-            best_recall = recall
             best_tau = float(tau)
     if best_precision < 0.0:
         _logger.debug(
@@ -175,7 +173,6 @@ def select_threshold(
             fallback_recall,
         )
         return fallback_tau
-    _ = best_recall  # selected for clarity; precision is the optimization target
     return best_tau
 
 

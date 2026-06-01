@@ -129,7 +129,7 @@ python -m src.main configs/classifier.yaml --mode evaluate \
   --evaluation.checkpoint outputs/classifier/checkpoints/best_model.pth
 ```
 
-This runs inference on the validation set and produces `reports/evaluation.json` with per-class metrics (precision, recall, F1, AUC) and a confusion matrix.
+This runs inference on the split named by `evaluation.split` (default `val`) and writes per-class metrics (precision, recall, F1, AUC) and a confusion matrix. The held-out `test` split is written to the canonical `reports/evaluation.json` (what the evaluation report aggregates); other splits are written split-tagged as `reports/evaluation_<split>.json` (e.g. `evaluation_val.json`) so a `val` pass cannot clobber the `test` report.
 
 ### Training a Diffusion Model
 
