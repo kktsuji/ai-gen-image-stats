@@ -341,7 +341,7 @@ def aggregate_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
             "n_seeds": int(len(group)),
         }
         for metric in METRIC_COLUMNS:
-            values = group[metric].astype(float)
+            values = np.asarray(group[metric], dtype=float)
             agg[metric] = float(values.mean())
             if len(values) > 1:
                 agg[f"{metric}_std"] = float(values.std(ddof=1))
