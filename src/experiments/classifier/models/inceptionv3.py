@@ -11,12 +11,14 @@ The model supports:
 
 import fnmatch
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import inception_v3
+
+from src.experiments.classifier.losses import build_loss
 
 
 class InceptionV3Classifier(nn.Module):
@@ -69,6 +71,8 @@ class InceptionV3Classifier(nn.Module):
         trainable_layers: Optional[List[str]] = None,
         model_dir: str = "./models/",
         dropout: float = 0.5,
+        loss_config: Optional[Dict[str, Any]] = None,
+        class_counts: Optional[List[int]] = None,
     ):
         super().__init__()
 
@@ -95,6 +99,12 @@ class InceptionV3Classifier(nn.Module):
         # Apply selective unfreezing if specified
         if self.trainable_layers is not None:
             self.set_trainable_layers(self.trainable_layers)
+
+        # Build the classification loss (cross_entropy by default; focal /
+        # class_balanced are config-driven). All logic lives in losses.build_loss.
+        self._loss_fn = build_loss(
+            loss_config or {"type": "cross_entropy"}, class_counts, num_classes
+        )
 
     def _load_inception_backbone(self):
         """Load InceptionV3 backbone with optional pretrained weights.
@@ -293,7 +303,10 @@ class InceptionV3Classifier(nn.Module):
         targets: torch.Tensor,
         reduction: str = "mean",
     ) -> torch.Tensor:
-        """Compute classification loss using cross-entropy.
+        """Compute the configured classification loss.
+
+        Delegates to the loss callable built in __init__ from ``model.loss``
+        (cross_entropy by default; focal / class_balanced when configured).
 
         Args:
             predictions: Model output logits of shape [batch_size, num_classes]
@@ -311,7 +324,7 @@ class InceptionV3Classifier(nn.Module):
             >>> logits = model(images)
             >>> loss = model.compute_loss(logits, labels)
         """
-        return F.cross_entropy(predictions, targets, reduction=reduction)
+        return self._loss_fn(predictions, targets, reduction=reduction)
 
     def get_trainable_parameters(self):
         """Get only the trainable parameters.

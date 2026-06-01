@@ -36,6 +36,12 @@ runner:
   classifier_max_parallel: 3
   # Root under which per-variant/per-seed classifier output dirs are created.
   classifier_output_root: outputs/classifier
+  # Optional: which splits to evaluate per experiment (default: [test]). Use
+  # [val, test] to also evaluate val, enabling the post-hoc decision-threshold
+  # analysis (select tau on val, report on test). main.py writes the test report as
+  # the canonical reports/evaluation.json and other splits as evaluation_{split}.json;
+  # predictions_{split}.npz are saved for the threshold analysis.
+  evaluation_splits: [test]
 
 # Base experiment configs passed to `python -m src.main`.
 configs:
@@ -119,3 +125,8 @@ summarize:
   # (no balancing) flatters any variant by conflating its effect with simply addressing
   # the class imbalance; ws isolates the representation effect.
   baseline_name: baseline__ws
+  # Optional post-summary decision-threshold analysis. Runs after the evaluation report
+  # only when runner.evaluation_splits includes both 'val' and 'test'. Defaults shown.
+  threshold_output_dir: outputs/threshold_analysis
+  threshold_criterion: max_f1_1 # or: precision_at_recall
+  threshold_target_recall: 0.9 # used only by the precision_at_recall criterion

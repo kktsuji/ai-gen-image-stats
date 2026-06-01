@@ -81,6 +81,63 @@ def get_model_specific_config(model_name: str) -> Dict[str, Any]:
     return model_configs[model_name]
 
 
+def validate_loss_section(loss: Any, num_classes: int) -> None:
+    """Validate the optional model.loss section (strict when present).
+
+    Args:
+        loss: The model.loss config mapping.
+        num_classes: Number of classes (used to validate focal alpha length).
+
+    Raises:
+        KeyError: If a required type-specific field is missing.
+        ValueError: If a value is invalid.
+    """
+    if not isinstance(loss, dict):
+        raise ValueError("model.loss must be a mapping")
+
+    if "type" not in loss:
+        raise KeyError("Missing required field: model.loss.type")
+
+    loss_type = loss["type"]
+    valid_types = ["cross_entropy", "focal", "class_balanced"]
+    if loss_type not in valid_types:
+        raise ValueError(
+            f"Invalid model.loss.type: {loss_type}. Must be one of {valid_types}"
+        )
+
+    if loss_type == "focal":
+        if "gamma" not in loss:
+            raise KeyError("Missing required field: model.loss.gamma (focal)")
+        if not isinstance(loss["gamma"], (int, float)) or loss["gamma"] < 0:
+            raise ValueError("model.loss.gamma must be a non-negative number")
+        alpha = loss.get("alpha")
+        if alpha is not None:
+            if not isinstance(alpha, list) or len(alpha) != num_classes:
+                raise ValueError(
+                    "model.loss.alpha must be null or a list of length num_classes"
+                )
+            if not all(isinstance(a, (int, float)) for a in alpha):
+                raise ValueError("model.loss.alpha entries must be numbers")
+
+    elif loss_type == "class_balanced":
+        if "beta" not in loss:
+            raise KeyError("Missing required field: model.loss.beta (class_balanced)")
+        beta = loss["beta"]
+        if not isinstance(beta, (int, float)) or not (0 <= beta < 1):
+            raise ValueError("model.loss.beta must be a number in [0, 1)")
+        if "base" not in loss:
+            raise KeyError("Missing required field: model.loss.base (class_balanced)")
+        if loss["base"] not in ["cross_entropy", "focal"]:
+            raise ValueError("model.loss.base must be 'cross_entropy' or 'focal'")
+        if loss["base"] == "focal":
+            if "gamma" not in loss:
+                raise KeyError(
+                    "Missing required field: model.loss.gamma (class_balanced base=focal)"
+                )
+            if not isinstance(loss["gamma"], (int, float)) or loss["gamma"] < 0:
+                raise ValueError("model.loss.gamma must be a non-negative number")
+
+
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate classifier configuration.
 
@@ -137,6 +194,11 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError("initialization.pretrained must be a boolean")
         if "freeze_backbone" in init and not isinstance(init["freeze_backbone"], bool):
             raise ValueError("initialization.freeze_backbone must be a boolean")
+
+    # Validate loss configuration (optional; defaults to cross_entropy when absent
+    # for backward compatibility). When present, it is validated strictly.
+    if "loss" in model:
+        validate_loss_section(model["loss"], architecture["num_classes"])
 
     # Validate data configuration
     data = config["data"]

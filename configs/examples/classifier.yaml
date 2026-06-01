@@ -64,6 +64,15 @@ model:
   regularization:
     dropout: 0.5 # Only for InceptionV3
 
+  # Classification loss. Optional: omit for plain cross_entropy. focal /
+  # class_balanced address the minority-class recall gap on imbalanced data.
+  loss:
+    type: cross_entropy # Options: cross_entropy, focal, class_balanced
+    gamma: 2.0 # focal: focusing parameter (>= 0); also used by class_balanced base=focal
+    alpha: null # focal: per-class weight list of length num_classes, or null
+    beta: 0.999 # class_balanced: effective-number beta in [0, 1)
+    base: cross_entropy # class_balanced: loss to reweight (cross_entropy or focal)
+
 # ------------------------------------------------------------------------------
 # DATA CONFIGURATION
 # ------------------------------------------------------------------------------
@@ -203,6 +212,7 @@ training:
 
 evaluation:
   checkpoint: null # Path to checkpoint for evaluate mode (required when mode=evaluate)
+  split: val # Split to score in evaluate mode: train/val/test (pipeline overrides to test)
   bootstrap:
     enabled: true # Compute bootstrap confidence intervals for evaluation metrics
     n_bootstrap: 10000 # Number of bootstrap iterations
