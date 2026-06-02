@@ -157,10 +157,28 @@ def setup_logging(
     return root_logger
 
 
+def get_timestamp(timezone: Optional[str] = None) -> str:
+    """Generate a 'YYYYMMDD_HHMMSS' timestamp in the given timezone.
+
+    Args:
+        timezone: Timezone for timestamp ('UTC', 'local', or IANA timezone like 'Asia/Tokyo')
+
+    Returns:
+        Timestamp string, e.g. '20260216_143022'
+    """
+    if timezone is None or timezone.lower() == "local":
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
+    elif timezone.upper() == "UTC":
+        return datetime.now(ZoneInfo("UTC")).strftime("%Y%m%d_%H%M%S")
+    else:
+        return datetime.now(ZoneInfo(timezone)).strftime("%Y%m%d_%H%M%S")
+
+
 def get_log_file_path(
     output_base_dir: Union[str, Path],
     log_subdir: str = "logs",
     timezone: Optional[str] = None,
+    timestamp: Optional[str] = None,
 ) -> Path:
     """Generate timestamped log file path.
 
@@ -168,6 +186,8 @@ def get_log_file_path(
         output_base_dir: Base output directory from config
         log_subdir: Subdirectory for logs
         timezone: Timezone for timestamp ('UTC', 'local', or IANA timezone like 'Asia/Tokyo')
+        timestamp: Optional pre-generated timestamp to reuse (e.g. to pair the log
+            file with a config snapshot). If None, one is generated from ``timezone``.
 
     Returns:
         Path to log file with timestamp
@@ -179,13 +199,8 @@ def get_log_file_path(
     """
     output_base_dir = Path(output_base_dir)
 
-    # Get current time in the specified timezone
-    if timezone is None or timezone.lower() == "local":
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    elif timezone.upper() == "UTC":
-        timestamp = datetime.now(ZoneInfo("UTC")).strftime("%Y%m%d_%H%M%S")
-    else:
-        timestamp = datetime.now(ZoneInfo(timezone)).strftime("%Y%m%d_%H%M%S")
+    if timestamp is None:
+        timestamp = get_timestamp(timezone)
 
     log_filename = f"log_{timestamp}.log"
     return output_base_dir / log_subdir / log_filename

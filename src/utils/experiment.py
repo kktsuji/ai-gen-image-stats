@@ -12,7 +12,7 @@ import torch
 from src.utils.config import resolve_output_path, save_config
 from src.utils.device import get_device
 from src.utils.git import get_git_info
-from src.utils.logging import get_log_file_path, setup_logging
+from src.utils.logging import get_log_file_path, get_timestamp, setup_logging
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -45,10 +45,14 @@ def setup_experiment_common(
     module_levels = logging_config.get("module_levels")
 
     # 3. Setup logging FIRST (before any other operations)
+    # Generate a single timestamp shared by the log file and the config snapshot
+    # so that log_<ts>.log and config_<ts>.yaml pair up and neither is overwritten
+    # when multiple phases (e.g. train then evaluate) reuse the same output dir.
+    timestamp = get_timestamp(timezone)
     log_file = get_log_file_path(
         output_base_dir=config["output"]["base_dir"],
         log_subdir=config["output"]["subdirs"]["logs"],
-        timezone=timezone,
+        timestamp=timestamp,
     )
 
     setup_logging(
@@ -99,8 +103,9 @@ def setup_experiment_common(
             torch.cuda.manual_seed_all(seed)
         logger.info(f"Random seed set to: {seed}")
 
-    # 8. Save configuration to log directory
-    config_save_path = log_dir / "config.yaml"
+    # 8. Save configuration to log directory (timestamped to match the log file,
+    # so train/evaluate phases sharing an output dir don't overwrite each other)
+    config_save_path = log_dir / f"config_{timestamp}.yaml"
     save_config(config, config_save_path)
     logger.info(f"Configuration saved to: {config_save_path}")
 
