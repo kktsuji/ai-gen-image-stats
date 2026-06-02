@@ -18,7 +18,9 @@ from src.experiments.classifier.evaluation_report import (
     generate_classifier_table,
     generate_report,
     generate_statistical_comparison_table,
+    key_metrics,
     load_evaluation_results,
+    resolve_positive_class,
 )
 
 
@@ -1125,3 +1127,125 @@ def test_generate_report_respects_baseline_name(tmp_path):
 
     report = (output_dir / "evaluation_report.md").read_text()
     assert "Baseline: **baseline__vanilla**" in report
+
+
+# =============================================================================
+# Multi-class / configurable positive class
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPositiveClassParametrization:
+    """Test that the report parametrizes per-class metrics by positive class."""
+
+    def test_key_metrics_default_is_binary(self):
+        assert key_metrics() == key_metrics(1)
+        assert "recall_1" in key_metrics(1)
+        assert "f1_1" in key_metrics(1)
+        assert "precision_1" in key_metrics(1)
+
+    def test_key_metrics_for_other_class(self):
+        km = key_metrics(6)
+        assert "recall_6" in km
+        assert "f1_6" in km
+        assert "precision_6" in km
+        # Class-agnostic metrics are unchanged
+        assert "balanced_accuracy" in km
+        assert "pr_auc" in km
+
+    def test_resolve_default_when_absent(self):
+        results = [{"experiment": "a", "accuracy": 0.9}]
+        assert resolve_positive_class(results) == 1
+
+    def test_resolve_reads_field(self):
+        results = [{"experiment": "a", "positive_class": 6}]
+        assert resolve_positive_class(results) == 6
+
+    def test_resolve_override_wins(self):
+        results = [{"experiment": "a", "positive_class": 6}]
+        assert resolve_positive_class(results, override=2) == 2
+
+    def test_resolve_disagreement_uses_majority_and_warns(self, caplog):
+        results = [
+            {"experiment": "a", "positive_class": 6},
+            {"experiment": "b", "positive_class": 6},
+            {"experiment": "c", "positive_class": 2},
+        ]
+        with caplog.at_level("WARNING"):
+            assert resolve_positive_class(results) == 6
+        assert "differing positive_class" in caplog.text
+
+    def test_resolve_override_out_of_range_raises(self):
+        results = [{"experiment": "a", "num_classes": 3, "positive_class": 0}]
+        with pytest.raises(ValueError, match="out of range"):
+            resolve_positive_class(results, override=7)
+
+    def test_resolve_override_negative_raises(self):
+        results = [{"experiment": "a", "num_classes": 3}]
+        with pytest.raises(ValueError, match="non-negative"):
+            resolve_positive_class(results, override=-1)
+
+    def test_resolve_stored_out_of_range_raises(self):
+        # A stored positive_class that exceeds the recorded num_classes is a
+        # corrupt report and should fail fast rather than mislabel columns.
+        results = [{"experiment": "a", "num_classes": 2, "positive_class": 5}]
+        with pytest.raises(ValueError, match="out of range"):
+            resolve_positive_class(results)
+
+    def test_resolve_override_in_range_ok(self):
+        results = [{"experiment": "a", "num_classes": 7, "positive_class": 0}]
+        assert resolve_positive_class(results, override=6) == 6
+
+    def test_classifier_table_uses_positive_class(self):
+        import pandas as pd
+
+        df = pd.DataFrame(
+            [
+                {
+                    "experiment": "baseline__vanilla",
+                    "type": "baseline",
+                    "recall_6": 0.3,
+                    "balanced_accuracy": 0.65,
+                },
+            ]
+        )
+        result = generate_classifier_table(df, positive_class=6)
+        assert "recall_6" in result
+
+    def test_best_per_metric_uses_positive_class(self):
+        import pandas as pd
+
+        df = pd.DataFrame(
+            [
+                {"experiment": "exp-a", "type": "synthetic", "recall_6": 0.8},
+                {"experiment": "exp-b", "type": "synthetic", "recall_6": 0.3},
+            ]
+        )
+        result = generate_best_per_metric(df, positive_class=6)
+        assert "recall_6" in result
+        assert "exp-a" in result  # best recall_6
+
+    def test_generate_report_autodetects_positive_class(self, tmp_path):
+        # Build a single-seed experiment whose evaluation.json declares class 6.
+        exp_dir = tmp_path / "ft-mixed67__us" / "reports"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "evaluation.json").write_text(
+            json.dumps(
+                {
+                    "recall_6": 0.81,
+                    "f1_6": 0.78,
+                    "precision_6": 0.75,
+                    "balanced_accuracy": 0.7,
+                    "accuracy": 0.9,
+                    "positive_class": 6,
+                    "num_classes": 7,
+                    "split": "test",
+                }
+            )
+        )
+        out_dir = tmp_path / "report"
+        generate_report(base_dir=str(tmp_path), output_dir=str(out_dir))
+
+        report = (out_dir / "evaluation_report.md").read_text()
+        assert "recall_6" in report
+        assert "recall_1" not in report

@@ -123,6 +123,21 @@ class TestValidateAccepts:
         assert cfg["summarize"]["threshold_target_recall"] == 0.9
         assert cfg["summarize"]["threshold_output_dir"] == "outputs/threshold_analysis"
 
+    def test_summarize_positive_class_left_unset_for_autodetect(self):
+        # When omitted, positive_class must NOT be defaulted/injected: the report
+        # and threshold tools auto-detect it from each evaluation.json, and an
+        # explicit value would override (and defeat) that detection.
+        cfg = _valid_config()
+        cfg["summarize"].pop("positive_class", None)
+        validate_pipeline_config(cfg)
+        assert "positive_class" not in cfg["summarize"]
+
+    def test_summarize_positive_class_explicit(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = 6
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["positive_class"] == 6
+
 
 @pytest.mark.unit
 class TestValidateRejects:
@@ -219,6 +234,30 @@ class TestValidateRejects:
     def test_summarize_threshold_target_recall_out_of_range(self):
         cfg = _valid_config()
         cfg["summarize"]["threshold_target_recall"] = 1.5
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_negative_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = -1
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_bool_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = True
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_float_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = 1.5
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_str_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = "1"
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 

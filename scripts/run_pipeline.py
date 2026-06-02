@@ -445,6 +445,14 @@ def main() -> None:
     # ------------------------------------------------------------------
     if phases["summarize"]:
         summarize = cfg["summarize"]
+        # Only force a positive-class index when one was explicitly configured;
+        # otherwise the report/threshold tools auto-detect it from each
+        # evaluation.json (an explicit flag always overrides that auto-detection).
+        positive_class_args = (
+            ["--positive-class-index", str(summarize["positive_class"])]
+            if summarize.get("positive_class") is not None
+            else []
+        )
         print("[SUMMARIZE] Generating classifier evaluation report")
         subprocess.run(
             [
@@ -460,6 +468,7 @@ def main() -> None:
                 summarize["output_dir"],
                 "--baseline-name",
                 summarize["baseline_name"],
+                *positive_class_args,
             ],
             check=True,
             # Report aggregation is pure filesystem I/O; cap it so a hung read can't
@@ -494,6 +503,7 @@ def main() -> None:
                         summarize["threshold_criterion"],
                         "--target-recall",
                         str(summarize["threshold_target_recall"]),
+                        *positive_class_args,
                     ],
                     check=True,
                     timeout=1800,

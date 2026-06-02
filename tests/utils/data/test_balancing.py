@@ -253,3 +253,103 @@ class TestUpsampleDataset:
         dataset._targets = []
         with pytest.raises(ValueError, match="no samples"):
             upsample_dataset(dataset, target_ratio=1.0, seed=42)
+
+
+# =============================================================================
+# Unit Tests: multi-class balancing (3+ classes)
+# =============================================================================
+
+
+def _class_counts(dataset, subset):
+    """Count samples per class label within a Subset."""
+    counts = {}
+    for idx in subset.indices:
+        label = dataset.targets[idx]
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
+@pytest.mark.unit
+class TestMultiClassBalancing:
+    """Test that balancing generalizes correctly to 3+ classes."""
+
+    def test_downsample_three_classes_equal_ratio(self):
+        """Every class is reduced to the smallest class count at ratio=1.0."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        subset = downsample_dataset(dataset, target_ratio=1.0, seed=42)
+
+        counts = _class_counts(dataset, subset)
+        # target_count = min_count / 1.0 = 20; every class capped at 20
+        assert counts == {0: 20, 1: 20, 2: 20}
+        assert len(subset) == 60
+
+    def test_downsample_three_classes_keeps_smallest_whole(self):
+        """Classes already at/below the target count are kept entirely."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        # target_count = 20 / 0.5 = 40; class 1 (20) stays, others capped at 40
+        subset = downsample_dataset(dataset, target_ratio=0.5, seed=42)
+
+        counts = _class_counts(dataset, subset)
+        assert counts == {0: 40, 1: 20, 2: 40}
+
+    def test_upsample_three_classes_equal_ratio(self):
+        """Every class is duplicated up to the largest class count at ratio=1.0."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        subset = upsample_dataset(dataset, target_ratio=1.0, seed=42)
+
+        counts = _class_counts(dataset, subset)
+        # target_count = max_count * 1.0 = 100; every class brought up to 100
+        assert counts == {0: 100, 1: 100, 2: 100}
+        assert len(subset) == 300
+
+    def test_upsample_three_classes_extra_from_correct_class(self):
+        """Duplicated indices for each minority class come from that class."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        subset = upsample_dataset(dataset, target_ratio=1.0, seed=42)
+
+        # The first len(dataset) indices are the originals; the rest are extras.
+        extra_indices = subset.indices[len(dataset) :]
+        extra_labels = [dataset.targets[i] for i in extra_indices]
+        # Class 0 needs no extras; classes 1 and 2 do.
+        assert 0 not in extra_labels
+        assert extra_labels.count(1) == 80  # 100 - 20
+        assert extra_labels.count(2) == 50  # 100 - 50
+
+    def test_downsample_multiclass_reproducible(self):
+        """Same seed yields identical indices for multi-class downsampling."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        s1 = downsample_dataset(dataset, target_ratio=1.0, seed=7)
+        s2 = downsample_dataset(dataset, target_ratio=1.0, seed=7)
+        assert s1.indices == s2.indices
+
+    def test_upsample_multiclass_reproducible(self):
+        """Same seed yields identical indices for multi-class upsampling."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        s1 = upsample_dataset(dataset, target_ratio=1.0, seed=7)
+        s2 = upsample_dataset(dataset, target_ratio=1.0, seed=7)
+        assert s1.indices == s2.indices
+
+    def test_non_positive_target_ratio_raises(self):
+        """A non-positive target_ratio is rejected by both functions."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            downsample_dataset(dataset, target_ratio=0.0, seed=42)
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            upsample_dataset(dataset, target_ratio=-1.0, seed=42)
+
+    def test_target_ratio_above_one_raises(self):
+        """A target_ratio > 1.0 is rejected so the smallest/largest class is
+        never crossed (matches the classifier config contract)."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            downsample_dataset(dataset, target_ratio=1.5, seed=42)
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            upsample_dataset(dataset, target_ratio=2.0, seed=42)
+
+    def test_boolean_target_ratio_raises(self):
+        """A boolean target_ratio is rejected (bool is a subclass of int)."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            downsample_dataset(dataset, target_ratio=True, seed=42)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            upsample_dataset(dataset, target_ratio=True, seed=42)  # type: ignore[arg-type]

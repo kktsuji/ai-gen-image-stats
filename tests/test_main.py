@@ -13,12 +13,31 @@ import torch.nn as nn
 import yaml
 
 from src.main import (
+    _report_positive_class,
     _validate_split_file_has_split,
     main,
     setup_experiment_classifier,
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+class TestReportPositiveClass:
+    """The positive_class stamped into evaluation.json."""
+
+    def test_explicit_config_wins(self):
+        assert _report_positive_class({"positive_class": 6}, num_classes=7) == 6
+
+    def test_explicit_config_wins_even_for_binary(self):
+        assert _report_positive_class({"positive_class": 0}, num_classes=2) == 0
+
+    def test_binary_defaults_to_one(self):
+        assert _report_positive_class({}, num_classes=2) == 1
+
+    def test_multiclass_unconfigured_omits(self):
+        # None signals "omit from payload" so downstream tools auto-detect
+        # instead of trusting a guessed 1.
+        assert _report_positive_class({}, num_classes=7) is None
 
 
 class TestMainEntryPoint:

@@ -4,7 +4,7 @@ This module provides configuration validation for classifier experiments.
 Strict validation: all parameters must be explicitly specified in the config file.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.utils.config import (
     validate_checkpointing_section,
@@ -168,6 +168,171 @@ def validate_loss_section(loss: Any, num_classes: int) -> None:
                 raise ValueError("model.loss.gamma must be a non-negative number")
 
 
+def _is_positive_number(value: Any) -> bool:
+    """True for a real, positive int/float. Rejects bool (a subclass of int)."""
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+
+
+def validate_balancing_section(
+    balancing: Any, num_classes: Optional[int] = None
+) -> None:
+    """Validate the optional data.balancing section (strict when present).
+
+    Mirrors the strict style of ``validate_loss_section``: only the strategies
+    the classifier actually consumes are allowed (weighted_sampler,
+    downsampling, upsampling), and unexpected keys are rejected so typos fail
+    loudly instead of being silently ignored.
+
+    The up/downsampling strategies are multi-class aware (see
+    ``src.utils.data.balancing``); ``target_ratio`` is the ratio of each
+    minority class to the largest (upsampling) or smallest (downsampling) class.
+
+    Args:
+        balancing: The data.balancing config mapping.
+        num_classes: Number of classes. When provided, ``manual_weights`` must
+            supply exactly one weight per class; otherwise the dataloader maps
+            weights by position (``{i: w for i, w in enumerate(...)}``) and a
+            too-short list would pass validation then KeyError at train time on
+            the first sample of an unweighted class.
+
+    Raises:
+        KeyError: If a required field is missing.
+        ValueError: If a value is invalid or an unexpected key is present.
+    """
+    if not isinstance(balancing, dict):
+        raise ValueError("data.balancing must be a mapping")
+
+    valid_strategies = {"weighted_sampler", "downsampling", "upsampling"}
+    unexpected = set(balancing) - valid_strategies
+    if unexpected:
+        raise ValueError(
+            f"Unexpected data.balancing keys: {sorted(unexpected)}. "
+            f"Allowed strategies: {sorted(valid_strategies)}"
+        )
+
+    # --- weighted_sampler ---
+    if "weighted_sampler" in balancing:
+        ws = balancing["weighted_sampler"]
+        if not isinstance(ws, dict):
+            raise ValueError("data.balancing.weighted_sampler must be a mapping")
+        allowed = {
+            "enabled",
+            "method",
+            "beta",
+            "manual_weights",
+            "replacement",
+            "num_samples",
+        }
+        unexpected = set(ws) - allowed
+        if unexpected:
+            raise ValueError(
+                f"Unexpected data.balancing.weighted_sampler keys: {sorted(unexpected)}"
+            )
+        if "enabled" in ws and not isinstance(ws["enabled"], bool):
+            raise ValueError(
+                "data.balancing.weighted_sampler.enabled must be a boolean"
+            )
+
+        # The dataloader hard-reads ws["method"] when the sampler is enabled, so an
+        # enabled sampler without a method would pass validation then KeyError at
+        # train time. Require it here so the failure is a clear config error.
+        if ws.get("enabled") and ws.get("method") is None:
+            raise KeyError(
+                "Missing required field: data.balancing.weighted_sampler.method "
+                "(required when weighted_sampler.enabled is true)"
+            )
+
+        valid_methods = ["inverse_frequency", "effective_num", "manual"]
+        if ws.get("method") is not None and ws["method"] not in valid_methods:
+            raise ValueError(
+                f"data.balancing.weighted_sampler.method must be one of "
+                f"{valid_methods}, got {ws['method']!r}"
+            )
+        if ws.get("method") == "manual":
+            mw = ws.get("manual_weights")
+            if not isinstance(mw, list) or len(mw) == 0:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must be a "
+                    "non-empty list when method='manual'"
+                )
+            if not all(_is_positive_number(w) for w in mw):
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must contain "
+                    "only positive numbers"
+                )
+            # The dataloader maps weights by position (one per class index), so a
+            # list that doesn't cover every class KeyErrors at train time. Require
+            # an exact per-class match when num_classes is known.
+            if num_classes is not None and len(mw) != num_classes:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must have one "
+                    f"weight per class (expected {num_classes}, got {len(mw)})"
+                )
+        if ws.get("beta") is not None:
+            beta = ws["beta"]
+            if (
+                isinstance(beta, bool)
+                or not isinstance(beta, (int, float))
+                or not (0 < beta < 1)
+            ):
+                raise ValueError(
+                    "data.balancing.weighted_sampler.beta must be a number in (0, 1)"
+                )
+        if "replacement" in ws and not isinstance(ws["replacement"], bool):
+            raise ValueError(
+                "data.balancing.weighted_sampler.replacement must be a boolean"
+            )
+        if ws.get("num_samples") is not None:
+            ns = ws["num_samples"]
+            if isinstance(ns, bool) or not isinstance(ns, int) or ns < 1:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.num_samples must be a "
+                    "positive integer or null"
+                )
+
+    # --- downsampling / upsampling (same shape) ---
+    for strategy in ("downsampling", "upsampling"):
+        if strategy in balancing:
+            section = balancing[strategy]
+            if not isinstance(section, dict):
+                raise ValueError(f"data.balancing.{strategy} must be a mapping")
+            unexpected = set(section) - {"enabled", "target_ratio"}
+            if unexpected:
+                raise ValueError(
+                    f"Unexpected data.balancing.{strategy} keys: {sorted(unexpected)}"
+                )
+            if "enabled" in section and not isinstance(section["enabled"], bool):
+                raise ValueError(f"data.balancing.{strategy}.enabled must be a boolean")
+            if section.get("target_ratio") is not None:
+                tr = section["target_ratio"]
+                if not _is_positive_number(tr) or tr > 1.0:
+                    raise ValueError(
+                        f"data.balancing.{strategy}.target_ratio must be a positive "
+                        "number in (0, 1.0]"
+                    )
+
+
+def validate_positive_class(positive_class: Any, num_classes: int) -> None:
+    """Validate the optional data.positive_class index.
+
+    Args:
+        positive_class: The configured positive/abnormal class index.
+        num_classes: Number of classes (positive_class must be a valid index).
+
+    Raises:
+        ValueError: If positive_class is not an integer in [0, num_classes).
+    """
+    if (
+        isinstance(positive_class, bool)
+        or not isinstance(positive_class, int)
+        or not (0 <= positive_class < num_classes)
+    ):
+        raise ValueError(
+            f"data.positive_class must be an integer in [0, {num_classes}), "
+            f"got {positive_class!r}"
+        )
+
+
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate classifier configuration.
 
@@ -269,6 +434,15 @@ def validate_config(config: Dict[str, Any]) -> None:
             f"Must be one of {valid_normalize}"
         )
 
+    # Validate optional balancing section (strict when present)
+    if "balancing" in data:
+        validate_balancing_section(data["balancing"], architecture["num_classes"])
+
+    # Validate optional positive/abnormal class index (defaults to 1 when absent
+    # for backward compatibility with the binary task).
+    if "positive_class" in data:
+        validate_positive_class(data["positive_class"], architecture["num_classes"])
+
     # Validate output configuration
     validate_output_section(config)
 
@@ -332,6 +506,13 @@ def validate_config(config: Dict[str, Any]) -> None:
             "f1_macro",
             "f1_1",
         ]
+        # The early-stopping F1 metric must track the configured positive class,
+        # not the hardcoded class 1. For a multi-class run with an explicit
+        # data.positive_class, allow selecting that class's F1 (e.g. "f1_2").
+        num_classes = architecture["num_classes"]
+        positive_class = data.get("positive_class", 1 if num_classes <= 2 else None)
+        if positive_class is not None and f"f1_{positive_class}" not in valid_metrics:
+            valid_metrics.append(f"f1_{positive_class}")
         if metric not in valid_metrics:
             raise ValueError(
                 f"Invalid training.validation.metric: {metric}. "
