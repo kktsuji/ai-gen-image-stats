@@ -330,6 +330,23 @@ class TestValidateValidationSection:
         with pytest.raises(ValueError, match="Invalid training.validation.metric"):
             validate_config(config)
 
+    def test_f1_of_configured_positive_class_passes(self):
+        """A multi-class run may select f1_{positive_class} for early stopping."""
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["positive_class"] = 2
+        config["training"]["validation"]["metric"] = "f1_2"
+        validate_config(config)  # should not raise
+
+    def test_f1_of_non_positive_class_raises(self):
+        """f1_N is rejected when N is neither class 1 nor the positive class."""
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["positive_class"] = 2
+        config["training"]["validation"]["metric"] = "f1_0"
+        with pytest.raises(ValueError, match="Invalid training.validation.metric"):
+            validate_config(config)
+
     def test_early_stopping_patience_null_passes(self):
         config = get_v2_default_config()
         config["training"]["validation"]["early_stopping_patience"] = None

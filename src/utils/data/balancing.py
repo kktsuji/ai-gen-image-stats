@@ -200,6 +200,11 @@ def upsample_dataset(
     # Every class is duplicated up to this target count.
     target_count = int(max_count * target_ratio)
 
+    _logger.info(
+        f"Upsampling {len(class_counts)} classes toward target_count="
+        f"{target_count} (largest class has {max_count} samples)"
+    )
+
     # Group indices by class
     class_indices: Dict[int, List[int]] = {}
     for idx, target in enumerate(targets):

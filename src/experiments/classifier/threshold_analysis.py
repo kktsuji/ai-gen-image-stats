@@ -475,11 +475,15 @@ def generate_report(
         if in_sample
         else "val -> test (threshold selected on VAL, reported on held-out TEST)"
     )
-    crit_note = (
-        f"{criterion} (target_recall={target_recall})"
-        if criterion == "precision_at_recall"
-        else criterion
-    )
+    # The "max_f1_1" criterion name is historical; it always maximizes the
+    # *configured* positive-class F1, so spell out the resolved class to avoid
+    # implying class 1 on multi-class runs (e.g. "max_f1_1 -> maximizing f1_3").
+    if criterion == "precision_at_recall":
+        crit_note = f"{criterion} (target_recall={target_recall})"
+    elif criterion == "max_f1_1":
+        crit_note = f"{criterion} (maximizing f1_{pc})"
+    else:
+        crit_note = criterion
 
     lines = [
         "# Decision-Threshold Analysis",

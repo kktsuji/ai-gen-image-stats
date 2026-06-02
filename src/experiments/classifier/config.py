@@ -506,6 +506,13 @@ def validate_config(config: Dict[str, Any]) -> None:
             "f1_macro",
             "f1_1",
         ]
+        # The early-stopping F1 metric must track the configured positive class,
+        # not the hardcoded class 1. For a multi-class run with an explicit
+        # data.positive_class, allow selecting that class's F1 (e.g. "f1_2").
+        num_classes = architecture["num_classes"]
+        positive_class = data.get("positive_class", 1 if num_classes <= 2 else None)
+        if positive_class is not None and f"f1_{positive_class}" not in valid_metrics:
+            valid_metrics.append(f"f1_{positive_class}")
         if metric not in valid_metrics:
             raise ValueError(
                 f"Invalid training.validation.metric: {metric}. "

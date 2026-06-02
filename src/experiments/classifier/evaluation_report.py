@@ -18,6 +18,7 @@ Usage:
 import json
 import logging
 import math
+from collections import Counter
 from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -109,8 +110,6 @@ def resolve_positive_class(
 
     distinct = set(values)
     if len(distinct) > 1:
-        from collections import Counter
-
         most_common = Counter(values).most_common(1)[0][0]
         _logger.warning(
             "Evaluation results report differing positive_class values %s; "
@@ -449,7 +448,9 @@ def generate_statistical_comparison_table(
         alpha: Significance threshold after correction. Must be in (0, 1).
         correction_method: P-value correction method.
         baseline_name: Specific baseline to use. If None, uses the best
-            baseline (highest recall_1 mean).
+            baseline (highest recall_{positive_class} mean).
+        positive_class: One-vs-rest positive/abnormal class index used to pick
+            the key metrics (e.g. recall_{positive_class}). Defaults to 1.
 
     Returns:
         Markdown-formatted table string, or empty string if not applicable.
