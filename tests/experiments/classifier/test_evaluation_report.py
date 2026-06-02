@@ -1175,6 +1175,27 @@ class TestPositiveClassParametrization:
             assert resolve_positive_class(results) == 6
         assert "differing positive_class" in caplog.text
 
+    def test_resolve_override_out_of_range_raises(self):
+        results = [{"experiment": "a", "num_classes": 3, "positive_class": 0}]
+        with pytest.raises(ValueError, match="out of range"):
+            resolve_positive_class(results, override=7)
+
+    def test_resolve_override_negative_raises(self):
+        results = [{"experiment": "a", "num_classes": 3}]
+        with pytest.raises(ValueError, match="non-negative"):
+            resolve_positive_class(results, override=-1)
+
+    def test_resolve_stored_out_of_range_raises(self):
+        # A stored positive_class that exceeds the recorded num_classes is a
+        # corrupt report and should fail fast rather than mislabel columns.
+        results = [{"experiment": "a", "num_classes": 2, "positive_class": 5}]
+        with pytest.raises(ValueError, match="out of range"):
+            resolve_positive_class(results)
+
+    def test_resolve_override_in_range_ok(self):
+        results = [{"experiment": "a", "num_classes": 7, "positive_class": 0}]
+        assert resolve_positive_class(results, override=6) == 6
+
     def test_classifier_table_uses_positive_class(self):
         import pandas as pd
 

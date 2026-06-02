@@ -332,7 +332,24 @@ class TestMultiClassBalancing:
     def test_non_positive_target_ratio_raises(self):
         """A non-positive target_ratio is rejected by both functions."""
         dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
-        with pytest.raises(ValueError, match="target_ratio must be positive"):
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
             downsample_dataset(dataset, target_ratio=0.0, seed=42)
-        with pytest.raises(ValueError, match="target_ratio must be positive"):
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
             upsample_dataset(dataset, target_ratio=-1.0, seed=42)
+
+    def test_target_ratio_above_one_raises(self):
+        """A target_ratio > 1.0 is rejected so the smallest/largest class is
+        never crossed (matches the classifier config contract)."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            downsample_dataset(dataset, target_ratio=1.5, seed=42)
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            upsample_dataset(dataset, target_ratio=2.0, seed=42)
+
+    def test_boolean_target_ratio_raises(self):
+        """A boolean target_ratio is rejected (bool is a subclass of int)."""
+        dataset = MockImbalancedDataset({0: 100, 1: 20, 2: 50})
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            downsample_dataset(dataset, target_ratio=True, seed=42)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match=r"target_ratio must be a number in"):
+            upsample_dataset(dataset, target_ratio=True, seed=42)  # type: ignore[arg-type]

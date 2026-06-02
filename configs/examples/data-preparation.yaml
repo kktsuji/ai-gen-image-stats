@@ -21,8 +21,11 @@ experiment: data_preparation # Name of the experiment to run
 #     normal_f: { path: "data/normal/f", label: 5 }
 #     abnormal: { path: "data/abnormal", label: 6 }
 #
-# Set the classifier's data.positive_class (and the pipeline's summarize.positive_class)
-# to the abnormal label above (6 in this example).
+# Set the classifier's data.positive_class to the abnormal label above (6 in this
+# example) so its evaluation focuses on that class. The pipeline's
+# summarize.positive_class is optional: leave it unset and the evaluation report /
+# threshold analysis auto-detect the class from each run's evaluation.json; only
+# set it to force a specific override.
 classes:
   normal:
     path: "data/0.Normal" # Path to the directory containing normal class images

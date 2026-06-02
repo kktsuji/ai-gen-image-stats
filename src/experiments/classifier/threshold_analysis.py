@@ -247,11 +247,11 @@ def _detect_positive_class(base_dir: str, override: Optional[int] = None) -> int
     :func:`evaluation_report.load_evaluation_results` (the same scan the
     classifier report uses) and resolution to :func:`resolve_positive_class`, so
     the two report tools stay in lockstep instead of maintaining a separate glob.
+    Passing ``override`` through ``resolve_positive_class`` (rather than
+    returning it verbatim) means an out-of-range ``--positive-class-index`` is
+    rejected up front instead of surfacing later as per-file skips.
     """
-    if override is not None:
-        return override
-
-    return resolve_positive_class(load_evaluation_results(base_dir))
+    return resolve_positive_class(load_evaluation_results(base_dir), override)
 
 
 def _resolve_predictions(reports_dir: Path, split: str) -> Optional[Path]:

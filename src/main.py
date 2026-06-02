@@ -93,6 +93,31 @@ def _validate_split_file_has_split(split_file: str, split: str = "val") -> None:
         )
 
 
+def _report_positive_class(
+    data_config: Dict[str, Any], num_classes: int
+) -> Optional[int]:
+    """Decide the ``positive_class`` value to persist in ``evaluation.json``.
+
+    An explicit ``data.positive_class`` always wins. A binary run falls back to
+    1 for backward-compat. For an unconfigured multi-class run, returns ``None``
+    so the value is *omitted* from the report — the downstream evaluation_report
+    / threshold_analysis tools then auto-detect the abnormal class per run
+    instead of trusting a guessed ``1`` that is almost certainly wrong.
+
+    Args:
+        data_config: The ``data`` config section.
+        num_classes: Number of classes for this run.
+
+    Returns:
+        The index to stamp, or ``None`` to omit (multi-class, unconfigured).
+    """
+    if "positive_class" in data_config:
+        return data_config["positive_class"]
+    if num_classes <= 2:
+        return 1
+    return None
+
+
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     """Setup and run classifier experiment.
 
@@ -378,29 +403,26 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         # Record class metadata so the standalone evaluation_report /
         # threshold_analysis tools can resolve which class is the positive
         # (abnormal/minority) one without reading per-experiment configs.
-        # Defaults to 1 when data.positive_class is absent (binary backward-compat).
-        # For a multi-class run the default-1 is almost certainly not the abnormal
-        # class, and the downstream report/threshold tools trust this stored value,
-        # so warn loudly rather than silently mislabelling a normal subclass as the
-        # positive class.
-        if "positive_class" in data_config:
-            positive_class = data_config["positive_class"]
-        else:
-            positive_class = 1
-            if num_classes > 2:
-                logger.warning(
-                    "data.positive_class is not set for a %d-class run; defaulting "
-                    "to 1. Set data.positive_class to the abnormal class index so the "
-                    "evaluation report and threshold analysis focus on the right class.",
-                    num_classes,
-                )
         report_payload = {
             **eval_metrics,
             "split": eval_split,
-            "positive_class": positive_class,
             "num_classes": num_classes,
             "class_names": class_names,
         }
+        # Stamp positive_class only when it is safe to be authoritative (see
+        # _report_positive_class). For an unconfigured multi-class run it is
+        # omitted so the downstream report / threshold tools auto-detect rather
+        # than trust a guessed 1; warn loudly in that case.
+        positive_class = _report_positive_class(data_config, num_classes)
+        if positive_class is not None:
+            report_payload["positive_class"] = positive_class
+        else:
+            logger.warning(
+                "data.positive_class is not set for a %d-class run. Set "
+                "data.positive_class to the abnormal class index so the evaluation "
+                "report and threshold analysis focus on the right class.",
+                num_classes,
+            )
         report_name = (
             "evaluation.json"
             if eval_split == "test"

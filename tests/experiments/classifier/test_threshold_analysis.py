@@ -257,3 +257,17 @@ class TestMulticlassReport:
         )
         md = (out / "threshold_analysis.md").read_text()
         assert "recall_2_tau" in md
+
+    def test_out_of_range_override_rejected_up_front(self, tmp_path):
+        # An out-of-range --positive-class-index must fail fast via the shared
+        # resolver instead of silently producing "No prediction files found".
+        base = tmp_path / "classifier"
+        reports = base / "ft-full__ws" / "seed0" / "reports"
+        probs = np.array([[0.7, 0.2, 0.1], [0.1, 0.2, 0.7]])
+        labels = np.array([0, 2])
+        _write_multiclass_predictions(reports, "test", probs, labels)
+        (reports / "evaluation.json").write_text(
+            '{"positive_class": 2, "num_classes": 3, "split": "test"}'
+        )
+        with pytest.raises(ValueError, match="out of range"):
+            ta._detect_positive_class(str(base), override=7)

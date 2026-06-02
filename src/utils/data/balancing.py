@@ -68,7 +68,7 @@ def downsample_dataset(
         torch.utils.data.Subset with balanced indices
 
     Raises:
-        ValueError: If dataset has no targets or target_ratio is not positive
+        ValueError: If dataset has no targets or target_ratio is not in (0, 1.0]
         AttributeError: If dataset doesn't have a targets attribute
 
     Example:
@@ -83,8 +83,17 @@ def downsample_dataset(
     if not targets:
         raise ValueError("Dataset has no samples")
 
-    if target_ratio <= 0:
-        raise ValueError(f"target_ratio must be positive, got {target_ratio}")
+    # Mirror the classifier config contract: ratios above 1.0 would push the
+    # target below the smallest class count and start downsampling the smallest
+    # class too, contradicting "toward the smallest class".
+    if (
+        isinstance(target_ratio, bool)
+        or not isinstance(target_ratio, (int, float))
+        or not (0 < target_ratio <= 1.0)
+    ):
+        raise ValueError(
+            f"target_ratio must be a number in (0, 1.0], got {target_ratio}"
+        )
 
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)
@@ -151,14 +160,14 @@ def upsample_dataset(
     Args:
         dataset: Dataset with `targets` attribute
         target_ratio: Desired ratio of each minority class to the largest class
-            (1.0 = all classes equal to the largest). Must be positive.
+            (1.0 = all classes equal to the largest). Must be in (0, 1.0].
         seed: Seed for local random generator
 
     Returns:
         torch.utils.data.Subset with duplicated minority indices
 
     Raises:
-        ValueError: If dataset has no targets or target_ratio is not positive
+        ValueError: If dataset has no targets or target_ratio is not in (0, 1.0]
         AttributeError: If dataset doesn't have a targets attribute
 
     Example:
@@ -173,8 +182,16 @@ def upsample_dataset(
     if not targets:
         raise ValueError("Dataset has no samples")
 
-    if target_ratio <= 0:
-        raise ValueError(f"target_ratio must be positive, got {target_ratio}")
+    # Mirror the classifier config contract: ratios above 1.0 would oversample
+    # past the largest class count, contradicting "toward the largest class".
+    if (
+        isinstance(target_ratio, bool)
+        or not isinstance(target_ratio, (int, float))
+        or not (0 < target_ratio <= 1.0)
+    ):
+        raise ValueError(
+            f"target_ratio must be a number in (0, 1.0], got {target_ratio}"
+        )
 
     # Count samples per class
     class_counts: Dict[int, int] = Counter(targets)

@@ -76,9 +76,30 @@ def resolve_positive_class(
 
     Returns:
         The resolved positive class index (defaults to 1).
+
+    Raises:
+        ValueError: If the resolved index is negative or out of range for the
+            ``num_classes`` recorded in the results.
     """
+    # evaluation.json now records num_classes; use it to reject indices that
+    # would silently drop recall_{pc}/f1_{pc} and fall back to unrelated columns.
+    num_classes = {
+        int(r["num_classes"]) for r in results if r.get("num_classes") is not None
+    }
+
+    def _validate(candidate: int) -> int:
+        if candidate < 0:
+            raise ValueError(f"positive_class must be non-negative, got {candidate}")
+        if num_classes and any(candidate >= n for n in num_classes):
+            raise ValueError(
+                f"positive_class={candidate} is out of range for "
+                f"num_classes={sorted(num_classes)}. "
+                "Pass a valid --positive-class-index."
+            )
+        return candidate
+
     if override is not None:
-        return override
+        return _validate(override)
 
     values = [
         int(r["positive_class"]) for r in results if r.get("positive_class") is not None
@@ -97,8 +118,8 @@ def resolve_positive_class(
             sorted(distinct),
             most_common,
         )
-        return most_common
-    return values[0]
+        return _validate(most_common)
+    return _validate(values[0])
 
 
 # Dose ladder: number of synthetic abnormal images added per dose level. This
