@@ -130,6 +130,8 @@ summarize:
   threshold_output_dir: outputs/threshold_analysis
   threshold_criterion: max_f1_1 # or: precision_at_recall
   threshold_target_recall: 0.9 # used only by the precision_at_recall criterion
-  # Positive/abnormal class index the report and threshold analysis focus on.
-  # Defaults to 1 (binary minority); set to the abnormal label for multi-class runs.
-  positive_class: 1
+  # Optional positive/abnormal class index the report and threshold analysis
+  # focus on. When omitted, it is auto-detected from each run's evaluation.json
+  # (falling back to 1 for legacy binary runs). Set it only to force a specific
+  # class, e.g. the abnormal label for a multi-class run.
+  # positive_class: 6

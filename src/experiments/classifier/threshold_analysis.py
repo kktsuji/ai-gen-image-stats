@@ -30,6 +30,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from glob import glob
 from pathlib import Path
@@ -45,14 +46,10 @@ from sklearn.metrics import (
 from src.experiments.classifier.evaluation_report import (
     _format_mean_std,
     _parse_experiment_name,
+    resolve_positive_class,
 )
 
 _logger = logging.getLogger(__name__)
-
-# Default positive (minority / abnormal) class index. For multi-class runs the
-# index is read from the saved evaluation.json (one-vs-rest); it defaults to 1
-# so the binary task is unchanged.
-DEFAULT_POSITIVE_CLASS = 1
 
 
 def metric_columns(positive_class: int = 1) -> List[str]:
@@ -248,14 +245,15 @@ def _detect_positive_class(base_dir: str, override: Optional[int] = None) -> int
     ``positive_class`` field of the evaluation.json files saved alongside the
     predictions (written by ``src/main.py``); legacy runs without the field
     default to 1. The most common value is used when runs disagree.
+
+    Loading is local to threshold analysis (it globs the report JSONs itself),
+    but the actual resolution/majority-vote/warning is delegated to
+    :func:`resolve_positive_class` so the two report tools stay in lockstep.
     """
     if override is not None:
         return override
 
-    import json
-    from collections import Counter
-
-    values: List[int] = []
+    payloads: List[Dict[str, Any]] = []
     for json_path in sorted(
         glob(f"{base_dir}/**/reports/evaluation*.json", recursive=True)
     ):
@@ -264,22 +262,10 @@ def _detect_positive_class(base_dir: str, override: Optional[int] = None) -> int
                 payload = json.load(f)
         except (OSError, ValueError):
             continue
-        if isinstance(payload, dict) and payload.get("positive_class") is not None:
-            values.append(int(payload["positive_class"]))
+        if isinstance(payload, dict):
+            payloads.append(payload)
 
-    if not values:
-        return DEFAULT_POSITIVE_CLASS
-    distinct = set(values)
-    if len(distinct) > 1:
-        most_common = Counter(values).most_common(1)[0][0]
-        _logger.warning(
-            "Evaluation results report differing positive_class values %s; using %s. "
-            "Pass --positive-class-index to override.",
-            sorted(distinct),
-            most_common,
-        )
-        return most_common
-    return values[0]
+    return resolve_positive_class(payloads)
 
 
 def _resolve_predictions(reports_dir: Path, split: str) -> Optional[Path]:
@@ -520,6 +506,13 @@ def generate_report(
         "Columns: `*_tau` = at the selected threshold, `*_base` = at the default "
         f"0.5 operating point, `delta_recall_{pc}` = recall_{pc}_tau - "
         f"recall_{pc}_base.",
+        "",
+        f"All metrics here are one-vs-rest (class {pc} vs the rest) on the "
+        f"positive-class probability `probs[:, {pc}]`. For a multi-class run the "
+        "`*_base` column is therefore the 0.5 one-vs-rest operating point, which "
+        "is NOT the model's argmax prediction; it will not match the same-named "
+        "metric in the classifier evaluation report (computed over all classes). "
+        "For the binary task the two coincide.",
         "",
         f"## Positive-class (class {pc}) metrics at selected vs default threshold",
         "",

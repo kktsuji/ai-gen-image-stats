@@ -226,6 +226,15 @@ def validate_balancing_section(balancing: Any) -> None:
                 "data.balancing.weighted_sampler.enabled must be a boolean"
             )
 
+        # The dataloader hard-reads ws["method"] when the sampler is enabled, so an
+        # enabled sampler without a method would pass validation then KeyError at
+        # train time. Require it here so the failure is a clear config error.
+        if ws.get("enabled") and ws.get("method") is None:
+            raise KeyError(
+                "Missing required field: data.balancing.weighted_sampler.method "
+                "(required when weighted_sampler.enabled is true)"
+            )
+
         valid_methods = ["inverse_frequency", "effective_num", "manual"]
         if ws.get("method") is not None and ws["method"] not in valid_methods:
             raise ValueError(

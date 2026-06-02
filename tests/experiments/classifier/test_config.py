@@ -1160,6 +1160,17 @@ class TestValidateBalancingSection:
                 {"weighted_sampler": {"enabled": True, "method": "manual"}}
             )
 
+    def test_enabled_sampler_requires_method(self):
+        # The dataloader hard-reads ws["method"] when enabled, so validation must
+        # reject an enabled sampler with no method rather than let it KeyError.
+        with pytest.raises(KeyError, match="weighted_sampler.method"):
+            validate_balancing_section({"weighted_sampler": {"enabled": True}})
+
+    def test_disabled_sampler_without_method_ok(self):
+        # A disabled sampler never reaches the loader's method access, so no method
+        # is required.
+        validate_balancing_section({"weighted_sampler": {"enabled": False}})
+
     def test_target_ratio_bool_rejected(self):
         with pytest.raises(ValueError, match="target_ratio must be a positive"):
             validate_balancing_section(

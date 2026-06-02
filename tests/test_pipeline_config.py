@@ -123,10 +123,14 @@ class TestValidateAccepts:
         assert cfg["summarize"]["threshold_target_recall"] == 0.9
         assert cfg["summarize"]["threshold_output_dir"] == "outputs/threshold_analysis"
 
-    def test_summarize_positive_class_default_applied(self):
+    def test_summarize_positive_class_left_unset_for_autodetect(self):
+        # When omitted, positive_class must NOT be defaulted/injected: the report
+        # and threshold tools auto-detect it from each evaluation.json, and an
+        # explicit value would override (and defeat) that detection.
         cfg = _valid_config()
+        cfg["summarize"].pop("positive_class", None)
         validate_pipeline_config(cfg)
-        assert cfg["summarize"]["positive_class"] == 1
+        assert "positive_class" not in cfg["summarize"]
 
     def test_summarize_positive_class_explicit(self):
         cfg = _valid_config()

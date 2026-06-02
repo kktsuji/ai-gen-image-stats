@@ -449,12 +449,14 @@ def _validate_summarize(config: Dict[str, Any]) -> None:
     if isinstance(tr, bool) or not isinstance(tr, (int, float)) or not (0 < tr <= 1):
         raise ValueError("summarize.threshold_target_recall must be a number in (0, 1]")
 
-    # Positive/abnormal class index for the evaluation report and threshold
-    # analysis. Defaults to 1 (binary task) so existing configs need no changes;
-    # for a multi-class run, set this to the abnormal class index.
-    summarize.setdefault("positive_class", 1)
-    pc = summarize["positive_class"]
-    if isinstance(pc, bool) or not isinstance(pc, int) or pc < 0:
+    # Optional positive/abnormal class index for the evaluation report and
+    # threshold analysis. When omitted, the report/threshold tools auto-detect it
+    # from the per-run evaluation.json files (written by src/main.py), so a
+    # multi-class pipeline only needs to set this to *force* a specific class.
+    # Leaving it unset (rather than defaulting to 1 and always passing it through)
+    # is what lets that auto-detection run. Validate only when present.
+    pc = summarize.get("positive_class")
+    if pc is not None and (isinstance(pc, bool) or not isinstance(pc, int) or pc < 0):
         raise ValueError("summarize.positive_class must be a non-negative integer")
 
     # The summarize step reads classifier reports from summarize.base_dir, but the
