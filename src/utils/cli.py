@@ -258,6 +258,16 @@ def parse_override_args(remaining: List[str]) -> Dict[str, Any]:
     return overrides
 
 
+# Type-polymorphic config subtrees whose valid leaf keys depend on a sibling
+# discriminator (e.g. model.loss keys depend on model.loss.type: focal needs gamma,
+# class_balanced needs beta/base). The override preflight cannot know which keys are
+# valid without resolving the type, so these subtrees are exempt from strict
+# leaf-existence checks. Their authoritative validation happens post-merge in the
+# experiment config validator (classifier validate_loss_section), which rejects both
+# missing required fields and unexpected keys for the resolved type.
+POLYMORPHIC_OVERRIDE_SUBTREES = frozenset({"model.loss"})
+
+
 def validate_override_keys(
     config: Dict[str, Any], overrides: Dict[str, Any], prefix: str = ""
 ) -> None:
@@ -276,7 +286,11 @@ def validate_override_keys(
 
     Note:
         This function validates key existence only, not value types. Type
-        validation is delegated to experiment-level config validators.
+        validation is delegated to experiment-level config validators. Subtrees
+        in ``POLYMORPHIC_OVERRIDE_SUBTREES`` (e.g. ``model.loss``) are exempt from
+        leaf-existence checks because their valid keys depend on a type
+        discriminator; those keys are validated post-merge by the experiment
+        validator instead.
     """
     for key, value in overrides.items():
         full_key = f"{prefix}.{key}" if prefix else key
@@ -293,6 +307,10 @@ def validate_override_keys(
                     f"Unknown config key: '{full_key}'. "
                     f"'{full_key}' is not a nested object in base config."
                 )
+            if full_key in POLYMORPHIC_OVERRIDE_SUBTREES:
+                # Type-polymorphic subtree: defer leaf validation to the post-merge
+                # experiment validator, which resolves the discriminator (type).
+                continue
             validate_override_keys(config[key], value, full_key)
 
 
