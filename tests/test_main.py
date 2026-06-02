@@ -372,7 +372,7 @@ class TestClassifierExperimentSetup:
             # Check that output directories were created
             assert (tmp_path / "checkpoints").exists()
             assert (tmp_path / "logs").exists()
-            assert (tmp_path / "logs" / "config.yaml").exists()
+            assert list((tmp_path / "logs").glob("config_*.yaml"))
 
     @pytest.mark.integration
     def test_setup_classifier_inceptionv3(self, tmp_path):
@@ -494,7 +494,7 @@ class TestClassifierExperimentSetup:
         # Verify outputs were created
         assert (tmp_path / "checkpoints").exists()
         assert (tmp_path / "logs").exists()
-        assert (tmp_path / "logs" / "config.yaml").exists()
+        assert list((tmp_path / "logs").glob("config_*.yaml"))
         assert (tmp_path / "logs" / "metrics" / "metrics.csv").exists()
 
         # Verify checkpoint was saved

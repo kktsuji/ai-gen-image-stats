@@ -5,6 +5,7 @@ These tests run on CPU only and do not require GPU hardware.
 """
 
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from src.utils.logging import (
     TimezoneFormatter,
     get_log_file_path,
     get_logger,
+    get_timestamp,
     setup_logging,
 )
 
@@ -245,6 +247,28 @@ class TestLogFilePath:
 
         # Paths should be different due to timestamp
         assert path1 != path2
+
+    def test_get_log_file_path_explicit_timestamp(self):
+        """get_log_file_path reuses a caller-provided timestamp."""
+        path = get_log_file_path("outputs/test", timestamp="20260216_143022")
+
+        assert path.name == "log_20260216_143022.log"
+
+
+@pytest.mark.unit
+class TestGetTimestamp:
+    """Tests for the get_timestamp helper."""
+
+    def test_format(self):
+        """get_timestamp returns a YYYYMMDD_HHMMSS string."""
+        ts = get_timestamp()
+
+        assert re.fullmatch(r"\d{8}_\d{6}", ts)
+
+    def test_utc_and_local_and_iana(self):
+        """get_timestamp honors UTC, local, and IANA timezones."""
+        for tz in (None, "local", "UTC", "Asia/Tokyo"):
+            assert re.fullmatch(r"\d{8}_\d{6}", get_timestamp(tz))
 
 
 @pytest.mark.unit

@@ -78,12 +78,12 @@ class TestSetupExperimentCommon:
         assert log_dir.is_dir()
 
     def test_config_yaml_written(self, tmp_path, clean_logging_handlers):
-        """Test that config.yaml is saved inside log_dir."""
+        """Test that a timestamped config snapshot is saved inside log_dir."""
         config = _make_config(tmp_path)
         _, log_dir = setup_experiment_common(config, "TEST STARTED")
 
-        config_snapshot = log_dir / "config.yaml"
-        assert config_snapshot.exists()
+        snapshots = list(log_dir.glob("config_*.yaml"))
+        assert len(snapshots) == 1
 
     def test_banner_logged(self, tmp_path, clean_logging_handlers):
         """Test that the experiment banner is logged to the log file."""
