@@ -249,6 +249,18 @@ class TestValidateRejects:
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 
+    def test_summarize_positive_class_float_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = 1.5
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_str_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = "1"
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
     def test_config_path_not_yaml(self):
         cfg = _valid_config()
         cfg["configs"]["classifier"] = "configs/classifier.json"

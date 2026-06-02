@@ -541,7 +541,12 @@ def main() -> None:
         "--criterion",
         default="max_f1_1",
         choices=list(VALID_CRITERIA),
-        help="Threshold selection criterion (default: max_f1_1)",
+        help=(
+            "Threshold selection criterion (default: max_f1_1). The historical "
+            "name 'max_f1_1' maximizes the *configured* positive-class F1 "
+            "(f1_{positive_class}), not literally class-1 F1 — on a run with "
+            "--positive-class-index 3 it optimizes f1_3."
+        ),
     )
     parser.add_argument(
         "--target-recall",

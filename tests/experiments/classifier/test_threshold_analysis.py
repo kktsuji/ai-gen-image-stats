@@ -247,6 +247,10 @@ class TestMulticlassReport:
         )
         labels = np.array([0, 2, 2, 0])
         _write_multiclass_predictions(reports, "test", probs, labels)
+        # Stored positive_class is 1; the explicit override must win over it.
+        (reports / "evaluation.json").write_text(
+            '{"positive_class": 1, "num_classes": 3, "split": "test"}'
+        )
 
         out = tmp_path / "probe"
         ta.generate_report(
@@ -257,6 +261,7 @@ class TestMulticlassReport:
         )
         md = (out / "threshold_analysis.md").read_text()
         assert "recall_2_tau" in md
+        assert "recall_1_tau" not in md
 
     def test_out_of_range_override_rejected_up_front(self, tmp_path):
         # An out-of-range --positive-class-index must fail fast via the shared
