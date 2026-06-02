@@ -32,17 +32,77 @@ from src.utils.statistical_testing import (
 
 _logger = logging.getLogger(__name__)
 
-# Key metrics for comparison (ordered by importance for imbalanced classification)
-KEY_METRICS = [
-    "recall_1",  # Minority class recall (abnormal detection)
-    "balanced_accuracy",
-    "f1_1",  # Minority class F1
-    "pr_auc",
-    "roc_auc",
-    "accuracy",
-    "precision_1",
-    "loss",
-]
+
+def key_metrics(positive_class: int = 1) -> List[str]:
+    """Key metrics for comparison, ordered by importance for imbalanced
+    classification.
+
+    The per-class metric names (recall/f1/precision) are parametrized by the
+    positive (abnormal/minority) class index, which defaults to 1 for the
+    binary task so legacy reports are unchanged.
+
+    Args:
+        positive_class: Index of the positive/abnormal class.
+
+    Returns:
+        Ordered list of metric column names.
+    """
+    pc = positive_class
+    return [
+        f"recall_{pc}",  # Positive (abnormal) class recall
+        "balanced_accuracy",
+        f"f1_{pc}",  # Positive (abnormal) class F1
+        "pr_auc",
+        "roc_auc",
+        "accuracy",
+        f"precision_{pc}",
+        "loss",
+    ]
+
+
+# Backward-compatible binary default (positive class = 1).
+KEY_METRICS = key_metrics(1)
+
+
+def resolve_positive_class(
+    results: List[Dict[str, Any]], override: Optional[int] = None
+) -> int:
+    """Resolve the positive/abnormal class index for a set of results.
+
+    Reads the ``positive_class`` field written into each evaluation.json (by
+    ``src/main.py``). Legacy results without the field default to 1 (binary).
+    An explicit ``override`` (e.g. a CLI flag) always wins. If aggregated
+    results disagree, the most common value is used and a warning is emitted.
+
+    Args:
+        results: Loaded evaluation result dicts.
+        override: Explicit positive class index, or None to auto-detect.
+
+    Returns:
+        The resolved positive class index (defaults to 1).
+    """
+    if override is not None:
+        return override
+
+    values = [
+        int(r["positive_class"]) for r in results if r.get("positive_class") is not None
+    ]
+    if not values:
+        return 1
+
+    distinct = set(values)
+    if len(distinct) > 1:
+        from collections import Counter
+
+        most_common = Counter(values).most_common(1)[0][0]
+        _logger.warning(
+            "Evaluation results report differing positive_class values %s; "
+            "using %s. Pass --positive-class-index to override.",
+            sorted(distinct),
+            most_common,
+        )
+        return most_common
+    return values[0]
 
 
 # Dose ladder: number of synthetic abnormal images added per dose level. This
@@ -359,6 +419,7 @@ def generate_statistical_comparison_table(
     alpha: float = 0.05,
     correction_method: str = "benjamini-hochberg",
     baseline_name: Optional[str] = None,
+    positive_class: int = 1,
 ) -> str:
     """Generate table of paired t-test results comparing baselines to variants.
 
@@ -385,7 +446,7 @@ def generate_statistical_comparison_table(
     if "seed" not in df.columns:
         return ""
 
-    metric_names = [m for m in KEY_METRICS if m in df.columns]
+    metric_names = [m for m in key_metrics(positive_class) if m in df.columns]
     if not metric_names:
         return ""
 
@@ -426,12 +487,13 @@ def generate_statistical_comparison_table(
                     f"Requested baseline {baseline_name!r} not found in results; "
                     f"falling back to auto-selection"
                 )
-        # Use baseline with highest mean recall_1 (or first available)
+        # Use baseline with highest mean positive-class recall (or first available)
+        recall_key = f"recall_{positive_class}"
         best_bl_name = None
         best_bl_recall = -float("inf")
         for bl_name, bl_vals in baselines.items():
-            if "recall_1" in bl_vals:
-                mean_recall = float(np.mean(bl_vals["recall_1"]))
+            if recall_key in bl_vals:
+                mean_recall = float(np.mean(bl_vals[recall_key]))
                 if mean_recall > best_bl_recall:
                     best_bl_recall = mean_recall
                     best_bl_name = bl_name
@@ -596,13 +658,15 @@ def _format_mean_std(df: pd.DataFrame, metric: str, floatfmt: str = ".4f") -> pd
     return pd.Series(formatted, index=df.index)
 
 
-def generate_classifier_table(df: pd.DataFrame) -> str:
+def generate_classifier_table(df: pd.DataFrame, positive_class: int = 1) -> str:
     """Generate markdown table of classifier performance.
 
     For multi-seed results, shows mean +/- std across seeds.
 
     Args:
         df: DataFrame with evaluation results.
+        positive_class: Index of the positive/abnormal class (for metric names
+            and sort order).
 
     Returns:
         Markdown-formatted table string.
@@ -613,14 +677,15 @@ def generate_classifier_table(df: pd.DataFrame) -> str:
     display_cols = ["experiment", "type"]
     if "n_seeds" in df.columns:
         display_cols.append("n_seeds")
-    metric_cols = [m for m in KEY_METRICS if m in df.columns]
+    metric_cols = [m for m in key_metrics(positive_class) if m in df.columns]
     cols = display_cols + metric_cols
 
     available = [c for c in cols if c in df.columns]
     subset = df[available].copy()
 
-    # Sort by minority recall descending
-    sort_col = "recall_1" if "recall_1" in subset.columns else "balanced_accuracy"
+    # Sort by positive-class (abnormal) recall descending
+    recall_col = f"recall_{positive_class}"
+    sort_col = recall_col if recall_col in subset.columns else "balanced_accuracy"
     if sort_col in subset.columns:
         subset = subset.sort_values(by=sort_col, ascending=False)  # type: ignore[call-overload]
 
@@ -639,11 +704,12 @@ def generate_classifier_table(df: pd.DataFrame) -> str:
     return result if result is not None else ""
 
 
-def generate_best_per_metric(df: pd.DataFrame) -> str:
+def generate_best_per_metric(df: pd.DataFrame, positive_class: int = 1) -> str:
     """Generate table showing best experiment per metric.
 
     Args:
         df: DataFrame with evaluation results.
+        positive_class: Index of the positive/abnormal class (for metric names).
 
     Returns:
         Markdown-formatted table string.
@@ -652,7 +718,7 @@ def generate_best_per_metric(df: pd.DataFrame) -> str:
         return "No evaluation results found.\n"
 
     rows = []
-    for metric in KEY_METRICS:
+    for metric in key_metrics(positive_class):
         if metric not in df.columns:
             continue
 
@@ -703,6 +769,7 @@ def generate_report(
     alpha: float = 0.05,
     correction_method: str = "benjamini-hochberg",
     baseline_name: Optional[str] = None,
+    positive_class: Optional[int] = None,
 ) -> None:
     """Generate full evaluation report.
 
@@ -713,7 +780,11 @@ def generate_report(
         alpha: Significance threshold for statistical testing.
         correction_method: P-value correction method.
         baseline_name: Specific baseline experiment to compare against. If None,
-            the baseline with the highest mean recall_1 is auto-selected.
+            the baseline with the highest mean positive-class recall is
+            auto-selected.
+        positive_class: Index of the positive/abnormal class. If None, it is
+            auto-detected from the evaluation.json files (defaults to 1 for
+            legacy binary results).
     """
     if not (0 < alpha < 1):
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -729,11 +800,15 @@ def generate_report(
         _logger.warning("No evaluation results found. Run evaluations first.")
         return
 
+    # Resolve which class is the positive (abnormal) one for metric naming.
+    pos_class = resolve_positive_class(results, positive_class)
+    metrics = key_metrics(pos_class)
+
     df = build_comparison_dataframe(results)
 
     # If multi-seed, aggregate to mean +/- std for tables 2 and 3
     is_multi_seed = "seed" in df.columns
-    display_df = build_mean_std_dataframe(df, KEY_METRICS) if is_multi_seed else df
+    display_df = build_mean_std_dataframe(df, metrics) if is_multi_seed else df
 
     # Build report
     n_experiments = len(display_df)
@@ -796,13 +871,13 @@ def generate_report(
     # Table 2: Classifier performance
     report_lines.append("## Table 2: Classifier Performance")
     report_lines.append("")
-    report_lines.append(generate_classifier_table(display_df))
+    report_lines.append(generate_classifier_table(display_df, pos_class))
     report_lines.append("")
 
     # Table 3: Best config per metric
     report_lines.append("## Table 3: Best Configuration per Metric")
     report_lines.append("")
-    report_lines.append(generate_best_per_metric(display_df))
+    report_lines.append(generate_best_per_metric(display_df, pos_class))
     report_lines.append("")
 
     # Key comparisons (best baseline vs best non-baseline variant: synthetic or transfer)
@@ -814,7 +889,12 @@ def generate_report(
         report_lines.append("")
 
         # Best baseline vs best synthetic
-        for metric in ["recall_1", "balanced_accuracy", "f1_1", "pr_auc"]:
+        for metric in [
+            f"recall_{pos_class}",
+            "balanced_accuracy",
+            f"f1_{pos_class}",
+            "pr_auc",
+        ]:
             if metric not in display_df.columns:
                 continue
 
@@ -875,6 +955,7 @@ def generate_report(
             alpha=alpha,
             correction_method=correction_method,
             baseline_name=baseline_name,
+            positive_class=pos_class,
         )
         if stat_table:
             report_lines.append(
@@ -939,7 +1020,16 @@ def main() -> None:
         default=None,
         help=(
             "Specific baseline experiment to compare against "
-            "(default: auto-select highest mean recall_1)"
+            "(default: auto-select highest mean positive-class recall)"
+        ),
+    )
+    parser.add_argument(
+        "--positive-class-index",
+        type=int,
+        default=None,
+        help=(
+            "Index of the positive/abnormal class for per-class metrics "
+            "(default: auto-detect from evaluation.json, falling back to 1)"
         ),
     )
 
@@ -953,6 +1043,7 @@ def main() -> None:
         alpha=args.alpha,
         correction_method=args.correction_method,
         baseline_name=args.baseline_name,
+        positive_class=args.positive_class_index,
     )
 
 

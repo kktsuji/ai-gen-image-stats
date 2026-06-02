@@ -123,6 +123,17 @@ class TestValidateAccepts:
         assert cfg["summarize"]["threshold_target_recall"] == 0.9
         assert cfg["summarize"]["threshold_output_dir"] == "outputs/threshold_analysis"
 
+    def test_summarize_positive_class_default_applied(self):
+        cfg = _valid_config()
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["positive_class"] == 1
+
+    def test_summarize_positive_class_explicit(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = 6
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["positive_class"] == 6
+
 
 @pytest.mark.unit
 class TestValidateRejects:
@@ -219,6 +230,18 @@ class TestValidateRejects:
     def test_summarize_threshold_target_recall_out_of_range(self):
         cfg = _valid_config()
         cfg["summarize"]["threshold_target_recall"] = 1.5
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_negative_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = -1
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_positive_class_bool_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["positive_class"] = True
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 

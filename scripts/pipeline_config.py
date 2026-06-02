@@ -449,6 +449,14 @@ def _validate_summarize(config: Dict[str, Any]) -> None:
     if isinstance(tr, bool) or not isinstance(tr, (int, float)) or not (0 < tr <= 1):
         raise ValueError("summarize.threshold_target_recall must be a number in (0, 1]")
 
+    # Positive/abnormal class index for the evaluation report and threshold
+    # analysis. Defaults to 1 (binary task) so existing configs need no changes;
+    # for a multi-class run, set this to the abnormal class index.
+    summarize.setdefault("positive_class", 1)
+    pc = summarize["positive_class"]
+    if isinstance(pc, bool) or not isinstance(pc, int) or pc < 0:
+        raise ValueError("summarize.positive_class must be a non-negative integer")
+
     # The summarize step reads classifier reports from summarize.base_dir, but the
     # classifier jobs write them under runner.classifier_output_root. If a classifier
     # phase runs in the same pipeline, the two must point at the same directory or

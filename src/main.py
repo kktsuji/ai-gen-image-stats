@@ -375,7 +375,18 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         # report (what classifier evaluation_report aggregates). Non-test splits
         # are written split-tagged (e.g. "evaluation_val.json") so a val pass in a
         # two-pass val->test pipeline does not clobber the test report.
-        report_payload = {**eval_metrics, "split": eval_split}
+        # Record class metadata so the standalone evaluation_report /
+        # threshold_analysis tools can resolve which class is the positive
+        # (abnormal/minority) one without reading per-experiment configs.
+        # Defaults to 1 when data.positive_class is absent (binary backward-compat).
+        positive_class = data_config.get("positive_class", 1)
+        report_payload = {
+            **eval_metrics,
+            "split": eval_split,
+            "positive_class": positive_class,
+            "num_classes": num_classes,
+            "class_names": class_names,
+        }
         report_name = (
             "evaluation.json"
             if eval_split == "test"

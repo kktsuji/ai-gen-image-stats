@@ -6,6 +6,23 @@ experiment: data_preparation # Name of the experiment to run
 # Class directories to scan for images
 # Each class must specify a path (directory containing images) and a label (integer).
 # Labels must be unique and form a contiguous range starting from 0.
+#
+# Each entry points at one LEAF directory whose images are scanned non-recursively,
+# so a subdirectory layout works directly: list each leaf directory as its own
+# class. For the multi-class task (normal has 6 subclasses + abnormal) prefer a
+# hierarchical layout and enumerate the leaves, e.g.:
+#
+#   classes:
+#     normal_a: { path: "data/normal/a", label: 0 }
+#     normal_b: { path: "data/normal/b", label: 1 }
+#     normal_c: { path: "data/normal/c", label: 2 }
+#     normal_d: { path: "data/normal/d", label: 3 }
+#     normal_e: { path: "data/normal/e", label: 4 }
+#     normal_f: { path: "data/normal/f", label: 5 }
+#     abnormal: { path: "data/abnormal", label: 6 }
+#
+# Set the classifier's data.positive_class (and the pipeline's summarize.positive_class)
+# to the abnormal label above (6 in this example).
 classes:
   normal:
     path: "data/0.Normal" # Path to the directory containing normal class images

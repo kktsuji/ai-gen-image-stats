@@ -460,6 +460,8 @@ def main() -> None:
                 summarize["output_dir"],
                 "--baseline-name",
                 summarize["baseline_name"],
+                "--positive-class-index",
+                str(summarize["positive_class"]),
             ],
             check=True,
             # Report aggregation is pure filesystem I/O; cap it so a hung read can't
@@ -494,6 +496,8 @@ def main() -> None:
                         summarize["threshold_criterion"],
                         "--target-recall",
                         str(summarize["threshold_target_recall"]),
+                        "--positive-class-index",
+                        str(summarize["positive_class"]),
                     ],
                     check=True,
                     timeout=1800,

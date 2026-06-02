@@ -12,8 +12,10 @@ import yaml
 
 from src.experiments.classifier.config import (
     get_model_specific_config,
+    validate_balancing_section,
     validate_config,
     validate_loss_section,
+    validate_positive_class,
 )
 
 # Resolve project root so config file tests work regardless of working directory
@@ -743,7 +745,7 @@ class TestValidateSyntheticAugmentation:
             "limit": {"mode": None, "max_ratio": None, "max_samples": None},
         }
         config["data"]["balancing"] = {
-            "weighted_sampler": {"enabled": True, "method": "inverse"},
+            "weighted_sampler": {"enabled": True, "method": "inverse_frequency"},
             "downsampling": {"enabled": False},
             "upsampling": {"enabled": False},
         }
@@ -1114,3 +1116,94 @@ class TestConfigFiles:
 
         # Should validate
         validate_config(config)
+
+
+@pytest.mark.unit
+class TestValidateBalancingSection:
+    """Test strict validation of the data.balancing section."""
+
+    def test_valid_full_section_passes(self):
+        validate_balancing_section(
+            {
+                "weighted_sampler": {
+                    "enabled": False,
+                    "method": "effective_num",
+                    "beta": 0.999,
+                    "manual_weights": None,
+                    "replacement": True,
+                    "num_samples": None,
+                },
+                "downsampling": {"enabled": False, "target_ratio": 1.0},
+                "upsampling": {"enabled": True, "target_ratio": 0.5},
+            }
+        )
+
+    def test_unexpected_top_level_strategy_rejected(self):
+        with pytest.raises(ValueError, match="Unexpected data.balancing keys"):
+            validate_balancing_section({"class_weights": {"enabled": True}})
+
+    def test_unexpected_nested_key_rejected(self):
+        with pytest.raises(
+            ValueError, match="Unexpected data.balancing.upsampling keys"
+        ):
+            validate_balancing_section({"upsampling": {"enabled": True, "ratio": 0.5}})
+
+    def test_invalid_method_rejected(self):
+        with pytest.raises(ValueError, match="method must be one of"):
+            validate_balancing_section(
+                {"weighted_sampler": {"enabled": True, "method": "bogus"}}
+            )
+
+    def test_manual_method_requires_weights(self):
+        with pytest.raises(ValueError, match="manual_weights must be a"):
+            validate_balancing_section(
+                {"weighted_sampler": {"enabled": True, "method": "manual"}}
+            )
+
+    def test_target_ratio_bool_rejected(self):
+        with pytest.raises(ValueError, match="target_ratio must be a positive"):
+            validate_balancing_section(
+                {"upsampling": {"enabled": True, "target_ratio": True}}
+            )
+
+    def test_target_ratio_out_of_range_rejected(self):
+        with pytest.raises(ValueError, match="target_ratio must be a positive"):
+            validate_balancing_section(
+                {"downsampling": {"enabled": True, "target_ratio": 1.5}}
+            )
+
+    def test_enabled_must_be_bool(self):
+        with pytest.raises(ValueError, match="enabled must be a boolean"):
+            validate_balancing_section(
+                {"downsampling": {"enabled": "yes", "target_ratio": 1.0}}
+            )
+
+
+@pytest.mark.unit
+class TestValidatePositiveClass:
+    """Test validation of the data.positive_class index."""
+
+    def test_valid_index_passes(self):
+        validate_positive_class(0, num_classes=7)
+        validate_positive_class(6, num_classes=7)
+
+    def test_out_of_range_rejected(self):
+        with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_positive_class(7, num_classes=7)
+        with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_positive_class(-1, num_classes=7)
+
+    def test_bool_rejected(self):
+        with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_positive_class(True, num_classes=7)
+
+    def test_non_int_rejected(self):
+        with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_positive_class(1.0, num_classes=7)
+
+    def test_validated_via_full_config(self):
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["positive_class"] = 5  # out of range
+        with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_config(config)
