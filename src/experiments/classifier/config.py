@@ -4,7 +4,7 @@ This module provides configuration validation for classifier experiments.
 Strict validation: all parameters must be explicitly specified in the config file.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.utils.config import (
     validate_checkpointing_section,
@@ -173,7 +173,9 @@ def _is_positive_number(value: Any) -> bool:
     return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
 
 
-def validate_balancing_section(balancing: Any) -> None:
+def validate_balancing_section(
+    balancing: Any, num_classes: Optional[int] = None
+) -> None:
     """Validate the optional data.balancing section (strict when present).
 
     Mirrors the strict style of ``validate_loss_section``: only the strategies
@@ -187,6 +189,11 @@ def validate_balancing_section(balancing: Any) -> None:
 
     Args:
         balancing: The data.balancing config mapping.
+        num_classes: Number of classes. When provided, ``manual_weights`` must
+            supply exactly one weight per class; otherwise the dataloader maps
+            weights by position (``{i: w for i, w in enumerate(...)}``) and a
+            too-short list would pass validation then KeyError at train time on
+            the first sample of an unweighted class.
 
     Raises:
         KeyError: If a required field is missing.
@@ -252,6 +259,14 @@ def validate_balancing_section(balancing: Any) -> None:
                 raise ValueError(
                     "data.balancing.weighted_sampler.manual_weights must contain "
                     "only positive numbers"
+                )
+            # The dataloader maps weights by position (one per class index), so a
+            # list that doesn't cover every class KeyErrors at train time. Require
+            # an exact per-class match when num_classes is known.
+            if num_classes is not None and len(mw) != num_classes:
+                raise ValueError(
+                    "data.balancing.weighted_sampler.manual_weights must have one "
+                    f"weight per class (expected {num_classes}, got {len(mw)})"
                 )
         if ws.get("beta") is not None:
             beta = ws["beta"]
@@ -421,7 +436,7 @@ def validate_config(config: Dict[str, Any]) -> None:
 
     # Validate optional balancing section (strict when present)
     if "balancing" in data:
-        validate_balancing_section(data["balancing"])
+        validate_balancing_section(data["balancing"], architecture["num_classes"])
 
     # Validate optional positive/abnormal class index (defaults to 1 when absent
     # for backward compatibility with the binary task).

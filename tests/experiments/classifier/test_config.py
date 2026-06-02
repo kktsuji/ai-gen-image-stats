@@ -1189,6 +1189,61 @@ class TestValidateBalancingSection:
                 {"downsampling": {"enabled": "yes", "target_ratio": 1.0}}
             )
 
+    def test_manual_weights_length_must_match_num_classes(self):
+        # The dataloader maps manual_weights by position, so a list shorter than
+        # num_classes would KeyError at train time on an unweighted class.
+        with pytest.raises(ValueError, match="one weight per class"):
+            validate_balancing_section(
+                {
+                    "weighted_sampler": {
+                        "enabled": True,
+                        "method": "manual",
+                        "manual_weights": [1.0, 3.0],
+                    }
+                },
+                num_classes=7,
+            )
+
+    def test_manual_weights_length_ok_when_matching(self):
+        validate_balancing_section(
+            {
+                "weighted_sampler": {
+                    "enabled": True,
+                    "method": "manual",
+                    "manual_weights": [1.0, 3.0, 2.0],
+                }
+            },
+            num_classes=3,
+        )
+
+    def test_manual_weights_length_unchecked_without_num_classes(self):
+        # Without num_classes the length check is skipped (preserves the
+        # standalone-validation behavior used elsewhere).
+        validate_balancing_section(
+            {
+                "weighted_sampler": {
+                    "enabled": True,
+                    "method": "manual",
+                    "manual_weights": [1.0, 3.0],
+                }
+            }
+        )
+
+    def test_manual_weights_length_rejected_via_full_config(self):
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["balancing"] = {
+            "weighted_sampler": {
+                "enabled": True,
+                "method": "manual",
+                "manual_weights": [1.0, 2.0],  # only 2 weights for 3 classes
+            },
+            "downsampling": {"enabled": False},
+            "upsampling": {"enabled": False},
+        }
+        with pytest.raises(ValueError, match="one weight per class"):
+            validate_config(config)
+
 
 @pytest.mark.unit
 class TestValidatePositiveClass:
