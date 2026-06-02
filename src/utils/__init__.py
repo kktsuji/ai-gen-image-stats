@@ -15,7 +15,12 @@ from src.utils.device import (
     is_cuda_available,
     to_device,
 )
-from src.utils.logging import get_log_file_path, get_logger, setup_logging
+from src.utils.logging import (
+    get_log_file_path,
+    get_logger,
+    get_timestamp,
+    setup_logging,
+)
 
 __all__ = [
     "DeviceManager",
@@ -28,4 +33,5 @@ __all__ = [
     "setup_logging",
     "get_log_file_path",
     "get_logger",
+    "get_timestamp",
 ]
