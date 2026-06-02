@@ -448,7 +448,10 @@ def main() -> None:
         print("[SUMMARIZE] Generating classifier evaluation report")
         subprocess.run(
             [
-                "python3",
+                # Host-side CPU step (no Docker): use the same interpreter running the
+                # pipeline (e.g. the venv) so it sees numpy etc. Bare "python3" would
+                # resolve to whatever is on PATH, which may lack the deps.
+                sys.executable,
                 "-m",
                 "src.experiments.classifier.evaluation_report",
                 "--base-dir",
@@ -480,7 +483,7 @@ def main() -> None:
                 print("[SUMMARIZE] Generating decision-threshold analysis")
                 subprocess.run(
                     [
-                        "python3",
+                        sys.executable,
                         "-m",
                         "src.experiments.classifier.threshold_analysis",
                         "--base-dir",
