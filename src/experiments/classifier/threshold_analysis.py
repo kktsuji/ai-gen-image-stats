@@ -30,7 +30,6 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 from glob import glob
 from pathlib import Path
@@ -46,6 +45,7 @@ from sklearn.metrics import (
 from src.experiments.classifier.evaluation_report import (
     _format_mean_std,
     _parse_experiment_name,
+    load_evaluation_results,
     resolve_positive_class,
 )
 
@@ -74,9 +74,6 @@ def metric_columns(positive_class: int = 1) -> List[str]:
         f"delta_recall_{pc}",
     ]
 
-
-# Backward-compatible binary default (positive class = 1).
-METRIC_COLUMNS = metric_columns(1)
 
 VALID_CRITERIA = ("max_f1_1", "precision_at_recall")
 
@@ -226,7 +223,7 @@ def _load_npz(
             "Skipping %s: probs shape %s has fewer than 2 classes", path, probs.shape
         )
         return None
-    if positive_class >= probs.shape[1]:
+    if not 0 <= positive_class < probs.shape[1]:
         _logger.warning(
             "Skipping %s: positive_class=%d out of range for probs with %d classes",
             path,
@@ -246,26 +243,15 @@ def _detect_positive_class(base_dir: str, override: Optional[int] = None) -> int
     predictions (written by ``src/main.py``); legacy runs without the field
     default to 1. The most common value is used when runs disagree.
 
-    Loading is local to threshold analysis (it globs the report JSONs itself),
-    but the actual resolution/majority-vote/warning is delegated to
-    :func:`resolve_positive_class` so the two report tools stay in lockstep.
+    Report loading is delegated to
+    :func:`evaluation_report.load_evaluation_results` (the same scan the
+    classifier report uses) and resolution to :func:`resolve_positive_class`, so
+    the two report tools stay in lockstep instead of maintaining a separate glob.
     """
     if override is not None:
         return override
 
-    payloads: List[Dict[str, Any]] = []
-    for json_path in sorted(
-        glob(f"{base_dir}/**/reports/evaluation*.json", recursive=True)
-    ):
-        try:
-            with open(json_path) as f:
-                payload = json.load(f)
-        except (OSError, ValueError):
-            continue
-        if isinstance(payload, dict):
-            payloads.append(payload)
-
-    return resolve_positive_class(payloads)
+    return resolve_positive_class(load_evaluation_results(base_dir))
 
 
 def _resolve_predictions(reports_dir: Path, split: str) -> Optional[Path]:

@@ -60,10 +60,6 @@ def key_metrics(positive_class: int = 1) -> List[str]:
     ]
 
 
-# Backward-compatible binary default (positive class = 1).
-KEY_METRICS = key_metrics(1)
-
-
 def resolve_positive_class(
     results: List[Dict[str, Any]], override: Optional[int] = None
 ) -> int:

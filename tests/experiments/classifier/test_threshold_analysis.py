@@ -183,6 +183,13 @@ class TestOneVsRest:
         # Only 2 classes -> index 5 is invalid.
         assert ta._load_npz(reports / "predictions_test.npz", positive_class=5) is None
 
+    def test_load_npz_rejects_negative_class(self, tmp_path):
+        reports = tmp_path / "reports"
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        _write_multiclass_predictions(reports, "test", probs, np.array([0, 1]))
+        # A negative index must be rejected, not silently wrap to probs[:, -1].
+        assert ta._load_npz(reports / "predictions_test.npz", positive_class=-1) is None
+
     def test_metrics_keys_named_by_positive_class(self):
         probs = np.array([0.9, 0.2])
         targets = np.array([1, 0])  # already binarized
