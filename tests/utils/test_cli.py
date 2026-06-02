@@ -362,6 +362,47 @@ class TestValidateOverrideKeys:
         overrides = {"model": {"architecture": "simple"}}
         validate_override_keys(config, overrides)  # Should not raise
 
+    def test_polymorphic_loss_subtree_accepts_new_keys(self):
+        """model.loss is type-polymorphic: new leaf keys (gamma/beta/base) are allowed.
+
+        Base config declares only model.loss.type, but focal/class_balanced overrides
+        add type-specific keys. These are validated post-merge by the classifier's
+        validate_loss_section, not by the override preflight.
+        """
+        config = {"model": {"loss": {"type": "cross_entropy"}}}
+        # focal adds gamma
+        validate_override_keys(
+            config, {"model": {"loss": {"type": "focal", "gamma": 2.0}}}
+        )
+        # class_balanced adds beta/base/gamma
+        validate_override_keys(
+            config,
+            {
+                "model": {
+                    "loss": {
+                        "type": "class_balanced",
+                        "beta": 0.999,
+                        "base": "focal",
+                        "gamma": 2.0,
+                    }
+                }
+            },
+        )  # Should not raise
+
+    def test_polymorphic_exemption_requires_existing_loss_dict(self):
+        """The exemption only skips leaf checks; model.loss itself must exist."""
+        config = {"model": {"architecture": {"image_size": 32}}}
+        with pytest.raises(ValueError, match="Unknown config key: 'model.loss'"):
+            validate_override_keys(
+                config, {"model": {"loss": {"type": "focal", "gamma": 2.0}}}
+            )
+
+    def test_sibling_of_polymorphic_subtree_still_validated(self):
+        """Exemption is scoped to model.loss; sibling typos are still rejected."""
+        config = {"model": {"loss": {"type": "cross_entropy"}, "architecture": {}}}
+        with pytest.raises(ValueError, match="Unknown config key: 'model.architectur'"):
+            validate_override_keys(config, {"model": {"architectur": {"x": 1}}})
+
 
 @pytest.mark.unit
 class TestParseArgs:
