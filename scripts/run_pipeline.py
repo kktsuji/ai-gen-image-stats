@@ -515,6 +515,45 @@ def main() -> None:
                     "(enable evaluation.bootstrap.save_predictions to produce them)"
                 )
 
+        # Hard-core direct evaluation (abnormal-vs-suspicious restricted PR-AUC).
+        # CPU-only post-hoc step over the saved predictions for the configured
+        # split (default 'test'); only the chosen split's npz is needed, so this
+        # runs independently of the val->test threshold analysis above.
+        hc_base_dir = summarize["base_dir"]
+        hc_split = summarize["hardcore_split"]
+        if glob(f"{hc_base_dir}/**/predictions_{hc_split}.npz", recursive=True):
+            print("[SUMMARIZE] Generating hard-core direct-evaluation report")
+            contrast_args = (
+                ["--contrast-class-index", str(summarize["hardcore_contrast_class"])]
+                if summarize.get("hardcore_contrast_class") is not None
+                else ["--contrast-class-name", summarize["hardcore_contrast_name"]]
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "src.experiments.classifier.hard_core_analysis",
+                    "--base-dir",
+                    hc_base_dir,
+                    "--output-dir",
+                    summarize["hardcore_output_dir"],
+                    "--split",
+                    hc_split,
+                    "--baseline-name",
+                    summarize["baseline_name"],
+                    *positive_class_args,
+                    *contrast_args,
+                ],
+                check=True,
+                timeout=1800,
+            )
+        else:
+            print(
+                "[SUMMARIZE] Skipping hard-core analysis: no saved "
+                f"predictions_{hc_split}.npz under {hc_base_dir} "
+                "(enable evaluation.bootstrap.save_predictions to produce them)"
+            )
+
     notify_success(
         {"experiment": "pipeline", "output": {"base_dir": "outputs"}},
         time.time() - start,

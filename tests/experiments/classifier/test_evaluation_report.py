@@ -1249,3 +1249,45 @@ class TestPositiveClassParametrization:
         report = (out_dir / "evaluation_report.md").read_text()
         assert "recall_6" in report
         assert "recall_1" not in report
+
+
+@pytest.mark.unit
+class TestHardCoreMetricsIntegration:
+    """Hard-core metrics flow through key_metrics and the tables."""
+
+    def test_key_metrics_includes_hardcore(self):
+        metrics = key_metrics(positive_class=6)
+        assert "hardcore_pr_auc_renorm" in metrics
+        assert "hardcore_pr_auc_raw" in metrics
+
+    def test_classifier_table_shows_hardcore_when_present(self):
+        df = build_comparison_dataframe(
+            [
+                {
+                    "experiment": "ft-mixed67__ws",
+                    "type": "transfer",
+                    "recall_6": 0.88,
+                    "balanced_accuracy": 0.9,
+                    "hardcore_pr_auc_renorm": 0.91,
+                    "hardcore_pr_auc_raw": 0.93,
+                }
+            ]
+        )
+        table = generate_classifier_table(df, positive_class=6)
+        assert "hardcore_pr_auc_renorm" in table
+
+    def test_tables_tolerate_runs_missing_hardcore(self):
+        # A legacy run lacking the hardcore columns must not break the table.
+        df = build_comparison_dataframe(
+            [
+                {
+                    "experiment": "baseline__ws",
+                    "type": "baseline",
+                    "recall_6": 0.80,
+                    "balanced_accuracy": 0.85,
+                }
+            ]
+        )
+        table = generate_classifier_table(df, positive_class=6)
+        assert "baseline__ws" in table
+        assert "hardcore_pr_auc_renorm" not in table

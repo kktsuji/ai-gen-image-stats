@@ -58,6 +58,12 @@ def key_metrics(positive_class: int = 1) -> List[str]:
         "accuracy",
         f"precision_{pc}",
         "loss",
+        # Hard-core direct evaluation (abnormal-vs-suspicious restricted PR-AUC).
+        # Present only for multi-class runs that resolved a contrast class; older
+        # runs lack these columns and are filtered out by the `in df.columns`
+        # guards downstream. See src.experiments.classifier.hard_core.
+        "hardcore_pr_auc_renorm",
+        "hardcore_pr_auc_raw",
     ]
 
 

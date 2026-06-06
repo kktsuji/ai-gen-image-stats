@@ -14,6 +14,7 @@ from src.experiments.classifier.config import (
     get_model_specific_config,
     validate_balancing_section,
     validate_config,
+    validate_contrast_class,
     validate_loss_section,
     validate_positive_class,
 )
@@ -1289,4 +1290,37 @@ class TestValidatePositiveClass:
         config["model"]["architecture"]["num_classes"] = 3
         config["data"]["positive_class"] = 5  # out of range
         with pytest.raises(ValueError, match="positive_class must be an integer"):
+            validate_config(config)
+
+
+@pytest.mark.unit
+class TestValidateContrastClass:
+    """Test validation of the data.contrast_class index."""
+
+    def test_valid_index_passes(self):
+        validate_contrast_class(0, num_classes=7)
+        validate_contrast_class(5, num_classes=7)
+
+    def test_out_of_range_rejected(self):
+        with pytest.raises(ValueError, match="contrast_class must be an integer"):
+            validate_contrast_class(7, num_classes=7)
+        with pytest.raises(ValueError, match="contrast_class must be an integer"):
+            validate_contrast_class(-1, num_classes=7)
+
+    def test_bool_rejected(self):
+        with pytest.raises(ValueError, match="contrast_class must be an integer"):
+            validate_contrast_class(True, num_classes=7)
+
+    def test_validated_via_full_config(self):
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["contrast_class"] = 5  # out of range
+        with pytest.raises(ValueError, match="contrast_class must be an integer"):
+            validate_config(config)
+
+    def test_contrast_class_name_must_be_string(self):
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["contrast_class_name"] = 123
+        with pytest.raises(ValueError, match="contrast_class_name must be a string"):
             validate_config(config)

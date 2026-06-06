@@ -449,6 +449,24 @@ def _validate_summarize(config: Dict[str, Any]) -> None:
     if isinstance(tr, bool) or not isinstance(tr, (int, float)) or not (0 < tr <= 1):
         raise ValueError("summarize.threshold_target_recall must be a number in (0, 1]")
 
+    # Optional hard-core direct evaluation (abnormal-vs-suspicious restricted
+    # PR-AUC). Runs after the evaluation report when test predictions exist. Keys
+    # default so existing configs need no changes.
+    summarize.setdefault("hardcore_output_dir", "outputs/hard_core_analysis")
+    if not _non_empty_str(summarize["hardcore_output_dir"]):
+        raise ValueError("summarize.hardcore_output_dir must be a non-empty string")
+    summarize.setdefault("hardcore_split", "test")
+    if not _non_empty_str(summarize["hardcore_split"]):
+        raise ValueError("summarize.hardcore_split must be a non-empty string")
+    summarize.setdefault("hardcore_contrast_name", "suspicious")
+    if not _non_empty_str(summarize["hardcore_contrast_name"]):
+        raise ValueError("summarize.hardcore_contrast_name must be a non-empty string")
+    cc = summarize.get("hardcore_contrast_class")
+    if cc is not None and (isinstance(cc, bool) or not isinstance(cc, int) or cc < 0):
+        raise ValueError(
+            "summarize.hardcore_contrast_class must be a non-negative integer"
+        )
+
     # Optional positive/abnormal class index for the evaluation report and
     # threshold analysis. When omitted, the report/threshold tools auto-detect it
     # from the per-run evaluation.json files (written by src/main.py), so a
