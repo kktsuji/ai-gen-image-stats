@@ -27,7 +27,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version-file: .python-version
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -38,7 +38,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install CPU-only PyTorch
-        run: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        run: pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version-file: .python-version
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -71,7 +71,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install CPU-only PyTorch
-        run: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        run: pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt

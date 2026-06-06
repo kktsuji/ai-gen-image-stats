@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+# Base image pinned by digest for reproducibility (tag kept for readability).
+# Digest of nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 as used by the proven image.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04@sha256:ac55d124da4882b497f732d8dfd9a702d5447a5f29d08d56da6f64f0a1eb34bc
 
 # Set environment variables
 ENV TZ=Asia/Tokyo \
@@ -37,6 +39,6 @@ RUN PYTHON_VERSION=$(cat .python-version | tr -d '\n' | cut -d. -f1,2) && \
 # Copy requirements files and install Python packages in one layer
 COPY requirements.txt requirements-dev.txt ./
 # TODO: multi-stage build to separate dev and prod images
-RUN python3 -m pip install --no-cache-dir -U --ignore-installed pip setuptools wheel && \
+RUN python3 -m pip install --no-cache-dir --ignore-installed pip==26.0.1 setuptools==82.0.0 wheel==0.46.3 && \
     python3 -m pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt && \
     rm -rf /root/.cache/pip
