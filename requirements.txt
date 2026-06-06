@@ -2,7 +2,7 @@
 # Versions match the proven GPU image
 # kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 (built 2026-02-18),
 # except tabulate (CPU-only, runs in venv) which is pinned to the local env.
-# Python 3.13.2 (see .python-version). Do not bump during an experiment campaign.
+# Python 3.13.12 (see .python-version). Do not bump during an experiment campaign.
 
 # Core Deep Learning
 torch==2.10.0
