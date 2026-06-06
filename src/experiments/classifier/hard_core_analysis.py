@@ -95,6 +95,22 @@ def _load_npz_full(path: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
             "Skipping %s: probs shape %s has fewer than 2 classes", path, probs.shape
         )
         return None
+    # Validate targets here (not just downstream in compute_hard_core_metrics) so
+    # the warning names the file that produced the bad array, keeping diagnostics
+    # self-contained.
+    if targets.ndim != 1:
+        _logger.warning(
+            "Skipping %s: targets must be 1-D, got shape %s", path, targets.shape
+        )
+        return None
+    if targets.shape[0] != probs.shape[0]:
+        _logger.warning(
+            "Skipping %s: targets/probs length mismatch: %d vs %d",
+            path,
+            targets.shape[0],
+            probs.shape[0],
+        )
+        return None
     return targets, probs
 
 

@@ -229,6 +229,26 @@ class TestHelpers:
         np.testing.assert_array_equal(got_targets, targets)
         np.testing.assert_allclose(got_probs, probs)
 
+    def test_load_npz_full_rejects_non_1d_targets(self, tmp_path):
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        np.savez_compressed(
+            tmp_path / "predictions_test.npz",
+            targets=np.array([[0], [1]]),  # 2-D targets
+            predictions=probs.argmax(axis=1),
+            probs=probs,
+        )
+        assert hca._load_npz_full(tmp_path / "predictions_test.npz") is None
+
+    def test_load_npz_full_rejects_length_mismatch(self, tmp_path):
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        np.savez_compressed(
+            tmp_path / "predictions_test.npz",
+            targets=np.array([0, 1, 0]),  # length 3 vs 2 rows of probs
+            predictions=np.array([0, 1, 0]),
+            probs=probs,
+        )
+        assert hca._load_npz_full(tmp_path / "predictions_test.npz") is None
+
     def test_detect_contrast_prefers_stamped(self):
         results = [{"contrast_class": 1, "class_names": CLASS_NAMES}]
         assert hca.detect_contrast_class(results, positive_class=0) == 1
