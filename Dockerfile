@@ -39,6 +39,6 @@ RUN PYTHON_VERSION=$(cat .python-version | tr -d '\n' | cut -d. -f1,2) && \
 # Copy requirements files and install Python packages in one layer
 COPY requirements.txt requirements-dev.txt ./
 # TODO: multi-stage build to separate dev and prod images
-RUN python3 -m pip install --no-cache-dir -U --ignore-installed pip setuptools wheel && \
+RUN python3 -m pip install --no-cache-dir --ignore-installed pip==26.0.1 setuptools==82.0.0 wheel==0.46.3 && \
     python3 -m pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt && \
     rm -rf /root/.cache/pip
