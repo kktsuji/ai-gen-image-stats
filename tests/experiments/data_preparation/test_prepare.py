@@ -5,6 +5,7 @@ Tests cover deterministic splitting, ratio correctness, JSON output, and error h
 """
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -813,3 +814,14 @@ class TestPrepareKFold:
         with open(paths_b[3]) as f:
             test_b = sorted(Path(i["path"]).name for i in json.load(f)["test"])
         assert test_a == test_b
+
+    def test_warns_when_class_smaller_than_n_folds(self, tmp_path, caplog):
+        """A class with fewer samples than n_folds warns about empty test folds."""
+        # abnormal has 3 samples but n_folds=5 -> 2 test folds get no abnormal.
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 3})
+        with caplog.at_level(logging.WARNING):
+            prepare_kfold_splits(config)
+        assert any(
+            "abnormal" in rec.message and "n_folds" in rec.message
+            for rec in caplog.records
+        )

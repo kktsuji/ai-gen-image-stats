@@ -340,6 +340,18 @@ def prepare_kfold_splits(config: Dict[str, Any]) -> List[str]:
         logger.info(f"  Found {len(files)} images")
         class_files[class_name] = files
 
+        # Stratified k-fold needs at least one sample per fold to populate every
+        # test fold for this class. With fewer, _kfold_chunks leaves some folds
+        # empty, so the class silently drops out of those test sets -- shrinking
+        # the across-split n the robustness CI is meant to report. Warn (don't
+        # raise) since a legitimately tiny class is a valid, if degraded, input.
+        if len(files) < n_folds:
+            logger.warning(
+                f"  Class '{class_name}' has fewer samples ({len(files)}) than "
+                f"n_folds ({n_folds}); {n_folds - len(files)} test fold(s) will "
+                "have no samples of this class (incomplete stratification)"
+            )
+
     output_paths: List[str] = []
 
     for repeat, repeat_seed in enumerate(repeat_seeds):
