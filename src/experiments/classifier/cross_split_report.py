@@ -109,13 +109,21 @@ def compute_split_means(
     only the mean columns (the ``{metric}_std`` init-seed spread is discarded on
     purpose -- the across-split report recomputes its own SD from these means).
 
+    Aggregation is ``nan_tolerant`` (mean over the finite seeds only): the
+    minority-class metrics this report exists to estimate (``pr_auc``,
+    ``hardcore_pr_auc_*``) are legitimately NaN for some seeds on a degenerate
+    restricted set. The default strict policy would drop the *whole split's*
+    contribution to such a metric whenever any single seed was NaN, silently
+    shrinking the across-split ``n`` (and the paired-comparison ``n``) without it
+    showing in the report header -- the opposite of an honest CI.
+
     Returns:
         Dict mapping experiment name -> {metric -> seed-mean value}.
     """
     df = build_comparison_dataframe(results)
     if df.empty or "seed" not in df.columns:
         return {}
-    msdf = build_mean_std_dataframe(df, metric_names)
+    msdf = build_mean_std_dataframe(df, metric_names, nan_tolerant=True)
     means: Dict[str, Dict[str, float]] = {}
     for _, row in msdf.iterrows():
         exp = str(row["experiment"])

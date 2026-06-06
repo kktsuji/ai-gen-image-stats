@@ -67,6 +67,26 @@ class TestPureHelpers:
     def test_compute_split_means_empty(self):
         assert compute_split_means([], ["recall_1"]) == {}
 
+    def test_compute_split_means_nan_tolerant(self):
+        # A NaN minority metric in ONE seed must NOT drop the whole split's
+        # contribution -- the mean is taken over the finite seeds only. This is
+        # the honest-CI contract: pr_auc / hardcore_pr_auc_* are legitimately
+        # NaN on a degenerate restricted set for some seeds.
+        results = [
+            {"experiment": "baseline__ws", "seed": 0, "recall_1": 0.70, "pr_auc": 0.85},
+            {
+                "experiment": "baseline__ws",
+                "seed": 1,
+                "recall_1": 0.72,
+                "pr_auc": float("nan"),
+            },
+        ]
+        means = compute_split_means(results, ["recall_1", "pr_auc"])
+        # recall has both seeds; pr_auc keeps the single finite seed (0.85),
+        # rather than the split losing pr_auc entirely.
+        assert means["baseline__ws"]["recall_1"] == pytest.approx(0.71)
+        assert means["baseline__ws"]["pr_auc"] == pytest.approx(0.85)
+
     def test_select_baseline_explicit(self):
         split_means = {
             0: {"baseline__ws": {"recall_1": 0.7}, "baseline__us": {"recall_1": 0.8}}
