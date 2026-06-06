@@ -391,7 +391,7 @@ def prepare_kfold_splits(config: Dict[str, Any]) -> List[str]:
                         pool.extend(folds_c[j])
 
                 # Carve a stratified val portion from the training pool.
-                val_n = round(len(class_files[class_name]) * val_fraction)
+                val_n = round(len(pool) * val_fraction)
                 if len(pool) > 1:
                     val_n = max(1, min(val_n, len(pool) - 1))
                 else:

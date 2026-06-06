@@ -235,6 +235,10 @@ def _select_baseline(
             score = float(np.mean(vals))
             if score > best_score:
                 best_score, best_name = score, exp
+    # Fallback: no baseline had any values for rank_key, so return the
+    # alphabetically first baseline. Downstream filters in
+    # compute_cross_split_comparisons gracefully handle a baseline with no
+    # shared metric data (yielding an empty comparisons DataFrame).
     return best_name or sorted(baselines)[0]
 
 

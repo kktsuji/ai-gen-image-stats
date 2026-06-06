@@ -815,6 +815,20 @@ class TestPrepareKFold:
             test_b = sorted(Path(i["path"]).name for i in json.load(f)["test"])
         assert test_a == test_b
 
+    def test_val_fraction_is_of_training_pool(self, tmp_path):
+        """Val count is a fraction of the per-fold training pool, not total class size."""
+        # normal: 40 samples, 5 folds -> test fold = 8, training pool = 32.
+        # val_fraction=0.15 -> val_n = round(32 * 0.15) = 5 (not round(40 * 0.15) = 6).
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        with open(paths[0]) as f:
+            data = json.load(f)
+        normal_label = data["metadata"]["classes"]["normal"]
+        normal_val = sum(1 for i in data["val"] if i["label"] == normal_label)
+        normal_test = sum(1 for i in data["test"] if i["label"] == normal_label)
+        normal_pool = 40 - normal_test
+        assert normal_val == round(normal_pool * 0.15)
+
     def test_warns_when_class_smaller_than_n_folds(self, tmp_path, caplog):
         """A class with fewer samples than n_folds warns about empty test folds."""
         # abnormal has 3 samples but n_folds=5 -> 2 test folds get no abnormal.
