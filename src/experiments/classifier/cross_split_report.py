@@ -125,7 +125,9 @@ def compute_split_means(
         return {}
     msdf = build_mean_std_dataframe(df, metric_names, nan_tolerant=True)
     means: Dict[str, Dict[str, float]] = {}
-    for _, row in msdf.iterrows():
+    # to_dict(records) yields plain-Python scalars (typed Any) so float() below
+    # accepts them; iterrows() Series indexing trips the stricter lint gate.
+    for row in msdf.to_dict(orient="records"):
         exp = str(row["experiment"])
         per_metric: Dict[str, float] = {}
         for metric in metric_names:
@@ -338,8 +340,8 @@ def _format_summary_table(summary: pd.DataFrame) -> str:
     rows: List[Dict[str, Any]] = []
     for exp, grp in summary.groupby("experiment"):
         row: Dict[str, Any] = {"experiment": exp}
-        n_splits = grp["n_splits"].max()
-        row["n_splits"] = int(n_splits) if bool(pd.notna(n_splits)) else 0
+        n_vals = [int(v) for v in grp["n_splits"] if bool(pd.notna(v))]
+        row["n_splits"] = max(n_vals) if n_vals else 0
         for _, r in grp.iterrows():
             row[str(r["metric"])] = (
                 f"{r['mean']:.4f} [{r['ci_lower']:.4f}, {r['ci_upper']:.4f}]"
@@ -356,7 +358,10 @@ def _format_comparison_table(comparisons: pd.DataFrame) -> str:
     if comparisons.empty:
         return "No cross-split comparisons available.\n"
     rows: List[Dict[str, Any]] = []
-    for _, r in comparisons.iterrows():
+    # to_dict(records) yields plain-Python scalars (typed Any), so int()/
+    # math.isfinite() below accept them -- iterrows() Series indexing is typed
+    # as Series|ndarray under stricter pyright/pandas and fails the lint gate.
+    for r in comparisons.to_dict(orient="records"):
         marker = "*" if bool(r["significant"]) else ""
         rows.append(
             {
@@ -466,7 +471,7 @@ def generate_cross_split_report(
         "",
     ]
     if baseline is not None and not comparisons.empty:
-        sig = int(comparisons["significant"].sum())
+        sig = sum(bool(v) for v in comparisons["significant"])
         total = len(comparisons)
         lines += [
             "## Treatment vs Baseline (paired by split)",
