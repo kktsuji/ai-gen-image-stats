@@ -314,7 +314,15 @@ def compute_cross_split_comparisons(
     for row, tc, wc in zip(raw, t_corr, w_corr):
         row["p_ttest_corrected"] = tc
         row["p_wilcoxon_corrected"] = wc
-        row["significant"] = bool(math.isfinite(tc) and tc < alpha)
+        # Paired-t is primary, but it is *undefined* (NaN) when the per-split
+        # differences have zero variance -- i.e. a constant non-zero shift, which
+        # is the STRONGEST possible evidence (every split moved the same way).
+        # Falling back to the BH-corrected Wilcoxon p there avoids silently
+        # reporting that maximally-consistent case as non-significant.
+        if math.isfinite(tc):
+            row["significant"] = bool(tc < alpha)
+        else:
+            row["significant"] = bool(math.isfinite(wc) and wc < alpha)
 
     return pd.DataFrame(raw)
 
@@ -418,6 +426,14 @@ def generate_cross_split_report(
     present_metrics = [m for m in metrics if m in present]
 
     baseline = _select_baseline(split_means, baseline_name, present_metrics, pos_class)
+    if baseline is None:
+        _logger.warning(
+            "No baseline experiment found in family %r; the report will contain "
+            "only the across-split summary (no treatment-vs-baseline comparisons). "
+            "An absent comparison section is NOT the same as 'no significant "
+            "differences'.",
+            family,
+        )
     comparisons = (
         compute_cross_split_comparisons(
             split_means, baseline, present_metrics, alpha, correction_method
@@ -449,7 +465,8 @@ def generate_cross_split_report(
             "",
             f"Baseline: **{baseline}**",
             f"Correction: {correction_method} (global, n={total}), alpha={alpha}",
-            f"Significant (paired-t, BH): {sig}/{total}",
+            f"Significant (paired-t BH; Wilcoxon BH when t is degenerate): "
+            f"{sig}/{total}",
             "",
             _format_comparison_table(comparisons),
             "",

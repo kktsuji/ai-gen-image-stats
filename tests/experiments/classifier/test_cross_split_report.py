@@ -217,6 +217,26 @@ class TestCrossSplitComparisons:
         assert row["significant"]  # paired-t BH-corrected
         assert row["p_value_wilcoxon"] < 0.05  # 6 pairs reaches Wilcoxon floor
 
+    def test_constant_shift_is_significant_via_wilcoxon_fallback(self):
+        # A perfectly constant non-zero improvement in every split has zero
+        # variance, so paired-t is degenerate (NaN). That is the STRONGEST
+        # evidence, not the weakest -- significance must fall back to the
+        # BH-corrected Wilcoxon p rather than being reported as non-significant.
+        split_means = {}
+        for s in range(6):
+            bl = 0.70 + 0.01 * s
+            split_means[s] = {
+                "baseline__ws": {"recall_1": bl},
+                "ft-mixed67__ws": {"recall_1": bl + 0.05},  # exact constant shift
+            }
+        comp = compute_cross_split_comparisons(
+            split_means, "baseline__ws", ["recall_1"]
+        )
+        row = comp[comp["treatment"] == "ft-mixed67__ws"].iloc[0]
+        assert np.isnan(row["p_value_ttest"])  # zero-variance -> t undefined
+        assert row["p_value_wilcoxon"] < 0.05  # 6 identical-sign pairs
+        assert row["significant"]  # Wilcoxon fallback, not a false negative
+
     def test_no_treatments_returns_empty(self):
         split_means = {s: {"baseline__ws": {"recall_1": 0.7}} for s in range(3)}
         comp = compute_cross_split_comparisons(
