@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from src.experiments.classifier.cross_split_report import (
+    _format_comparison_table,
     _parse_split_label,
     _select_baseline,
     _t_ci,
@@ -236,6 +237,31 @@ class TestCrossSplitComparisons:
         assert np.isnan(row["p_value_ttest"])  # zero-variance -> t undefined
         assert row["p_value_wilcoxon"] < 0.05  # 6 identical-sign pairs
         assert row["significant"]  # Wilcoxon fallback, not a false negative
+
+    def test_wilcoxon_fallback_marker_rendered_in_table(self):
+        # The renderer must surface the '*' on a Wilcoxon-significant row. When
+        # paired-t is degenerate its BH cell is "N/A", so the marker has to ride
+        # on the p_wilcoxon(BH) cell -- otherwise the row shows no '*' anywhere.
+        split_means = {}
+        for s in range(6):
+            bl = 0.70 + 0.01 * s
+            split_means[s] = {
+                "baseline__ws": {"recall_1": bl},
+                "ft-mixed67__ws": {"recall_1": bl + 0.05},  # exact constant shift
+            }
+        comp = compute_cross_split_comparisons(
+            split_means, "baseline__ws", ["recall_1"]
+        )
+        table = _format_comparison_table(comp)
+        # The Wilcoxon cell carries the marker; the degenerate t cell is "N/A".
+        wilcoxon_cell = [
+            cell.strip()
+            for line in table.splitlines()
+            if "ft-mixed67__ws" in line
+            for cell in line.split("|")
+            if cell.strip().endswith("*")
+        ]
+        assert wilcoxon_cell, "Wilcoxon-significant row must render a '*' marker"
 
     def test_no_treatments_returns_empty(self):
         split_means = {s: {"baseline__ws": {"recall_1": 0.7}} for s in range(3)}

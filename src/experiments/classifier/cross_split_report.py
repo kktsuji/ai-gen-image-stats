@@ -376,8 +376,12 @@ def _format_comparison_table(comparisons: pd.DataFrame) -> str:
                     if math.isfinite(r["p_ttest_corrected"])
                     else "N/A"
                 ),
+                # When paired-t is degenerate (NaN), significance falls back to
+                # Wilcoxon, so the marker must ride on this cell -- otherwise a
+                # Wilcoxon-significant row shows no '*' anywhere in the table.
                 "p_wilcoxon(BH)": (
                     f"{r['p_wilcoxon_corrected']:.4f}"
+                    f"{marker if not math.isfinite(r['p_ttest_corrected']) else ''}"
                     if math.isfinite(r["p_wilcoxon_corrected"])
                     else "N/A"
                 ),
