@@ -245,6 +245,72 @@ class TestHelpers:
         results = [{"class_names": ["normal", "abnormal"]}]
         assert hca.detect_contrast_class(results, positive_class=1) is None
 
+    def test_detect_contrast_ignores_non_integer_stamp(self):
+        # A hand-edited/externally-written report carrying the class *name* in
+        # contrast_class must be skipped, not crash the whole report.
+        results = [
+            {"contrast_class": "suspicious", "class_names": CLASS_NAMES},
+            {"contrast_class": 1, "class_names": CLASS_NAMES},
+        ]
+        assert hca.detect_contrast_class(results, positive_class=0) == 1
+
+    def test_detect_contrast_all_non_integer_falls_back_to_name(self):
+        # Every stamped value is unusable -> fall through to name lookup.
+        results = [{"contrast_class": None, "class_names": CLASS_NAMES}]
+        # None is filtered (not "non-integer"); name lookup finds "suspicious".
+        assert hca.detect_contrast_class(results, positive_class=0) == 1
+
+    def test_detect_contrast_tie_is_deterministic(self):
+        # Two distinct contrast indices with equal counts: the smallest index
+        # must win regardless of result ordering (no filesystem-order dependence).
+        a = [
+            {"contrast_class": 5},
+            {"contrast_class": 5},
+            {"contrast_class": 2},
+            {"contrast_class": 2},
+        ]
+        b = list(reversed(a))
+        assert hca.detect_contrast_class(a, positive_class=0) == 2
+        assert hca.detect_contrast_class(b, positive_class=0) == 2
+
+    def test_aggregate_reports_finite_support_when_some_seeds_nan(self):
+        # 3 seeds, 1 degenerate (NaN). The mean is over the 2 finite seeds, and
+        # n_seeds stays 3 (total attempted) while {metric}_n_seeds records 2.
+        rows = [
+            {
+                "experiment": "e__ws",
+                "type": "transfer",
+                "seed": s,
+                "hardcore_pr_auc_renorm": v,
+                "hardcore_n": 10,
+            }
+            for s, v in [(0, 0.90), (1, 0.92), (2, float("nan"))]
+        ]
+        agg = hca.aggregate_hardcore_rows(rows)
+        assert int(agg.loc[0, "n_seeds"]) == 3
+        assert int(agg.loc[0, "hardcore_pr_auc_renorm_n_seeds"]) == 2
+        assert agg.loc[0, "hardcore_pr_auc_renorm"] == pytest.approx(0.91)
+
+    def test_table_annotates_reduced_support(self):
+        # When a metric's finite support is below n_seeds, the cell carries (n=k)
+        # so n_seeds is not mistaken for the metric's backing.
+        rows = [
+            {
+                "experiment": "e__ws",
+                "type": "transfer",
+                "seed": s,
+                "hardcore_pr_auc_renorm": v,
+                "hardcore_pr_auc_raw": v,
+                "hardcore_roc_auc_renorm": v,
+                "hardcore_leak_rate": 0.0,
+                "hardcore_n": 10,
+            }
+            for s, v in [(0, 0.90), (1, 0.92), (2, float("nan"))]
+        ]
+        agg = hca.aggregate_hardcore_rows(rows)
+        table = hca.generate_hardcore_table(agg)
+        assert "(n=2)" in table
+
     def test_aggregate_all_nan_metric_no_warning(self, recwarn):
         # Every seed degenerate -> the metric is all-NaN. The mean must be NaN
         # without emitting a numpy "Mean of empty slice" RuntimeWarning.

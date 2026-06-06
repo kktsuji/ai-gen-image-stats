@@ -39,6 +39,7 @@ import pandas as pd
 from src.experiments.classifier.evaluation_report import (
     _format_mean_std,
     _parse_experiment_name,
+    build_mean_std_dataframe,
     generate_statistical_comparison_table,
     load_evaluation_results,
     resolve_positive_class,
@@ -109,13 +110,27 @@ def detect_contrast_class(
     if override is not None:
         return override
 
-    stamped = [
-        int(r["contrast_class"]) for r in results if r.get("contrast_class") is not None
-    ]
+    # Coerce defensively: a stamped contrast_class should be an int index, but a
+    # hand-edited or externally-written evaluation.json could carry a non-numeric
+    # value (e.g. the class *name*). Skip such entries with a warning rather than
+    # letting a single bad file abort the whole report.
+    stamped: List[int] = []
+    for r in results:
+        raw = r.get("contrast_class")
+        if raw is None:
+            continue
+        try:
+            stamped.append(int(raw))
+        except (TypeError, ValueError):
+            _logger.warning("Ignoring non-integer contrast_class %r in a result", raw)
     if stamped:
         distinct = set(stamped)
         if len(distinct) > 1:
-            most_common = Counter(stamped).most_common(1)[0][0]
+            # Break ties deterministically (smallest index wins) so the result
+            # does not depend on filesystem/seed iteration order, which is what
+            # Counter.most_common falls back to on equal counts.
+            counts = Counter(stamped)
+            most_common = max(distinct, key=lambda idx: (counts[idx], -idx))
             _logger.warning(
                 "Results report differing contrast_class values %s; using %s. "
                 "Pass --contrast-class-index to override.",
@@ -169,43 +184,19 @@ def load_hardcore_rows(
 def aggregate_hardcore_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     """Aggregate per-seed hard-core rows into one row per experiment (mean/std).
 
-    Single-seed experiments keep their raw values with no std column.
+    Delegates to :func:`build_mean_std_dataframe` in ``nan_tolerant`` mode so the
+    multi-seed bookkeeping (groupby, duplicate-seed rejection, mean/std) lives in
+    one place. Tolerant mode averages each metric over its finite seeds and emits
+    a ``{metric}_n_seeds`` support count (hard-core metrics are legitimately NaN
+    for a degenerate restricted set). Single-seed experiments keep their raw
+    values with no std column.
     """
     if not rows:
         return pd.DataFrame()
 
-    df = pd.DataFrame(rows)
-    has_seed = "seed" in df.columns
-
-    out: List[Dict[str, Any]] = []
-    for exp_name, group in df.groupby("experiment"):
-        if has_seed and bool(group["seed"].notna().any()):
-            if bool(group["seed"].duplicated().any()):
-                _logger.warning(
-                    "Experiment %r has duplicate seeds; omitting from tables",
-                    exp_name,
-                )
-                continue
-        agg: Dict[str, Any] = {
-            "experiment": exp_name,
-            "type": group.iloc[0].get("type", "unknown"),
-            "n_seeds": int(len(group)),
-        }
-        for metric in HARDCORE_TABLE_COLUMNS:
-            if metric not in group.columns:
-                continue
-            values = np.asarray(group[metric], dtype=float)
-            # Average over the finite seeds. Using the pre-filtered ``finite``
-            # array (rather than np.nanmean over ``values``) avoids the
-            # "Mean of empty slice" RuntimeWarning when every seed is NaN, which
-            # happens when the restricted set is degenerate for all seeds.
-            finite = values[np.isfinite(values)]
-            agg[metric] = float(finite.mean()) if finite.size else float("nan")
-            if finite.size > 1:
-                agg[f"{metric}_std"] = float(finite.std(ddof=1))
-        out.append(agg)
-
-    return pd.DataFrame(out)
+    return build_mean_std_dataframe(
+        pd.DataFrame(rows), HARDCORE_TABLE_COLUMNS, nan_tolerant=True
+    )
 
 
 def generate_hardcore_table(agg_df: pd.DataFrame) -> str:
@@ -224,9 +215,32 @@ def generate_hardcore_table(agg_df: pd.DataFrame) -> str:
         subset = subset.sort_values(by=sort_col, ascending=False)  # type: ignore[call-overload]
 
     # hardcore_n is an integer count; format the float metrics as mean +/- std.
+    # When a metric was averaged over fewer than n_seeds seeds (some seeds NaN
+    # from a degenerate restricted set), annotate the cell with its true support
+    # so the n_seeds column is not read as the metric's backing.
+    has_total = "n_seeds" in agg_df.columns
     for metric in HARDCORE_FLOAT_COLUMNS:
-        if metric in subset.columns:
-            subset[metric] = _format_mean_std(agg_df.loc[subset.index], metric).values
+        if metric not in subset.columns:
+            continue
+        formatted = _format_mean_std(agg_df.loc[subset.index], metric).values
+        n_col = f"{metric}_n_seeds"
+        if has_total and n_col in agg_df.columns:
+            cells = []
+            for cell, idx in zip(formatted, subset.index):
+                support = agg_df.loc[idx, n_col]
+                total = agg_df.loc[idx, "n_seeds"]
+                if (
+                    cell
+                    and pd.notna(support)
+                    and pd.notna(total)
+                    and int(support) < int(total)
+                ):
+                    cells.append(f"{cell} (n={int(support)})")
+                else:
+                    cells.append(cell)
+            subset[metric] = cells
+        else:
+            subset[metric] = formatted
     if "hardcore_n" in subset.columns:
         subset["hardcore_n"] = [
             "" if not np.isfinite(v) else f"{v:.0f}"

@@ -369,6 +369,7 @@ def aggregate_multi_seed(
 def build_mean_std_dataframe(
     df: pd.DataFrame,
     metric_names: List[str],
+    nan_tolerant: bool = False,
 ) -> pd.DataFrame:
     """Build a DataFrame with mean +/- std for multi-seed experiments.
 
@@ -378,10 +379,18 @@ def build_mean_std_dataframe(
     Args:
         df: DataFrame with evaluation results (may include "seed" column).
         metric_names: Metrics to include.
+        nan_tolerant: When False (default), a metric with any NaN seed is dropped
+            for that experiment (the standard report's policy). When True, each
+            metric is averaged over only its finite seeds and a ``{metric}_n_seeds``
+            column records how many seeds backed it, so the headline ``n_seeds``
+            (total seeds attempted) is never mistaken for the metric's support.
+            Used by the hard-core report, whose metrics are legitimately NaN for a
+            degenerate restricted set.
 
     Returns:
         DataFrame with one row per unique experiment, metrics as mean values,
-        and {metric}_std columns for multi-seed experiments.
+        and {metric}_std columns for multi-seed experiments. In ``nan_tolerant``
+        mode each included metric also gets a {metric}_n_seeds finite-count column.
     """
     if "seed" not in df.columns:
         return df
@@ -416,24 +425,36 @@ def build_mean_std_dataframe(
         row["n_seeds"] = len(group)
 
         for metric in metric_names:
-            if metric in group.columns:
-                values = group[metric]
-                # Mirror aggregate_multi_seed: require all seeds non-NaN
-                if bool(values.isna().any()):
-                    _logger.warning(
-                        "Experiment %r metric %r has NaN seeds; "
-                        "omitting from aggregated tables",
-                        exp_name,
-                        metric,
-                    )
-                    continue
-                row[metric] = float(values.mean())  # type: ignore[arg-type]
-                if len(values) > 1:
-                    row[f"{metric}_std"] = float(values.std(ddof=1))  # type: ignore[arg-type]
+            if metric not in group.columns:
+                continue
+            values = group[metric]
+            if nan_tolerant:
+                # Average over the finite seeds only (a NaN seed is a degenerate
+                # restricted set, not a missing metric). Record the finite count
+                # so the reader sees the actual support behind mean +/- std.
+                arr = np.asarray(values, dtype=float)
+                finite = arr[np.isfinite(arr)]
+                row[metric] = float(finite.mean()) if finite.size else float("nan")
+                if finite.size > 1:
+                    row[f"{metric}_std"] = float(finite.std(ddof=1))
+                row[f"{metric}_n_seeds"] = int(finite.size)
+                continue
+            # Mirror aggregate_multi_seed: require all seeds non-NaN
+            if bool(values.isna().any()):
+                _logger.warning(
+                    "Experiment %r metric %r has NaN seeds; "
+                    "omitting from aggregated tables",
+                    exp_name,
+                    metric,
+                )
+                continue
+            row[metric] = float(values.mean())  # type: ignore[arg-type]
+            if len(values) > 1:
+                row[f"{metric}_std"] = float(values.std(ddof=1))  # type: ignore[arg-type]
 
-                # Note: bootstrap CI columns are not preserved for multi-seed
-                # aggregation because the CI of an average is not the average
-                # of the CIs. Use {metric}_std with the t-distribution instead.
+            # Note: bootstrap CI columns are not preserved for multi-seed
+            # aggregation because the CI of an average is not the average
+            # of the CIs. Use {metric}_std with the t-distribution instead.
 
         rows.append(row)
 

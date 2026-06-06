@@ -516,6 +516,27 @@ def test_build_mean_std_dataframe_skips_metric_with_nan():
 
 
 @pytest.mark.unit
+def test_build_mean_std_dataframe_nan_tolerant_keeps_finite_seeds():
+    """nan_tolerant averages over finite seeds and records the finite support."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70},
+            {"experiment": "exp-a", "seed": 1, "recall_1": float("nan")},
+            {"experiment": "exp-a", "seed": 2, "recall_1": 0.80},
+        ]
+    )
+    result = build_mean_std_dataframe(df, ["recall_1"], nan_tolerant=True)
+    assert len(result) == 1
+    # Metric kept (not dropped); mean over the 2 finite seeds.
+    assert result.iloc[0]["recall_1"] == pytest.approx(0.75)
+    # n_seeds is total attempted; the finite support is reported separately.
+    assert result.iloc[0]["n_seeds"] == 3
+    assert result.iloc[0]["recall_1_n_seeds"] == 2
+
+
+@pytest.mark.unit
 def test_generate_statistical_comparison_table():
     """Test statistical comparison table generation with multi-seed data."""
     import pandas as pd

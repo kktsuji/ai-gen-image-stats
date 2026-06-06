@@ -415,40 +415,56 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             eval_metrics["bootstrap_confidence_level"] = confidence_level
 
         # Hard-core direct evaluation (abnormal-vs-suspicious restricted PR-AUC).
+        # Resolve the positive (abnormal) and contrast (suspicious) classes once;
+        # the same indices drive both the metric here and the contrast_class
+        # stamped into the report below, so the report can never advertise a
+        # contrast the metric was not computed against. A run is hard-core capable
+        # only when both resolve and differ -- equal indices make the restricted
+        # ranking degenerate (NaN), so it is skipped rather than emitting NaNs.
+        hc_positive = _report_positive_class(data_config, num_classes)
+        hc_contrast = (
+            _resolve_eval_contrast_class(data_config, class_names)
+            if hc_positive is not None
+            else None
+        )
+        hardcore_enabled = (
+            hc_positive is not None
+            and hc_contrast is not None
+            and hc_contrast != hc_positive
+        )
+
         # Computed after the bootstrap block so these keys never enter the
         # bootstrap metric_names (bootstrap_classification_metrics does not know
-        # them). Requires a known positive class and a resolvable contrast class;
-        # skipped (logged) for binary/unconfigured runs.
-        if inference["total"] > 0:
+        # them); skipped (logged) for binary/unconfigured runs.
+        if inference["total"] > 0 and hardcore_enabled:
             from src.experiments.classifier.hard_core import compute_hard_core_metrics
 
-            hc_positive = _report_positive_class(data_config, num_classes)
-            hc_contrast = _resolve_eval_contrast_class(data_config, class_names)
-            if hc_positive is not None and hc_contrast is not None:
-                hardcore = compute_hard_core_metrics(
-                    np.array(inference["all_targets"]),
-                    inference["all_probs"],
-                    hc_positive,
-                    hc_contrast,
-                )
-                eval_metrics.update(hardcore)
-                logger.info(
-                    "Hard-core (class %d vs %d): pr_auc_renorm=%.4f, "
-                    "pr_auc_raw=%.4f, leak_rate=%.4f, n=%d",
-                    hc_positive,
-                    hc_contrast,
-                    hardcore["hardcore_pr_auc_renorm"],
-                    hardcore["hardcore_pr_auc_raw"],
-                    hardcore["hardcore_leak_rate"],
-                    int(hardcore["hardcore_n"]),
-                )
-            else:
-                logger.info(
-                    "Skipping hard-core evaluation (positive_class=%s, "
-                    "contrast_class=%s could not be resolved).",
-                    hc_positive,
-                    hc_contrast,
-                )
+            # Guaranteed by hardcore_enabled; narrows int | None -> int.
+            assert hc_positive is not None and hc_contrast is not None
+            hardcore = compute_hard_core_metrics(
+                np.array(inference["all_targets"]),
+                inference["all_probs"],
+                hc_positive,
+                hc_contrast,
+            )
+            eval_metrics.update(hardcore)
+            logger.info(
+                "Hard-core (class %d vs %d): pr_auc_renorm=%.4f, "
+                "pr_auc_raw=%.4f, leak_rate=%.4f, n=%d",
+                hc_positive,
+                hc_contrast,
+                hardcore["hardcore_pr_auc_renorm"],
+                hardcore["hardcore_pr_auc_raw"],
+                hardcore["hardcore_leak_rate"],
+                int(hardcore["hardcore_n"]),
+            )
+        elif inference["total"] > 0:
+            logger.info(
+                "Skipping hard-core evaluation (positive_class=%s, "
+                "contrast_class=%s could not be resolved or are equal).",
+                hc_positive,
+                hc_contrast,
+            )
 
         # Separate scalar metrics for logging from full payload for JSON
         scalar_eval_metrics = {}
@@ -489,15 +505,15 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         # Stamp positive_class only when it is safe to be authoritative (see
         # _report_positive_class). For an unconfigured multi-class run it is
         # omitted so the downstream report / threshold tools auto-detect rather
-        # than trust a guessed 1; warn loudly in that case.
-        positive_class = _report_positive_class(data_config, num_classes)
-        if positive_class is not None:
-            report_payload["positive_class"] = positive_class
+        # than trust a guessed 1; warn loudly in that case. Reuse hc_positive /
+        # hc_contrast resolved above so the stamped indices are exactly the ones
+        # the hard-core metric used (or none, when hard-core was not enabled).
+        if hc_positive is not None:
+            report_payload["positive_class"] = hc_positive
             # Stamp the resolved hard-core contrast class so the standalone
             # hard_core_analysis tool uses the exact same index this run did.
-            contrast_class = _resolve_eval_contrast_class(data_config, class_names)
-            if contrast_class is not None and contrast_class != positive_class:
-                report_payload["contrast_class"] = contrast_class
+            if hardcore_enabled:
+                report_payload["contrast_class"] = hc_contrast
         else:
             logger.warning(
                 "data.positive_class is not set for a %d-class run. Set "
