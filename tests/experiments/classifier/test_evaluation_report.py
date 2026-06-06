@@ -248,6 +248,26 @@ def test_load_evaluation_results(tmp_path):
 
 
 @pytest.mark.component
+def test_load_evaluation_results_report_name_override(tmp_path):
+    """A non-default report_name loads split-tagged reports (e.g. val-only runs).
+
+    A run that only evaluated val writes evaluation_val.json (not the canonical
+    evaluation.json); the override lets downstream tools resolve it.
+    """
+    reports_dir = tmp_path / "baseline__vanilla" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation_val.json", "w") as f:
+        json.dump({"accuracy": 81.0, "split": "val"}, f)
+
+    # Default name (evaluation.json) finds nothing.
+    assert load_evaluation_results(str(tmp_path)) == []
+    # Explicit split-tagged name finds the val report.
+    results = load_evaluation_results(str(tmp_path), report_name="evaluation_val.json")
+    assert len(results) == 1
+    assert results[0]["accuracy"] == 81.0
+
+
+@pytest.mark.component
 def test_load_evaluation_results_preserves_split_field(tmp_path):
     """Test that the 'split' field (val vs test) is surfaced as its own column.
 
@@ -493,6 +513,27 @@ def test_build_mean_std_dataframe_skips_metric_with_nan():
     assert "recall_1" not in result.columns
     # f1_1 is complete -> present
     assert result.iloc[0]["f1_1"] == pytest.approx(0.66)
+
+
+@pytest.mark.unit
+def test_build_mean_std_dataframe_nan_tolerant_keeps_finite_seeds():
+    """nan_tolerant averages over finite seeds and records the finite support."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"experiment": "exp-a", "seed": 0, "recall_1": 0.70},
+            {"experiment": "exp-a", "seed": 1, "recall_1": float("nan")},
+            {"experiment": "exp-a", "seed": 2, "recall_1": 0.80},
+        ]
+    )
+    result = build_mean_std_dataframe(df, ["recall_1"], nan_tolerant=True)
+    assert len(result) == 1
+    # Metric kept (not dropped); mean over the 2 finite seeds.
+    assert result.iloc[0]["recall_1"] == pytest.approx(0.75)
+    # n_seeds is total attempted; the finite support is reported separately.
+    assert result.iloc[0]["n_seeds"] == 3
+    assert result.iloc[0]["recall_1_n_seeds"] == 2
 
 
 @pytest.mark.unit
@@ -1249,3 +1290,45 @@ class TestPositiveClassParametrization:
         report = (out_dir / "evaluation_report.md").read_text()
         assert "recall_6" in report
         assert "recall_1" not in report
+
+
+@pytest.mark.unit
+class TestHardCoreMetricsIntegration:
+    """Hard-core metrics flow through key_metrics and the tables."""
+
+    def test_key_metrics_includes_hardcore(self):
+        metrics = key_metrics(positive_class=6)
+        assert "hardcore_pr_auc_renorm" in metrics
+        assert "hardcore_pr_auc_raw" in metrics
+
+    def test_classifier_table_shows_hardcore_when_present(self):
+        df = build_comparison_dataframe(
+            [
+                {
+                    "experiment": "ft-mixed67__ws",
+                    "type": "transfer",
+                    "recall_6": 0.88,
+                    "balanced_accuracy": 0.9,
+                    "hardcore_pr_auc_renorm": 0.91,
+                    "hardcore_pr_auc_raw": 0.93,
+                }
+            ]
+        )
+        table = generate_classifier_table(df, positive_class=6)
+        assert "hardcore_pr_auc_renorm" in table
+
+    def test_tables_tolerate_runs_missing_hardcore(self):
+        # A legacy run lacking the hardcore columns must not break the table.
+        df = build_comparison_dataframe(
+            [
+                {
+                    "experiment": "baseline__ws",
+                    "type": "baseline",
+                    "recall_6": 0.80,
+                    "balanced_accuracy": 0.85,
+                }
+            ]
+        )
+        table = generate_classifier_table(df, positive_class=6)
+        assert "baseline__ws" in table
+        assert "hardcore_pr_auc_renorm" not in table

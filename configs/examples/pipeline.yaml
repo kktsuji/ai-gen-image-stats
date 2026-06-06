@@ -135,3 +135,12 @@ summarize:
   # (falling back to 1 for legacy binary runs). Set it only to force a specific
   # class, e.g. the abnormal label for a multi-class run.
   # positive_class: 6
+  # Optional hard-core direct evaluation (abnormal-vs-suspicious restricted
+  # PR-AUC). Runs after the report over the chosen split's saved predictions.
+  # Defaults shown. The contrast (suspicious) class is auto-detected from each
+  # run's evaluation.json (stamped contrast_class, else the class named
+  # hardcore_contrast_name); set hardcore_contrast_class to force an index.
+  hardcore_output_dir: outputs/hard_core_analysis
+  hardcore_split: test
+  hardcore_contrast_name: suspicious
+  # hardcore_contrast_class: 5

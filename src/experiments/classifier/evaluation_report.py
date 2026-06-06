@@ -58,6 +58,17 @@ def key_metrics(positive_class: int = 1) -> List[str]:
         "accuracy",
         f"precision_{pc}",
         "loss",
+        # Hard-core direct evaluation (abnormal-vs-suspicious restricted PR-AUC).
+        # Present only for multi-class runs that resolved a contrast class; older
+        # runs lack these columns and are filtered out by the `in df.columns`
+        # guards downstream. See src.experiments.classifier.hard_core.
+        # Only the two PR-AUC variants are surfaced here (main table +
+        # significance test): renorm is the primary, raw the sanity check.
+        # hardcore_roc_auc_renorm and hardcore_leak_rate are intentionally
+        # omitted to keep the headline table focused -- they remain in the JSON
+        # and in the dedicated hard_core_analysis report.
+        "hardcore_pr_auc_renorm",
+        "hardcore_pr_auc_raw",
     ]
 
 
@@ -198,14 +209,18 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
 
 def load_evaluation_results(
     base_dir: str = "outputs/classifier",
+    report_name: str = "evaluation.json",
 ) -> List[Dict[str, Any]]:
-    """Scan for evaluation.json files and load all results.
+    """Scan for evaluation report JSON files and load all results.
 
     Supports both single-seed and multi-seed directory layouts.
     For multi-seed, each result includes a "seed" field.
 
     Args:
         base_dir: Base directory containing classifier experiment outputs.
+        report_name: Report filename to scan for. Defaults to the canonical
+            held-out-test ``evaluation.json``; pass ``evaluation_{split}.json``
+            to load a non-test split's reports (e.g. for a val-only sweep).
 
     Returns:
         List of dictionaries, each containing experiment name + metrics.
@@ -213,7 +228,7 @@ def load_evaluation_results(
     results: List[Dict[str, Any]] = []
 
     # Try multi-seed pattern first
-    multi_seed_pattern = f"{base_dir}/*/seed*/reports/evaluation.json"
+    multi_seed_pattern = f"{base_dir}/*/seed*/reports/{report_name}"
     multi_seed_paths = sorted(glob(multi_seed_pattern))
 
     if multi_seed_paths:
@@ -236,7 +251,7 @@ def load_evaluation_results(
 
     # Also load single-seed results (backward compatibility)
     multi_seed_experiments = {r["experiment"] for r in results}
-    single_seed_pattern = f"{base_dir}/*/reports/evaluation.json"
+    single_seed_pattern = f"{base_dir}/*/reports/{report_name}"
     for json_path in sorted(glob(single_seed_pattern)):
         path = Path(json_path)
         exp_name = path.parent.parent.name
@@ -359,6 +374,7 @@ def aggregate_multi_seed(
 def build_mean_std_dataframe(
     df: pd.DataFrame,
     metric_names: List[str],
+    nan_tolerant: bool = False,
 ) -> pd.DataFrame:
     """Build a DataFrame with mean +/- std for multi-seed experiments.
 
@@ -368,10 +384,18 @@ def build_mean_std_dataframe(
     Args:
         df: DataFrame with evaluation results (may include "seed" column).
         metric_names: Metrics to include.
+        nan_tolerant: When False (default), a metric with any NaN seed is dropped
+            for that experiment (the standard report's policy). When True, each
+            metric is averaged over only its finite seeds and a ``{metric}_n_seeds``
+            column records how many seeds backed it, so the headline ``n_seeds``
+            (total seeds attempted) is never mistaken for the metric's support.
+            Used by the hard-core report, whose metrics are legitimately NaN for a
+            degenerate restricted set.
 
     Returns:
         DataFrame with one row per unique experiment, metrics as mean values,
-        and {metric}_std columns for multi-seed experiments.
+        and {metric}_std columns for multi-seed experiments. In ``nan_tolerant``
+        mode each included metric also gets a {metric}_n_seeds finite-count column.
     """
     if "seed" not in df.columns:
         return df
@@ -406,24 +430,36 @@ def build_mean_std_dataframe(
         row["n_seeds"] = len(group)
 
         for metric in metric_names:
-            if metric in group.columns:
-                values = group[metric]
-                # Mirror aggregate_multi_seed: require all seeds non-NaN
-                if bool(values.isna().any()):
-                    _logger.warning(
-                        "Experiment %r metric %r has NaN seeds; "
-                        "omitting from aggregated tables",
-                        exp_name,
-                        metric,
-                    )
-                    continue
-                row[metric] = float(values.mean())  # type: ignore[arg-type]
-                if len(values) > 1:
-                    row[f"{metric}_std"] = float(values.std(ddof=1))  # type: ignore[arg-type]
+            if metric not in group.columns:
+                continue
+            values = group[metric]
+            if nan_tolerant:
+                # Average over the finite seeds only (a NaN seed is a degenerate
+                # restricted set, not a missing metric). Record the finite count
+                # so the reader sees the actual support behind mean +/- std.
+                arr = np.asarray(values, dtype=float)
+                finite = arr[np.isfinite(arr)]
+                row[metric] = float(finite.mean()) if finite.size else float("nan")
+                if finite.size > 1:
+                    row[f"{metric}_std"] = float(finite.std(ddof=1))
+                row[f"{metric}_n_seeds"] = int(finite.size)
+                continue
+            # Mirror aggregate_multi_seed: require all seeds non-NaN
+            if bool(values.isna().any()):
+                _logger.warning(
+                    "Experiment %r metric %r has NaN seeds; "
+                    "omitting from aggregated tables",
+                    exp_name,
+                    metric,
+                )
+                continue
+            row[metric] = float(values.mean())  # type: ignore[arg-type]
+            if len(values) > 1:
+                row[f"{metric}_std"] = float(values.std(ddof=1))  # type: ignore[arg-type]
 
-                # Note: bootstrap CI columns are not preserved for multi-seed
-                # aggregation because the CI of an average is not the average
-                # of the CIs. Use {metric}_std with the t-distribution instead.
+            # Note: bootstrap CI columns are not preserved for multi-seed
+            # aggregation because the CI of an average is not the average
+            # of the CIs. Use {metric}_std with the t-distribution instead.
 
         rows.append(row)
 
@@ -505,16 +541,31 @@ def generate_statistical_comparison_table(
                     f"Requested baseline {baseline_name!r} not found in results; "
                     f"falling back to auto-selection"
                 )
-        # Use baseline with highest mean positive-class recall (or first available)
-        recall_key = f"recall_{positive_class}"
+        # Rank baselines by mean positive-class recall. For tables whose frame
+        # carries no recall_{pc} column (e.g. the hard-core report, which only
+        # has hardcore_* metrics), fall back to the first available key metric so
+        # the choice stays meaningful instead of degrading to dict-iteration
+        # order. baselines iterates in sorted-name order (pandas groupby), so the
+        # final next(iter(...)) fallback is at least deterministic.
+        rank_key = f"recall_{positive_class}"
+        if not any(rank_key in bl_vals for bl_vals in baselines.values()):
+            rank_key = next(
+                (
+                    m
+                    for m in metric_names
+                    if any(m in bl_vals for bl_vals in baselines.values())
+                ),
+                None,
+            )
         best_bl_name = None
-        best_bl_recall = -float("inf")
-        for bl_name, bl_vals in baselines.items():
-            if recall_key in bl_vals:
-                mean_recall = float(np.mean(bl_vals[recall_key]))
-                if mean_recall > best_bl_recall:
-                    best_bl_recall = mean_recall
-                    best_bl_name = bl_name
+        best_bl_score = -float("inf")
+        if rank_key is not None:
+            for bl_name, bl_vals in baselines.items():
+                if rank_key in bl_vals:
+                    mean_score = float(np.mean(bl_vals[rank_key]))
+                    if mean_score > best_bl_score:
+                        best_bl_score = mean_score
+                        best_bl_name = bl_name
         selected_baseline = best_bl_name or next(iter(baselines))
 
     bl_values = baselines[selected_baseline]

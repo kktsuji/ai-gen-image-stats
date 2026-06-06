@@ -333,6 +333,31 @@ def validate_positive_class(positive_class: Any, num_classes: int) -> None:
         )
 
 
+def validate_contrast_class(contrast_class: Any, num_classes: int) -> None:
+    """Validate the optional data.contrast_class index.
+
+    The contrast class is the single negative class the hard-core direct
+    evaluation ranks the positive class against (e.g. "suspicious"). See
+    :mod:`src.experiments.classifier.hard_core`.
+
+    Args:
+        contrast_class: The configured contrast (suspicious) class index.
+        num_classes: Number of classes (contrast_class must be a valid index).
+
+    Raises:
+        ValueError: If contrast_class is not an integer in [0, num_classes).
+    """
+    if (
+        isinstance(contrast_class, bool)
+        or not isinstance(contrast_class, int)
+        or not (0 <= contrast_class < num_classes)
+    ):
+        raise ValueError(
+            f"data.contrast_class must be an integer in [0, {num_classes}), "
+            f"got {contrast_class!r}"
+        )
+
+
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate classifier configuration.
 
@@ -442,6 +467,16 @@ def validate_config(config: Dict[str, Any]) -> None:
     # for backward compatibility with the binary task).
     if "positive_class" in data:
         validate_positive_class(data["positive_class"], architecture["num_classes"])
+
+    # Validate optional hard-core contrast (suspicious) class. The index, when
+    # set, must be a valid class; the name is used to auto-detect the index from
+    # the split's class metadata when the index is omitted.
+    if "contrast_class" in data:
+        validate_contrast_class(data["contrast_class"], architecture["num_classes"])
+    if "contrast_class_name" in data:
+        contrast_name = data["contrast_class_name"]
+        if not isinstance(contrast_name, str) or not contrast_name.strip():
+            raise ValueError("data.contrast_class_name must be a non-empty string")
 
     # Validate output configuration
     validate_output_section(config)

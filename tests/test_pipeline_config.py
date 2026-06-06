@@ -138,6 +138,20 @@ class TestValidateAccepts:
         validate_pipeline_config(cfg)
         assert cfg["summarize"]["positive_class"] == 6
 
+    def test_summarize_hardcore_defaults_applied(self):
+        cfg = _valid_config()
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["hardcore_output_dir"] == "outputs/hard_core_analysis"
+        assert cfg["summarize"]["hardcore_split"] == "test"
+        assert cfg["summarize"]["hardcore_contrast_name"] == "suspicious"
+        assert "hardcore_contrast_class" not in cfg["summarize"]
+
+    def test_summarize_hardcore_contrast_class_explicit(self):
+        cfg = _valid_config()
+        cfg["summarize"]["hardcore_contrast_class"] = 5
+        validate_pipeline_config(cfg)
+        assert cfg["summarize"]["hardcore_contrast_class"] == 5
+
 
 @pytest.mark.unit
 class TestValidateRejects:
@@ -246,6 +260,18 @@ class TestValidateRejects:
     def test_summarize_positive_class_bool_rejected(self):
         cfg = _valid_config()
         cfg["summarize"]["positive_class"] = True
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_hardcore_contrast_class_negative_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["hardcore_contrast_class"] = -1
+        with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_summarize_hardcore_contrast_class_bool_rejected(self):
+        cfg = _valid_config()
+        cfg["summarize"]["hardcore_contrast_class"] = True
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 
