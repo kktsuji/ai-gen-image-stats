@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+# Base image pinned by digest for reproducibility (tag kept for readability).
+# Digest of nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 as used by the proven image.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04@sha256:ac55d124da4882b497f732d8dfd9a702d5447a5f29d08d56da6f64f0a1eb34bc
 
 # Set environment variables
 ENV TZ=Asia/Tokyo \
