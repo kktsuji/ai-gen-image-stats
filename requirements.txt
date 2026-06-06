@@ -3,6 +3,13 @@
 # kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04 (built 2026-02-18),
 # except tabulate (CPU-only, runs in venv) which is pinned to the local env.
 # Python 3.13.12 (see .python-version). Do not bump during an experiment campaign.
+#
+# Known advisories accepted to keep this file consistent with the proven image
+# (local pipeline, trusted inputs, not network-exposed):
+#   - Pillow 12.1.1: CVEs fixed in 12.2.0 (image parsing). Not bumped — that
+#     would desync requirements from the runtime (the image ships 12.1.1).
+#   - torch 2.10.0: PYSEC-2026-139 (last-affected); no patched release exists yet.
+# Revisit both only via a deliberate, re-validated image rebuild.
 
 # Core Deep Learning
 torch==2.10.0
