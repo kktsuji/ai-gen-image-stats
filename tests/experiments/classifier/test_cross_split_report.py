@@ -7,6 +7,7 @@ statistical contract is that the experimental unit is the SPLIT (not the
 """
 
 import json
+import logging
 
 import numpy as np
 import pytest
@@ -269,6 +270,26 @@ class TestCrossSplitComparisons:
             split_means, "baseline__ws", ["recall_1"]
         )
         assert comp.empty
+
+    def test_other_baseline_excluded_and_logged(self, caplog):
+        # A second baseline strategy is not the chosen reference -> it is dropped
+        # rather than compared, and the exclusion is logged for transparency.
+        split_means = {
+            s: {
+                "baseline__ws": {"recall_1": 0.70},
+                "baseline__us": {"recall_1": 0.72},
+            }
+            for s in range(3)
+        }
+        with caplog.at_level(
+            logging.DEBUG, logger="src.experiments.classifier.cross_split_report"
+        ):
+            comp = compute_cross_split_comparisons(
+                split_means, "baseline__ws", ["recall_1"]
+            )
+        # baseline__us is a baseline type, so it is not a treatment.
+        assert comp.empty
+        assert "baseline__us" in caplog.text
 
 
 @pytest.mark.component

@@ -262,12 +262,26 @@ def compute_cross_split_comparisons(
     """
     splits = sorted(split_means)
     all_exps = sorted({exp for s in splits for exp in split_means[s]})
+    # Treatments are every experiment except the chosen baseline, restricted to
+    # non-baseline types. This intentionally assumes a single baseline: other
+    # ``baseline``-typed experiments are NOT compared against the reference (so a
+    # second baseline strategy like ``baseline__us`` is dropped, not treated).
+    # Log the exclusions so this is transparent rather than silent.
     treatments = [
         e
         for e in all_exps
         if e != baseline
         and _parse_experiment_name(e)["type"] in ("synthetic", "transfer", "unknown")
     ]
+    excluded = [e for e in all_exps if e != baseline and e not in treatments]
+    if excluded:
+        _logger.debug(
+            "Excluded %d non-treatment experiment(s) from cross-split comparison "
+            "(other baselines, not compared against %r): %s",
+            len(excluded),
+            baseline,
+            ", ".join(excluded),
+        )
 
     raw: List[Dict[str, Any]] = []
     t_pvals: List[float] = []
