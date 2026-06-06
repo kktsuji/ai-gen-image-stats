@@ -5,6 +5,8 @@ ensuring proper configuration handling, experiment routing, and
 end-to-end execution flow with config-only mode.
 """
 
+import json
+import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +15,7 @@ import torch.nn as nn
 import yaml
 
 from src.main import (
+    _json_safe,
     _report_positive_class,
     _validate_split_file_has_split,
     main,
@@ -20,6 +23,45 @@ from src.main import (
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _reject_constant(_value):  # pragma: no cover - only fires on invalid JSON
+    raise AssertionError("strict JSON should contain no NaN/Infinity tokens")
+
+
+@pytest.mark.unit
+class TestJsonSafe:
+    """Non-finite floats are sanitized so evaluation.json stays valid JSON."""
+
+    def test_nan_and_inf_become_null(self):
+        payload = {
+            "hardcore_pr_auc_renorm": float("nan"),
+            "x": float("inf"),
+            "y": float("-inf"),
+            "ok": 0.91,
+            "n": 17,
+            "name": "abnormal",
+        }
+        safe = _json_safe(payload)
+        assert safe["hardcore_pr_auc_renorm"] is None
+        assert safe["x"] is None and safe["y"] is None
+        assert safe["ok"] == 0.91
+        assert safe["n"] == 17
+        assert safe["name"] == "abnormal"
+
+    def test_nested_structures_and_strict_json_roundtrip(self):
+        payload = {"metrics": [1.0, float("nan")], "nested": {"a": float("inf")}}
+        safe = _json_safe(payload)
+        assert safe["metrics"][1] is None
+        assert safe["nested"]["a"] is None
+        # Strict parsing (no NaN tokens allowed) must now succeed.
+        reparsed = json.loads(json.dumps(safe), parse_constant=_reject_constant)
+        assert reparsed["metrics"][0] == 1.0
+
+    def test_finite_values_unchanged(self):
+        assert _json_safe(0.5) == 0.5
+        assert _json_safe(3) == 3
+        assert not math.isnan(_json_safe(0.0))
 
 
 class TestReportPositiveClass:

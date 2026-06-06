@@ -248,6 +248,26 @@ def test_load_evaluation_results(tmp_path):
 
 
 @pytest.mark.component
+def test_load_evaluation_results_report_name_override(tmp_path):
+    """A non-default report_name loads split-tagged reports (e.g. val-only runs).
+
+    A run that only evaluated val writes evaluation_val.json (not the canonical
+    evaluation.json); the override lets downstream tools resolve it.
+    """
+    reports_dir = tmp_path / "baseline__vanilla" / "reports"
+    reports_dir.mkdir(parents=True)
+    with open(reports_dir / "evaluation_val.json", "w") as f:
+        json.dump({"accuracy": 81.0, "split": "val"}, f)
+
+    # Default name (evaluation.json) finds nothing.
+    assert load_evaluation_results(str(tmp_path)) == []
+    # Explicit split-tagged name finds the val report.
+    results = load_evaluation_results(str(tmp_path), report_name="evaluation_val.json")
+    assert len(results) == 1
+    assert results[0]["accuracy"] == 81.0
+
+
+@pytest.mark.component
 def test_load_evaluation_results_preserves_split_field(tmp_path):
     """Test that the 'split' field (val vs test) is surfaced as its own column.
 

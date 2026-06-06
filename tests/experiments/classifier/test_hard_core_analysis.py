@@ -125,6 +125,92 @@ class TestGenerateReport:
         hca.generate_report(base_dir=str(base), output_dir=str(out))
         assert not (out / "hard_core_analysis.md").exists()
 
+    def test_val_only_run_resolves_via_split_tagged_report(self, tmp_path):
+        # A sweep that only evaluated val has no evaluation.json, only
+        # evaluation_val.json + predictions_val.npz. The report must still
+        # resolve the contrast class from the split-tagged report.
+        base = tmp_path / "classifier"
+        rng = np.random.RandomState(7)
+        for seed in range(2):
+            reports = base / "baseline__ws" / f"seed{seed}" / "reports"
+            reports.mkdir(parents=True, exist_ok=True)
+            targets = np.repeat([0, 1, 2], 8)
+            logits = rng.gamma(1.0, size=(targets.size, 3))
+            logits[np.arange(targets.size), targets] += rng.uniform(
+                0.5, 2.0, size=targets.size
+            )
+            probs = logits / logits.sum(axis=1, keepdims=True)
+            np.savez_compressed(
+                reports / "predictions_val.npz",
+                targets=targets,
+                predictions=probs.argmax(axis=1),
+                probs=probs,
+            )
+            with open(reports / "evaluation_val.json", "w") as f:
+                json.dump(
+                    {
+                        "split": "val",
+                        "num_classes": 3,
+                        "class_names": CLASS_NAMES,
+                        "positive_class": 0,
+                        "contrast_class": 1,
+                    },
+                    f,
+                )
+
+        out = tmp_path / "hardcore_out"
+        hca.generate_report(base_dir=str(base), output_dir=str(out), split="val")
+        md = (out / "hard_core_analysis.md").read_text()
+        assert "Split: **val**" in md
+        assert "contrast class (suspicious) = 1" in md
+
+    def test_legacy_unsuffixed_predictions_not_used_for_test(self, tmp_path):
+        # Only a legacy predictions.npz (no split tag) exists. Because it could be
+        # any split, the hard-core report must NOT pick it up as test.
+        base = tmp_path / "classifier"
+        reports = base / "baseline__ws" / "seed0" / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        targets = np.repeat([0, 1, 2], 6)
+        probs = np.full((targets.size, 3), 1.0 / 3.0)
+        np.savez_compressed(
+            reports / "predictions.npz",
+            targets=targets,
+            predictions=probs.argmax(axis=1),
+            probs=probs,
+        )
+        with open(reports / "evaluation.json", "w") as f:
+            json.dump(
+                {
+                    "split": "test",
+                    "num_classes": 3,
+                    "class_names": CLASS_NAMES,
+                    "positive_class": 0,
+                    "contrast_class": 1,
+                },
+                f,
+            )
+
+        out = tmp_path / "hardcore_out"
+        hca.generate_report(base_dir=str(base), output_dir=str(out))
+        # Contrast resolves, but no split-tagged predictions -> no rows -> abort.
+        assert not (out / "hard_core_analysis.md").exists()
+
+    def test_no_baseline_name_picks_deterministic_baseline(self, tmp_path):
+        # Without --baseline-name the significance table must still select a
+        # baseline deterministically (the hard-core frame has no recall_{pc}).
+        base = tmp_path / "classifier"
+        rng = np.random.RandomState(11)
+        for exp in ("baseline__vanilla", "baseline__ws", "ft-mixed67__ws"):
+            for seed in range(3):
+                _write_run(base, exp, seed, rng)
+
+        out = tmp_path / "hardcore_out"
+        hca.generate_report(base_dir=str(base), output_dir=str(out))
+        md = (out / "hard_core_analysis.md").read_text()
+        assert "Significance vs baseline" in md
+        # A concrete baseline is named (not omitted / not arbitrary blank).
+        assert "Baseline: **baseline__" in md
+
 
 @pytest.mark.unit
 class TestHelpers:
@@ -158,3 +244,40 @@ class TestHelpers:
     def test_detect_contrast_unresolvable(self):
         results = [{"class_names": ["normal", "abnormal"]}]
         assert hca.detect_contrast_class(results, positive_class=1) is None
+
+    def test_aggregate_all_nan_metric_no_warning(self, recwarn):
+        # Every seed degenerate -> the metric is all-NaN. The mean must be NaN
+        # without emitting a numpy "Mean of empty slice" RuntimeWarning.
+        rows = [
+            {
+                "experiment": "baseline__ws",
+                "type": "baseline",
+                "seed": 0,
+                "hardcore_pr_auc_renorm": float("nan"),
+                "hardcore_n": 0,
+            },
+            {
+                "experiment": "baseline__ws",
+                "type": "baseline",
+                "seed": 1,
+                "hardcore_pr_auc_renorm": float("nan"),
+                "hardcore_n": 0,
+            },
+        ]
+        agg = hca.aggregate_hardcore_rows(rows)
+        assert np.isnan(agg.loc[0, "hardcore_pr_auc_renorm"])
+        assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn.list)
+
+    def test_float_columns_sourced_from_metric_keys(self):
+        # The analysis column list mirrors the single authoritative key list.
+        from src.experiments.classifier.hard_core import HARD_CORE_METRIC_KEYS
+
+        assert hca.HARDCORE_FLOAT_COLUMNS == list(HARD_CORE_METRIC_KEYS)
+
+    def test_resolve_predictions_allow_legacy_flag(self, tmp_path):
+        from src.experiments.classifier.threshold_analysis import _resolve_predictions
+
+        (tmp_path / "predictions.npz").write_bytes(b"")
+        # Legacy fallback is opt-in; off by request, on by default.
+        assert _resolve_predictions(tmp_path, "test", allow_legacy=False) is None
+        assert _resolve_predictions(tmp_path, "test") is not None

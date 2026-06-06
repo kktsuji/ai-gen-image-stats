@@ -521,7 +521,15 @@ def main() -> None:
         # runs independently of the val->test threshold analysis above.
         hc_base_dir = summarize["base_dir"]
         hc_split = summarize["hardcore_split"]
-        if glob(f"{hc_base_dir}/**/predictions_{hc_split}.npz", recursive=True):
+        if hc_split not in eval_splits:
+            # Gate on this run's evaluated splits so a stale predictions_{split}
+            # .npz from a previous run can't trigger the step on data the current
+            # run never produced.
+            print(
+                "[SUMMARIZE] Skipping hard-core analysis: hardcore_split "
+                f"{hc_split!r} not in evaluation_splits {eval_splits}"
+            )
+        elif glob(f"{hc_base_dir}/**/predictions_{hc_split}.npz", recursive=True):
             print("[SUMMARIZE] Generating hard-core direct-evaluation report")
             contrast_args = (
                 ["--contrast-class-index", str(summarize["hardcore_contrast_class"])]

@@ -204,14 +204,18 @@ def _parse_experiment_name(exp_name: str) -> Dict[str, str]:
 
 def load_evaluation_results(
     base_dir: str = "outputs/classifier",
+    report_name: str = "evaluation.json",
 ) -> List[Dict[str, Any]]:
-    """Scan for evaluation.json files and load all results.
+    """Scan for evaluation report JSON files and load all results.
 
     Supports both single-seed and multi-seed directory layouts.
     For multi-seed, each result includes a "seed" field.
 
     Args:
         base_dir: Base directory containing classifier experiment outputs.
+        report_name: Report filename to scan for. Defaults to the canonical
+            held-out-test ``evaluation.json``; pass ``evaluation_{split}.json``
+            to load a non-test split's reports (e.g. for a val-only sweep).
 
     Returns:
         List of dictionaries, each containing experiment name + metrics.
@@ -219,7 +223,7 @@ def load_evaluation_results(
     results: List[Dict[str, Any]] = []
 
     # Try multi-seed pattern first
-    multi_seed_pattern = f"{base_dir}/*/seed*/reports/evaluation.json"
+    multi_seed_pattern = f"{base_dir}/*/seed*/reports/{report_name}"
     multi_seed_paths = sorted(glob(multi_seed_pattern))
 
     if multi_seed_paths:
@@ -242,7 +246,7 @@ def load_evaluation_results(
 
     # Also load single-seed results (backward compatibility)
     multi_seed_experiments = {r["experiment"] for r in results}
-    single_seed_pattern = f"{base_dir}/*/reports/evaluation.json"
+    single_seed_pattern = f"{base_dir}/*/reports/{report_name}"
     for json_path in sorted(glob(single_seed_pattern)):
         path = Path(json_path)
         exp_name = path.parent.parent.name
@@ -511,16 +515,31 @@ def generate_statistical_comparison_table(
                     f"Requested baseline {baseline_name!r} not found in results; "
                     f"falling back to auto-selection"
                 )
-        # Use baseline with highest mean positive-class recall (or first available)
-        recall_key = f"recall_{positive_class}"
+        # Rank baselines by mean positive-class recall. For tables whose frame
+        # carries no recall_{pc} column (e.g. the hard-core report, which only
+        # has hardcore_* metrics), fall back to the first available key metric so
+        # the choice stays meaningful instead of degrading to dict-iteration
+        # order. baselines iterates in sorted-name order (pandas groupby), so the
+        # final next(iter(...)) fallback is at least deterministic.
+        rank_key = f"recall_{positive_class}"
+        if not any(rank_key in bl_vals for bl_vals in baselines.values()):
+            rank_key = next(
+                (
+                    m
+                    for m in metric_names
+                    if any(m in bl_vals for bl_vals in baselines.values())
+                ),
+                None,
+            )
         best_bl_name = None
-        best_bl_recall = -float("inf")
-        for bl_name, bl_vals in baselines.items():
-            if recall_key in bl_vals:
-                mean_recall = float(np.mean(bl_vals[recall_key]))
-                if mean_recall > best_bl_recall:
-                    best_bl_recall = mean_recall
-                    best_bl_name = bl_name
+        best_bl_score = -float("inf")
+        if rank_key is not None:
+            for bl_name, bl_vals in baselines.items():
+                if rank_key in bl_vals:
+                    mean_score = float(np.mean(bl_vals[rank_key]))
+                    if mean_score > best_bl_score:
+                        best_bl_score = mean_score
+                        best_bl_name = bl_name
         selected_baseline = best_bl_name or next(iter(baselines))
 
     bl_values = baselines[selected_baseline]

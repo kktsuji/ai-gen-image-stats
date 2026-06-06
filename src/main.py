@@ -38,6 +38,7 @@ Note:
 
 import json
 import logging
+import math
 import sys
 import time
 from pathlib import Path
@@ -116,6 +117,24 @@ def _report_positive_class(
     if num_classes <= 2:
         return 1
     return None
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively replace non-finite floats (NaN/inf) with None for JSON.
+
+    ``json.dump`` emits bare ``NaN``/``Infinity`` tokens, which are valid for
+    Python's tolerant reader but rejected by strict/external JSON parsers. The
+    hard-core metrics are the first source of NaN in ``evaluation.json`` (a
+    degenerate restricted set yields NaN PR-AUC), so sanitize the payload to
+    ``null`` to keep the file spec-compliant.
+    """
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
 
 
 def _resolve_eval_contrast_class(
@@ -493,7 +512,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         )
         report_path = reports_dir / report_name
         with open(report_path, "w") as f:
-            json.dump(report_payload, f, indent=2)
+            json.dump(_json_safe(report_payload), f, indent=2)
         logger.info(f"Evaluation report saved to: {report_path}")
 
         # Log scalar metrics to CSV

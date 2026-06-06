@@ -254,18 +254,24 @@ def _detect_positive_class(base_dir: str, override: Optional[int] = None) -> int
     return resolve_positive_class(load_evaluation_results(base_dir), override)
 
 
-def _resolve_predictions(reports_dir: Path, split: str) -> Optional[Path]:
+def _resolve_predictions(
+    reports_dir: Path, split: str, allow_legacy: bool = True
+) -> Optional[Path]:
     """Find a predictions file for a split, falling back to the unsuffixed name.
 
-    Looks for ``predictions_{split}.npz`` first, then legacy ``predictions.npz``
-    (single-split archived runs).
+    Looks for ``predictions_{split}.npz`` first, then (only when ``allow_legacy``)
+    the legacy ``predictions.npz`` (single-split archived runs). The legacy file
+    carries no split tag, so callers whose correctness depends on the file
+    matching ``split`` (e.g. the hard-core report) pass ``allow_legacy=False`` to
+    avoid silently scoring one split's predictions as another's.
     """
     suffixed = reports_dir / f"predictions_{split}.npz"
     if suffixed.exists():
         return suffixed
-    legacy = reports_dir / "predictions.npz"
-    if legacy.exists():
-        return legacy
+    if allow_legacy:
+        legacy = reports_dir / "predictions.npz"
+        if legacy.exists():
+            return legacy
     return None
 
 

@@ -45,6 +45,7 @@ from src.experiments.classifier.evaluation_report import (
 )
 from src.experiments.classifier.hard_core import (
     DEFAULT_CONTRAST_NAME,
+    HARD_CORE_METRIC_KEYS,
     compute_hard_core_metrics,
     resolve_contrast_class,
 )
@@ -60,13 +61,10 @@ _logger = logging.getLogger(__name__)
 BINARY_ORACLE_PR_AUC = 0.915
 
 # Float metrics aggregated/formatted (NaN-safe). hardcore_n is the integer
-# restricted sample count, shown separately.
-HARDCORE_FLOAT_COLUMNS: List[str] = [
-    "hardcore_pr_auc_renorm",
-    "hardcore_pr_auc_raw",
-    "hardcore_roc_auc_renorm",
-    "hardcore_leak_rate",
-]
+# restricted sample count, shown separately. Sourced from the single
+# authoritative key list in :mod:`hard_core` so a new metric flows here without
+# a second edit.
+HARDCORE_FLOAT_COLUMNS: List[str] = list(HARD_CORE_METRIC_KEYS)
 HARDCORE_TABLE_COLUMNS: List[str] = HARDCORE_FLOAT_COLUMNS + ["hardcore_n"]
 
 
@@ -146,7 +144,10 @@ def load_hardcore_rows(
     """Build per-run hard-core rows from saved predictions for ``split``."""
     rows: List[Dict[str, Any]] = []
     for exp_name, seed, reports_dir in _iter_reports_dirs(base_dir):
-        pred_path = _resolve_predictions(reports_dir, split)
+        # Require the split-tagged file: the hard-core metric is reported under a
+        # specific split label, so accepting the untagged legacy predictions.npz
+        # (which could be any split) would mislabel e.g. val predictions as test.
+        pred_path = _resolve_predictions(reports_dir, split, allow_legacy=False)
         if pred_path is None:
             _logger.warning("No %s predictions in %s, skipping", split, reports_dir)
             continue
@@ -194,8 +195,12 @@ def aggregate_hardcore_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
             if metric not in group.columns:
                 continue
             values = np.asarray(group[metric], dtype=float)
-            agg[metric] = float(np.nanmean(values)) if values.size else float("nan")
+            # Average over the finite seeds. Using the pre-filtered ``finite``
+            # array (rather than np.nanmean over ``values``) avoids the
+            # "Mean of empty slice" RuntimeWarning when every seed is NaN, which
+            # happens when the restricted set is degenerate for all seeds.
             finite = values[np.isfinite(values)]
+            agg[metric] = float(finite.mean()) if finite.size else float("nan")
             if finite.size > 1:
                 agg[f"{metric}_std"] = float(finite.std(ddof=1))
         out.append(agg)
@@ -247,7 +252,16 @@ def generate_report(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
+    # Class metadata (positive/contrast indices, class_names) lives in the
+    # canonical test report. Class indices are split-invariant, so the test
+    # report is authoritative even for a non-test split -- but a sweep that only
+    # evaluated `split` has no evaluation.json, so fall back to its split-tagged
+    # report rather than aborting with predictions on disk.
     results = load_evaluation_results(base_dir)
+    if not results and split != "test":
+        results = load_evaluation_results(
+            base_dir, report_name=f"evaluation_{split}.json"
+        )
     pos = resolve_positive_class(results, positive_class)
     con = detect_contrast_class(results, pos, contrast_class, contrast_class_name)
     if con is None:
