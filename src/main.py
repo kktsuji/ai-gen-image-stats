@@ -42,7 +42,7 @@ import math
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 import torch
@@ -440,7 +440,9 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             from src.experiments.classifier.hard_core import compute_hard_core_metrics
 
             # Guaranteed by hardcore_enabled; narrows int | None -> int.
-            assert hc_positive is not None and hc_contrast is not None
+            # cast (not assert) so the narrowing survives `python -O`.
+            hc_positive = cast(int, hc_positive)
+            hc_contrast = cast(int, hc_contrast)
             hardcore = compute_hard_core_metrics(
                 np.array(inference["all_targets"]),
                 inference["all_probs"],
@@ -448,14 +450,22 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
                 hc_contrast,
             )
             eval_metrics.update(hardcore)
+
+            # AUC metrics are legitimately NaN on a degenerate restricted set;
+            # %.4f would silently print "nan", indistinguishable from a real
+            # failure. Render finite values normally and NaN as an explicit
+            # "N/A" so the log is unambiguous.
+            def _fmt_finite(value: float) -> str:
+                return f"{value:.4f}" if math.isfinite(value) else "N/A"
+
             logger.info(
-                "Hard-core (class %d vs %d): pr_auc_renorm=%.4f, "
-                "pr_auc_raw=%.4f, leak_rate=%.4f, n=%d",
+                "Hard-core (class %d vs %d): pr_auc_renorm=%s, "
+                "pr_auc_raw=%s, leak_rate=%s, n=%d",
                 hc_positive,
                 hc_contrast,
-                hardcore["hardcore_pr_auc_renorm"],
-                hardcore["hardcore_pr_auc_raw"],
-                hardcore["hardcore_leak_rate"],
+                _fmt_finite(hardcore["hardcore_pr_auc_renorm"]),
+                _fmt_finite(hardcore["hardcore_pr_auc_raw"]),
+                _fmt_finite(hardcore["hardcore_leak_rate"]),
                 int(hardcore["hardcore_n"]),
             )
         elif inference["total"] > 0:

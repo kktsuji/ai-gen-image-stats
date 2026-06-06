@@ -273,6 +273,26 @@ class TestHelpers:
         assert hca.detect_contrast_class(a, positive_class=0) == 2
         assert hca.detect_contrast_class(b, positive_class=0) == 2
 
+    def test_detect_contrast_drops_stamp_equal_to_positive(self):
+        # A stamped contrast equal to the positive class is degenerate; it must
+        # be ignored and resolution must fall through to name lookup rather than
+        # returning the positive class itself.
+        results = [{"contrast_class": 0, "class_names": CLASS_NAMES}]
+        assert hca.detect_contrast_class(results, positive_class=0) == 1
+
+    def test_detect_contrast_mixes_positive_and_valid_stamp(self):
+        # When some stamps equal positive and one is valid, the valid one wins.
+        results = [
+            {"contrast_class": 0, "class_names": CLASS_NAMES},
+            {"contrast_class": 1, "class_names": CLASS_NAMES},
+        ]
+        assert hca.detect_contrast_class(results, positive_class=0) == 1
+
+    def test_detect_contrast_all_stamps_equal_positive_unresolvable(self):
+        # Every stamp equals positive and no class_names to fall back on.
+        results = [{"contrast_class": 0}, {"contrast_class": 0}]
+        assert hca.detect_contrast_class(results, positive_class=0) is None
+
     def test_aggregate_reports_finite_support_when_some_seeds_nan(self):
         # 3 seeds, 1 degenerate (NaN). The mean is over the 2 finite seeds, and
         # n_seeds stays 3 (total attempted) while {metric}_n_seeds records 2.
@@ -333,6 +353,43 @@ class TestHelpers:
         agg = hca.aggregate_hardcore_rows(rows)
         assert np.isnan(agg.loc[0, "hardcore_pr_auc_renorm"])
         assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn.list)
+
+    def test_significance_nan_dropout_warns(self, caplog):
+        import logging
+
+        import pandas as pd
+
+        # 3 seeds, one NaN: the headline table reports the metric from the 2
+        # finite seeds, but the NaN-strict significance test drops it entirely.
+        # That mismatch must be surfaced as a warning, not silent.
+        df = pd.DataFrame(
+            [
+                {"experiment": "e__ws", "seed": s, "hardcore_pr_auc_renorm": v}
+                for s, v in [(0, 0.90), (1, 0.92), (2, float("nan"))]
+            ]
+        )
+        with caplog.at_level(logging.WARNING):
+            hca._warn_significance_nan_dropouts(df, positive_class=0)
+        assert any(
+            "hardcore_pr_auc_renorm" in r.message and "significance test" in r.message
+            for r in caplog.records
+        )
+
+    def test_significance_no_dropout_no_warning(self, caplog):
+        import logging
+
+        import pandas as pd
+
+        # All seeds finite -> nothing dropped -> no warning.
+        df = pd.DataFrame(
+            [
+                {"experiment": "e__ws", "seed": s, "hardcore_pr_auc_renorm": v}
+                for s, v in [(0, 0.90), (1, 0.92), (2, 0.91)]
+            ]
+        )
+        with caplog.at_level(logging.WARNING):
+            hca._warn_significance_nan_dropouts(df, positive_class=0)
+        assert not caplog.records
 
     def test_float_columns_sourced_from_metric_keys(self):
         # The analysis column list mirrors the single authoritative key list.

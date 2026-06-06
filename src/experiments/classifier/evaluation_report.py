@@ -62,6 +62,11 @@ def key_metrics(positive_class: int = 1) -> List[str]:
         # Present only for multi-class runs that resolved a contrast class; older
         # runs lack these columns and are filtered out by the `in df.columns`
         # guards downstream. See src.experiments.classifier.hard_core.
+        # Only the two PR-AUC variants are surfaced here (main table +
+        # significance test): renorm is the primary, raw the sanity check.
+        # hardcore_roc_auc_renorm and hardcore_leak_rate are intentionally
+        # omitted to keep the headline table focused -- they remain in the JSON
+        # and in the dedicated hard_core_analysis report.
         "hardcore_pr_auc_renorm",
         "hardcore_pr_auc_raw",
     ]

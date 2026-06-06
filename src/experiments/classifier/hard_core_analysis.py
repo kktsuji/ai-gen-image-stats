@@ -41,6 +41,7 @@ from src.experiments.classifier.evaluation_report import (
     _parse_experiment_name,
     build_mean_std_dataframe,
     generate_statistical_comparison_table,
+    key_metrics,
     load_evaluation_results,
     resolve_positive_class,
 )
@@ -58,7 +59,10 @@ from src.experiments.classifier.threshold_analysis import (
 _logger = logging.getLogger(__name__)
 
 # Binary oracle ceiling (dedicated abnormal-vs-suspicious 2-class classifier) the
-# renormalized hard-core PR-AUC is meant to be contrasted against.
+# renormalized hard-core PR-AUC is meant to be contrasted against. Empirical
+# value: the held-out *test*-split PR-AUC of the 2-class transfer baseline
+# (ft-mixed67); ~0.95 reported on val was leakage. Dataset-specific -- update if
+# the abnormal-vs-suspicious baseline is retrained.
 BINARY_ORACLE_PR_AUC = 0.915
 
 # Float metrics aggregated/formatted (NaN-safe). hardcore_n is the integer
@@ -123,6 +127,17 @@ def detect_contrast_class(
             stamped.append(int(raw))
         except (TypeError, ValueError):
             _logger.warning("Ignoring non-integer contrast_class %r in a result", raw)
+    # A stamped contrast equal to the positive class is degenerate (the
+    # restricted ranking would be NaN). Drop such entries so resolution falls
+    # through to name lookup instead of returning the positive class itself --
+    # keeps the stamped path consistent with the name-lookup guard below for
+    # standalone/future callers, not just generate_report's later == check.
+    if any(idx == positive_class for idx in stamped):
+        _logger.warning(
+            "Ignoring stamped contrast_class equal to positive class %d.",
+            positive_class,
+        )
+    stamped = [idx for idx in stamped if idx != positive_class]
     if stamped:
         distinct = set(stamped)
         if len(distinct) > 1:
@@ -251,6 +266,48 @@ def generate_hardcore_table(agg_df: pd.DataFrame) -> str:
     return result if result is not None else ""
 
 
+def _warn_significance_nan_dropouts(
+    perseed_df: pd.DataFrame, positive_class: int
+) -> None:
+    """Warn when a hard-core metric shows in the headline table but not the test.
+
+    The significance table is built by ``aggregate_multi_seed``, which is
+    NaN-strict: a single NaN seed silently drops the *entire* metric for that
+    experiment. Hard-core AUCs are legitimately NaN on a degenerate restricted
+    set, so an experiment can appear in the headline ``nan_tolerant`` table (from
+    its finite seeds) yet vanish from the significance section with no warning.
+    Surface that mismatch per (experiment, metric) so it reads as a known data
+    property, not a missing-section bug.
+    """
+    if "experiment" not in perseed_df.columns or "seed" not in perseed_df.columns:
+        return
+    # Only the hard-core metrics the significance test actually considers.
+    sig_metrics = [
+        m for m in key_metrics(positive_class) if m in HARDCORE_FLOAT_COLUMNS
+    ]
+    for exp_name, group in perseed_df.groupby("experiment"):
+        # Mirror aggregate_multi_seed's eligibility (>=2 seeds, no dup seeds).
+        if len(group) < 2 or group["seed"].duplicated().any():
+            continue
+        for metric in sig_metrics:
+            if metric not in group.columns:
+                continue
+            values = np.array(group[metric].values, dtype=np.float64)
+            n_nan = int(np.isnan(values).sum())
+            n_finite = int(values.size - n_nan)
+            if n_nan > 0 and n_finite >= 1:
+                _logger.warning(
+                    "Hard-core metric %r for experiment %r is in the aggregated "
+                    "table (%d finite seed[s]) but excluded from the significance "
+                    "test: the paired test requires all seeds finite and %d "
+                    "seed[s] are NaN (degenerate restricted set).",
+                    metric,
+                    exp_name,
+                    n_finite,
+                    n_nan,
+                )
+
+
 def generate_report(
     base_dir: str = "outputs/classifier",
     output_dir: str = "outputs/hard_core_analysis",
@@ -307,6 +364,7 @@ def generate_report(
         baseline_name=baseline_name,
         positive_class=pos,
     )
+    _warn_significance_nan_dropouts(perseed_df, pos)
 
     lines = [
         "# Hard-Core Direct Evaluation (abnormal vs suspicious)",
