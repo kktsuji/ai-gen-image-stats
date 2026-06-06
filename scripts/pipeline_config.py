@@ -16,7 +16,7 @@ Strict validation: all parameters must be explicitly specified, mirroring the
 import logging
 import math
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.utils.cli import dot_notation_to_dict, infer_type, validate_override_keys
 from src.utils.config import load_config, merge_configs
@@ -45,7 +45,57 @@ DRIVER_OWNED_KEYS = frozenset(
 )
 
 
-def load_pipeline_config(path: str) -> Dict[str, Any]:
+def _split_key_value(item: str) -> tuple[str, str]:
+    """Split a ``KEY=VALUE`` CLI override into its parts.
+
+    Raises:
+        ValueError: If ``item`` has no ``=`` or an empty key.
+    """
+    if "=" not in item:
+        raise ValueError(f"Override must be KEY=VALUE, got {item!r}")
+    key, value = item.split("=", 1)
+    if not key:
+        raise ValueError(f"Override key must be non-empty, got {item!r}")
+    return key, value
+
+
+def _apply_cli_overrides(
+    config: Dict[str, Any],
+    overrides: List[str],
+    run_overrides: List[str],
+) -> Dict[str, Any]:
+    """Apply ``--set`` / ``--set-run`` overrides to the raw config before validation.
+
+    ``overrides`` are nested pipeline-config keys (e.g. ``runner.classifier_output_root``,
+    ``summarize.base_dir``) merged via dot-notation. ``run_overrides`` are flat
+    classifier-run keys (e.g. ``data.split_file``) injected verbatim into
+    ``classifier_overrides.runtime`` so they reach every classifier launch as
+    ``--key value``. This lets one base pipeline YAML serve every split.
+    """
+    for item in overrides:
+        key, value = _split_key_value(item)
+        config = merge_configs(config, dot_notation_to_dict(key, infer_type(value)))
+
+    if run_overrides:
+        co = config.setdefault("classifier_overrides", {})
+        if not isinstance(co, dict):
+            raise ValueError("classifier_overrides must be a dictionary")
+        runtime = co.setdefault("runtime", {})
+        if not isinstance(runtime, dict):
+            raise ValueError("classifier_overrides.runtime must be a dictionary")
+        for item in run_overrides:
+            key, value = _split_key_value(item)
+            # Keep the dotted key flat: runtime maps CLI-flag names -> values.
+            runtime[key] = infer_type(value)
+
+    return config
+
+
+def load_pipeline_config(
+    path: str,
+    overrides: Optional[List[str]] = None,
+    run_overrides: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """Load, validate, and normalize the pipeline config.
 
     After this returns, ``config["seeds"]`` is always the canonical ``{"list": [...]}``
@@ -54,6 +104,10 @@ def load_pipeline_config(path: str) -> Dict[str, Any]:
 
     Args:
         path: Path to the pipeline YAML config.
+        overrides: ``KEY=VALUE`` strings (from ``--set``) merged as nested
+            pipeline-config overrides before validation.
+        run_overrides: ``KEY=VALUE`` strings (from ``--set-run``) injected as flat
+            keys into ``classifier_overrides.runtime`` (per-classifier-run flags).
 
     Returns:
         The validated, normalized config dictionary.
@@ -63,6 +117,7 @@ def load_pipeline_config(path: str) -> Dict[str, Any]:
         KeyError: If required fields are missing.
     """
     config = load_config(path)
+    config = _apply_cli_overrides(config, overrides or [], run_overrides or [])
     validate_pipeline_config(config)
     config["seeds"] = {"list": resolve_seeds(config["seeds"])}
     _preflight_override_keys(config)

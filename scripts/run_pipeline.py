@@ -9,6 +9,13 @@ changing what runs is a config edit, not a code change.
 
 Usage:
     python -m scripts.run_pipeline [configs/pipeline.yaml]
+        [--set KEY=VALUE ...] [--set-run KEY=VALUE ...]
+
+``--set`` overrides nested pipeline-config keys (e.g.
+``--set runner.classifier_output_root=outputs/multisplit/split0/binary-depth``);
+``--set-run`` injects flat classifier-run flags into every launch (e.g.
+``--set-run data.split_file=outputs/splits/cv/cv_split0.json``). Together they let
+one base pipeline YAML serve every split of a cross-validation sweep.
 
 Naming convention:
     Dimension separator: "__" (double underscore)
@@ -17,6 +24,7 @@ Naming convention:
     Baseline:                      baseline__{strategy}   e.g. baseline__ws (head-only, D0)
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -408,10 +416,43 @@ def _run_classifier_jobs(jobs: List[Job], total: int) -> None:
                 _notify_classifier_progress(done, total)
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Synthetic-augmentation pipeline driver"
+    )
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default=DEFAULT_PIPELINE_CONFIG,
+        help="Path to the pipeline YAML config",
+    )
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        dest="set_overrides",
+        metavar="KEY=VALUE",
+        help="Override a nested pipeline-config key (repeatable)",
+    )
+    parser.add_argument(
+        "--set-run",
+        action="append",
+        default=[],
+        dest="set_run_overrides",
+        metavar="KEY=VALUE",
+        help="Inject a flat classifier-run override into every launch (repeatable)",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     load_dotenv()
-    config_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PIPELINE_CONFIG
-    cfg = load_pipeline_config(config_path)
+    args = _parse_args()
+    cfg = load_pipeline_config(
+        args.config_path,
+        overrides=args.set_overrides,
+        run_overrides=args.set_run_overrides,
+    )
 
     global CFG
     CFG = cfg

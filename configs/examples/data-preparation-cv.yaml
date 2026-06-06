@@ -1,0 +1,52 @@
+# ------------------------------------------------------------------------------
+# DATA PREPARATION — REPEATED STRATIFIED K-FOLD (multi-class, 7-way)
+# ------------------------------------------------------------------------------
+# Emits N = n_folds * n_repeats split JSONs in ONE invocation, for the
+# cross-split robustness sweep (honest confidence intervals on the tiny minority
+# class). See outputs/reports/experiment_plan_robustness_ci.md.
+#
+#   python -m src.main configs/data-preparation-cv.yaml
+#
+# Within each repeat the test folds partition the data (every sample is tested
+# exactly once), so the across-split spread of metrics reflects data-resampling
+# variance, not just weight-initialisation noise. Copy to configs/ (gitignored)
+# and edit freely.
+# ------------------------------------------------------------------------------
+experiment: data_preparation
+
+# 7-way layout: 6 normal subclasses + abnormal. Labels 0..6, abnormal last so the
+# classifier's data.positive_class = 6 and the hard-core contrast (suspicious) = 5,
+# matching the paper's confusion-matrix indexing (§4.7).
+classes:
+  red:
+    path: "data/normal/red"
+    label: 0
+  green:
+    path: "data/normal/green"
+    label: 1
+  blue:
+    path: "data/normal/blue"
+    label: 2
+  blur:
+    path: "data/normal/blur"
+    label: 3
+  junk:
+    path: "data/normal/junk"
+    label: 4
+  suspicious:
+    path: "data/normal/suspicious"
+    label: 5
+  abnormal:
+    path: "data/abnormal"
+    label: 6
+
+split:
+  mode: kfold # repeated stratified k-fold (vs the default single-ratio split)
+  n_folds: 5 # test fold ~= 20% of each class (abnormal test ~= 21)
+  n_repeats: 2 # 5 x 2 = 10 split files (the experimental unit for CIs)
+  repeat_seeds: [42, 43] # explicit per-repeat shuffle seeds (reproducible)
+  val_fraction: 0.15 # stratified val carved from each fold's training pool
+  save_dir: "outputs/splits/cv"
+  # {index} is expanded to 0..(n_folds*n_repeats - 1). Required in kfold mode.
+  split_file: "cv_split{index}.json"
+  force: false # skip a split file that already exists (set true to overwrite)

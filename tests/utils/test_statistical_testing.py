@@ -16,6 +16,7 @@ from src.utils.statistical_testing import (
     finalize_comparisons,
     interpret_effect_size,
     paired_ttest,
+    wilcoxon_signed_rank,
 )
 
 
@@ -83,6 +84,66 @@ class TestPairedTtest:
         tr = [0.78, 0.75, 0.77, 0.76, 0.71]
         t_stat, p_val = paired_ttest(bl, tr)  # type: ignore[arg-type]
         assert math.isfinite(t_stat)
+        assert math.isfinite(p_val)
+
+
+class TestWilcoxonSignedRank:
+    """Tests for wilcoxon_signed_rank."""
+
+    @pytest.mark.unit
+    def test_agrees_with_scipy(self) -> None:
+        """Wrapper matches scipy.stats.wilcoxon(treatment, baseline)."""
+        baseline = np.array([0.72, 0.68, 0.75, 0.70, 0.66, 0.69, 0.71])
+        treatment = np.array([0.78, 0.75, 0.77, 0.76, 0.71, 0.74, 0.73])
+        stat, p_val = wilcoxon_signed_rank(baseline, treatment)
+        exp_stat, exp_p = stats.wilcoxon(treatment, baseline)
+        assert stat == pytest.approx(float(exp_stat))  # type: ignore[arg-type]
+        assert p_val == pytest.approx(float(exp_p))  # type: ignore[arg-type]
+
+    @pytest.mark.unit
+    def test_consistent_positive_shift_is_significant(self) -> None:
+        """A consistent improvement across >=6 pairs reaches p < 0.05."""
+        baseline = np.array([0.70, 0.71, 0.69, 0.72, 0.68, 0.70, 0.71, 0.69])
+        treatment = baseline + 0.05
+        _, p_val = wilcoxon_signed_rank(baseline, treatment)
+        assert p_val < 0.05
+
+    @pytest.mark.unit
+    def test_no_difference_returns_nan(self) -> None:
+        """Identical values (all-zero diffs) return nan rather than raising."""
+        values = np.array([0.80, 0.82, 0.79, 0.81, 0.80])
+        stat, p_val = wilcoxon_signed_rank(values, values.copy())
+        assert math.isnan(stat)
+        assert math.isnan(p_val)
+
+    @pytest.mark.unit
+    def test_too_few_samples(self) -> None:
+        """n < 2 returns nan."""
+        stat, p_val = wilcoxon_signed_rank(np.array([0.5]), np.array([0.6]))
+        assert math.isnan(stat)
+        assert math.isnan(p_val)
+
+    @pytest.mark.unit
+    def test_mismatched_lengths(self) -> None:
+        """Different array lengths raise ValueError."""
+        with pytest.raises(ValueError, match="same length"):
+            wilcoxon_signed_rank(np.array([0.5, 0.6]), np.array([0.5, 0.6, 0.7]))
+
+    @pytest.mark.unit
+    def test_power_floor_n5_cannot_reach_significance(self) -> None:
+        """With only 5 pairs the min two-sided p (2/2**5=0.0625) is > 0.05."""
+        baseline = np.array([0.70, 0.71, 0.69, 0.72, 0.68])
+        treatment = baseline + 0.05
+        _, p_val = wilcoxon_signed_rank(baseline, treatment)
+        assert p_val >= 0.05
+
+    @pytest.mark.unit
+    def test_list_input(self) -> None:
+        """Accepts list inputs."""
+        bl = [0.72, 0.68, 0.75, 0.70, 0.66, 0.69]
+        tr = [0.78, 0.75, 0.77, 0.76, 0.71, 0.74]
+        stat, p_val = wilcoxon_signed_rank(bl, tr)  # type: ignore[arg-type]
+        assert math.isfinite(stat)
         assert math.isfinite(p_val)
 
 

@@ -1,0 +1,129 @@
+# ------------------------------------------------------------------------------
+# PIPELINE — CROSS-SPLIT (per-split classifier sweep) TEMPLATE
+# ------------------------------------------------------------------------------
+# One base pipeline config that serves EVERY split of the k-fold robustness
+# sweep. The split is injected at invocation with --set / --set-run, so this file
+# is written once and looped over splits 0..9. See
+# outputs/reports/experiment_plan_robustness_ci.md.
+#
+# This template is the BINARY DEPTH family (§4.2: unfreeze-depth sweep). Derive
+# the other families by swapping only the variant matrix below:
+#   - binary-dose (§4.4): baselines vanilla/ws/us; ft = ft-mixed67 x {d1..d4} via
+#       data.synthetic_augmentation.{enabled,limit.max_samples} overrides.
+#   - binary-loss (§4.5): ft = ft-mixed67 x {ce,focal,cb_ce,cb_focal} via
+#       model.loss.{type,gamma,beta,base} overrides.
+#   - mc-depth (§4.6) / mc-dose (§4.8): point configs.classifier at the 7-way
+#       classifier config and set summarize.positive_class: 6 / contrast 5.
+#
+# Per-split driver loop (bash):
+#   for S in $(seq 0 9); do
+#     python -m scripts.run_pipeline configs/pipeline-cv.yaml \
+#       --set runner.classifier_output_root=outputs/multisplit/split${S}/binary-depth \
+#       --set summarize.base_dir=outputs/multisplit/split${S}/binary-depth \
+#       --set summarize.output_dir=outputs/multisplit/split${S}/binary-depth/_report \
+#       --set-run data.split_file=outputs/splits/cv-binary/cv_binary_split${S}.json
+#   done
+#   # then once, across splits:
+#   python -m src.experiments.classifier.cross_split_report \
+#     --base-dir outputs/multisplit --family binary-depth --baseline-name baseline__ws
+# ------------------------------------------------------------------------------
+experiment: pipeline
+
+phases:
+  data_preparation: false # done once up front via data-preparation-cv*.yaml
+  baseline_classifier: true
+  ft_classifier: true
+  evaluation: true
+  summarize: true # writes per-split reports; cross_split_report aggregates after
+
+runner:
+  skip_completed: true
+  delete_checkpoints_after_eval: true
+  gpu_cooldown_seconds: 5
+  classifier_notify_every: 10
+  classifier_max_parallel: 3
+  # Overridden per split via --set runner.classifier_output_root=...
+  classifier_output_root: outputs/multisplit/split0/binary-depth
+  # [val, test] enables the val->test decision-threshold analysis (saves
+  # predictions_{val,test}.npz). Keep both for the robustness sweep.
+  evaluation_splits: [val, test]
+
+configs:
+  # Example paths so this template validates/runs as-is. When you copy it to
+  # configs/ point these at your own (gitignored) configs.
+  data_preparation: configs/examples/data-preparation-cv-binary.yaml
+  classifier: configs/examples/classifier.yaml # 2-class base; mc families use the 7-way config
+
+docker:
+  image: kktsuji/nvidia-cuda12.8.1-cudnn-runtime-ubuntu24.04
+  shm_size: 4g
+
+# 5 init seeds per split (the split is the unit; seeds only de-noise optimisation).
+seeds:
+  range: [0, 5]
+
+classifier_overrides:
+  checkpoint:
+    training.checkpointing.save_optimizer: false
+    training.checkpointing.save_latest: false
+    training.checkpointing.save_frequency: 100
+  runtime:
+    data.loading.num_workers: 2
+    # data.split_file is injected per split via --set-run (do NOT hardcode here).
+
+baselines:
+  - name: baseline__vanilla
+    overrides:
+      data.synthetic_augmentation.enabled: false
+  - name: baseline__ws
+    overrides:
+      data.synthetic_augmentation.enabled: false
+      data.balancing.weighted_sampler.enabled: true
+  - name: baseline__us
+    overrides:
+      data.synthetic_augmentation.enabled: false
+      data.balancing.upsampling.enabled: true
+
+ft:
+  common:
+    data.synthetic_augmentation.enabled: false
+  depths:
+    - name: ft-head # frozen backbone (D0 ceiling)
+      learning_rate: 0.001
+      overrides:
+        model.initialization.freeze_backbone: true
+        model.initialization.trainable_layers: null
+    - name: ft-mixed7
+      learning_rate: 0.0001
+      overrides:
+        model.initialization.freeze_backbone: true
+        model.initialization.trainable_layers: ["Mixed_7*"]
+    - name: ft-mixed67 # the recommended operating point (inverted-U peak)
+      learning_rate: 0.0001
+      overrides:
+        model.initialization.freeze_backbone: true
+        model.initialization.trainable_layers: ["Mixed_6*", "Mixed_7*"]
+    - name: ft-full
+      learning_rate: 0.00001
+      overrides:
+        model.initialization.freeze_backbone: false
+        model.initialization.trainable_layers: null
+  balancing:
+    - name: ws
+      overrides:
+        data.balancing.weighted_sampler.enabled: true
+    - name: us
+      overrides:
+        data.balancing.upsampling.enabled: true
+
+summarize:
+  # All three dirs are overridden per split via --set (see header loop).
+  base_dir: outputs/multisplit/split0/binary-depth
+  output_dir: outputs/multisplit/split0/binary-depth/_report
+  baseline_name: baseline__ws
+  threshold_output_dir: outputs/multisplit/split0/binary-depth/_report/threshold
+  threshold_criterion: max_f1_1
+  threshold_target_recall: 0.9
+  hardcore_output_dir: outputs/multisplit/split0/binary-depth/_report/hard_core
+  hardcore_split: test
+  hardcore_contrast_name: suspicious
