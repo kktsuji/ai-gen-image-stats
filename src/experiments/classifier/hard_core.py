@@ -102,11 +102,25 @@ def compute_hard_core_metrics(
         "hardcore_n": 0,
     }
 
-    targets = np.asarray(targets).astype(int)
+    try:
+        targets = np.asarray(targets).astype(int)
+    except (TypeError, ValueError):
+        _logger.warning("Hard-core: targets must be coercible to int labels")
+        return out
     probs = np.asarray(probs, dtype=float)
 
     if probs.ndim != 2:
         _logger.warning("Hard-core: probs must be 2-D, got shape %s", probs.shape)
+        return out
+    if targets.ndim != 1:
+        _logger.warning("Hard-core: targets must be 1-D, got shape %s", targets.shape)
+        return out
+    if targets.shape[0] != probs.shape[0]:
+        _logger.warning(
+            "Hard-core: targets/probs length mismatch: %d vs %d",
+            targets.shape[0],
+            probs.shape[0],
+        )
         return out
     num_classes = probs.shape[1]
     if not (0 <= positive_class < num_classes) or not (

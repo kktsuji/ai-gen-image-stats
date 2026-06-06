@@ -473,10 +473,10 @@ def validate_config(config: Dict[str, Any]) -> None:
     # the split's class metadata when the index is omitted.
     if "contrast_class" in data:
         validate_contrast_class(data["contrast_class"], architecture["num_classes"])
-    if "contrast_class_name" in data and not isinstance(
-        data["contrast_class_name"], str
-    ):
-        raise ValueError("data.contrast_class_name must be a string")
+    if "contrast_class_name" in data:
+        contrast_name = data["contrast_class_name"]
+        if not isinstance(contrast_name, str) or not contrast_name.strip():
+            raise ValueError("data.contrast_class_name must be a non-empty string")
 
     # Validate output configuration
     validate_output_section(config)

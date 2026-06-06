@@ -1322,5 +1322,17 @@ class TestValidateContrastClass:
         config = get_v2_default_config()
         config["model"]["architecture"]["num_classes"] = 3
         config["data"]["contrast_class_name"] = 123
-        with pytest.raises(ValueError, match="contrast_class_name must be a string"):
+        with pytest.raises(
+            ValueError, match="contrast_class_name must be a non-empty string"
+        ):
+            validate_config(config)
+
+    @pytest.mark.parametrize("bad", ["", "   ", "\t"])
+    def test_contrast_class_name_rejects_empty(self, bad):
+        config = get_v2_default_config()
+        config["model"]["architecture"]["num_classes"] = 3
+        config["data"]["contrast_class_name"] = bad
+        with pytest.raises(
+            ValueError, match="contrast_class_name must be a non-empty string"
+        ):
             validate_config(config)

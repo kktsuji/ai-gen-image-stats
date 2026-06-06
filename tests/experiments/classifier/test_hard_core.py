@@ -110,3 +110,24 @@ class TestComputeHardCoreMetrics:
         probs = np.array([[0.6, 0.4], [0.3, 0.7]])
         m = hc.compute_hard_core_metrics(targets, probs, 1, 1)
         assert np.isnan(m["hardcore_pr_auc_renorm"])
+
+    def test_length_mismatch_is_nan(self):
+        targets = np.array([0, 1, 0])
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        m = hc.compute_hard_core_metrics(targets, probs, 0, 1)
+        assert m["hardcore_n"] == 0
+        assert np.isnan(m["hardcore_pr_auc_renorm"])
+
+    def test_non_1d_targets_is_nan(self):
+        targets = np.array([[0, 1], [1, 0]])
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        m = hc.compute_hard_core_metrics(targets, probs, 0, 1)
+        assert m["hardcore_n"] == 0
+        assert np.isnan(m["hardcore_pr_auc_renorm"])
+
+    def test_non_coercible_targets_is_nan(self):
+        targets = np.array(["abnormal", "suspicious"])
+        probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+        m = hc.compute_hard_core_metrics(targets, probs, 0, 1)
+        assert m["hardcore_n"] == 0
+        assert np.isnan(m["hardcore_pr_auc_renorm"])
