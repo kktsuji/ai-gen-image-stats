@@ -1250,10 +1250,17 @@ def setup_experiment_data_preparation(config: Dict[str, Any]) -> None:
     from src.experiments.data_preparation.config import (
         validate_config as validate_data_preparation_config,
     )
-    from src.experiments.data_preparation.prepare import prepare_split
+    from src.experiments.data_preparation.prepare import (
+        prepare_kfold_splits,
+        prepare_split,
+    )
 
     validate_data_preparation_config(config)
-    prepare_split(config)
+    # Repeated stratified k-fold emits N split JSONs; the ratio mode emits one.
+    if config["split"].get("mode", "ratio") == "kfold":
+        prepare_kfold_splits(config)
+    else:
+        prepare_split(config)
 
 
 def main(args: Optional[list] = None) -> None:

@@ -80,6 +80,64 @@ def paired_ttest(
     return (float(t_stat), float(p_value))
 
 
+def wilcoxon_signed_rank(
+    baseline_values: np.ndarray,
+    treatment_values: np.ndarray,
+) -> Tuple[float, float]:
+    """Wilcoxon signed-rank test comparing baseline vs treatment (paired).
+
+    Non-parametric counterpart to :func:`paired_ttest`; it makes no normality
+    assumption, which matters for the small split-level samples used in the
+    cross-split robustness analysis. Tests whether the paired differences are
+    symmetrically distributed about zero.
+
+    Args:
+        baseline_values: Metric values from baseline runs, shape (n,).
+        treatment_values: Metric values from treatment runs, shape (n,).
+
+    Returns:
+        Tuple of (statistic, p_value). Returns (nan, nan) if n < 2, if all
+        differences are (effectively) zero, or if scipy cannot compute the test
+        (e.g. every difference is dropped as a zero).
+
+    Note:
+        With n pairs the smallest attainable two-sided p-value is 2 / 2**n, so
+        at least 6 pairs are needed to reach p < 0.05. This is why the
+        robustness design uses 10 splits (5-fold x 2 repeats).
+    """
+    baseline_values = np.asarray(baseline_values, dtype=np.float64)
+    treatment_values = np.asarray(treatment_values, dtype=np.float64)
+
+    if len(baseline_values) != len(treatment_values):
+        raise ValueError(
+            f"Arrays must have same length: "
+            f"{len(baseline_values)} vs {len(treatment_values)}"
+        )
+
+    n = len(baseline_values)
+    if n < 2:
+        return (float("nan"), float("nan"))
+
+    diffs = treatment_values - baseline_values
+    # Bail only when every difference is (effectively) zero. Unlike the t-test,
+    # a constant *non-zero* shift (zero variance, all same sign) is the most
+    # significant case for Wilcoxon, so guard on the diffs themselves, not their
+    # variance.
+    if np.all(np.abs(diffs) < np.finfo(np.float64).eps * 100):
+        return (float("nan"), float("nan"))
+
+    try:
+        # treatment - baseline so a positive shift means treatment is better,
+        # consistent with the sign convention of paired_ttest / cohens_d_paired.
+        stat, p_value = stats.wilcoxon(treatment_values, baseline_values)
+    except ValueError:
+        # scipy raises when every difference is zero after the zero-method drop.
+        return (float("nan"), float("nan"))
+
+    # scipy's wilcoxon return is loosely typed in the stubs; the floats are real.
+    return (float(stat), float(p_value))  # type: ignore[arg-type]
+
+
 def cohens_d_paired(
     baseline_values: np.ndarray,
     treatment_values: np.ndarray,

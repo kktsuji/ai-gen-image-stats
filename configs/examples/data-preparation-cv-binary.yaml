@@ -1,0 +1,31 @@
+# ------------------------------------------------------------------------------
+# DATA PREPARATION — REPEATED STRATIFIED K-FOLD (binary: abnormal vs suspicious)
+# ------------------------------------------------------------------------------
+# Binary task of the paper: abnormal vs the single hardest negative subclass
+# (suspicious). This is the "oracle first-stage 2-stage QC" framing (§2) — easy
+# normal subclasses are excluded by construction. Emits N = n_folds * n_repeats
+# split JSONs for the cross-split robustness sweep.
+#
+#   python -m src.main configs/data-preparation-cv-binary.yaml
+#
+# Copy to configs/ (gitignored) and edit freely.
+# ------------------------------------------------------------------------------
+experiment: data_preparation
+
+classes:
+  suspicious: # the sole negative: hardest normal subclass, visually nearest abnormal
+    path: "data/normal/suspicious"
+    label: 0
+  abnormal:
+    path: "data/abnormal"
+    label: 1
+
+split:
+  mode: kfold
+  n_folds: 5 # test fold ~= 20% of each class (abnormal test ~= 21)
+  n_repeats: 2 # 5 x 2 = 10 split files (the experimental unit for CIs)
+  repeat_seeds: [42, 43] # explicit per-repeat shuffle seeds (reproducible)
+  val_fraction: 0.15 # stratified val carved from each fold's training pool
+  save_dir: "outputs/splits/cv-binary"
+  split_file: "cv_binary_split{index}.json" # {index} -> 0..9 (required in kfold)
+  force: false

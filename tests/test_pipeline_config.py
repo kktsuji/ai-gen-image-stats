@@ -390,6 +390,75 @@ class TestLoadPipelineConfig:
 
 
 @pytest.mark.unit
+class TestCliOverrides:
+    """`--set` (nested pipeline keys) and `--set-run` (flat classifier-run flags)."""
+
+    def _write(self, tmp_path, cfg):
+        path = tmp_path / "pipeline.yaml"
+        path.write_text(yaml.safe_dump(cfg))
+        return str(path)
+
+    def test_set_overrides_nested_key(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        loaded = load_pipeline_config(
+            path,
+            overrides=[
+                "runner.classifier_output_root=outputs/multisplit/split0/binary-depth",
+                "summarize.base_dir=outputs/multisplit/split0/binary-depth",
+            ],
+        )
+        assert (
+            loaded["runner"]["classifier_output_root"]
+            == "outputs/multisplit/split0/binary-depth"
+        )
+        assert (
+            loaded["summarize"]["base_dir"] == "outputs/multisplit/split0/binary-depth"
+        )
+
+    def test_set_run_injects_flat_runtime_key(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        loaded = load_pipeline_config(
+            path,
+            run_overrides=["data.split_file=outputs/splits/cv/cv_split0.json"],
+        )
+        runtime = loaded["classifier_overrides"]["runtime"]
+        # Dotted key kept flat (runtime maps CLI-flag names -> values).
+        assert runtime["data.split_file"] == "outputs/splits/cv/cv_split0.json"
+        # Pre-existing runtime entries are preserved.
+        assert runtime["data.loading.num_workers"] == 2
+
+    def test_set_run_value_type_inferred(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        loaded = load_pipeline_config(
+            path, run_overrides=["data.loading.num_workers=8"]
+        )
+        assert (
+            loaded["classifier_overrides"]["runtime"]["data.loading.num_workers"] == 8
+        )
+
+    def test_override_without_equals_raises(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        with pytest.raises(ValueError, match="KEY=VALUE"):
+            load_pipeline_config(path, overrides=["runner.classifier_output_root"])
+
+    def test_override_empty_key_raises(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        with pytest.raises(ValueError, match="non-empty"):
+            load_pipeline_config(path, overrides=["=value"])
+
+    def test_set_run_driver_owned_key_rejected(self, tmp_path):
+        """Injecting a driver-owned key via --set-run is caught by validation."""
+        path = self._write(tmp_path, _valid_config())
+        with pytest.raises(ValueError, match="driver-owned"):
+            load_pipeline_config(path, run_overrides=["output.base_dir=/tmp/x"])
+
+    def test_no_overrides_is_unchanged(self, tmp_path):
+        path = self._write(tmp_path, _valid_config())
+        loaded = load_pipeline_config(path)
+        assert loaded["runner"]["classifier_output_root"] == "outputs/classifier"
+
+
+@pytest.mark.unit
 class TestScientificNotationNormalization:
     """Fix #1: YAML 1.1 leaves "1e-4" as a string; the validator must normalize numeric
     string overrides/LRs in place so they later serialize as numbers, not quoted strings.

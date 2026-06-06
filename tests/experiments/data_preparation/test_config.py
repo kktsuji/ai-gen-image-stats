@@ -283,3 +283,80 @@ class TestValidateConfig:
             "c": {"path": "data/c", "label": 2},
         }
         validate_config(config)  # Should not raise
+
+
+# ============================================================================
+# Unit Tests - K-Fold Split Mode
+# ============================================================================
+
+
+def _make_valid_kfold_config():
+    """A valid kfold-mode config derived from the canonical example."""
+    config = _make_valid_config()
+    config["split"] = {
+        "mode": "kfold",
+        "n_folds": 5,
+        "n_repeats": 2,
+        "repeat_seeds": [42, 43],
+        "val_fraction": 0.15,
+        "save_dir": "outputs/splits/cv",
+        "split_file": "cv_split{index}.json",
+        "force": False,
+    }
+    return config
+
+
+@pytest.mark.unit
+class TestValidateKFoldConfig:
+    """Test validation of the repeated stratified k-fold split mode."""
+
+    def test_valid_kfold_passes(self):
+        validate_config(_make_valid_kfold_config())  # Should not raise
+
+    def test_invalid_mode_raises(self):
+        config = _make_valid_kfold_config()
+        config["split"]["mode"] = "bogus"
+        with pytest.raises(ValueError, match="split.mode"):
+            validate_config(config)
+
+    def test_missing_n_folds_raises(self):
+        config = _make_valid_kfold_config()
+        del config["split"]["n_folds"]
+        with pytest.raises(KeyError, match="n_folds"):
+            validate_config(config)
+
+    def test_n_folds_below_two_raises(self):
+        config = _make_valid_kfold_config()
+        config["split"]["n_folds"] = 1
+        with pytest.raises(ValueError, match="n_folds"):
+            validate_config(config)
+
+    def test_repeat_seeds_length_mismatch_raises(self):
+        config = _make_valid_kfold_config()
+        config["split"]["repeat_seeds"] = [42]  # n_repeats is 2
+        with pytest.raises(ValueError, match="repeat_seeds"):
+            validate_config(config)
+
+    def test_repeat_seeds_must_be_unique(self):
+        config = _make_valid_kfold_config()
+        config["split"]["repeat_seeds"] = [42, 42]
+        with pytest.raises(ValueError, match="unique"):
+            validate_config(config)
+
+    def test_val_fraction_out_of_range_raises(self):
+        config = _make_valid_kfold_config()
+        config["split"]["val_fraction"] = 1.5
+        with pytest.raises(ValueError, match="val_fraction"):
+            validate_config(config)
+
+    def test_split_file_requires_index_placeholder(self):
+        config = _make_valid_kfold_config()
+        config["split"]["split_file"] = "cv_split.json"
+        with pytest.raises(ValueError, match=r"\{index\}"):
+            validate_config(config)
+
+    def test_kfold_does_not_require_ratios(self):
+        """K-fold mode ignores train/val/test ratios (they are not required)."""
+        config = _make_valid_kfold_config()
+        assert "train_ratio" not in config["split"]
+        validate_config(config)  # Should not raise

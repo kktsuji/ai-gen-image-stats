@@ -5,14 +5,17 @@ Tests cover deterministic splitting, ratio correctness, JSON output, and error h
 """
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from src.experiments.data_preparation.prepare import (
+    _kfold_chunks,
     _scan_image_files,
     _split_list,
+    prepare_kfold_splits,
     prepare_split,
 )
 
@@ -675,3 +678,164 @@ class TestPrepareSplitUnit:
         }
         with pytest.raises(FileNotFoundError):
             prepare_split(config)
+
+
+# ============================================================================
+# Unit Tests - _kfold_chunks
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestKFoldChunks:
+    """Test the contiguous k-fold partition helper."""
+
+    def test_partitions_all_items_once(self):
+        """Every item appears in exactly one chunk."""
+        items = [str(i) for i in range(10)]
+        folds = _kfold_chunks(items, 5)
+        assert len(folds) == 5
+        flat = [x for fold in folds for x in fold]
+        assert sorted(flat, key=int) == items
+        assert len(flat) == len(set(flat))
+
+    def test_chunk_sizes_differ_by_at_most_one(self):
+        """Remainder is spread so chunk sizes differ by at most one."""
+        items = [str(i) for i in range(13)]
+        folds = _kfold_chunks(items, 5)
+        sizes = sorted(len(f) for f in folds)
+        assert sizes == [2, 3, 3, 3, 2] or max(sizes) - min(sizes) <= 1
+
+    def test_more_folds_than_items(self):
+        """Empty chunks are allowed when n_folds exceeds item count."""
+        folds = _kfold_chunks(["a", "b"], 5)
+        assert len(folds) == 5
+        assert sum(len(f) for f in folds) == 2
+
+
+# ============================================================================
+# Component Tests - prepare_split (kfold mode)
+# ============================================================================
+
+
+@pytest.mark.component
+class TestPrepareKFold:
+    """Test repeated stratified k-fold split generation."""
+
+    def _make_kfold_config(self, tmp_path, classes_config, **overrides):
+        class_paths = _create_mock_class_dirs(tmp_path / "data", classes_config)
+        split_config = {
+            "mode": "kfold",
+            "n_folds": 5,
+            "n_repeats": 2,
+            "repeat_seeds": [42, 43],
+            "val_fraction": 0.15,
+            "save_dir": str(tmp_path / "output"),
+            "split_file": "cv_split{index}.json",
+            "force": False,
+        }
+        split_config.update(overrides)
+        return {
+            "experiment": "data_preparation",
+            "classes": class_paths,
+            "split": split_config,
+        }
+
+    def test_emits_n_folds_times_n_repeats_files(self, tmp_path):
+        """5 folds x 2 repeats -> 10 split files, index 0..9."""
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        assert isinstance(paths, list)
+        assert len(paths) == 10
+        for index, path in enumerate(paths):
+            assert path.endswith(f"cv_split{index}.json")
+            assert Path(path).exists()
+
+    def test_test_folds_partition_within_repeat(self, tmp_path):
+        """Each sample is tested exactly once per repeat (disjoint test folds)."""
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+
+        # Repeat 0 = splits 0..4; their test sets must partition all samples.
+        repeat0_test = []
+        for index in range(5):
+            with open(paths[index]) as f:
+                data = json.load(f)
+            repeat0_test.extend(item["path"] for item in data["test"])
+        assert len(repeat0_test) == 60  # 40 + 20
+        assert len(set(repeat0_test)) == 60  # no overlap across folds
+
+    def test_no_leakage_train_val_test_disjoint(self, tmp_path):
+        """Within a split, train/val/test never share a sample."""
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        with open(paths[0]) as f:
+            data = json.load(f)
+        train = {item["path"] for item in data["train"]}
+        val = {item["path"] for item in data["val"]}
+        test = {item["path"] for item in data["test"]}
+        assert train.isdisjoint(val)
+        assert train.isdisjoint(test)
+        assert val.isdisjoint(test)
+
+    def test_stratified_test_has_minority(self, tmp_path):
+        """Each test fold contains some minority-class samples (stratification)."""
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        for path in paths:
+            with open(path) as f:
+                data = json.load(f)
+            labels = {item["label"] for item in data["test"]}
+            assert 1 in labels  # abnormal (label 1) present in every test fold
+
+    def test_metadata_records_fold_indices(self, tmp_path):
+        """K-fold metadata records split_index, repeat, fold and seed."""
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        with open(paths[6]) as f:
+            meta = json.load(f)["metadata"]
+        assert meta["mode"] == "kfold"
+        assert meta["split_index"] == 6
+        assert meta["repeat"] == 1  # 6 // 5
+        assert meta["fold"] == 1  # 6 % 5
+        assert meta["repeat_seed"] == 43
+
+    def test_deterministic_with_same_seeds(self, tmp_path):
+        """Same repeat_seeds reproduce identical fold assignments."""
+        config_a = self._make_kfold_config(
+            tmp_path / "a", {"normal": 40, "abnormal": 20}
+        )
+        config_b = self._make_kfold_config(
+            tmp_path / "b", {"normal": 40, "abnormal": 20}
+        )
+        paths_a = prepare_kfold_splits(config_a)
+        paths_b = prepare_kfold_splits(config_b)
+        with open(paths_a[3]) as f:
+            test_a = sorted(Path(i["path"]).name for i in json.load(f)["test"])
+        with open(paths_b[3]) as f:
+            test_b = sorted(Path(i["path"]).name for i in json.load(f)["test"])
+        assert test_a == test_b
+
+    def test_val_fraction_is_of_training_pool(self, tmp_path):
+        """Val count is a fraction of the per-fold training pool, not total class size."""
+        # normal: 40 samples, 5 folds -> test fold = 8, training pool = 32.
+        # val_fraction=0.15 -> val_n = round(32 * 0.15) = 5 (not round(40 * 0.15) = 6).
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 20})
+        paths = prepare_kfold_splits(config)
+        with open(paths[0]) as f:
+            data = json.load(f)
+        normal_label = data["metadata"]["classes"]["normal"]
+        normal_val = sum(1 for i in data["val"] if i["label"] == normal_label)
+        normal_test = sum(1 for i in data["test"] if i["label"] == normal_label)
+        normal_pool = 40 - normal_test
+        assert normal_val == round(normal_pool * 0.15)
+
+    def test_warns_when_class_smaller_than_n_folds(self, tmp_path, caplog):
+        """A class with fewer samples than n_folds warns about empty test folds."""
+        # abnormal has 3 samples but n_folds=5 -> 2 test folds get no abnormal.
+        config = self._make_kfold_config(tmp_path, {"normal": 40, "abnormal": 3})
+        with caplog.at_level(logging.WARNING):
+            prepare_kfold_splits(config)
+        assert any(
+            "abnormal" in rec.message and "n_folds" in rec.message
+            for rec in caplog.records
+        )
