@@ -9,13 +9,18 @@ changing what runs is a config edit, not a code change.
 
 Usage:
     python -m scripts.run_pipeline [configs/pipeline.yaml]
-        [--set KEY=VALUE ...] [--set-run KEY=VALUE ...]
+        [--set KEY=VALUE ...] [--set-run KEY=VALUE ...] [--local]
 
 ``--set`` overrides nested pipeline-config keys (e.g.
 ``--set runner.classifier_output_root=outputs/multisplit/split0/binary-depth``);
 ``--set-run`` injects flat classifier-run flags into every launch (e.g.
 ``--set-run data.split_file=outputs/splits/cv/cv_split0.json``). Together they let
 one base pipeline YAML serve every split of a cross-validation sweep.
+
+``--local`` (alias ``--no-docker``) runs each ``src.main`` job directly with the
+current interpreter (this venv) instead of inside a Docker container, bypassing the
+WSL+Docker layer that destabilizes long training runs on Windows. The ``docker:``
+config section is then unused but still required (kept for validator compatibility).
 
 Naming convention:
     Dimension separator: "__" (double underscore)
@@ -54,6 +59,12 @@ DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 # settings without threading them through every call (same load-once/read-only
 # thread-safety model the previous module-global constants had).
 CFG: Dict[str, Any] = {}
+
+# Set once in main() from the --local CLI flag; read-only thereafter (mirrors CFG).
+# When True, GPU jobs run directly via sys.executable instead of inside a Docker
+# container — used to bypass the WSL+Docker layer that destabilizes long training
+# runs on Windows.
+LOCAL_MODE: bool = False
 
 # A classifier job: (label, out_dir, train_overrides).
 Job = Tuple[str, str, List[str]]
@@ -135,42 +146,58 @@ def run(
     suppress_output: bool = False,
     disable_notifications: bool = False,
 ) -> "subprocess.Popen[bytes]":
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-i",
-        "--gpus",
-        "all",
-        "--network=host",
-        f"--shm-size={CFG['docker']['shm_size']}",
-        "-v",
-        f"{os.getcwd()}:/work",
-        "-w",
-        "/work",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}",
-    ]
-    # Suppress in-container Slack notifications by blanking the webhook env var. main.py's
-    # load_dotenv(override=False) won't overwrite an already-set var, so the empty value wins
-    # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
-    if disable_notifications:
-        cmd += ["-e", "SLACK_WEBHOOK_URL="]
-    cmd += [
-        CFG["docker"]["image"],
-        "python3",
-        "-m",
-        "src.main",
-        config,
-        *overrides,
-    ]
+    if LOCAL_MODE:
+        # Run directly with the interpreter driving the pipeline (this venv), no
+        # container. Notification suppression is handled below via the child env, since
+        # there is no `-e SLACK_WEBHOOK_URL=` container flag to blank the webhook with.
+        cmd = [sys.executable, "-m", "src.main", config, *overrides]
+    else:
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--gpus",
+            "all",
+            "--network=host",
+            f"--shm-size={CFG['docker']['shm_size']}",
+            "-v",
+            f"{os.getcwd()}:/work",
+            "-w",
+            "/work",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+        ]
+        # Suppress in-container Slack notifications by blanking the webhook env var. main.py's
+        # load_dotenv(override=False) won't overwrite an already-set var, so the empty value wins
+        # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
+        if disable_notifications:
+            cmd += ["-e", "SLACK_WEBHOOK_URL="]
+        cmd += [
+            CFG["docker"]["image"],
+            "python3",
+            "-m",
+            "src.main",
+            config,
+            *overrides,
+        ]
+
+    popen_kwargs: Dict[str, Any] = {}
     if suppress_output:
-        # Drop normal stdout (the in-container logger streams INFO to stdout; concurrent
-        # runs would interleave) but keep stderr so a container crash — OOM kill, import
-        # error, traceback — still surfaces on the console instead of vanishing. stderr
-        # is quiet during normal runs, so this doesn't reintroduce the interleaving.
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr)
-    return subprocess.Popen(cmd)
+        # Drop normal stdout (the logger streams INFO to stdout; concurrent runs would
+        # interleave) but keep stderr so a crash — OOM kill, import error, traceback —
+        # still surfaces on the console instead of vanishing. stderr is quiet during
+        # normal runs, so this doesn't reintroduce the interleaving.
+        popen_kwargs["stdout"] = subprocess.DEVNULL
+        popen_kwargs["stderr"] = sys.stderr
+    # Local mode has no `-e SLACK_WEBHOOK_URL=` container flag, so blank the webhook in
+    # the child env instead. main.py's load_dotenv(override=False) keeps the empty value,
+    # so notify_success/notify_error short-circuit — matching the Docker suppression path.
+    if LOCAL_MODE and disable_notifications:
+        env = os.environ.copy()
+        env["SLACK_WEBHOOK_URL"] = ""
+        popen_kwargs["env"] = env
+    return subprocess.Popen(cmd, **popen_kwargs)
 
 
 def _gpu_cooldown() -> None:
@@ -442,6 +469,14 @@ def _parse_args() -> argparse.Namespace:
         metavar="KEY=VALUE",
         help="Inject a flat classifier-run override into every launch (repeatable)",
     )
+    parser.add_argument(
+        "--local",
+        "--no-docker",
+        action="store_true",
+        dest="local",
+        help="Run src.main jobs directly with the current interpreter (this venv) "
+        "instead of inside a Docker container. Bypasses the WSL+Docker layer.",
+    )
     return parser.parse_args()
 
 
@@ -454,8 +489,11 @@ def main() -> None:
         run_overrides=args.set_run_overrides,
     )
 
-    global CFG
+    global CFG, LOCAL_MODE
     CFG = cfg
+    LOCAL_MODE = args.local
+    if LOCAL_MODE:
+        print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
 
     start = time.time()
     phases = cfg["phases"]

@@ -390,3 +390,81 @@ class TestRunOutputStreams:
         # Foreground run streams both stdout and stderr (no redirection kwargs).
         assert "stdout" not in captured["kwargs"]
         assert "stderr" not in captured["kwargs"]
+
+    def test_docker_mode_disable_notifications_uses_env_flag_not_env_kwarg(
+        self, monkeypatch
+    ):
+        """Regression: Docker suppression blanks the webhook via `-e`, not env kwarg."""
+        captured = self._capture_popen(monkeypatch)
+        monkeypatch.setattr(rp, "LOCAL_MODE", False)
+        rp.run("configs/classifier.yaml", [], disable_notifications=True)
+        cmd = captured["cmd"]
+        # Blanked via a container -e flag, immediately before the image.
+        assert cmd[:2] == ["docker", "run"]
+        assert "-e" in cmd and "SLACK_WEBHOOK_URL=" in cmd
+        # No child-env override in Docker mode.
+        assert "env" not in captured["kwargs"]
+
+
+@pytest.mark.unit
+class TestRunLocalMode:
+    """run() local (--local / --no-docker) branch: launch src.main via this venv."""
+
+    def _capture_popen(self, monkeypatch):
+        captured = {}
+
+        class _FakeProc:
+            pass
+
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+            return _FakeProc()
+
+        # docker.* is unused in local mode, but keep a valid CFG so an accidental read
+        # would not KeyError silently.
+        monkeypatch.setattr(rp, "CFG", {"docker": {"shm_size": "4g", "image": "img"}})
+        monkeypatch.setattr(rp, "LOCAL_MODE", True)
+        monkeypatch.setattr(rp.subprocess, "Popen", fake_popen)
+        return captured
+
+    def test_local_uses_sys_executable_no_docker(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", ["--compute.seed", "0"])
+        cmd = captured["cmd"]
+        assert cmd[0] == rp.sys.executable
+        assert "docker" not in cmd
+        # src.main is invoked directly with the config and overrides appended.
+        assert cmd[1:] == [
+            "-m",
+            "src.main",
+            "configs/classifier.yaml",
+            "--compute.seed",
+            "0",
+        ]
+
+    def test_local_blanks_webhook_when_disabled(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], disable_notifications=True)
+        # Suppression is done via the child env, not a container -e flag.
+        assert captured["kwargs"]["env"]["SLACK_WEBHOOK_URL"] == ""
+        assert "SLACK_WEBHOOK_URL=" not in captured["cmd"]
+
+    def test_local_no_env_when_notifications_enabled(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], disable_notifications=False)
+        assert "env" not in captured["kwargs"]
+
+    def test_local_suppress_output_coexists_with_env(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run(
+            "configs/classifier.yaml",
+            [],
+            suppress_output=True,
+            disable_notifications=True,
+        )
+        kwargs = captured["kwargs"]
+        # Stream wiring preserved (stdout dropped, stderr kept) alongside the env blank.
+        assert kwargs["stdout"] is rp.subprocess.DEVNULL
+        assert kwargs["stderr"] is rp.sys.stderr
+        assert kwargs["env"]["SLACK_WEBHOOK_URL"] == ""
