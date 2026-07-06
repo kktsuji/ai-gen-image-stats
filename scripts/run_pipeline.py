@@ -57,6 +57,11 @@ from src.utils.notification import (  # noqa: E402
 
 DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 
+# Runtime deps the pinned Docker image supplied regardless of the launching interpreter.
+# In --local mode the pipeline's own interpreter must carry them, so the preflight verifies
+# each is importable (via find_spec, without importing) before any job launches.
+_REQUIRED_LOCAL_MODULES = ("torch", "torchvision")
+
 # Set once in main() before any worker thread spawns, then read-only. Holds the
 # validated pipeline config so the orchestration helpers can read runner/docker/phase
 # settings without threading them through every call (same load-once/read-only
@@ -518,31 +523,58 @@ def _preflight_local_checks() -> None:
     """Guard the assumptions Docker used to enforce, before any --local job launches.
 
     1. Jobs run as ``sys.executable -m src.main``, so the pipeline's own interpreter must
-       carry the GPU deps (torch). The pinned Docker image supplied these regardless of
-       the launching interpreter; local mode inherits whatever ``python`` invoked us.
-    2. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
+       carry every GPU dep (torch, torchvision, ...). The pinned Docker image supplied
+       these regardless of the launching interpreter; local mode inherits whatever
+       ``python`` invoked us, so a missing dep would only surface mid-run.
+    2. Docker's CUDA base image + ``--gpus all`` guaranteed a usable GPU. A CPU-only torch
+       wheel imports fine but would silently run every job on CPU (10-100x slower), so
+       verify ``torch.cuda.is_available()`` too. Fatal, like a missing dep: there is no
+       valid CPU use for a GPU campaign.
+    3. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
        host process is bounded by ``/dev/shm`` instead, which defaults small on WSL2 —
-       the exact platform --local targets — and triggers a Bus error mid-run.
+       the exact platform --local targets — and triggers a Bus error mid-run. This is a
+       warning, not fatal: it only bites when ``data.loading.num_workers > 0``, and
+       ``num_workers=0`` is a valid escape hatch.
     """
-    if importlib.util.find_spec("torch") is None:
+    # #4: check every required dep, not just torch — report them all at once.
+    missing = [
+        name
+        for name in _REQUIRED_LOCAL_MODULES
+        if importlib.util.find_spec(name) is None
+    ]
+    if missing:
         raise SystemExit(
             f"[RUN] --local: the launching interpreter ({sys.executable}) cannot import "
-            "'torch'. Local mode runs src.main jobs with this interpreter, so it must have "
-            "the GPU deps installed. Launch via 'venv/bin/python -m scripts.run_pipeline ... "
-            "--local' (see CLAUDE.md)."
+            f"{', '.join(repr(m) for m in missing)}. Local mode runs src.main jobs with "
+            "this interpreter, so it must have the GPU deps installed. Launch via "
+            "'venv/bin/python -m scripts.run_pipeline ... --local' (see CLAUDE.md)."
         )
 
-    # docker.* is optional in local mode; only warn when a shm_size is actually configured.
-    shm_size = CFG.get("docker", {}).get("shm_size", "")
+    # #3: deps are importable now, so import torch here (kept out of module scope so the
+    # driver still loads on a torch-less interpreter) and require a usable CUDA device.
+    import torch
+
+    if not torch.cuda.is_available():
+        raise SystemExit(
+            f"[RUN] --local: torch is installed but reports no CUDA device "
+            f"(torch.cuda.is_available() is False) for interpreter {sys.executable}. "
+            "Docker guaranteed a GPU; local mode would silently run every job on CPU. "
+            "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
+        )
+
+    # #1/#2: the shm expectation lives in runner.shm_size (populated by _validate_runner),
+    # so the check fires even for a local config that dropped the docker section. Compare
+    # against .free (not .total): capacity that is already consumed still triggers Bus errors.
+    shm_size = CFG["runner"]["shm_size"]
     configured = _parse_shm_size(shm_size)
     try:
-        available = shutil.disk_usage("/dev/shm").total
+        available = shutil.disk_usage("/dev/shm").free
     except OSError:
         available = 0
     if configured and available and available < configured:
         print(
-            f"[RUN] WARNING --local: /dev/shm is {available / 1024**3:.1f} GiB but "
-            f"docker.shm_size requests {shm_size}. Local mode cannot raise "
+            f"[RUN] WARNING --local: /dev/shm has {available / 1024**3:.1f} GiB free but "
+            f"runner.shm_size expects {shm_size}. Local mode cannot raise "
             "the shared-memory limit (no container), so multi-worker DataLoaders may crash "
             "with 'Bus error'. Reduce data.loading.num_workers (e.g. --set-run "
             "data.loading.num_workers=0) or enlarge /dev/shm."

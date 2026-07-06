@@ -136,6 +136,18 @@ class TestValidateAccepts:
         with pytest.raises((KeyError, ValueError)):
             validate_pipeline_config(cfg)
 
+    def test_shm_size_defaults_to_4g(self):
+        cfg = _valid_config()
+        assert "shm_size" not in cfg["runner"]  # backward-compat: existing configs
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "4g"
+
+    def test_shm_size_explicit_preserved(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = "8g"
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "8g"
+
     def test_summarize_threshold_defaults_applied(self):
         cfg = _valid_config()
         validate_pipeline_config(cfg)
@@ -245,6 +257,18 @@ class TestValidateRejects:
         cfg = _valid_config()
         cfg["runner"]["classifier_max_parallel"] = 0
         with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_runner_empty_shm_size(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = ""
+        with pytest.raises(ValueError, match="runner.shm_size"):
+            validate_pipeline_config(cfg)
+
+    def test_runner_non_string_shm_size(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = 4
+        with pytest.raises(ValueError, match="runner.shm_size"):
             validate_pipeline_config(cfg)
 
     def test_evaluation_splits_invalid_value(self):

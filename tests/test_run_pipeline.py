@@ -5,6 +5,9 @@ serialized overrides) on tiny synthetic configs — so editing the real pipeline
 requires no test changes. build_classifier_jobs is pure (no GPU/Docker/filesystem).
 """
 
+import sys
+import types
+
 import pytest
 
 import scripts.run_pipeline as rp
@@ -521,50 +524,96 @@ class TestParseShmSize:
 
 @pytest.mark.unit
 class TestPreflightLocalChecks:
-    """--local preflight: fail fast on a depless interpreter, warn on a small /dev/shm."""
+    """--local preflight: fail fast on missing deps or no CUDA, warn on a small /dev/shm."""
 
     def _cfg(self):
-        return {"docker": {"shm_size": "4g", "image": "img"}}
+        # No docker section: the #2 regression case (recommended local config drops it).
+        # The shm threshold must still come from runner.shm_size.
+        return {"runner": {"execution": "local", "shm_size": "4g"}}
+
+    def _pass_deps(self, monkeypatch, *, cuda_available=True, missing=()):
+        """Make find_spec report every required module present (except `missing`) and
+        inject a fake torch so the CUDA check is deterministic regardless of the test host.
+        """
+        monkeypatch.setattr(
+            rp.importlib.util,
+            "find_spec",
+            lambda name: None if name in missing else object(),
+        )
+        # A SimpleNamespace stands in for the torch module: `import torch` just binds
+        # sys.modules["torch"], so the object's type is irrelevant to the import machinery.
+        fake_torch = types.SimpleNamespace(
+            cuda=types.SimpleNamespace(is_available=lambda: cuda_available)
+        )
+        monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    def _mock_shm(self, monkeypatch, *, free_bytes):
+        monkeypatch.setattr(
+            rp.shutil, "disk_usage", lambda p: type("U", (), {"free": free_bytes})()
+        )
 
     def test_raises_when_torch_missing(self, monkeypatch):
         monkeypatch.setattr(rp, "CFG", self._cfg())
         # Interpreter cannot import torch -> jobs would ModuleNotFoundError; fail early.
-        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: None)
+        self._pass_deps(monkeypatch, missing=("torch",))
         with pytest.raises(SystemExit) as exc:
             rp._preflight_local_checks()
         assert "torch" in str(exc.value)
 
+    def test_raises_when_torchvision_missing(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # torch present but torchvision absent -> src.main would die mid-run; fail early.
+        self._pass_deps(monkeypatch, missing=("torchvision",))
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks()
+        assert "torchvision" in str(exc.value)
+
+    def test_raises_when_cuda_unavailable(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # Deps import fine but it's a CPU-only torch -> every job would silently run on
+        # CPU; fatal, like a missing dep. Assert the message names the CUDA condition.
+        self._pass_deps(monkeypatch, cuda_available=False)
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks()
+        assert "CUDA" in str(exc.value)
+
     def test_warns_when_shm_smaller_than_configured(self, monkeypatch, capsys):
         monkeypatch.setattr(rp, "CFG", self._cfg())
-        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
-        # /dev/shm is 1 GiB but config requests 4g -> warn.
-        monkeypatch.setattr(
-            rp.shutil, "disk_usage", lambda p: type("U", (), {"total": 1024**3})()
-        )
+        self._pass_deps(monkeypatch)
+        # /dev/shm has 1 GiB free but config requests 4g -> warn.
+        self._mock_shm(monkeypatch, free_bytes=1024**3)
         rp._preflight_local_checks()
         out = capsys.readouterr().out
         assert "WARNING" in out and "Bus error" in out
 
+    def test_warns_on_free_not_total(self, monkeypatch, capsys):
+        # #1 regression: a large-capacity shm that is nearly full (little free) must still
+        # warn. The check reads .free, so this fires even though total capacity is ample.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=1024**3)  # 1 GiB free, < 4g configured
+        rp._preflight_local_checks()
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+
     def test_no_warn_when_shm_sufficient(self, monkeypatch, capsys):
         monkeypatch.setattr(rp, "CFG", self._cfg())
-        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
-        # /dev/shm is 8 GiB >= 4g -> no warning.
-        monkeypatch.setattr(
-            rp.shutil, "disk_usage", lambda p: type("U", (), {"total": 8 * 1024**3})()
-        )
+        self._pass_deps(monkeypatch)
+        # /dev/shm has 8 GiB free >= 4g -> no warning.
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
         rp._preflight_local_checks()
         out = capsys.readouterr().out
         assert "WARNING" not in out
 
     def test_no_warn_when_shm_probe_fails(self, monkeypatch, capsys):
         monkeypatch.setattr(rp, "CFG", self._cfg())
-        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
+        self._pass_deps(monkeypatch)
 
         def _raise(_):
             raise OSError("no /dev/shm")
 
         monkeypatch.setattr(rp.shutil, "disk_usage", _raise)
-        # Probe failure is non-fatal: torch present, so no exit and no shm warning.
+        # Probe failure is non-fatal: deps present + CUDA ok, so no exit and no shm warning.
         rp._preflight_local_checks()
         out = capsys.readouterr().out
         assert "WARNING" not in out

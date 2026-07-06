@@ -225,6 +225,16 @@ def _validate_runner(config: Dict[str, Any]) -> None:
             f"runner.execution must be 'docker' or 'local', got {execution!r}"
         )
 
+    # Shared-memory expectation for DataLoader workers. Docker enforces it via --shm-size
+    # (docker.shm_size); local mode has no container to raise the limit, so the preflight
+    # warns when /dev/shm is smaller than this. Defaults to the value Docker enforced so
+    # existing docker-mode configs (which omit it) keep working and local configs that drop
+    # the docker section still get a threshold. Parse-ability is checked in the preflight's
+    # _parse_shm_size, matching how docker.shm_size is validated (non-empty string only).
+    shm_size = runner.setdefault("shm_size", "4g")
+    if not _non_empty_str(shm_size):
+        raise ValueError("runner.shm_size must be a non-empty string")
+
     for key in ("skip_completed", "delete_checkpoints_after_eval"):
         if key not in runner:
             raise KeyError(f"Missing required field: runner.{key}")
