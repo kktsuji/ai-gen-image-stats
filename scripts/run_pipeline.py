@@ -560,8 +560,8 @@ def _pinned_requirement_versions() -> Dict[str, str]:
     return pins
 
 
-def _pending_local_gpu_jobs() -> bool:
-    """True when this run will actually launch at least one classifier GPU pass.
+def _pending_local_gpu_jobs(jobs: List[Job]) -> bool:
+    """True when at least one of ``jobs`` will actually launch a classifier GPU pass.
 
     Mirrors the skip logic in ``_run_classifier_experiment`` so the --local preflight
     agrees with the runner on whether any GPU work happens. For each classifier job:
@@ -574,12 +574,13 @@ def _pending_local_gpu_jobs() -> bool:
       path). So a training-only re-run over existing checkpoints launches nothing and
       must not be blocked for lacking a GPU.
 
-    ``build_classifier_jobs`` is pure/no-I/O and already reflects the enabled classifier
-    phases, so a summarize-only or fully-skip_completed --local run needs no CUDA and the
-    fatal GPU preflight is skipped.
+    ``jobs`` is the already-expanded classifier matrix (``build_classifier_jobs``, pure and
+    reflecting the enabled classifier phases), reused from ``main`` so the matrix is not
+    expanded twice. A summarize-only or fully-skip_completed --local run therefore needs no
+    CUDA and the fatal GPU preflight is skipped.
     """
     evaluation_on = CFG["phases"]["evaluation"]
-    for _, out_dir, _ in build_classifier_jobs(CFG):
+    for _, out_dir, _ in jobs:
         if _experiment_eval_complete(out_dir):
             continue
         if evaluation_on:
@@ -724,13 +725,16 @@ def main() -> None:
     global CFG
     CFG = cfg
     phases = cfg["phases"]
+    # Expand the classifier variant matrix once (pure/no-I/O) and reuse it for both the
+    # --local preflight GPU-need decision and the actual run below.
+    classifier_jobs = build_classifier_jobs(cfg)
     if _is_local():
         print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
         # Run the preflight only when a src.main job will actually launch (data_preparation
         # or a not-yet-completed classifier job); require CUDA only when a classifier GPU
         # pass will run — data_preparation is CPU-only and a fully skip_completed run
         # launches nothing, so neither should be blocked for lacking a GPU.
-        needs_cuda = _pending_local_gpu_jobs()
+        needs_cuda = _pending_local_gpu_jobs(classifier_jobs)
         launches_job = phases["data_preparation"] or needs_cuda
         if launches_job:
             _preflight_local_checks(require_cuda=needs_cuda)
@@ -756,9 +760,8 @@ def main() -> None:
     # own out_dir/seed, so they never contend. Evaluation is interleaved per experiment
     # inside _run_classifier_experiment (train -> eval -> cleanup), gated by phases.evaluation.
     # Per-run notifications are suppressed inside the containers; the pipeline emits a
-    # throttled "Classifier: current/total" instead.
+    # throttled "Classifier: current/total" instead. The job list was expanded once above.
     # ------------------------------------------------------------------
-    classifier_jobs = build_classifier_jobs(cfg)
     if classifier_jobs:
         _run_classifier_jobs(classifier_jobs, len(classifier_jobs))
 

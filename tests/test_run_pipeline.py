@@ -563,63 +563,45 @@ class TestPendingLocalGpuJobs:
             "runner": {"skip_completed": skip_completed},
         }
 
+    # The caller (main) passes the already-expanded matrix; these tests feed it directly.
+    _JOBS = [("a", "out/a", []), ("b", "out/b", [])]
+
     def test_false_when_no_classifier_jobs(self, monkeypatch):
-        # summarize-only / no classifier phases -> build_classifier_jobs returns [].
+        # summarize-only / no classifier phases -> the matrix is empty.
         monkeypatch.setattr(rp, "CFG", self._cfg())
-        monkeypatch.setattr(rp, "build_classifier_jobs", lambda cfg: [])
-        assert rp._pending_local_gpu_jobs() is False
+        assert rp._pending_local_gpu_jobs([]) is False
 
     def test_false_when_all_jobs_already_complete(self, monkeypatch):
         # skip_completed run where every classifier report already exists -> no GPU work.
         monkeypatch.setattr(rp, "CFG", self._cfg())
-        monkeypatch.setattr(
-            rp,
-            "build_classifier_jobs",
-            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
-        )
         monkeypatch.setattr(rp, "_experiment_eval_complete", lambda out_dir: True)
-        assert rp._pending_local_gpu_jobs() is False
+        assert rp._pending_local_gpu_jobs(self._JOBS) is False
 
     def test_true_when_any_job_pending(self, monkeypatch):
         monkeypatch.setattr(rp, "CFG", self._cfg())
         monkeypatch.setattr(
-            rp,
-            "build_classifier_jobs",
-            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
-        )
-        monkeypatch.setattr(
             rp, "_experiment_eval_complete", lambda out_dir: out_dir == "out/a"
         )
-        assert rp._pending_local_gpu_jobs() is True
+        assert rp._pending_local_gpu_jobs(self._JOBS) is True
 
     def test_false_when_eval_off_and_checkpoints_exist(self, monkeypatch):
         # Training-only re-run (evaluation phase off) where every final_model.pth already
         # exists under skip_completed -> each job hits [SKIP-TRAIN] and launches nothing,
         # so the run needs no CUDA and must not be blocked (finding 1).
         monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
-        monkeypatch.setattr(
-            rp,
-            "build_classifier_jobs",
-            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
-        )
         # eval off -> _experiment_eval_complete is always False; the checkpoint marker is
         # what gates GPU work. Every final_model.pth present -> _is_done True -> no launch.
         monkeypatch.setattr(
             rp.os.path, "exists", lambda p: p.endswith("final_model.pth")
         )
-        assert rp._pending_local_gpu_jobs() is False
+        assert rp._pending_local_gpu_jobs(self._JOBS) is False
 
     def test_true_when_eval_off_and_a_checkpoint_missing(self, monkeypatch):
         # Same as above but out/a's final_model.pth is absent -> that job trains on the GPU.
         monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
-        monkeypatch.setattr(
-            rp,
-            "build_classifier_jobs",
-            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
-        )
         # out/b checkpoint present, out/a checkpoint missing -> out/a must launch training.
         monkeypatch.setattr(rp.os.path, "exists", lambda p: not p.startswith("out/a"))
-        assert rp._pending_local_gpu_jobs() is True
+        assert rp._pending_local_gpu_jobs(self._JOBS) is True
 
 
 @pytest.mark.unit
