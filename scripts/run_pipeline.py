@@ -616,15 +616,15 @@ def _preflight_local_checks(*, require_cuda: bool) -> None:
        ``num_workers=0`` is a valid escape hatch.
     """
     # 1. Check every required dep, not just torch — report them all at once.
-    missing = [
+    missing_modules = [
         name
         for name in _REQUIRED_LOCAL_MODULES
         if importlib.util.find_spec(name) is None
     ]
-    if missing:
+    if missing_modules:
         raise SystemExit(
             f"[RUN] --local: the launching interpreter ({sys.executable}) cannot import "
-            f"{', '.join(repr(m) for m in missing)}. Local mode runs src.main jobs with "
+            f"{', '.join(repr(m) for m in missing_modules)}. Local mode runs src.main jobs with "
             "this interpreter, so it must have the GPU deps installed. Launch via "
             "'venv/bin/python -m scripts.run_pipeline ... --local' (see CLAUDE.md)."
         )
@@ -650,21 +650,21 @@ def _preflight_local_checks(*, require_cuda: bool) -> None:
     # (a local run then won't reproduce the container baselines, which is legitimate
     # outside a frozen-deps campaign).
     drifted = []
-    missing = []
+    missing_pins = []
     for name, pinned in _pinned_requirement_versions().items():
         try:
             installed = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
-            missing.append(f"{name} (pinned {pinned})")
+            missing_pins.append(f"{name} (pinned {pinned})")
             continue
         # Compare the public version only: a CUDA wheel reports a local segment
         # (e.g. '2.10.0+cu128') that still satisfies the plain pin '2.10.0'.
         if installed.split("+", 1)[0] != pinned:
             drifted.append(f"{name} {installed} (pinned {pinned})")
-    if missing:
+    if missing_pins:
         raise SystemExit(
             f"[RUN] --local: the launching interpreter ({sys.executable}) is missing "
-            f"pinned dependencies [{', '.join(missing)}]. Docker's frozen image guaranteed "
+            f"pinned dependencies [{', '.join(missing_pins)}]. Docker's frozen image guaranteed "
             "every requirements.txt pin was installed; local mode runs src.main jobs with "
             "this interpreter, so a missing dep would crash a job mid-run. Install them "
             "('pip install -r requirements.txt') or run in Docker mode."

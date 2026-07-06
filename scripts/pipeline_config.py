@@ -153,6 +153,11 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     container. Strings the user quoted to force a string type (``"0"``, ``"true"``) are
     left untouched.
 
+    Validation also normalizes ``runner`` in place: ``_validate_runner`` injects
+    ``runner.execution`` (default ``"docker"``) and ``runner.shm_size`` (defaulted from
+    ``docker.shm_size`` when present, else ``"4g"``) via ``setdefault`` when absent, so a
+    config that omits them carries the effective defaults after this call returns.
+
     Raises:
         ValueError: If the configuration is invalid.
         KeyError: If required fields are missing.

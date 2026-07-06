@@ -560,7 +560,12 @@ class TestPendingLocalGpuJobs:
     def _cfg(self, *, evaluation=True, skip_completed=True):
         return {
             "phases": {"evaluation": evaluation},
-            "runner": {"skip_completed": skip_completed},
+            "runner": {
+                "skip_completed": skip_completed,
+                # Mirror what _experiment_eval_complete reads so the fixture stays
+                # self-consistent if a test ever calls through to the real function.
+                "evaluation_splits": ["test"],
+            },
         }
 
     # The caller (main) passes the already-expanded matrix; these tests feed it directly.
