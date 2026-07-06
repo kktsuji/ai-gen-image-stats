@@ -195,6 +195,32 @@ def _non_empty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value)
 
 
+# Suffix multipliers for a Docker ``--shm-size`` string. A bare number (no suffix) is
+# interpreted as bytes, matching Docker's own grammar.
+_SHM_UNITS = {"b": 1, "k": 1024, "m": 1024**2, "g": 1024**3}
+
+
+def parse_shm_size(value: Any) -> Optional[int]:
+    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``, ``1048576``) into bytes.
+
+    Canonical grammar for both ``runner.shm_size`` and ``docker.shm_size``; the driver's
+    ``_parse_shm_size`` delegates here so the format lives in one place. Returns ``None``
+    for an unparseable value (empty, bad number, or an unknown suffix like ``4gb``) so
+    callers can reject it rather than silently treating it as "no threshold".
+    """
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text[-1] in _SHM_UNITS:
+        num, mult = text[:-1], _SHM_UNITS[text[-1]]
+    else:
+        num, mult = text, 1
+    try:
+        return int(float(num) * mult)
+    except ValueError:
+        return None
+
+
 def _validate_phases(config: Dict[str, Any]) -> None:
     phases = _require(config, "phases")
     if not isinstance(phases, dict):
@@ -227,13 +253,28 @@ def _validate_runner(config: Dict[str, Any]) -> None:
 
     # Shared-memory expectation for DataLoader workers. Docker enforces it via --shm-size
     # (docker.shm_size); local mode has no container to raise the limit, so the preflight
-    # warns when /dev/shm is smaller than this. Defaults to the value Docker enforced so
-    # existing docker-mode configs (which omit it) keep working and local configs that drop
-    # the docker section still get a threshold. Parse-ability is checked in the preflight's
-    # _parse_shm_size, matching how docker.shm_size is validated (non-empty string only).
-    shm_size = runner.setdefault("shm_size", "4g")
+    # warns when /dev/shm is smaller than this. Default to docker.shm_size when a docker
+    # section supplies it (so raising the container's shm also raises the local threshold);
+    # fall back to "4g" (the value Docker historically enforced) for a local config that
+    # dropped the docker section. An explicit runner.shm_size is preserved by setdefault.
+    # docker.shm_size is validated later (execution==docker only), so read it defensively.
+    docker_section = config.get("docker")
+    default_shm = (
+        docker_section.get("shm_size") if isinstance(docker_section, dict) else None
+    )
+    # Fall back to 4g unless docker supplies a valid size. A malformed docker.shm_size is
+    # left for _validate_docker to reject (docker mode) with a docker.* message rather than
+    # surfacing here as a misleading runner.shm_size error; in local mode docker.* is unused.
+    if not _non_empty_str(default_shm) or parse_shm_size(default_shm) is None:
+        default_shm = "4g"
+    shm_size = runner.setdefault("shm_size", default_shm)
     if not _non_empty_str(shm_size):
         raise ValueError("runner.shm_size must be a non-empty string")
+    if parse_shm_size(shm_size) is None:
+        raise ValueError(
+            f"runner.shm_size must be a docker-style size like '4g' or '512m', "
+            f"got {shm_size!r}"
+        )
 
     for key in ("skip_completed", "delete_checkpoints_after_eval"):
         if key not in runner:
@@ -310,6 +351,11 @@ def _validate_docker(config: Dict[str, Any]) -> None:
             raise KeyError(f"Missing required field: docker.{key}")
         if not _non_empty_str(docker[key]):
             raise ValueError(f"docker.{key} must be a non-empty string")
+    if parse_shm_size(docker["shm_size"]) is None:
+        raise ValueError(
+            f"docker.shm_size must be a docker-style size like '4g' or '512m', "
+            f"got {docker['shm_size']!r}"
+        )
 
 
 def _validate_seeds(config: Dict[str, Any]) -> None:

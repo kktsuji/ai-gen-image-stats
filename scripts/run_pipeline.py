@@ -49,7 +49,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-from scripts.pipeline_config import load_pipeline_config  # noqa: E402
+from scripts.pipeline_config import (  # noqa: E402
+    load_pipeline_config,
+    parse_shm_size,
+)
 from src.utils.cli import serialize_overrides  # noqa: E402
 from src.utils.notification import (  # noqa: E402
     notify_progress,
@@ -62,6 +65,11 @@ DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 # In --local mode the pipeline's own interpreter must carry them, so the preflight verifies
 # each is importable (via find_spec, without importing) before any job launches.
 _REQUIRED_LOCAL_MODULES = ("torch", "torchvision")
+
+# Phases that launch a GPU/src.main job. `evaluation` is interleaved inside the classifier
+# phases (no GPU work when both are off) and `summarize` is CPU-only, so neither belongs
+# here. Used to skip the GPU preflight when a --local run needs no GPU (e.g. summarize-only).
+_GPU_PHASE_KEYS = ("data_preparation", "baseline_classifier", "ft_classifier")
 
 # The ==-pinned dependency manifest the Docker image was built from. In --local mode the
 # preflight compares the interpreter's installed deps against these pins to warn when a
@@ -509,23 +517,14 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _parse_shm_size(value: str) -> int:
-    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``) into bytes.
+    """Bytes for a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``); 0 if unparseable.
 
-    Returns 0 for an unparseable value so the caller treats it as "no threshold".
+    Delegates to the canonical parser in ``pipeline_config`` (single source of the grammar)
+    and collapses its ``None`` to 0 so the preflight's ``configured and ...`` guard treats an
+    unparseable value as "no threshold". Config validation now rejects such values up front,
+    so 0 is defensive belt-and-suspenders rather than a silent failure path.
     """
-    units = {"b": 1, "k": 1024, "m": 1024**2, "g": 1024**3}
-    text = str(value).strip().lower()
-    if not text:
-        return 0
-    suffix = text[-1]
-    if suffix in units:
-        num, mult = text[:-1], units[suffix]
-    else:
-        num, mult = text, 1
-    try:
-        return int(float(num) * mult)
-    except ValueError:
-        return 0
+    return parse_shm_size(value) or 0
 
 
 def _pinned_requirement_versions(modules: Tuple[str, ...]) -> Dict[str, str]:
@@ -552,6 +551,16 @@ def _pinned_requirement_versions(modules: Tuple[str, ...]) -> Dict[str, str]:
     return pins
 
 
+def _local_run_needs_gpu() -> bool:
+    """True when this run will launch at least one GPU/src.main job.
+
+    Only the phases in ``_GPU_PHASE_KEYS`` spawn GPU work; ``evaluation`` is interleaved
+    inside the classifier phases and ``summarize`` is CPU-only. A summarize-only --local
+    run needs no GPU, so the GPU preflight (which fatally requires CUDA) must be skipped.
+    """
+    return any(CFG["phases"][phase] for phase in _GPU_PHASE_KEYS)
+
+
 def _preflight_local_checks() -> None:
     """Guard the assumptions Docker used to enforce, before any --local job launches.
 
@@ -572,7 +581,7 @@ def _preflight_local_checks() -> None:
        warning, not fatal: it only bites when ``data.loading.num_workers > 0``, and
        ``num_workers=0`` is a valid escape hatch.
     """
-    # #4: check every required dep, not just torch — report them all at once.
+    # 1. Check every required dep, not just torch — report them all at once.
     missing = [
         name
         for name in _REQUIRED_LOCAL_MODULES
@@ -586,7 +595,7 @@ def _preflight_local_checks() -> None:
             "'venv/bin/python -m scripts.run_pipeline ... --local' (see CLAUDE.md)."
         )
 
-    # #3: deps are importable now, so import torch here (kept out of module scope so the
+    # 2. Deps are importable now, so import torch here (kept out of module scope so the
     # driver still loads on a torch-less interpreter) and require a usable CUDA device.
     import torch
 
@@ -598,7 +607,7 @@ def _preflight_local_checks() -> None:
             "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
         )
 
-    # #5: warn (don't abort) when an installed dep diverges from the ==-pinned version the
+    # 3. Warn (don't abort) when an installed dep diverges from the ==-pinned version the
     # Docker image was built from — a local run would then not reproduce the container
     # baselines. Advisory only: divergence is legitimate outside a frozen-deps campaign.
     drifted = []
@@ -616,9 +625,10 @@ def _preflight_local_checks() -> None:
             "image, so numeric results may diverge from container-produced baselines."
         )
 
-    # #1/#2: the shm expectation lives in runner.shm_size (populated by _validate_runner),
-    # so the check fires even for a local config that dropped the docker section. Compare
-    # against .free (not .total): capacity that is already consumed still triggers Bus errors.
+    # 4. The shm expectation lives in runner.shm_size (populated by _validate_runner, which
+    # defaults it from docker.shm_size), so the check fires even for a local config that
+    # dropped the docker section. Compare against .free (not .total): capacity that is
+    # already consumed still triggers Bus errors.
     shm_size = CFG["runner"]["shm_size"]
     configured = _parse_shm_size(shm_size)
     try:
@@ -654,7 +664,14 @@ def main() -> None:
     CFG = cfg
     if _is_local():
         print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
-        _preflight_local_checks()
+        # The preflight fatally requires a GPU; skip it when no GPU phase is enabled
+        # (e.g. a summarize-only run) so CPU-only work isn't blocked on a CUDA device.
+        if _local_run_needs_gpu():
+            _preflight_local_checks()
+        else:
+            print(
+                "[RUN] local mode: no GPU phases enabled; skipping GPU preflight checks"
+            )
 
     start = time.time()
     phases = cfg["phases"]

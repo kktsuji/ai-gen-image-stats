@@ -516,6 +516,41 @@ class TestIsLocal:
 
 
 @pytest.mark.unit
+class TestLocalRunNeedsGpu:
+    """_local_run_needs_gpu() gates the GPU preflight so summarize-only runs aren't blocked."""
+
+    def _phases(self, **overrides):
+        phases = {
+            "data_preparation": False,
+            "baseline_classifier": False,
+            "ft_classifier": False,
+            "evaluation": False,
+            "summarize": False,
+        }
+        phases.update(overrides)
+        return phases
+
+    @pytest.mark.parametrize(
+        "gpu_phase",
+        ["data_preparation", "baseline_classifier", "ft_classifier"],
+    )
+    def test_true_when_any_gpu_phase_enabled(self, monkeypatch, gpu_phase):
+        monkeypatch.setattr(rp, "CFG", {"phases": self._phases(**{gpu_phase: True})})
+        assert rp._local_run_needs_gpu() is True
+
+    def test_false_when_only_summarize(self, monkeypatch):
+        # Summarize is CPU-only; a summarize-only --local run must skip the GPU preflight.
+        monkeypatch.setattr(rp, "CFG", {"phases": self._phases(summarize=True)})
+        assert rp._local_run_needs_gpu() is False
+
+    def test_false_when_only_evaluation(self, monkeypatch):
+        # evaluation is interleaved inside the classifier phases; on its own it launches
+        # no GPU work, so it must not force the preflight.
+        monkeypatch.setattr(rp, "CFG", {"phases": self._phases(evaluation=True)})
+        assert rp._local_run_needs_gpu() is False
+
+
+@pytest.mark.unit
 class TestParseShmSize:
     @pytest.mark.parametrize(
         "value,expected",
