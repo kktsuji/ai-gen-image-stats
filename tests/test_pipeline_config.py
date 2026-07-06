@@ -116,6 +116,26 @@ class TestValidateAccepts:
         validate_pipeline_config(cfg)
         assert cfg["runner"]["evaluation_splits"] == ["val", "test"]
 
+    def test_execution_defaults_to_docker(self):
+        cfg = _valid_config()
+        assert "execution" not in cfg["runner"]  # backward-compat: existing configs
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["execution"] == "docker"
+
+    def test_execution_local_makes_docker_section_optional(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "local"
+        cfg.pop("docker")  # local runs read no docker.* — must not be required
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["execution"] == "local"
+
+    def test_execution_docker_still_requires_docker_section(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "docker"
+        cfg.pop("docker")
+        with pytest.raises((KeyError, ValueError)):
+            validate_pipeline_config(cfg)
+
     def test_summarize_threshold_defaults_applied(self):
         cfg = _valid_config()
         validate_pipeline_config(cfg)
@@ -213,6 +233,12 @@ class TestValidateRejects:
         cfg = _valid_config()
         cfg["runner"]["gpu_cooldown_seconds"] = -1
         with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_runner_invalid_execution(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "podman"
+        with pytest.raises(ValueError, match="runner.execution"):
             validate_pipeline_config(cfg)
 
     def test_runner_zero_parallel(self):

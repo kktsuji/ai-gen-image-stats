@@ -359,7 +359,10 @@ class TestRunOutputStreams:
     """run() stream wiring: suppressed runs hide stdout but keep stderr for crashes."""
 
     def _cfg(self):
-        return {"docker": {"shm_size": "4g", "image": "img"}}
+        return {
+            "runner": {"execution": "docker"},
+            "docker": {"shm_size": "4g", "image": "img"},
+        }
 
     def _capture_popen(self, monkeypatch):
         captured = {}
@@ -395,8 +398,7 @@ class TestRunOutputStreams:
         self, monkeypatch
     ):
         """Regression: Docker suppression blanks the webhook via `-e`, not env kwarg."""
-        captured = self._capture_popen(monkeypatch)
-        monkeypatch.setattr(rp, "LOCAL_MODE", False)
+        captured = self._capture_popen(monkeypatch)  # runner.execution=docker
         rp.run("configs/classifier.yaml", [], disable_notifications=True)
         cmd = captured["cmd"]
         # Blanked via a container -e flag, immediately before the image.
@@ -421,10 +423,16 @@ class TestRunLocalMode:
             captured["kwargs"] = kwargs
             return _FakeProc()
 
-        # docker.* is unused in local mode, but keep a valid CFG so an accidental read
-        # would not KeyError silently.
-        monkeypatch.setattr(rp, "CFG", {"docker": {"shm_size": "4g", "image": "img"}})
-        monkeypatch.setattr(rp, "LOCAL_MODE", True)
+        # runner.execution=local drives the local branch; docker.* is unused here but a
+        # valid CFG avoids an accidental KeyError.
+        monkeypatch.setattr(
+            rp,
+            "CFG",
+            {
+                "runner": {"execution": "local"},
+                "docker": {"shm_size": "4g", "image": "img"},
+            },
+        )
         monkeypatch.setattr(rp.subprocess, "Popen", fake_popen)
         return captured
 
@@ -468,6 +476,19 @@ class TestRunLocalMode:
         assert kwargs["stdout"] is rp.subprocess.DEVNULL
         assert kwargs["stderr"] is rp.sys.stderr
         assert kwargs["env"]["SLACK_WEBHOOK_URL"] == ""
+
+
+@pytest.mark.unit
+class TestIsLocal:
+    """_is_local() reads runner.execution — the single source of truth (no global)."""
+
+    def test_true_when_execution_local(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"execution": "local"}})
+        assert rp._is_local() is True
+
+    def test_false_when_execution_docker(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"execution": "docker"}})
+        assert rp._is_local() is False
 
 
 @pytest.mark.unit

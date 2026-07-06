@@ -164,7 +164,10 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     _validate_phases(config)
     _validate_runner(config)
     _validate_configs_section(config)
-    _validate_docker(config)
+    # docker.* is only consumed when jobs run in containers; a "local" run reads none of
+    # it, so don't force users to maintain a dead docker section for local pipelines.
+    if config["runner"]["execution"] == "docker":
+        _validate_docker(config)
     _validate_seeds(config)
     _validate_classifier_overrides(config)
     _validate_baselines(config)
@@ -210,6 +213,17 @@ def _validate_runner(config: Dict[str, Any]) -> None:
     runner = _require(config, "runner")
     if not isinstance(runner, dict):
         raise ValueError("'runner' must be a dictionary")
+
+    # How each src.main job is launched. "docker" (default, and the prior behavior) runs
+    # it inside the pinned GPU container; "local" runs it directly with the pipeline's own
+    # interpreter (this venv), bypassing the WSL+Docker layer. The docker.* section is only
+    # required for "docker" (see validate_pipeline_config). Set in YAML or via the --local
+    # CLI alias, which injects runner.execution=local.
+    execution = runner.setdefault("execution", "docker")
+    if execution not in ("docker", "local"):
+        raise ValueError(
+            f"runner.execution must be 'docker' or 'local', got {execution!r}"
+        )
 
     for key in ("skip_completed", "delete_checkpoints_after_eval"):
         if key not in runner:

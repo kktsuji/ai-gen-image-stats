@@ -19,8 +19,10 @@ one base pipeline YAML serve every split of a cross-validation sweep.
 
 ``--local`` (alias ``--no-docker``) runs each ``src.main`` job directly with the
 current interpreter (this venv) instead of inside a Docker container, bypassing the
-WSL+Docker layer that destabilizes long training runs on Windows. The ``docker:``
-config section is then unused but still required (kept for validator compatibility).
+WSL+Docker layer that destabilizes long training runs on Windows. It is sugar for the
+``runner.execution: local`` config field (injected as ``--set runner.execution=local``),
+so the mode is validated once and recorded in the run's config snapshot; the ``docker:``
+section is then optional. Equivalently, set ``runner.execution: local`` in the YAML.
 
 Naming convention:
     Dimension separator: "__" (double underscore)
@@ -61,14 +63,18 @@ DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 # thread-safety model the previous module-global constants had).
 CFG: Dict[str, Any] = {}
 
-# Set once in main() from the --local CLI flag; read-only thereafter (mirrors CFG).
-# When True, GPU jobs run directly via sys.executable instead of inside a Docker
-# container — used to bypass the WSL+Docker layer that destabilizes long training
-# runs on Windows.
-LOCAL_MODE: bool = False
-
 # A classifier job: (label, out_dir, train_overrides).
 Job = Tuple[str, str, List[str]]
+
+
+def _is_local() -> bool:
+    """True when jobs run via the host interpreter instead of a Docker container.
+
+    Reads the validated ``runner.execution`` config field (single source of truth, set in
+    the YAML or via the ``--local`` alias), so there is no second module global to keep in
+    sync with CFG.
+    """
+    return CFG["runner"]["execution"] == "local"
 
 
 def _is_done(*markers: str) -> bool:
@@ -147,7 +153,8 @@ def run(
     suppress_output: bool = False,
     disable_notifications: bool = False,
 ) -> "subprocess.Popen[bytes]":
-    if LOCAL_MODE:
+    local = _is_local()
+    if local:
         # Run directly with the interpreter driving the pipeline (this venv), no
         # container. Notification suppression is handled below via the child env, since
         # there is no `-e SLACK_WEBHOOK_URL=` container flag to blank the webhook with.
@@ -194,7 +201,7 @@ def run(
     # Local mode has no `-e SLACK_WEBHOOK_URL=` container flag, so blank the webhook in
     # the child env instead. main.py's load_dotenv(override=False) keeps the empty value,
     # so notify_success/notify_error short-circuit — matching the Docker suppression path.
-    if LOCAL_MODE and disable_notifications:
+    if local and disable_notifications:
         env = os.environ.copy()
         env["SLACK_WEBHOOK_URL"] = ""
         popen_kwargs["env"] = env
@@ -476,7 +483,8 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         dest="local",
         help="Run src.main jobs directly with the current interpreter (this venv) "
-        "instead of inside a Docker container. Bypasses the WSL+Docker layer.",
+        "instead of inside a Docker container. Alias for --set runner.execution=local; "
+        "bypasses the WSL+Docker layer.",
     )
     return parser.parse_args()
 
@@ -519,7 +527,9 @@ def _preflight_local_checks() -> None:
             "--local' (see CLAUDE.md)."
         )
 
-    configured = _parse_shm_size(CFG["docker"]["shm_size"])
+    # docker.* is optional in local mode; only warn when a shm_size is actually configured.
+    shm_size = CFG.get("docker", {}).get("shm_size", "")
+    configured = _parse_shm_size(shm_size)
     try:
         available = shutil.disk_usage("/dev/shm").total
     except OSError:
@@ -527,7 +537,7 @@ def _preflight_local_checks() -> None:
     if configured and available and available < configured:
         print(
             f"[RUN] WARNING --local: /dev/shm is {available / 1024**3:.1f} GiB but "
-            f"docker.shm_size requests {CFG['docker']['shm_size']}. Local mode cannot raise "
+            f"docker.shm_size requests {shm_size}. Local mode cannot raise "
             "the shared-memory limit (no container), so multi-worker DataLoaders may crash "
             "with 'Bus error'. Reduce data.loading.num_workers (e.g. --set-run "
             "data.loading.num_workers=0) or enlarge /dev/shm."
@@ -537,16 +547,21 @@ def _preflight_local_checks() -> None:
 def main() -> None:
     load_dotenv()
     args = _parse_args()
+    # --local is sugar for the config field: route it through the same --set override path
+    # so runner.execution is validated once, captured in the config snapshot, and read from
+    # CFG everywhere (no second module global). Appended last so it wins over any YAML value.
+    overrides = list(args.set_overrides)
+    if args.local:
+        overrides.append("runner.execution=local")
     cfg = load_pipeline_config(
         args.config_path,
-        overrides=args.set_overrides,
+        overrides=overrides,
         run_overrides=args.set_run_overrides,
     )
 
-    global CFG, LOCAL_MODE
+    global CFG
     CFG = cfg
-    LOCAL_MODE = args.local
-    if LOCAL_MODE:
+    if _is_local():
         print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
         _preflight_local_checks()
 
