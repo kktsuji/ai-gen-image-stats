@@ -458,10 +458,16 @@ class TestRunLocalMode:
         assert captured["kwargs"]["env"]["SLACK_WEBHOOK_URL"] == ""
         assert "SLACK_WEBHOOK_URL=" not in captured["cmd"]
 
-    def test_local_no_env_when_notifications_enabled(self, monkeypatch):
+    def test_local_drops_inherited_webhook_when_notifications_enabled(
+        self, monkeypatch
+    ):
+        # A stale shell-exported webhook must not shadow .env: local mode drops it from the
+        # child env so main.py's load_dotenv makes .env authoritative (matches Docker).
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/stale")
         captured = self._capture_popen(monkeypatch)
         rp.run("configs/classifier.yaml", [], disable_notifications=False)
-        assert "env" not in captured["kwargs"]
+        env = captured["kwargs"]["env"]
+        assert "SLACK_WEBHOOK_URL" not in env
 
     def test_local_suppress_output_coexists_with_env(self, monkeypatch):
         captured = self._capture_popen(monkeypatch)

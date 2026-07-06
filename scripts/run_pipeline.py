@@ -198,12 +198,17 @@ def run(
         # normal runs, so this doesn't reintroduce the interleaving.
         popen_kwargs["stdout"] = subprocess.DEVNULL
         popen_kwargs["stderr"] = sys.stderr
-    # Local mode has no `-e SLACK_WEBHOOK_URL=` container flag, so blank the webhook in
-    # the child env instead. main.py's load_dotenv(override=False) keeps the empty value,
-    # so notify_success/notify_error short-circuit — matching the Docker suppression path.
-    if local and disable_notifications:
+    # Local mode inherits the parent env by default, which would let a stale shell-exported
+    # SLACK_WEBHOOK_URL shadow .env (main.py's load_dotenv(override=False) keeps an
+    # already-set var). Docker never leaked host env, so .env was always authoritative. Pin
+    # the webhook in the child env to match that: blank it to suppress notifications, else
+    # drop it so main.py's load_dotenv populates it from .env.
+    if local:
         env = os.environ.copy()
-        env["SLACK_WEBHOOK_URL"] = ""
+        if disable_notifications:
+            env["SLACK_WEBHOOK_URL"] = ""
+        else:
+            env.pop("SLACK_WEBHOOK_URL", None)
         popen_kwargs["env"] = env
     return subprocess.Popen(cmd, **popen_kwargs)
 
