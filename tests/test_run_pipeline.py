@@ -557,13 +557,21 @@ class TestExperimentEvalComplete:
 class TestPendingLocalGpuJobs:
     """Gate deciding whether a --local run will actually launch a classifier GPU pass."""
 
+    def _cfg(self, *, evaluation=True, skip_completed=True):
+        return {
+            "phases": {"evaluation": evaluation},
+            "runner": {"skip_completed": skip_completed},
+        }
+
     def test_false_when_no_classifier_jobs(self, monkeypatch):
         # summarize-only / no classifier phases -> build_classifier_jobs returns [].
+        monkeypatch.setattr(rp, "CFG", self._cfg())
         monkeypatch.setattr(rp, "build_classifier_jobs", lambda cfg: [])
         assert rp._pending_local_gpu_jobs() is False
 
     def test_false_when_all_jobs_already_complete(self, monkeypatch):
         # skip_completed run where every classifier report already exists -> no GPU work.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
         monkeypatch.setattr(
             rp,
             "build_classifier_jobs",
@@ -573,6 +581,7 @@ class TestPendingLocalGpuJobs:
         assert rp._pending_local_gpu_jobs() is False
 
     def test_true_when_any_job_pending(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
         monkeypatch.setattr(
             rp,
             "build_classifier_jobs",
@@ -581,6 +590,35 @@ class TestPendingLocalGpuJobs:
         monkeypatch.setattr(
             rp, "_experiment_eval_complete", lambda out_dir: out_dir == "out/a"
         )
+        assert rp._pending_local_gpu_jobs() is True
+
+    def test_false_when_eval_off_and_checkpoints_exist(self, monkeypatch):
+        # Training-only re-run (evaluation phase off) where every final_model.pth already
+        # exists under skip_completed -> each job hits [SKIP-TRAIN] and launches nothing,
+        # so the run needs no CUDA and must not be blocked (finding 1).
+        monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
+        monkeypatch.setattr(
+            rp,
+            "build_classifier_jobs",
+            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
+        )
+        # eval off -> _experiment_eval_complete is always False; the checkpoint marker is
+        # what gates GPU work. Every final_model.pth present -> _is_done True -> no launch.
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("final_model.pth")
+        )
+        assert rp._pending_local_gpu_jobs() is False
+
+    def test_true_when_eval_off_and_a_checkpoint_missing(self, monkeypatch):
+        # Same as above but out/a's final_model.pth is absent -> that job trains on the GPU.
+        monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
+        monkeypatch.setattr(
+            rp,
+            "build_classifier_jobs",
+            lambda cfg: [("a", "out/a", []), ("b", "out/b", [])],
+        )
+        # out/b checkpoint present, out/a checkpoint missing -> out/a must launch training.
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: not p.startswith("out/a"))
         assert rp._pending_local_gpu_jobs() is True
 
 
@@ -605,6 +643,22 @@ class TestPinnedRequirementVersions:
         # A missing manifest degrades to "no drift check" rather than erroring.
         monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", tmp_path / "nope.txt")
         assert rp._pinned_requirement_versions() == {}
+
+    def test_strips_markers_extras_and_trailing_specs(self, monkeypatch, tmp_path):
+        # Since the drift scan was broadened from torch/torchvision to the whole manifest,
+        # the parser must tolerate PEP 508 markers/extras/trailing options on any line
+        # without leaking them into the name or version (finding 5). A mangled name would
+        # otherwise trigger a false fatal (missing-pin check) and a mangled version a false
+        # drift warning.
+        req = tmp_path / "requirements.txt"
+        req.write_text(
+            'torch==2.10.0; python_version>="3.9"\n'  # environment marker
+            "pandas[performance]==3.0.0\n"  # extras on the name
+            "numpy==2.3.5 --hash=sha256:abc\n"  # trailing option
+        )
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", req)
+        pins = rp._pinned_requirement_versions()
+        assert pins == {"torch": "2.10.0", "pandas": "3.0.0", "numpy": "2.3.5"}
 
 
 @pytest.mark.unit
@@ -716,6 +770,25 @@ class TestPreflightLocalChecks:
         out = capsys.readouterr().out
         assert "requirements.txt pins" not in out
 
+    def test_raises_when_pinned_dep_missing(self, monkeypatch):
+        # A pinned dep entirely absent from the venv -> fail fast at preflight instead of a
+        # mid-run ModuleNotFoundError; Docker's frozen image guaranteed every pin present
+        # (finding 2). Absence is fatal even though a version mismatch is only advisory.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda: {"scikit-learn": "1.8.0"}
+        )
+
+        def _missing(name):
+            raise rp.importlib.metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(rp.importlib.metadata, "version", _missing)
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks(require_cuda=True)
+        assert "scikit-learn" in str(exc.value) and "missing" in str(exc.value)
+
     def test_warns_when_shm_smaller_than_configured(self, monkeypatch, capsys):
         monkeypatch.setattr(rp, "CFG", self._cfg())
         self._pass_deps(monkeypatch)
@@ -744,7 +817,19 @@ class TestPreflightLocalChecks:
         out = capsys.readouterr().out
         assert "WARNING" not in out
 
-    def test_no_warn_when_shm_probe_fails(self, monkeypatch, capsys):
+    def test_warns_when_shm_exhausted(self, monkeypatch, capsys):
+        # finding 3: /dev/shm completely full (0 bytes free) is exactly when a Bus error is
+        # imminent, yet the old `and available` truthiness guard short-circuited to silence.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=0)
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "Bus error" in out
+
+    def test_warns_when_shm_probe_fails(self, monkeypatch, capsys):
+        # finding 3: a failed /dev/shm probe means we can't rule out exhaustion, so it must
+        # warn (not stay silent) — probe failure is still non-fatal (no SystemExit).
         monkeypatch.setattr(rp, "CFG", self._cfg())
         self._pass_deps(monkeypatch)
 
@@ -752,7 +837,6 @@ class TestPreflightLocalChecks:
             raise OSError("no /dev/shm")
 
         monkeypatch.setattr(rp.shutil, "disk_usage", _raise)
-        # Probe failure is non-fatal: deps present + CUDA ok, so no exit and no shm warning.
         rp._preflight_local_checks(require_cuda=True)
         out = capsys.readouterr().out
-        assert "WARNING" not in out
+        assert "WARNING" in out and "could not be probed" in out

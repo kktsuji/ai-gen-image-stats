@@ -540,11 +540,21 @@ def _pinned_requirement_versions() -> Dict[str, str]:
     except OSError:
         return pins
     for raw in lines:
-        line = raw.split("#", 1)[0].strip()
+        # Drop inline comments (#) and any PEP 508 environment marker (everything after
+        # ';', e.g. '; python_version>="3.9"') before parsing. The whole manifest is
+        # scanned now — not just torch/torchvision — and a missing/mismatched pin is acted
+        # on (missing is fatal), so an arbitrary line must parse exactly: a marker or
+        # trailing spec must not leak into the name or version.
+        line = raw.split("#", 1)[0].split(";", 1)[0].strip()
         if "==" not in line:
             continue
         name, _, version = line.partition("==")
-        name, version = name.strip(), version.strip()
+        # Strip an optional extras group from the name ('pkg[extra]==' -> 'pkg') and keep
+        # only the first token of the version, dropping any trailing specifier or option
+        # ('1.0 --hash=...' -> '1.0'), so both match what importlib.metadata reports.
+        name = name.split("[", 1)[0].strip()
+        version_tokens = version.split()
+        version = version_tokens[0] if version_tokens else ""
         if name and version:
             pins[name] = version
     return pins
@@ -553,17 +563,33 @@ def _pinned_requirement_versions() -> Dict[str, str]:
 def _pending_local_gpu_jobs() -> bool:
     """True when this run will actually launch at least one classifier GPU pass.
 
-    Only the classifier phases (baseline/ft) do GPU compute; ``data_preparation`` is
-    CPU-only, ``evaluation`` is interleaved inside the classifier phases, and ``summarize``
-    is CPU-only. ``build_classifier_jobs`` already reflects which classifier phases are
-    enabled (it is pure/no-I/O), and a job whose reports already exist under
-    ``skip_completed`` will be skipped without touching the GPU — so a summarize-only or
-    fully-skip_completed --local run needs no CUDA and the fatal GPU preflight is skipped.
+    Mirrors the skip logic in ``_run_classifier_experiment`` so the --local preflight
+    agrees with the runner on whether any GPU work happens. For each classifier job:
+
+    * ``_experiment_eval_complete`` -> the whole experiment is skipped (no GPU).
+    * evaluation phase on (and not complete) -> a train and/or eval pass always runs on
+      the GPU, so CUDA is needed.
+    * evaluation phase off -> the only GPU work is training, which is itself skipped when
+      ``final_model.pth`` already exists under ``skip_completed`` (the ``[SKIP-TRAIN]``
+      path). So a training-only re-run over existing checkpoints launches nothing and
+      must not be blocked for lacking a GPU.
+
+    ``build_classifier_jobs`` is pure/no-I/O and already reflects the enabled classifier
+    phases, so a summarize-only or fully-skip_completed --local run needs no CUDA and the
+    fatal GPU preflight is skipped.
     """
-    return any(
-        not _experiment_eval_complete(out_dir)
-        for _, out_dir, _ in build_classifier_jobs(CFG)
-    )
+    evaluation_on = CFG["phases"]["evaluation"]
+    for _, out_dir, _ in build_classifier_jobs(CFG):
+        if _experiment_eval_complete(out_dir):
+            continue
+        if evaluation_on:
+            return True
+        # evaluation off: GPU work happens only when training actually runs, i.e. the
+        # final checkpoint does not already exist under skip_completed.
+        final_ckpt = os.path.join(out_dir, "checkpoints", "final_model.pth")
+        if not _is_done(final_ckpt):
+            return True
+    return False
 
 
 def _preflight_local_checks(*, require_cuda: bool) -> None:
@@ -615,20 +641,33 @@ def _preflight_local_checks(*, require_cuda: bool) -> None:
                 "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
             )
 
-    # 3. Warn (don't abort) when an installed dep diverges from the ==-pinned version the
-    # Docker image was built from — a local run would then not reproduce the container
-    # baselines. Every ==-pinned dep is checked (the whole manifest is frozen for the
-    # campaign, not just torch). Advisory only: divergence is legitimate outside one.
+    # 3. Compare installed versions against the ==-pins (the whole manifest is frozen for
+    # the campaign, not just torch). A pin that is entirely absent is fatal — Docker's
+    # frozen image guaranteed every pin was installed, so a missing dep would only surface
+    # as a mid-run ModuleNotFoundError; fail fast here, the same contract as the required-
+    # module check above. A pin that is present but a different version is advisory only
+    # (a local run then won't reproduce the container baselines, which is legitimate
+    # outside a frozen-deps campaign).
     drifted = []
+    missing = []
     for name, pinned in _pinned_requirement_versions().items():
         try:
             installed = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
+            missing.append(f"{name} (pinned {pinned})")
             continue
         # Compare the public version only: a CUDA wheel reports a local segment
         # (e.g. '2.10.0+cu128') that still satisfies the plain pin '2.10.0'.
         if installed.split("+", 1)[0] != pinned:
             drifted.append(f"{name} {installed} (pinned {pinned})")
+    if missing:
+        raise SystemExit(
+            f"[RUN] --local: the launching interpreter ({sys.executable}) is missing "
+            f"pinned dependencies [{', '.join(missing)}]. Docker's frozen image guaranteed "
+            "every requirements.txt pin was installed; local mode runs src.main jobs with "
+            "this interpreter, so a missing dep would crash a job mid-run. Install them "
+            "('pip install -r requirements.txt') or run in Docker mode."
+        )
     if drifted:
         print(
             "[RUN] WARNING --local: installed deps differ from requirements.txt pins "
@@ -647,10 +686,19 @@ def _preflight_local_checks(*, require_cuda: bool) -> None:
     try:
         available = shutil.disk_usage("/dev/shm").free
     except OSError:
-        available = 0
-    if configured and available and available < configured:
+        available = None
+    # Warn whenever the free shm can't cover the configured size. `available == 0`
+    # (/dev/shm exhausted) and `available is None` (probe failed) are exactly the cases the
+    # old `and available` truthiness guard skipped — i.e. when the Bus-error risk is
+    # highest — so they must warn, not short-circuit to silence.
+    if configured and (available is None or available < configured):
+        free_desc = (
+            "free space could not be probed"
+            if available is None
+            else f"has {available / 1024**3:.1f} GiB free"
+        )
         print(
-            f"[RUN] WARNING --local: /dev/shm has {available / 1024**3:.1f} GiB free but "
+            f"[RUN] WARNING --local: /dev/shm {free_desc} but "
             f"runner.shm_size expects {shm_size}. Local mode cannot raise "
             "the shared-memory limit (no container), so multi-worker DataLoaders may crash "
             "with 'Bus error'. Reduce data.loading.num_workers (e.g. --set-run "

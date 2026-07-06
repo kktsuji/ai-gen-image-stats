@@ -84,7 +84,6 @@ def _valid_config():
 
 
 @pytest.mark.unit
-@pytest.mark.unit
 class TestParseShmSize:
     """The canonical Docker ``--shm-size`` parser shared by runner/docker validation."""
 
@@ -124,6 +123,7 @@ class TestParseShmSize:
         assert parse_shm_size(value) is None
 
 
+@pytest.mark.unit
 class TestValidateAccepts:
     def test_minimal_valid_config(self):
         validate_pipeline_config(_valid_config())
