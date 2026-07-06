@@ -32,6 +32,7 @@ Naming convention:
 """
 
 import argparse
+import importlib.metadata
 import importlib.util
 import os
 import shutil
@@ -61,6 +62,11 @@ DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 # In --local mode the pipeline's own interpreter must carry them, so the preflight verifies
 # each is importable (via find_spec, without importing) before any job launches.
 _REQUIRED_LOCAL_MODULES = ("torch", "torchvision")
+
+# The ==-pinned dependency manifest the Docker image was built from. In --local mode the
+# preflight compares the interpreter's installed deps against these pins to warn when a
+# local run would not reproduce the container-frozen results.
+_REQUIREMENTS_FILE = Path(__file__).resolve().parent.parent / "requirements.txt"
 
 # Set once in main() before any worker thread spawns, then read-only. Holds the
 # validated pipeline config so the orchestration helpers can read runner/docker/phase
@@ -159,11 +165,15 @@ def run(
     disable_notifications: bool = False,
 ) -> "subprocess.Popen[bytes]":
     local = _is_local()
+    # The job itself is identical in both modes; only the interpreter and its wrapper
+    # differ (this venv directly vs python3 inside the container). Kept in one place so a
+    # change to how src.main is invoked can't make local and docker modes diverge.
+    main_invocation = ["-m", "src.main", config, *overrides]
     if local:
         # Run directly with the interpreter driving the pipeline (this venv), no
         # container. Notification suppression is handled below via the child env, since
         # there is no `-e SLACK_WEBHOOK_URL=` container flag to blank the webhook with.
-        cmd = [sys.executable, "-m", "src.main", config, *overrides]
+        cmd = [sys.executable, *main_invocation]
     else:
         cmd = [
             "docker",
@@ -186,14 +196,7 @@ def run(
         # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
         if disable_notifications:
             cmd += ["-e", "SLACK_WEBHOOK_URL="]
-        cmd += [
-            CFG["docker"]["image"],
-            "python3",
-            "-m",
-            "src.main",
-            config,
-            *overrides,
-        ]
+        cmd += [CFG["docker"]["image"], "python3", *main_invocation]
 
     popen_kwargs: Dict[str, Any] = {}
     if suppress_output:
@@ -219,7 +222,11 @@ def run(
 
 
 def _gpu_cooldown() -> None:
-    """Fixed pause giving the GPU driver time to release the CUDA context."""
+    """Fixed pause giving the GPU driver time to release the CUDA context.
+
+    Applied after every job regardless of execution mode: local host processes and
+    Docker containers both leave a CUDA context to tear down.
+    """
     cooldown = CFG["runner"]["gpu_cooldown_seconds"]
     if cooldown > 0:
         time.sleep(cooldown)
@@ -232,7 +239,8 @@ def run_and_wait(
     suppress_output: bool = False,
     disable_notifications: bool = False,
 ) -> int:
-    """Launch a container, wait for it, apply the GPU cooldown, return the returncode."""
+    """Launch a job (Docker container or, in local mode, a host process), wait for it,
+    apply the GPU cooldown, and return its returncode."""
     proc = run(
         config,
         overrides,
@@ -246,13 +254,14 @@ def run_and_wait(
 
 # Serializes only the GPU-context *initialization* window across parallel classifier
 # workers: a worker waits until gpu_cooldown_seconds have elapsed since the previous
-# launch, starts its container, then releases the gate so runs overlap. This staggers
-# launches (preventing the back-to-back CUDA-init crashes) without serializing the runs.
+# launch, starts its job (container, or host process in local mode), then releases the
+# gate so runs overlap. This staggers launches (preventing the back-to-back CUDA-init
+# crashes) without serializing the runs.
 _launch_lock = threading.Lock()
 _last_launch_monotonic = [0.0]
 # Guards the shared progress counter / Slack notifications across worker threads.
 _progress_lock = threading.Lock()
-# Single "foreground" slot: at most one running classifier job streams its container
+# Single "foreground" slot: at most one running classifier job streams its
 # stdout/stderr to the console; the rest run suppressed (their detail still lands in
 # each run's own logs/ dir). A job acquires this non-blocking at start and holds it for
 # its whole train -> eval, so the console shows one coherent run at a time.
@@ -519,6 +528,30 @@ def _parse_shm_size(value: str) -> int:
         return 0
 
 
+def _pinned_requirement_versions(modules: Tuple[str, ...]) -> Dict[str, str]:
+    """Map each of ``modules`` to its ``==``-pinned version in requirements.txt.
+
+    Only plain ``name==version`` pins are recognized; a module absent from the manifest
+    or pinned another way is omitted (no version expectation). Returns ``{}`` if the file
+    cannot be read, so a missing manifest degrades to "no drift check" rather than erroring.
+    """
+    wanted = set(modules)
+    pins: Dict[str, str] = {}
+    try:
+        lines = _REQUIREMENTS_FILE.read_text().splitlines()
+    except OSError:
+        return pins
+    for raw in lines:
+        line = raw.split("#", 1)[0].strip()
+        if "==" not in line:
+            continue
+        name, _, version = line.partition("==")
+        name, version = name.strip(), version.strip()
+        if name in wanted and version:
+            pins[name] = version
+    return pins
+
+
 def _preflight_local_checks() -> None:
     """Guard the assumptions Docker used to enforce, before any --local job launches.
 
@@ -530,7 +563,10 @@ def _preflight_local_checks() -> None:
        wheel imports fine but would silently run every job on CPU (10-100x slower), so
        verify ``torch.cuda.is_available()`` too. Fatal, like a missing dep: there is no
        valid CPU use for a GPU campaign.
-    3. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
+    3. The Docker image froze deps at ``==`` pins; a local venv may hold different versions,
+       so results would silently diverge from the container baselines. Warn (not fatal:
+       divergence is legitimate outside a frozen-deps campaign).
+    4. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
        host process is bounded by ``/dev/shm`` instead, which defaults small on WSL2 —
        the exact platform --local targets — and triggers a Bus error mid-run. This is a
        warning, not fatal: it only bites when ``data.loading.num_workers > 0``, and
@@ -560,6 +596,24 @@ def _preflight_local_checks() -> None:
             f"(torch.cuda.is_available() is False) for interpreter {sys.executable}. "
             "Docker guaranteed a GPU; local mode would silently run every job on CPU. "
             "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
+        )
+
+    # #5: warn (don't abort) when an installed dep diverges from the ==-pinned version the
+    # Docker image was built from — a local run would then not reproduce the container
+    # baselines. Advisory only: divergence is legitimate outside a frozen-deps campaign.
+    drifted = []
+    for name, pinned in _pinned_requirement_versions(_REQUIRED_LOCAL_MODULES).items():
+        try:
+            installed = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        if installed != pinned:
+            drifted.append(f"{name} {installed} (pinned {pinned})")
+    if drifted:
+        print(
+            "[RUN] WARNING --local: installed deps differ from requirements.txt pins "
+            f"[{', '.join(drifted)}]. Local runs use this venv, not the pinned Docker "
+            "image, so numeric results may diverge from container-produced baselines."
         )
 
     # #1/#2: the shm expectation lives in runner.shm_size (populated by _validate_runner),

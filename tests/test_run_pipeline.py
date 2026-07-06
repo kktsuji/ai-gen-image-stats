@@ -410,6 +410,21 @@ class TestRunOutputStreams:
         # No child-env override in Docker mode.
         assert "env" not in captured["kwargs"]
 
+    def test_docker_command_tail_invokes_src_main(self, monkeypatch):
+        # The src.main invocation tail is shared with local mode (single source of truth);
+        # in docker mode it follows the image, run by python3.
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", ["--compute.seed", "0"])
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("img") + 1 :] == [
+            "python3",
+            "-m",
+            "src.main",
+            "configs/classifier.yaml",
+            "--compute.seed",
+            "0",
+        ]
+
 
 @pytest.mark.unit
 class TestRunLocalMode:
@@ -523,6 +538,27 @@ class TestParseShmSize:
 
 
 @pytest.mark.unit
+class TestPinnedRequirementVersions:
+    def test_extracts_only_equals_pins_for_wanted_modules(self, monkeypatch, tmp_path):
+        req = tmp_path / "requirements.txt"
+        req.write_text(
+            "# a comment\n"
+            "torch==2.10.0\n"
+            "torchvision==0.25.0  # inline comment\n"
+            "numpy>=1.0\n"  # not an == pin -> omitted
+            "pandas==2.0\n"  # not in the wanted set -> omitted
+        )
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", req)
+        pins = rp._pinned_requirement_versions(("torch", "torchvision", "numpy"))
+        assert pins == {"torch": "2.10.0", "torchvision": "0.25.0"}
+
+    def test_missing_file_returns_empty(self, monkeypatch, tmp_path):
+        # A missing manifest degrades to "no drift check" rather than erroring.
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", tmp_path / "nope.txt")
+        assert rp._pinned_requirement_versions(("torch",)) == {}
+
+
+@pytest.mark.unit
 class TestPreflightLocalChecks:
     """--local preflight: fail fast on missing deps or no CUDA, warn on a small /dev/shm."""
 
@@ -546,6 +582,10 @@ class TestPreflightLocalChecks:
             cuda=types.SimpleNamespace(is_available=lambda: cuda_available)
         )
         monkeypatch.setitem(sys.modules, "torch", fake_torch)
+        # Neutralize the version-drift check by default (no pins -> no drift) so the shm
+        # tests stay isolated from whatever versions this venv actually has installed.
+        # The drift-specific tests re-patch this.
+        monkeypatch.setattr(rp, "_pinned_requirement_versions", lambda modules: {})
 
     def _mock_shm(self, monkeypatch, *, free_bytes):
         monkeypatch.setattr(
@@ -576,6 +616,31 @@ class TestPreflightLocalChecks:
         with pytest.raises(SystemExit) as exc:
             rp._preflight_local_checks()
         assert "CUDA" in str(exc.value)
+
+    def test_warns_on_version_drift(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)  # shm ok -> isolate drift
+        # Installed torch differs from the requirements.txt pin -> advisory warning.
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda modules: {"torch": "2.10.0"}
+        )
+        monkeypatch.setattr(rp.importlib.metadata, "version", lambda name: "2.9.0")
+        rp._preflight_local_checks()  # not fatal
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "requirements.txt pins" in out and "2.10.0" in out
+
+    def test_no_warn_when_versions_match(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda modules: {"torch": "2.10.0"}
+        )
+        monkeypatch.setattr(rp.importlib.metadata, "version", lambda name: "2.10.0")
+        rp._preflight_local_checks()
+        out = capsys.readouterr().out
+        assert "requirements.txt pins" not in out
 
     def test_warns_when_shm_smaller_than_configured(self, monkeypatch, capsys):
         monkeypatch.setattr(rp, "CFG", self._cfg())
