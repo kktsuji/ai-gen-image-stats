@@ -66,11 +66,6 @@ DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
 # each is importable (via find_spec, without importing) before any job launches.
 _REQUIRED_LOCAL_MODULES = ("torch", "torchvision")
 
-# Phases that launch a GPU/src.main job. `evaluation` is interleaved inside the classifier
-# phases (no GPU work when both are off) and `summarize` is CPU-only, so neither belongs
-# here. Used to skip the GPU preflight when a --local run needs no GPU (e.g. summarize-only).
-_GPU_PHASE_KEYS = ("data_preparation", "baseline_classifier", "ft_classifier")
-
 # The ==-pinned dependency manifest the Docker image was built from. In --local mode the
 # preflight compares the interpreter's installed deps against these pins to warn when a
 # local run would not reproduce the container-frozen results.
@@ -99,6 +94,24 @@ def _is_local() -> bool:
 def _is_done(*markers: str) -> bool:
     """True if skip_completed is enabled and every marker file exists."""
     return CFG["runner"]["skip_completed"] and all(os.path.exists(m) for m in markers)
+
+
+def _experiment_eval_complete(out_dir: str) -> bool:
+    """True if this classifier experiment is already fully evaluated (skip_completed).
+
+    An experiment is "done" only when the evaluation phase is on and every
+    evaluation-split report already exists under ``out_dir/reports/`` (the same
+    condition that makes ``_run_classifier_experiment`` skip a run entirely). Shared
+    with the ``--local`` preflight gate so it agrees with the runner on what will
+    actually launch a GPU pass. Returns False when skip_completed is off.
+    """
+    if not CFG["phases"]["evaluation"]:
+        return False
+    markers = [
+        os.path.join(out_dir, "reports", _eval_report_name(s))
+        for s in CFG["runner"]["evaluation_splits"]
+    ]
+    return _is_done(*markers)
 
 
 def _eval_report_name(split: str) -> str:
@@ -340,14 +353,12 @@ def _run_classifier_experiment(
     run_evaluation = CFG["phases"]["evaluation"]
     eval_splits = CFG["runner"]["evaluation_splits"]
     final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
-    # One report marker per evaluated split; the run is "done" only when every
-    # split has been evaluated (so a half-finished two-pass run re-runs the rest).
-    eval_markers = [
-        os.path.join(out_dir, "reports", _eval_report_name(s)) for s in eval_splits
-    ]
 
-    # Already evaluated (checkpoints possibly already cleaned up): skip entirely.
-    if run_evaluation and _is_done(*eval_markers):
+    # Already evaluated (checkpoints possibly already cleaned up): skip entirely. The
+    # per-split report markers under out_dir/reports/ are the completion signal — the run
+    # is "done" only when every split has been evaluated (so a half-finished two-pass run
+    # re-runs the rest). Shared with the --local preflight gate via _experiment_eval_complete.
+    if _experiment_eval_complete(out_dir):
         print(f"[SKIP] {exp_label}: already complete")
         return
 
@@ -516,25 +527,13 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _parse_shm_size(value: str) -> int:
-    """Bytes for a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``); 0 if unparseable.
+def _pinned_requirement_versions() -> Dict[str, str]:
+    """Map every ``name==version`` pin in requirements.txt to its version.
 
-    Delegates to the canonical parser in ``pipeline_config`` (single source of the grammar)
-    and collapses its ``None`` to 0 so the preflight's ``configured and ...`` guard treats an
-    unparseable value as "no threshold". Config validation now rejects such values up front,
-    so 0 is defensive belt-and-suspenders rather than a silent failure path.
-    """
-    return parse_shm_size(value) or 0
-
-
-def _pinned_requirement_versions(modules: Tuple[str, ...]) -> Dict[str, str]:
-    """Map each of ``modules`` to its ``==``-pinned version in requirements.txt.
-
-    Only plain ``name==version`` pins are recognized; a module absent from the manifest
-    or pinned another way is omitted (no version expectation). Returns ``{}`` if the file
+    Only plain ``name==version`` pins are recognized; a dependency pinned another way
+    (``>=``, unpinned) is omitted (no version expectation). Returns ``{}`` if the file
     cannot be read, so a missing manifest degrades to "no drift check" rather than erroring.
     """
-    wanted = set(modules)
     pins: Dict[str, str] = {}
     try:
         lines = _REQUIREMENTS_FILE.read_text().splitlines()
@@ -546,22 +545,28 @@ def _pinned_requirement_versions(modules: Tuple[str, ...]) -> Dict[str, str]:
             continue
         name, _, version = line.partition("==")
         name, version = name.strip(), version.strip()
-        if name in wanted and version:
+        if name and version:
             pins[name] = version
     return pins
 
 
-def _local_run_needs_gpu() -> bool:
-    """True when this run will launch at least one GPU/src.main job.
+def _pending_local_gpu_jobs() -> bool:
+    """True when this run will actually launch at least one classifier GPU pass.
 
-    Only the phases in ``_GPU_PHASE_KEYS`` spawn GPU work; ``evaluation`` is interleaved
-    inside the classifier phases and ``summarize`` is CPU-only. A summarize-only --local
-    run needs no GPU, so the GPU preflight (which fatally requires CUDA) must be skipped.
+    Only the classifier phases (baseline/ft) do GPU compute; ``data_preparation`` is
+    CPU-only, ``evaluation`` is interleaved inside the classifier phases, and ``summarize``
+    is CPU-only. ``build_classifier_jobs`` already reflects which classifier phases are
+    enabled (it is pure/no-I/O), and a job whose reports already exist under
+    ``skip_completed`` will be skipped without touching the GPU — so a summarize-only or
+    fully-skip_completed --local run needs no CUDA and the fatal GPU preflight is skipped.
     """
-    return any(CFG["phases"][phase] for phase in _GPU_PHASE_KEYS)
+    return any(
+        not _experiment_eval_complete(out_dir)
+        for _, out_dir, _ in build_classifier_jobs(CFG)
+    )
 
 
-def _preflight_local_checks() -> None:
+def _preflight_local_checks(*, require_cuda: bool) -> None:
     """Guard the assumptions Docker used to enforce, before any --local job launches.
 
     1. Jobs run as ``sys.executable -m src.main``, so the pipeline's own interpreter must
@@ -571,7 +576,9 @@ def _preflight_local_checks() -> None:
     2. Docker's CUDA base image + ``--gpus all`` guaranteed a usable GPU. A CPU-only torch
        wheel imports fine but would silently run every job on CPU (10-100x slower), so
        verify ``torch.cuda.is_available()`` too. Fatal, like a missing dep: there is no
-       valid CPU use for a GPU campaign.
+       valid CPU use for a GPU campaign. Only checked when ``require_cuda`` — a run that
+       launches only CPU work (e.g. data_preparation, or classifier jobs all skip_completed)
+       must not be blocked for lacking a GPU it never uses.
     3. The Docker image froze deps at ``==`` pins; a local venv may hold different versions,
        so results would silently diverge from the container baselines. Warn (not fatal:
        divergence is legitimate outside a frozen-deps campaign).
@@ -595,28 +602,32 @@ def _preflight_local_checks() -> None:
             "'venv/bin/python -m scripts.run_pipeline ... --local' (see CLAUDE.md)."
         )
 
-    # 2. Deps are importable now, so import torch here (kept out of module scope so the
-    # driver still loads on a torch-less interpreter) and require a usable CUDA device.
-    import torch
+    # 2. When GPU compute will actually run, import torch here (kept out of module scope so
+    # the driver still loads on a torch-less interpreter) and require a usable CUDA device.
+    if require_cuda:
+        import torch
 
-    if not torch.cuda.is_available():
-        raise SystemExit(
-            f"[RUN] --local: torch is installed but reports no CUDA device "
-            f"(torch.cuda.is_available() is False) for interpreter {sys.executable}. "
-            "Docker guaranteed a GPU; local mode would silently run every job on CPU. "
-            "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
-        )
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                f"[RUN] --local: torch is installed but reports no CUDA device "
+                f"(torch.cuda.is_available() is False) for interpreter {sys.executable}. "
+                "Docker guaranteed a GPU; local mode would silently run every job on CPU. "
+                "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
+            )
 
     # 3. Warn (don't abort) when an installed dep diverges from the ==-pinned version the
     # Docker image was built from — a local run would then not reproduce the container
-    # baselines. Advisory only: divergence is legitimate outside a frozen-deps campaign.
+    # baselines. Every ==-pinned dep is checked (the whole manifest is frozen for the
+    # campaign, not just torch). Advisory only: divergence is legitimate outside one.
     drifted = []
-    for name, pinned in _pinned_requirement_versions(_REQUIRED_LOCAL_MODULES).items():
+    for name, pinned in _pinned_requirement_versions().items():
         try:
             installed = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             continue
-        if installed != pinned:
+        # Compare the public version only: a CUDA wheel reports a local segment
+        # (e.g. '2.10.0+cu128') that still satisfies the plain pin '2.10.0'.
+        if installed.split("+", 1)[0] != pinned:
             drifted.append(f"{name} {installed} (pinned {pinned})")
     if drifted:
         print(
@@ -630,7 +641,9 @@ def _preflight_local_checks() -> None:
     # dropped the docker section. Compare against .free (not .total): capacity that is
     # already consumed still triggers Bus errors.
     shm_size = CFG["runner"]["shm_size"]
-    configured = _parse_shm_size(shm_size)
+    # Validation guarantees runner.shm_size is a positive, parseable size; `or 0` is a
+    # defensive fallback so the `configured and ...` guard degrades to "no threshold".
+    configured = parse_shm_size(shm_size) or 0
     try:
         available = shutil.disk_usage("/dev/shm").free
     except OSError:
@@ -662,19 +675,23 @@ def main() -> None:
 
     global CFG
     CFG = cfg
+    phases = cfg["phases"]
     if _is_local():
         print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
-        # The preflight fatally requires a GPU; skip it when no GPU phase is enabled
-        # (e.g. a summarize-only run) so CPU-only work isn't blocked on a CUDA device.
-        if _local_run_needs_gpu():
-            _preflight_local_checks()
+        # Run the preflight only when a src.main job will actually launch (data_preparation
+        # or a not-yet-completed classifier job); require CUDA only when a classifier GPU
+        # pass will run — data_preparation is CPU-only and a fully skip_completed run
+        # launches nothing, so neither should be blocked for lacking a GPU.
+        needs_cuda = _pending_local_gpu_jobs()
+        launches_job = phases["data_preparation"] or needs_cuda
+        if launches_job:
+            _preflight_local_checks(require_cuda=needs_cuda)
         else:
             print(
-                "[RUN] local mode: no GPU phases enabled; skipping GPU preflight checks"
+                "[RUN] local mode: no local jobs will launch; skipping preflight checks"
             )
 
     start = time.time()
-    phases = cfg["phases"]
 
     # ------------------------------------------------------------------
     # Data Preparation: create train/val split

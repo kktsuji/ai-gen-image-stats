@@ -16,6 +16,7 @@ Strict validation: all parameters must be explicitly specified, mirroring the
 import logging
 import math
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from src.utils.cli import dot_notation_to_dict, infer_type, validate_override_keys
@@ -164,9 +165,11 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     _validate_phases(config)
     _validate_runner(config)
     _validate_configs_section(config)
-    # docker.* is only consumed when jobs run in containers; a "local" run reads none of
-    # it, so don't force users to maintain a dead docker section for local pipelines.
-    if config["runner"]["execution"] == "docker":
+    # docker.* is only consumed when jobs run in containers, so a "local" run isn't forced
+    # to carry a docker section. But if one *is* present (e.g. a config flipped to local that
+    # kept its docker block), validate it here so a malformed section fails fast now rather
+    # than only when the same YAML is later run in docker mode.
+    if config["runner"]["execution"] == "docker" or "docker" in config:
         _validate_docker(config)
     _validate_seeds(config)
     _validate_classifier_overrides(config)
@@ -196,29 +199,32 @@ def _non_empty_str(value: Any) -> bool:
 
 
 # Suffix multipliers for a Docker ``--shm-size`` string. A bare number (no suffix) is
-# interpreted as bytes, matching Docker's own grammar.
-_SHM_UNITS = {"b": 1, "k": 1024, "m": 1024**2, "g": 1024**3}
+# interpreted as bytes; the unit letter may carry an optional ``i`` and/or ``b`` (so ``g``,
+# ``gb`` and ``gib`` all mean 1024**3), matching Docker's own ``RAMInBytes`` grammar.
+_SHM_UNITS = {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4, "p": 1024**5}
+
+# ``<number><unit>`` where number is a non-negative int/decimal and unit is an optional
+# ``k/m/g/t/p`` letter followed by an optional ``i`` and/or ``b``. A leading ``-`` and
+# non-numeric tokens (``inf``, ``abc``) do not match, so they are rejected as unparseable.
+_SHM_SIZE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*([kmgtp]?)i?b?$")
 
 
 def parse_shm_size(value: Any) -> Optional[int]:
-    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``, ``1048576``) into bytes.
+    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``, ``4gb``, ``1048576``) to bytes.
 
-    Canonical grammar for both ``runner.shm_size`` and ``docker.shm_size``; the driver's
-    ``_parse_shm_size`` delegates here so the format lives in one place. Returns ``None``
-    for an unparseable value (empty, bad number, or an unknown suffix like ``4gb``) so
-    callers can reject it rather than silently treating it as "no threshold".
+    Canonical grammar for both ``runner.shm_size`` and ``docker.shm_size``, matching Docker's
+    own size grammar so any value ``docker run --shm-size=`` accepts (``4g``, ``4gb``, ``2gib``,
+    ``512mb``, uppercase, bare bytes) parses. Returns ``None`` for anything unparseable —
+    empty, a bad number, an unknown suffix, or a non-positive size (``0``/``-4g``) — so callers
+    can reject it up front rather than passing it to Docker (which would abort per job) or
+    silently treating it as "no threshold".
     """
-    text = str(value).strip().lower()
-    if not text:
+    match = _SHM_SIZE_RE.match(str(value).strip().lower())
+    if not match:
         return None
-    if text[-1] in _SHM_UNITS:
-        num, mult = text[:-1], _SHM_UNITS[text[-1]]
-    else:
-        num, mult = text, 1
-    try:
-        return int(float(num) * mult)
-    except ValueError:
-        return None
+    number, unit = match.groups()
+    size = int(float(number) * _SHM_UNITS[unit])
+    return size if size > 0 else None
 
 
 def _validate_phases(config: Dict[str, Any]) -> None:
