@@ -468,3 +468,76 @@ class TestRunLocalMode:
         assert kwargs["stdout"] is rp.subprocess.DEVNULL
         assert kwargs["stderr"] is rp.sys.stderr
         assert kwargs["env"]["SLACK_WEBHOOK_URL"] == ""
+
+
+@pytest.mark.unit
+class TestParseShmSize:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("4g", 4 * 1024**3),
+            ("512m", 512 * 1024**2),
+            ("1024k", 1024 * 1024),
+            ("2G", 2 * 1024**3),
+            ("1048576", 1048576),  # bare bytes, no suffix
+            ("2.5g", int(2.5 * 1024**3)),
+        ],
+    )
+    def test_parses_units(self, value, expected):
+        assert rp._parse_shm_size(value) == expected
+
+    @pytest.mark.parametrize("value", ["", "  ", "abc", "g", "4x"])
+    def test_unparseable_returns_zero(self, value):
+        # 0 signals "no threshold" so the shm warning is skipped rather than crashing.
+        assert rp._parse_shm_size(value) == 0
+
+
+@pytest.mark.unit
+class TestPreflightLocalChecks:
+    """--local preflight: fail fast on a depless interpreter, warn on a small /dev/shm."""
+
+    def _cfg(self):
+        return {"docker": {"shm_size": "4g", "image": "img"}}
+
+    def test_raises_when_torch_missing(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # Interpreter cannot import torch -> jobs would ModuleNotFoundError; fail early.
+        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: None)
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks()
+        assert "torch" in str(exc.value)
+
+    def test_warns_when_shm_smaller_than_configured(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
+        # /dev/shm is 1 GiB but config requests 4g -> warn.
+        monkeypatch.setattr(
+            rp.shutil, "disk_usage", lambda p: type("U", (), {"total": 1024**3})()
+        )
+        rp._preflight_local_checks()
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "Bus error" in out
+
+    def test_no_warn_when_shm_sufficient(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
+        # /dev/shm is 8 GiB >= 4g -> no warning.
+        monkeypatch.setattr(
+            rp.shutil, "disk_usage", lambda p: type("U", (), {"total": 8 * 1024**3})()
+        )
+        rp._preflight_local_checks()
+        out = capsys.readouterr().out
+        assert "WARNING" not in out
+
+    def test_no_warn_when_shm_probe_fails(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(rp.importlib.util, "find_spec", lambda name: object())
+
+        def _raise(_):
+            raise OSError("no /dev/shm")
+
+        monkeypatch.setattr(rp.shutil, "disk_usage", _raise)
+        # Probe failure is non-fatal: torch present, so no exit and no shm warning.
+        rp._preflight_local_checks()
+        out = capsys.readouterr().out
+        assert "WARNING" not in out

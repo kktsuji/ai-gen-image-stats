@@ -30,6 +30,7 @@ Naming convention:
 """
 
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -480,6 +481,59 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _parse_shm_size(value: str) -> int:
+    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``) into bytes.
+
+    Returns 0 for an unparseable value so the caller treats it as "no threshold".
+    """
+    units = {"b": 1, "k": 1024, "m": 1024**2, "g": 1024**3}
+    text = str(value).strip().lower()
+    if not text:
+        return 0
+    suffix = text[-1]
+    if suffix in units:
+        num, mult = text[:-1], units[suffix]
+    else:
+        num, mult = text, 1
+    try:
+        return int(float(num) * mult)
+    except ValueError:
+        return 0
+
+
+def _preflight_local_checks() -> None:
+    """Guard the assumptions Docker used to enforce, before any --local job launches.
+
+    1. Jobs run as ``sys.executable -m src.main``, so the pipeline's own interpreter must
+       carry the GPU deps (torch). The pinned Docker image supplied these regardless of
+       the launching interpreter; local mode inherits whatever ``python`` invoked us.
+    2. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
+       host process is bounded by ``/dev/shm`` instead, which defaults small on WSL2 —
+       the exact platform --local targets — and triggers a Bus error mid-run.
+    """
+    if importlib.util.find_spec("torch") is None:
+        raise SystemExit(
+            f"[RUN] --local: the launching interpreter ({sys.executable}) cannot import "
+            "'torch'. Local mode runs src.main jobs with this interpreter, so it must have "
+            "the GPU deps installed. Launch via 'venv/bin/python -m scripts.run_pipeline ... "
+            "--local' (see CLAUDE.md)."
+        )
+
+    configured = _parse_shm_size(CFG["docker"]["shm_size"])
+    try:
+        available = shutil.disk_usage("/dev/shm").total
+    except OSError:
+        available = 0
+    if configured and available and available < configured:
+        print(
+            f"[RUN] WARNING --local: /dev/shm is {available / 1024**3:.1f} GiB but "
+            f"docker.shm_size requests {CFG['docker']['shm_size']}. Local mode cannot raise "
+            "the shared-memory limit (no container), so multi-worker DataLoaders may crash "
+            "with 'Bus error'. Reduce data.loading.num_workers (e.g. --set-run "
+            "data.loading.num_workers=0) or enlarge /dev/shm."
+        )
+
+
 def main() -> None:
     load_dotenv()
     args = _parse_args()
@@ -494,6 +548,7 @@ def main() -> None:
     LOCAL_MODE = args.local
     if LOCAL_MODE:
         print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
+        _preflight_local_checks()
 
     start = time.time()
     phases = cfg["phases"]
