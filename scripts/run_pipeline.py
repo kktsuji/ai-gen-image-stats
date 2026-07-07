@@ -9,13 +9,20 @@ changing what runs is a config edit, not a code change.
 
 Usage:
     python -m scripts.run_pipeline [configs/pipeline.yaml]
-        [--set KEY=VALUE ...] [--set-run KEY=VALUE ...]
+        [--set KEY=VALUE ...] [--set-run KEY=VALUE ...] [--local]
 
 ``--set`` overrides nested pipeline-config keys (e.g.
 ``--set runner.classifier_output_root=outputs/multisplit/split0/binary-depth``);
 ``--set-run`` injects flat classifier-run flags into every launch (e.g.
 ``--set-run data.split_file=outputs/splits/cv/cv_split0.json``). Together they let
 one base pipeline YAML serve every split of a cross-validation sweep.
+
+``--local`` (alias ``--no-docker``) runs each ``src.main`` job directly with the
+current interpreter (this venv) instead of inside a Docker container, bypassing the
+WSL+Docker layer that destabilizes long training runs on Windows. It is sugar for the
+``runner.execution: local`` config field (injected as ``--set runner.execution=local``),
+so the mode is validated once and recorded in the run's config snapshot; the ``docker:``
+section is then optional. Equivalently, set ``runner.execution: local`` in the YAML.
 
 Naming convention:
     Dimension separator: "__" (double underscore)
@@ -25,6 +32,8 @@ Naming convention:
 """
 
 import argparse
+import importlib.metadata
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -40,7 +49,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-from scripts.pipeline_config import load_pipeline_config  # noqa: E402
+from scripts.pipeline_config import (  # noqa: E402
+    load_pipeline_config,
+    parse_shm_size,
+)
 from src.utils.cli import serialize_overrides  # noqa: E402
 from src.utils.notification import (  # noqa: E402
     notify_progress,
@@ -48,6 +60,16 @@ from src.utils.notification import (  # noqa: E402
 )
 
 DEFAULT_PIPELINE_CONFIG = "configs/pipeline.yaml"
+
+# Runtime deps the pinned Docker image supplied regardless of the launching interpreter.
+# In --local mode the pipeline's own interpreter must carry them, so the preflight verifies
+# each is importable (via find_spec, without importing) before any job launches.
+_REQUIRED_LOCAL_MODULES = ("torch", "torchvision")
+
+# The ==-pinned dependency manifest the Docker image was built from. In --local mode the
+# preflight compares the interpreter's installed deps against these pins to warn when a
+# local run would not reproduce the container-frozen results.
+_REQUIREMENTS_FILE = Path(__file__).resolve().parent.parent / "requirements.txt"
 
 # Set once in main() before any worker thread spawns, then read-only. Holds the
 # validated pipeline config so the orchestration helpers can read runner/docker/phase
@@ -59,9 +81,37 @@ CFG: Dict[str, Any] = {}
 Job = Tuple[str, str, List[str]]
 
 
+def _is_local() -> bool:
+    """True when jobs run via the host interpreter instead of a Docker container.
+
+    Reads the validated ``runner.execution`` config field (single source of truth, set in
+    the YAML or via the ``--local`` alias), so there is no second module global to keep in
+    sync with CFG.
+    """
+    return CFG["runner"]["execution"] == "local"
+
+
 def _is_done(*markers: str) -> bool:
     """True if skip_completed is enabled and every marker file exists."""
     return CFG["runner"]["skip_completed"] and all(os.path.exists(m) for m in markers)
+
+
+def _experiment_eval_complete(out_dir: str) -> bool:
+    """True if this classifier experiment is already fully evaluated (skip_completed).
+
+    An experiment is "done" only when the evaluation phase is on and every
+    evaluation-split report already exists under ``out_dir/reports/`` (the same
+    condition that makes ``_run_classifier_experiment`` skip a run entirely). Shared
+    with the ``--local`` preflight gate so it agrees with the runner on what will
+    actually launch a GPU pass. Returns False when skip_completed is off.
+    """
+    if not CFG["phases"]["evaluation"]:
+        return False
+    markers = [
+        os.path.join(out_dir, "reports", _eval_report_name(s))
+        for s in CFG["runner"]["evaluation_splits"]
+    ]
+    return _is_done(*markers)
 
 
 def _eval_report_name(split: str) -> str:
@@ -135,46 +185,69 @@ def run(
     suppress_output: bool = False,
     disable_notifications: bool = False,
 ) -> "subprocess.Popen[bytes]":
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-i",
-        "--gpus",
-        "all",
-        "--network=host",
-        f"--shm-size={CFG['docker']['shm_size']}",
-        "-v",
-        f"{os.getcwd()}:/work",
-        "-w",
-        "/work",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}",
-    ]
-    # Suppress in-container Slack notifications by blanking the webhook env var. main.py's
-    # load_dotenv(override=False) won't overwrite an already-set var, so the empty value wins
-    # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
-    if disable_notifications:
-        cmd += ["-e", "SLACK_WEBHOOK_URL="]
-    cmd += [
-        CFG["docker"]["image"],
-        "python3",
-        "-m",
-        "src.main",
-        config,
-        *overrides,
-    ]
+    local = _is_local()
+    # The job itself is identical in both modes; only the interpreter and its wrapper
+    # differ (this venv directly vs python3 inside the container). Kept in one place so a
+    # change to how src.main is invoked can't make local and docker modes diverge.
+    main_invocation = ["-m", "src.main", config, *overrides]
+    if local:
+        # Run directly with the interpreter driving the pipeline (this venv), no
+        # container. Notification suppression is handled below via the child env, since
+        # there is no `-e SLACK_WEBHOOK_URL=` container flag to blank the webhook with.
+        cmd = [sys.executable, *main_invocation]
+    else:
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--gpus",
+            "all",
+            "--network=host",
+            f"--shm-size={CFG['docker']['shm_size']}",
+            "-v",
+            f"{os.getcwd()}:/work",
+            "-w",
+            "/work",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+        ]
+        # Suppress in-container Slack notifications by blanking the webhook env var. main.py's
+        # load_dotenv(override=False) won't overwrite an already-set var, so the empty value wins
+        # and notify_success/notify_error short-circuit on the missing webhook. Must precede the image.
+        if disable_notifications:
+            cmd += ["-e", "SLACK_WEBHOOK_URL="]
+        cmd += [CFG["docker"]["image"], "python3", *main_invocation]
+
+    popen_kwargs: Dict[str, Any] = {}
     if suppress_output:
-        # Drop normal stdout (the in-container logger streams INFO to stdout; concurrent
-        # runs would interleave) but keep stderr so a container crash — OOM kill, import
-        # error, traceback — still surfaces on the console instead of vanishing. stderr
-        # is quiet during normal runs, so this doesn't reintroduce the interleaving.
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=sys.stderr)
-    return subprocess.Popen(cmd)
+        # Drop normal stdout (the logger streams INFO to stdout; concurrent runs would
+        # interleave) but keep stderr so a crash — OOM kill, import error, traceback —
+        # still surfaces on the console instead of vanishing. stderr is quiet during
+        # normal runs, so this doesn't reintroduce the interleaving.
+        popen_kwargs["stdout"] = subprocess.DEVNULL
+        popen_kwargs["stderr"] = sys.stderr
+    # Local mode inherits the parent env by default, which would let a stale shell-exported
+    # SLACK_WEBHOOK_URL shadow .env (main.py's load_dotenv(override=False) keeps an
+    # already-set var). Docker never leaked host env, so .env was always authoritative. Pin
+    # the webhook in the child env to match that: blank it to suppress notifications, else
+    # drop it so main.py's load_dotenv populates it from .env.
+    if local:
+        env = os.environ.copy()
+        if disable_notifications:
+            env["SLACK_WEBHOOK_URL"] = ""
+        else:
+            env.pop("SLACK_WEBHOOK_URL", None)
+        popen_kwargs["env"] = env
+    return subprocess.Popen(cmd, **popen_kwargs)
 
 
 def _gpu_cooldown() -> None:
-    """Fixed pause giving the GPU driver time to release the CUDA context."""
+    """Fixed pause giving the GPU driver time to release the CUDA context.
+
+    Applied after every job regardless of execution mode: local host processes and
+    Docker containers both leave a CUDA context to tear down.
+    """
     cooldown = CFG["runner"]["gpu_cooldown_seconds"]
     if cooldown > 0:
         time.sleep(cooldown)
@@ -187,7 +260,8 @@ def run_and_wait(
     suppress_output: bool = False,
     disable_notifications: bool = False,
 ) -> int:
-    """Launch a container, wait for it, apply the GPU cooldown, return the returncode."""
+    """Launch a job (Docker container or, in local mode, a host process), wait for it,
+    apply the GPU cooldown, and return its returncode."""
     proc = run(
         config,
         overrides,
@@ -201,13 +275,14 @@ def run_and_wait(
 
 # Serializes only the GPU-context *initialization* window across parallel classifier
 # workers: a worker waits until gpu_cooldown_seconds have elapsed since the previous
-# launch, starts its container, then releases the gate so runs overlap. This staggers
-# launches (preventing the back-to-back CUDA-init crashes) without serializing the runs.
+# launch, starts its job (container, or host process in local mode), then releases the
+# gate so runs overlap. This staggers launches (preventing the back-to-back CUDA-init
+# crashes) without serializing the runs.
 _launch_lock = threading.Lock()
 _last_launch_monotonic = [0.0]
 # Guards the shared progress counter / Slack notifications across worker threads.
 _progress_lock = threading.Lock()
-# Single "foreground" slot: at most one running classifier job streams its container
+# Single "foreground" slot: at most one running classifier job streams its
 # stdout/stderr to the console; the rest run suppressed (their detail still lands in
 # each run's own logs/ dir). A job acquires this non-blocking at start and holds it for
 # its whole train -> eval, so the console shows one coherent run at a time.
@@ -278,14 +353,12 @@ def _run_classifier_experiment(
     run_evaluation = CFG["phases"]["evaluation"]
     eval_splits = CFG["runner"]["evaluation_splits"]
     final_ckpt = f"{out_dir}/checkpoints/final_model.pth"
-    # One report marker per evaluated split; the run is "done" only when every
-    # split has been evaluated (so a half-finished two-pass run re-runs the rest).
-    eval_markers = [
-        os.path.join(out_dir, "reports", _eval_report_name(s)) for s in eval_splits
-    ]
 
-    # Already evaluated (checkpoints possibly already cleaned up): skip entirely.
-    if run_evaluation and _is_done(*eval_markers):
+    # Already evaluated (checkpoints possibly already cleaned up): skip entirely. The
+    # per-split report markers under out_dir/reports/ are the completion signal — the run
+    # is "done" only when every split has been evaluated (so a half-finished two-pass run
+    # re-runs the rest). Shared with the --local preflight gate via _experiment_eval_complete.
+    if _experiment_eval_complete(out_dir):
         print(f"[SKIP] {exp_label}: already complete")
         return
 
@@ -442,23 +515,235 @@ def _parse_args() -> argparse.Namespace:
         metavar="KEY=VALUE",
         help="Inject a flat classifier-run override into every launch (repeatable)",
     )
+    parser.add_argument(
+        "--local",
+        "--no-docker",
+        action="store_true",
+        dest="local",
+        help="Run src.main jobs directly with the current interpreter (this venv) "
+        "instead of inside a Docker container. Alias for --set runner.execution=local; "
+        "bypasses the WSL+Docker layer.",
+    )
     return parser.parse_args()
+
+
+def _pinned_requirement_versions() -> Dict[str, str]:
+    """Map every ``name==version`` pin in requirements.txt to its version.
+
+    Only plain ``name==version`` pins are recognized; a dependency pinned another way
+    (``>=``, unpinned) is omitted (no version expectation). Returns ``{}`` if the file
+    cannot be read, so a missing manifest degrades to "no drift check" rather than erroring.
+    """
+    pins: Dict[str, str] = {}
+    try:
+        lines = _REQUIREMENTS_FILE.read_text().splitlines()
+    except OSError:
+        return pins
+    for raw in lines:
+        # Drop inline comments (#) and any PEP 508 environment marker (everything after
+        # ';', e.g. '; python_version>="3.9"') before parsing. The whole manifest is
+        # scanned now — not just torch/torchvision — and a missing/mismatched pin is acted
+        # on (missing is fatal), so an arbitrary line must parse exactly: a marker or
+        # trailing spec must not leak into the name or version.
+        line = raw.split("#", 1)[0].split(";", 1)[0].strip()
+        if "==" not in line:
+            continue
+        name, _, version = line.partition("==")
+        # Strip an optional extras group from the name ('pkg[extra]==' -> 'pkg') and keep
+        # only the first token of the version, dropping any trailing specifier or option
+        # ('1.0 --hash=...' -> '1.0'), so both match what importlib.metadata reports.
+        name = name.split("[", 1)[0].strip()
+        version_tokens = version.split()
+        version = version_tokens[0] if version_tokens else ""
+        if name and version:
+            pins[name] = version
+    return pins
+
+
+def _pending_local_gpu_jobs(jobs: List[Job]) -> bool:
+    """True when at least one of ``jobs`` will actually launch a classifier GPU pass.
+
+    Mirrors the skip logic in ``_run_classifier_experiment`` so the --local preflight
+    agrees with the runner on whether any GPU work happens. For each classifier job:
+
+    * ``_experiment_eval_complete`` -> the whole experiment is skipped (no GPU).
+    * evaluation phase on (and not complete) -> a train and/or eval pass always runs on
+      the GPU, so CUDA is needed.
+    * evaluation phase off -> the only GPU work is training, which is itself skipped when
+      ``final_model.pth`` already exists under ``skip_completed`` (the ``[SKIP-TRAIN]``
+      path). So a training-only re-run over existing checkpoints launches nothing and
+      must not be blocked for lacking a GPU.
+
+    ``jobs`` is the already-expanded classifier matrix (``build_classifier_jobs``, pure and
+    reflecting the enabled classifier phases), reused from ``main`` so the matrix is not
+    expanded twice. A summarize-only or fully-skip_completed --local run therefore needs no
+    CUDA and the fatal GPU preflight is skipped.
+    """
+    evaluation_on = CFG["phases"]["evaluation"]
+    for _, out_dir, _ in jobs:
+        if _experiment_eval_complete(out_dir):
+            continue
+        if evaluation_on:
+            return True
+        # evaluation off: GPU work happens only when training actually runs, i.e. the
+        # final checkpoint does not already exist under skip_completed.
+        final_ckpt = os.path.join(out_dir, "checkpoints", "final_model.pth")
+        if not _is_done(final_ckpt):
+            return True
+    return False
+
+
+def _preflight_local_checks(*, require_cuda: bool) -> None:
+    """Guard the assumptions Docker used to enforce, before any --local job launches.
+
+    1. Jobs run as ``sys.executable -m src.main``, so the pipeline's own interpreter must
+       carry every GPU dep (torch, torchvision, ...). The pinned Docker image supplied
+       these regardless of the launching interpreter; local mode inherits whatever
+       ``python`` invoked us, so a missing dep would only surface mid-run.
+    2. Docker's CUDA base image + ``--gpus all`` guaranteed a usable GPU. A CPU-only torch
+       wheel imports fine but would silently run every job on CPU (10-100x slower), so
+       verify ``torch.cuda.is_available()`` too. Fatal, like a missing dep: there is no
+       valid CPU use for a GPU campaign. Only checked when ``require_cuda`` — a run that
+       launches only CPU work (e.g. data_preparation, or classifier jobs all skip_completed)
+       must not be blocked for lacking a GPU it never uses.
+    3. The Docker image froze deps at ``==`` pins; a local venv may hold different versions,
+       so results would silently diverge from the container baselines. Warn (not fatal:
+       divergence is legitimate outside a frozen-deps campaign).
+    4. Docker passed ``--shm-size`` to give DataLoader workers enough shared memory; a
+       host process is bounded by ``/dev/shm`` instead, which defaults small on WSL2 —
+       the exact platform --local targets — and triggers a Bus error mid-run. This is a
+       warning, not fatal: it only bites when ``data.loading.num_workers > 0``, and
+       ``num_workers=0`` is a valid escape hatch.
+    """
+    # 1. Check every required dep, not just torch — report them all at once.
+    missing_modules = [
+        name
+        for name in _REQUIRED_LOCAL_MODULES
+        if importlib.util.find_spec(name) is None
+    ]
+    if missing_modules:
+        raise SystemExit(
+            f"[RUN] --local: the launching interpreter ({sys.executable}) cannot import "
+            f"{', '.join(repr(m) for m in missing_modules)}. Local mode runs src.main jobs with "
+            "this interpreter, so it must have the GPU deps installed. Launch via "
+            "'venv/bin/python -m scripts.run_pipeline ... --local' (see CLAUDE.md)."
+        )
+
+    # 2. When GPU compute will actually run, import torch here (kept out of module scope so
+    # the driver still loads on a torch-less interpreter) and require a usable CUDA device.
+    if require_cuda:
+        import torch
+
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                f"[RUN] --local: torch is installed but reports no CUDA device "
+                f"(torch.cuda.is_available() is False) for interpreter {sys.executable}. "
+                "Docker guaranteed a GPU; local mode would silently run every job on CPU. "
+                "Install a CUDA-enabled torch build in this venv, or run in Docker mode."
+            )
+
+    # 3. Compare installed versions against the ==-pins (the whole manifest is frozen for
+    # the campaign, not just torch). A pin that is entirely absent is fatal — Docker's
+    # frozen image guaranteed every pin was installed, so a missing dep would only surface
+    # as a mid-run ModuleNotFoundError; fail fast here, the same contract as the required-
+    # module check above. A pin that is present but a different version is advisory only
+    # (a local run then won't reproduce the container baselines, which is legitimate
+    # outside a frozen-deps campaign).
+    drifted = []
+    missing_pins = []
+    for name, pinned in _pinned_requirement_versions().items():
+        try:
+            installed = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            missing_pins.append(f"{name} (pinned {pinned})")
+            continue
+        # Compare the public version only: a CUDA wheel reports a local segment
+        # (e.g. '2.10.0+cu128') that still satisfies the plain pin '2.10.0'.
+        if installed.split("+", 1)[0] != pinned:
+            drifted.append(f"{name} {installed} (pinned {pinned})")
+    if missing_pins:
+        raise SystemExit(
+            f"[RUN] --local: the launching interpreter ({sys.executable}) is missing "
+            f"pinned dependencies [{', '.join(missing_pins)}]. Docker's frozen image guaranteed "
+            "every requirements.txt pin was installed; local mode runs src.main jobs with "
+            "this interpreter, so a missing dep would crash a job mid-run. Install them "
+            "('pip install -r requirements.txt') or run in Docker mode."
+        )
+    if drifted:
+        print(
+            "[RUN] WARNING --local: installed deps differ from requirements.txt pins "
+            f"[{', '.join(drifted)}]. Local runs use this venv, not the pinned Docker "
+            "image, so numeric results may diverge from container-produced baselines."
+        )
+
+    # 4. The shm expectation lives in runner.shm_size (populated by _validate_runner, which
+    # defaults it from docker.shm_size), so the check fires even for a local config that
+    # dropped the docker section. Compare against .free (not .total): capacity that is
+    # already consumed still triggers Bus errors.
+    shm_size = CFG["runner"]["shm_size"]
+    # Validation guarantees runner.shm_size is a positive, parseable size; `or 0` is a
+    # defensive fallback so the `configured and ...` guard degrades to "no threshold".
+    configured = parse_shm_size(shm_size) or 0
+    try:
+        available = shutil.disk_usage("/dev/shm").free
+    except OSError:
+        available = None
+    # Warn whenever the free shm can't cover the configured size. `available == 0`
+    # (/dev/shm exhausted) and `available is None` (probe failed) are exactly the cases the
+    # old `and available` truthiness guard skipped — i.e. when the Bus-error risk is
+    # highest — so they must warn, not short-circuit to silence.
+    if configured and (available is None or available < configured):
+        free_desc = (
+            "free space could not be probed"
+            if available is None
+            else f"has {available / 1024**3:.1f} GiB free"
+        )
+        print(
+            f"[RUN] WARNING --local: /dev/shm {free_desc} but "
+            f"runner.shm_size expects {shm_size}. Local mode cannot raise "
+            "the shared-memory limit (no container), so multi-worker DataLoaders may crash "
+            "with 'Bus error'. Reduce data.loading.num_workers (e.g. --set-run "
+            "data.loading.num_workers=0) or enlarge /dev/shm."
+        )
 
 
 def main() -> None:
     load_dotenv()
     args = _parse_args()
+    # --local is sugar for the config field: route it through the same --set override path
+    # so runner.execution is validated once, captured in the config snapshot, and read from
+    # CFG everywhere (no second module global). Appended last so it wins over any YAML value.
+    overrides = list(args.set_overrides)
+    if args.local:
+        overrides.append("runner.execution=local")
     cfg = load_pipeline_config(
         args.config_path,
-        overrides=args.set_overrides,
+        overrides=overrides,
         run_overrides=args.set_run_overrides,
     )
 
     global CFG
     CFG = cfg
+    phases = cfg["phases"]
+    # Expand the classifier variant matrix once (pure/no-I/O) and reuse it for both the
+    # --local preflight GPU-need decision and the actual run below.
+    classifier_jobs = build_classifier_jobs(cfg)
+    if _is_local():
+        print(f"[RUN] local mode: launching src.main via {sys.executable} (no Docker)")
+        # Run the preflight only when a src.main job will actually launch (data_preparation
+        # or a not-yet-completed classifier job); require CUDA only when a classifier GPU
+        # pass will run — data_preparation is CPU-only and a fully skip_completed run
+        # launches nothing, so neither should be blocked for lacking a GPU.
+        needs_cuda = _pending_local_gpu_jobs(classifier_jobs)
+        launches_job = phases["data_preparation"] or needs_cuda
+        if launches_job:
+            _preflight_local_checks(require_cuda=needs_cuda)
+        else:
+            print(
+                "[RUN] local mode: no local jobs will launch; skipping preflight checks"
+            )
 
     start = time.time()
-    phases = cfg["phases"]
 
     # ------------------------------------------------------------------
     # Data Preparation: create train/val split
@@ -475,9 +760,8 @@ def main() -> None:
     # own out_dir/seed, so they never contend. Evaluation is interleaved per experiment
     # inside _run_classifier_experiment (train -> eval -> cleanup), gated by phases.evaluation.
     # Per-run notifications are suppressed inside the containers; the pipeline emits a
-    # throttled "Classifier: current/total" instead.
+    # throttled "Classifier: current/total" instead. The job list was expanded once above.
     # ------------------------------------------------------------------
-    classifier_jobs = build_classifier_jobs(cfg)
     if classifier_jobs:
         _run_classifier_jobs(classifier_jobs, len(classifier_jobs))
 

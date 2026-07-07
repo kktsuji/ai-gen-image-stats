@@ -12,6 +12,7 @@ import yaml
 
 from scripts.pipeline_config import (
     load_pipeline_config,
+    parse_shm_size,
     resolve_seeds,
     validate_pipeline_config,
 )
@@ -83,6 +84,46 @@ def _valid_config():
 
 
 @pytest.mark.unit
+class TestParseShmSize:
+    """The canonical Docker ``--shm-size`` parser shared by runner/docker validation."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("4g", 4 * 1024**3),
+            ("512m", 512 * 1024**2),
+            ("1024k", 1024 * 1024),
+            ("2G", 2 * 1024**3),  # case-insensitive
+            ("1048576", 1048576),  # bare bytes, no suffix
+            ("2.5g", int(2.5 * 1024**3)),  # fractional
+            ("4gb", 4 * 1024**3),  # optional 'b' suffix (Docker grammar)
+            ("512mb", 512 * 1024**2),
+            ("2gib", 2 * 1024**3),  # optional 'ib' suffix
+            ("1t", 1024**4),
+        ],
+    )
+    def test_parses_docker_sizes(self, value, expected):
+        assert parse_shm_size(value) == expected
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "  ",
+            "abc",
+            "g",  # unit with no number
+            "4x",  # unknown suffix
+            "-4g",  # negative
+            "0",  # zero
+            "inf",  # would raise OverflowError under the old float() path
+            "1e400",  # parses to inf as a float
+        ],
+    )
+    def test_rejects_unparseable_or_nonpositive(self, value):
+        assert parse_shm_size(value) is None
+
+
+@pytest.mark.unit
 class TestValidateAccepts:
     def test_minimal_valid_config(self):
         validate_pipeline_config(_valid_config())
@@ -115,6 +156,59 @@ class TestValidateAccepts:
         cfg["runner"]["evaluation_splits"] = ["val", "test"]
         validate_pipeline_config(cfg)
         assert cfg["runner"]["evaluation_splits"] == ["val", "test"]
+
+    def test_execution_defaults_to_docker(self):
+        cfg = _valid_config()
+        assert "execution" not in cfg["runner"]  # backward-compat: existing configs
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["execution"] == "docker"
+
+    def test_execution_local_makes_docker_section_optional(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "local"
+        cfg.pop("docker")  # local runs read no docker.* — must not be required
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["execution"] == "local"
+
+    def test_execution_docker_still_requires_docker_section(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "docker"
+        cfg.pop("docker")
+        with pytest.raises((KeyError, ValueError)):
+            validate_pipeline_config(cfg)
+
+    def test_shm_size_defaults_to_docker_shm_size(self):
+        # runner.shm_size mirrors the container's shm so raising docker.shm_size also
+        # raises the local /dev/shm warning threshold (fixture docker.shm_size is "4g").
+        cfg = _valid_config()
+        assert "shm_size" not in cfg["runner"]  # backward-compat: existing configs
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "4g"
+
+    def test_shm_size_derives_from_raised_docker_shm_size(self):
+        # A raised docker.shm_size propagates to runner.shm_size (not the hardcoded 4g),
+        # so a later --local switch keeps a correctly-sized warning.
+        cfg = _valid_config()
+        cfg["docker"]["shm_size"] = "8g"
+        assert "shm_size" not in cfg["runner"]
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "8g"
+
+    def test_shm_size_falls_back_to_4g_without_docker_section(self):
+        # A local config that drops docker.* still gets a threshold (the value Docker
+        # historically enforced).
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "local"
+        cfg.pop("docker")
+        assert "shm_size" not in cfg["runner"]
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "4g"
+
+    def test_shm_size_explicit_preserved(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = "8g"
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "8g"
 
     def test_summarize_threshold_defaults_applied(self):
         cfg = _valid_config()
@@ -215,10 +309,62 @@ class TestValidateRejects:
         with pytest.raises(ValueError):
             validate_pipeline_config(cfg)
 
+    def test_runner_invalid_execution(self):
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "podman"
+        with pytest.raises(ValueError, match="runner.execution"):
+            validate_pipeline_config(cfg)
+
     def test_runner_zero_parallel(self):
         cfg = _valid_config()
         cfg["runner"]["classifier_max_parallel"] = 0
         with pytest.raises(ValueError):
+            validate_pipeline_config(cfg)
+
+    def test_runner_empty_shm_size(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = ""
+        with pytest.raises(ValueError, match="runner.shm_size"):
+            validate_pipeline_config(cfg)
+
+    def test_runner_non_string_shm_size(self):
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = 4
+        with pytest.raises(ValueError, match="runner.shm_size"):
+            validate_pipeline_config(cfg)
+
+    @pytest.mark.parametrize("bad", ["4x", "0", "-4g"])
+    def test_runner_unparseable_shm_size(self, bad):
+        # A non-empty but unparseable ("4x") or non-positive ("0", "-4g") value must be
+        # rejected up front rather than silently disabling the /dev/shm preflight (which
+        # treats an unparseable value as 0) or being handed to `docker run --shm-size=`.
+        cfg = _valid_config()
+        cfg["runner"]["shm_size"] = bad
+        with pytest.raises(ValueError, match="runner.shm_size"):
+            validate_pipeline_config(cfg)
+
+    @pytest.mark.parametrize("bad", ["4x", "0", "-4g"])
+    def test_docker_unparseable_shm_size(self, bad):
+        cfg = _valid_config()
+        cfg["docker"]["shm_size"] = bad
+        with pytest.raises(ValueError, match="docker.shm_size"):
+            validate_pipeline_config(cfg)
+
+    def test_docker_style_shm_suffix_accepted(self):
+        # Docker-grammar spellings like "4gb" ran fine on `docker run --shm-size=` before
+        # the parser existed, so they must still validate (regression guard for finding 1).
+        cfg = _valid_config()
+        cfg["docker"]["shm_size"] = "4gb"
+        validate_pipeline_config(cfg)
+        assert cfg["runner"]["shm_size"] == "4gb"
+
+    def test_local_mode_still_validates_present_docker_section(self):
+        # A config flipped to local that kept a malformed docker section must fail fast
+        # here, not only when the same YAML is later run in docker mode (finding 6).
+        cfg = _valid_config()
+        cfg["runner"]["execution"] = "local"
+        cfg["docker"]["image"] = ""
+        with pytest.raises(ValueError, match="docker.image"):
             validate_pipeline_config(cfg)
 
     def test_evaluation_splits_invalid_value(self):

@@ -21,6 +21,17 @@ phases:
   summarize: true
 
 runner:
+  # How each src.main job is launched: "docker" (default) runs it inside the pinned
+  # GPU container below; "local" runs it directly with the pipeline's own interpreter
+  # (this venv), bypassing the WSL+Docker layer. The --local CLI flag is a shorthand for
+  # setting this to "local". When "local", the docker: section below is optional.
+  execution: docker
+  # Shared-memory expectation for DataLoader workers (default: 4g, the value Docker
+  # enforces via docker.shm_size). Docker mode ignores this and uses docker.shm_size; it
+  # matters in "local" mode, where there is no container to raise the limit — the preflight
+  # warns when /dev/shm is smaller than this so multi-worker DataLoaders don't Bus-error
+  # mid-run. Lower it (or set data.loading.num_workers=0) if /dev/shm is small on your host.
+  shm_size: 4g
   # Skip runs whose completion marker (reports/evaluation.json) already exists.
   skip_completed: true
   # Delete each experiment's checkpoints/ dir after a successful eval (the .pth files

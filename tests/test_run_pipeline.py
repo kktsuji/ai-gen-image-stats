@@ -5,6 +5,9 @@ serialized overrides) on tiny synthetic configs — so editing the real pipeline
 requires no test changes. build_classifier_jobs is pure (no GPU/Docker/filesystem).
 """
 
+import sys
+import types
+
 import pytest
 
 import scripts.run_pipeline as rp
@@ -359,7 +362,10 @@ class TestRunOutputStreams:
     """run() stream wiring: suppressed runs hide stdout but keep stderr for crashes."""
 
     def _cfg(self):
-        return {"docker": {"shm_size": "4g", "image": "img"}}
+        return {
+            "runner": {"execution": "docker"},
+            "docker": {"shm_size": "4g", "image": "img"},
+        }
 
     def _capture_popen(self, monkeypatch):
         captured = {}
@@ -390,3 +396,434 @@ class TestRunOutputStreams:
         # Foreground run streams both stdout and stderr (no redirection kwargs).
         assert "stdout" not in captured["kwargs"]
         assert "stderr" not in captured["kwargs"]
+
+    def test_docker_mode_disable_notifications_uses_env_flag_not_env_kwarg(
+        self, monkeypatch
+    ):
+        """Regression: Docker suppression blanks the webhook via `-e`, not env kwarg."""
+        captured = self._capture_popen(monkeypatch)  # runner.execution=docker
+        rp.run("configs/classifier.yaml", [], disable_notifications=True)
+        cmd = captured["cmd"]
+        # Blanked via a container -e flag, immediately before the image.
+        assert cmd[:2] == ["docker", "run"]
+        assert "-e" in cmd and "SLACK_WEBHOOK_URL=" in cmd
+        # No child-env override in Docker mode.
+        assert "env" not in captured["kwargs"]
+
+    def test_docker_command_tail_invokes_src_main(self, monkeypatch):
+        # The src.main invocation tail is shared with local mode (single source of truth);
+        # in docker mode it follows the image, run by python3.
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", ["--compute.seed", "0"])
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("img") + 1 :] == [
+            "python3",
+            "-m",
+            "src.main",
+            "configs/classifier.yaml",
+            "--compute.seed",
+            "0",
+        ]
+
+
+@pytest.mark.unit
+class TestRunLocalMode:
+    """run() local (--local / --no-docker) branch: launch src.main via this venv."""
+
+    def _capture_popen(self, monkeypatch):
+        captured = {}
+
+        class _FakeProc:
+            pass
+
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+            return _FakeProc()
+
+        # runner.execution=local drives the local branch; docker.* is unused here but a
+        # valid CFG avoids an accidental KeyError.
+        monkeypatch.setattr(
+            rp,
+            "CFG",
+            {
+                "runner": {"execution": "local"},
+                "docker": {"shm_size": "4g", "image": "img"},
+            },
+        )
+        monkeypatch.setattr(rp.subprocess, "Popen", fake_popen)
+        return captured
+
+    def test_local_uses_sys_executable_no_docker(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", ["--compute.seed", "0"])
+        cmd = captured["cmd"]
+        assert cmd[0] == rp.sys.executable
+        assert "docker" not in cmd
+        # src.main is invoked directly with the config and overrides appended.
+        assert cmd[1:] == [
+            "-m",
+            "src.main",
+            "configs/classifier.yaml",
+            "--compute.seed",
+            "0",
+        ]
+
+    def test_local_blanks_webhook_when_disabled(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], disable_notifications=True)
+        # Suppression is done via the child env, not a container -e flag.
+        assert captured["kwargs"]["env"]["SLACK_WEBHOOK_URL"] == ""
+        assert "SLACK_WEBHOOK_URL=" not in captured["cmd"]
+
+    def test_local_drops_inherited_webhook_when_notifications_enabled(
+        self, monkeypatch
+    ):
+        # A stale shell-exported webhook must not shadow .env: local mode drops it from the
+        # child env so main.py's load_dotenv makes .env authoritative (matches Docker).
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/stale")
+        captured = self._capture_popen(monkeypatch)
+        rp.run("configs/classifier.yaml", [], disable_notifications=False)
+        env = captured["kwargs"]["env"]
+        assert "SLACK_WEBHOOK_URL" not in env
+
+    def test_local_suppress_output_coexists_with_env(self, monkeypatch):
+        captured = self._capture_popen(monkeypatch)
+        rp.run(
+            "configs/classifier.yaml",
+            [],
+            suppress_output=True,
+            disable_notifications=True,
+        )
+        kwargs = captured["kwargs"]
+        # Stream wiring preserved (stdout dropped, stderr kept) alongside the env blank.
+        assert kwargs["stdout"] is rp.subprocess.DEVNULL
+        assert kwargs["stderr"] is rp.sys.stderr
+        assert kwargs["env"]["SLACK_WEBHOOK_URL"] == ""
+
+
+@pytest.mark.unit
+class TestIsLocal:
+    """_is_local() reads runner.execution — the single source of truth (no global)."""
+
+    def test_true_when_execution_local(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"execution": "local"}})
+        assert rp._is_local() is True
+
+    def test_false_when_execution_docker(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", {"runner": {"execution": "docker"}})
+        assert rp._is_local() is False
+
+
+@pytest.mark.unit
+class TestExperimentEvalComplete:
+    """Shared skip-completed check used by the runner and the --local preflight gate."""
+
+    def _cfg(self, *, evaluation=True, skip_completed=True, splits=("test",)):
+        return {
+            "phases": {"evaluation": evaluation},
+            "runner": {
+                "skip_completed": skip_completed,
+                "evaluation_splits": list(splits),
+            },
+        }
+
+    def test_false_when_evaluation_phase_off(self, monkeypatch):
+        # Nothing is "eval-complete" if the evaluation phase isn't running this pass.
+        monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+        assert rp._experiment_eval_complete("out/a") is False
+
+    def test_false_when_skip_completed_off(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg(skip_completed=False))
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+        assert rp._experiment_eval_complete("out/a") is False
+
+    def test_true_when_all_split_reports_exist(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg(splits=("val", "test")))
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: True)
+        assert rp._experiment_eval_complete("out/a") is True
+
+    def test_false_when_a_split_report_missing(self, monkeypatch):
+        # evaluation_val.json present but the canonical test evaluation.json missing.
+        monkeypatch.setattr(rp, "CFG", self._cfg(splits=("val", "test")))
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("evaluation_val.json")
+        )
+        assert rp._experiment_eval_complete("out/a") is False
+
+
+@pytest.mark.unit
+class TestPendingLocalGpuJobs:
+    """Gate deciding whether a --local run will actually launch a classifier GPU pass."""
+
+    def _cfg(self, *, evaluation=True, skip_completed=True):
+        return {
+            "phases": {"evaluation": evaluation},
+            "runner": {
+                "skip_completed": skip_completed,
+                # Mirror what _experiment_eval_complete reads so the fixture stays
+                # self-consistent if a test ever calls through to the real function.
+                "evaluation_splits": ["test"],
+            },
+        }
+
+    # The caller (main) passes the already-expanded matrix; these tests feed it directly.
+    _JOBS = [("a", "out/a", []), ("b", "out/b", [])]
+
+    def test_false_when_no_classifier_jobs(self, monkeypatch):
+        # summarize-only / no classifier phases -> the matrix is empty.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        assert rp._pending_local_gpu_jobs([]) is False
+
+    def test_false_when_all_jobs_already_complete(self, monkeypatch):
+        # skip_completed run where every classifier report already exists -> no GPU work.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(rp, "_experiment_eval_complete", lambda out_dir: True)
+        assert rp._pending_local_gpu_jobs(self._JOBS) is False
+
+    def test_true_when_any_job_pending(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        monkeypatch.setattr(
+            rp, "_experiment_eval_complete", lambda out_dir: out_dir == "out/a"
+        )
+        assert rp._pending_local_gpu_jobs(self._JOBS) is True
+
+    def test_false_when_eval_off_and_checkpoints_exist(self, monkeypatch):
+        # Training-only re-run (evaluation phase off) where every final_model.pth already
+        # exists under skip_completed -> each job hits [SKIP-TRAIN] and launches nothing,
+        # so the run needs no CUDA and must not be blocked (finding 1).
+        monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
+        # eval off -> _experiment_eval_complete is always False; the checkpoint marker is
+        # what gates GPU work. Every final_model.pth present -> _is_done True -> no launch.
+        monkeypatch.setattr(
+            rp.os.path, "exists", lambda p: p.endswith("final_model.pth")
+        )
+        assert rp._pending_local_gpu_jobs(self._JOBS) is False
+
+    def test_true_when_eval_off_and_a_checkpoint_missing(self, monkeypatch):
+        # Same as above but out/a's final_model.pth is absent -> that job trains on the GPU.
+        monkeypatch.setattr(rp, "CFG", self._cfg(evaluation=False))
+        # out/b checkpoint present, out/a checkpoint missing -> out/a must launch training.
+        monkeypatch.setattr(rp.os.path, "exists", lambda p: not p.startswith("out/a"))
+        assert rp._pending_local_gpu_jobs(self._JOBS) is True
+
+
+@pytest.mark.unit
+class TestPinnedRequirementVersions:
+    def test_extracts_all_equals_pins(self, monkeypatch, tmp_path):
+        # The whole ==-pinned manifest is checked for drift (frozen-deps campaign), so
+        # every name==version pin is returned; only non-== lines are omitted.
+        req = tmp_path / "requirements.txt"
+        req.write_text(
+            "# a comment\n"
+            "torch==2.10.0\n"
+            "torchvision==0.25.0  # inline comment\n"
+            "numpy>=1.0\n"  # not an == pin -> omitted
+            "pandas==2.0\n"
+        )
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", req)
+        pins = rp._pinned_requirement_versions()
+        assert pins == {"torch": "2.10.0", "torchvision": "0.25.0", "pandas": "2.0"}
+
+    def test_missing_file_returns_empty(self, monkeypatch, tmp_path):
+        # A missing manifest degrades to "no drift check" rather than erroring.
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", tmp_path / "nope.txt")
+        assert rp._pinned_requirement_versions() == {}
+
+    def test_strips_markers_extras_and_trailing_specs(self, monkeypatch, tmp_path):
+        # Since the drift scan was broadened from torch/torchvision to the whole manifest,
+        # the parser must tolerate PEP 508 markers/extras/trailing options on any line
+        # without leaking them into the name or version (finding 5). A mangled name would
+        # otherwise trigger a false fatal (missing-pin check) and a mangled version a false
+        # drift warning.
+        req = tmp_path / "requirements.txt"
+        req.write_text(
+            'torch==2.10.0; python_version>="3.9"\n'  # environment marker
+            "pandas[performance]==3.0.0\n"  # extras on the name
+            "numpy==2.3.5 --hash=sha256:abc\n"  # trailing option
+        )
+        monkeypatch.setattr(rp, "_REQUIREMENTS_FILE", req)
+        pins = rp._pinned_requirement_versions()
+        assert pins == {"torch": "2.10.0", "pandas": "3.0.0", "numpy": "2.3.5"}
+
+
+@pytest.mark.unit
+class TestPreflightLocalChecks:
+    """--local preflight: fail fast on missing deps or no CUDA, warn on a small /dev/shm."""
+
+    def _cfg(self):
+        # No docker section: the #2 regression case (recommended local config drops it).
+        # The shm threshold must still come from runner.shm_size.
+        return {"runner": {"execution": "local", "shm_size": "4g"}}
+
+    def _pass_deps(self, monkeypatch, *, cuda_available=True, missing=()):
+        """Make find_spec report every required module present (except `missing`) and
+        inject a fake torch so the CUDA check is deterministic regardless of the test host.
+        """
+        monkeypatch.setattr(
+            rp.importlib.util,
+            "find_spec",
+            lambda name: None if name in missing else object(),
+        )
+        # A SimpleNamespace stands in for the torch module: `import torch` just binds
+        # sys.modules["torch"], so the object's type is irrelevant to the import machinery.
+        fake_torch = types.SimpleNamespace(
+            cuda=types.SimpleNamespace(is_available=lambda: cuda_available)
+        )
+        monkeypatch.setitem(sys.modules, "torch", fake_torch)
+        # Neutralize the version-drift check by default (no pins -> no drift) so the shm
+        # tests stay isolated from whatever versions this venv actually has installed.
+        # The drift-specific tests re-patch this.
+        monkeypatch.setattr(rp, "_pinned_requirement_versions", lambda: {})
+
+    def _mock_shm(self, monkeypatch, *, free_bytes):
+        monkeypatch.setattr(
+            rp.shutil, "disk_usage", lambda p: type("U", (), {"free": free_bytes})()
+        )
+
+    def test_raises_when_torch_missing(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # Interpreter cannot import torch -> jobs would ModuleNotFoundError; fail early.
+        # The dep check is fatal regardless of require_cuda (data-prep needs torch too).
+        self._pass_deps(monkeypatch, missing=("torch",))
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks(require_cuda=False)
+        assert "torch" in str(exc.value)
+
+    def test_raises_when_torchvision_missing(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # torch present but torchvision absent -> src.main would die mid-run; fail early.
+        self._pass_deps(monkeypatch, missing=("torchvision",))
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks(require_cuda=True)
+        assert "torchvision" in str(exc.value)
+
+    def test_raises_when_cuda_unavailable_and_required(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # Deps import fine but it's a CPU-only torch -> every job would silently run on
+        # CPU; fatal when GPU compute will run. Assert the message names the CUDA condition.
+        self._pass_deps(monkeypatch, cuda_available=False)
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks(require_cuda=True)
+        assert "CUDA" in str(exc.value)
+
+    def test_no_raise_when_cuda_unavailable_but_not_required(self, monkeypatch):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        # A CPU-only run (data-prep-only, or all classifier jobs skip_completed) must NOT
+        # be blocked for lacking a GPU it never uses (findings 2 & 7).
+        self._pass_deps(monkeypatch, cuda_available=False)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        rp._preflight_local_checks(require_cuda=False)  # no SystemExit
+
+    def test_warns_on_version_drift(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)  # shm ok -> isolate drift
+        # Installed torch differs from the requirements.txt pin -> advisory warning.
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda: {"torch": "2.10.0"}
+        )
+        monkeypatch.setattr(rp.importlib.metadata, "version", lambda name: "2.9.0")
+        rp._preflight_local_checks(require_cuda=True)  # not fatal
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "requirements.txt pins" in out and "2.10.0" in out
+
+    def test_no_warn_when_versions_match(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda: {"torch": "2.10.0"}
+        )
+        monkeypatch.setattr(rp.importlib.metadata, "version", lambda name: "2.10.0")
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "requirements.txt pins" not in out
+
+    def test_no_warn_when_cuda_wheel_local_segment(self, monkeypatch, capsys):
+        # A CUDA wheel reports a local segment (2.10.0+cu128) that still satisfies the plain
+        # pin 2.10.0, so it must NOT read as drift (finding 4).
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda: {"torch": "2.10.0"}
+        )
+        monkeypatch.setattr(
+            rp.importlib.metadata, "version", lambda name: "2.10.0+cu128"
+        )
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "requirements.txt pins" not in out
+
+    def test_raises_when_pinned_dep_missing(self, monkeypatch):
+        # A pinned dep entirely absent from the venv -> fail fast at preflight instead of a
+        # mid-run ModuleNotFoundError; Docker's frozen image guaranteed every pin present
+        # (finding 2). Absence is fatal even though a version mismatch is only advisory.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        monkeypatch.setattr(
+            rp, "_pinned_requirement_versions", lambda: {"scikit-learn": "1.8.0"}
+        )
+
+        def _missing(name):
+            raise rp.importlib.metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(rp.importlib.metadata, "version", _missing)
+        with pytest.raises(SystemExit) as exc:
+            rp._preflight_local_checks(require_cuda=True)
+        assert "scikit-learn" in str(exc.value) and "missing" in str(exc.value)
+
+    def test_warns_when_shm_smaller_than_configured(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        # /dev/shm has 1 GiB free but config requests 4g -> warn.
+        self._mock_shm(monkeypatch, free_bytes=1024**3)
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "Bus error" in out
+
+    def test_warns_on_free_not_total(self, monkeypatch, capsys):
+        # #1 regression: a large-capacity shm that is nearly full (little free) must still
+        # warn. The check reads .free, so this fires even though total capacity is ample.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=1024**3)  # 1 GiB free, < 4g configured
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+
+    def test_no_warn_when_shm_sufficient(self, monkeypatch, capsys):
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        # /dev/shm has 8 GiB free >= 4g -> no warning.
+        self._mock_shm(monkeypatch, free_bytes=8 * 1024**3)
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" not in out
+
+    def test_warns_when_shm_exhausted(self, monkeypatch, capsys):
+        # finding 3: /dev/shm completely full (0 bytes free) is exactly when a Bus error is
+        # imminent, yet the old `and available` truthiness guard short-circuited to silence.
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+        self._mock_shm(monkeypatch, free_bytes=0)
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "Bus error" in out
+
+    def test_warns_when_shm_probe_fails(self, monkeypatch, capsys):
+        # finding 3: a failed /dev/shm probe means we can't rule out exhaustion, so it must
+        # warn (not stay silent) — probe failure is still non-fatal (no SystemExit).
+        monkeypatch.setattr(rp, "CFG", self._cfg())
+        self._pass_deps(monkeypatch)
+
+        def _raise(_):
+            raise OSError("no /dev/shm")
+
+        monkeypatch.setattr(rp.shutil, "disk_usage", _raise)
+        rp._preflight_local_checks(require_cuda=True)
+        out = capsys.readouterr().out
+        assert "WARNING" in out and "could not be probed" in out

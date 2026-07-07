@@ -16,6 +16,7 @@ Strict validation: all parameters must be explicitly specified, mirroring the
 import logging
 import math
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from src.utils.cli import dot_notation_to_dict, infer_type, validate_override_keys
@@ -152,6 +153,11 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     container. Strings the user quoted to force a string type (``"0"``, ``"true"``) are
     left untouched.
 
+    Validation also normalizes ``runner`` in place: ``_validate_runner`` injects
+    ``runner.execution`` (default ``"docker"``) and ``runner.shm_size`` (defaulted from
+    ``docker.shm_size`` when present, else ``"4g"``) via ``setdefault`` when absent, so a
+    config that omits them carries the effective defaults after this call returns.
+
     Raises:
         ValueError: If the configuration is invalid.
         KeyError: If required fields are missing.
@@ -164,7 +170,12 @@ def validate_pipeline_config(config: Dict[str, Any]) -> None:
     _validate_phases(config)
     _validate_runner(config)
     _validate_configs_section(config)
-    _validate_docker(config)
+    # docker.* is only consumed when jobs run in containers, so a "local" run isn't forced
+    # to carry a docker section. But if one *is* present (e.g. a config flipped to local that
+    # kept its docker block), validate it here so a malformed section fails fast now rather
+    # than only when the same YAML is later run in docker mode.
+    if config["runner"]["execution"] == "docker" or "docker" in config:
+        _validate_docker(config)
     _validate_seeds(config)
     _validate_classifier_overrides(config)
     _validate_baselines(config)
@@ -192,6 +203,35 @@ def _non_empty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value)
 
 
+# Suffix multipliers for a Docker ``--shm-size`` string. A bare number (no suffix) is
+# interpreted as bytes; the unit letter may carry an optional ``i`` and/or ``b`` (so ``g``,
+# ``gb`` and ``gib`` all mean 1024**3), matching Docker's own ``RAMInBytes`` grammar.
+_SHM_UNITS = {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4, "p": 1024**5}
+
+# ``<number><unit>`` where number is a non-negative int/decimal and unit is an optional
+# ``k/m/g/t/p`` letter followed by an optional ``i`` and/or ``b``. A leading ``-`` and
+# non-numeric tokens (``inf``, ``abc``) do not match, so they are rejected as unparseable.
+_SHM_SIZE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*([kmgtp]?)i?b?$")
+
+
+def parse_shm_size(value: Any) -> Optional[int]:
+    """Parse a Docker ``--shm-size`` string (e.g. ``4g``, ``512m``, ``4gb``, ``1048576``) to bytes.
+
+    Canonical grammar for both ``runner.shm_size`` and ``docker.shm_size``, matching Docker's
+    own size grammar so any value ``docker run --shm-size=`` accepts (``4g``, ``4gb``, ``2gib``,
+    ``512mb``, uppercase, bare bytes) parses. Returns ``None`` for anything unparseable —
+    empty, a bad number, an unknown suffix, or a non-positive size (``0``/``-4g``) — so callers
+    can reject it up front rather than passing it to Docker (which would abort per job) or
+    silently treating it as "no threshold".
+    """
+    match = _SHM_SIZE_RE.match(str(value).strip().lower())
+    if not match:
+        return None
+    number, unit = match.groups()
+    size = int(float(number) * _SHM_UNITS[unit])
+    return size if size > 0 else None
+
+
 def _validate_phases(config: Dict[str, Any]) -> None:
     phases = _require(config, "phases")
     if not isinstance(phases, dict):
@@ -210,6 +250,42 @@ def _validate_runner(config: Dict[str, Any]) -> None:
     runner = _require(config, "runner")
     if not isinstance(runner, dict):
         raise ValueError("'runner' must be a dictionary")
+
+    # How each src.main job is launched. "docker" (default, and the prior behavior) runs
+    # it inside the pinned GPU container; "local" runs it directly with the pipeline's own
+    # interpreter (this venv), bypassing the WSL+Docker layer. The docker.* section is only
+    # required for "docker" (see validate_pipeline_config). Set in YAML or via the --local
+    # CLI alias, which injects runner.execution=local.
+    execution = runner.setdefault("execution", "docker")
+    if execution not in ("docker", "local"):
+        raise ValueError(
+            f"runner.execution must be 'docker' or 'local', got {execution!r}"
+        )
+
+    # Shared-memory expectation for DataLoader workers. Docker enforces it via --shm-size
+    # (docker.shm_size); local mode has no container to raise the limit, so the preflight
+    # warns when /dev/shm is smaller than this. Default to docker.shm_size when a docker
+    # section supplies it (so raising the container's shm also raises the local threshold);
+    # fall back to "4g" (the value Docker historically enforced) for a local config that
+    # dropped the docker section. An explicit runner.shm_size is preserved by setdefault.
+    # docker.shm_size is validated later (execution==docker only), so read it defensively.
+    docker_section = config.get("docker")
+    default_shm = (
+        docker_section.get("shm_size") if isinstance(docker_section, dict) else None
+    )
+    # Fall back to 4g unless docker supplies a valid size. A malformed docker.shm_size is
+    # left for _validate_docker to reject (docker mode) with a docker.* message rather than
+    # surfacing here as a misleading runner.shm_size error; in local mode docker.* is unused.
+    if not _non_empty_str(default_shm) or parse_shm_size(default_shm) is None:
+        default_shm = "4g"
+    shm_size = runner.setdefault("shm_size", default_shm)
+    if not _non_empty_str(shm_size):
+        raise ValueError("runner.shm_size must be a non-empty string")
+    if parse_shm_size(shm_size) is None:
+        raise ValueError(
+            f"runner.shm_size must be a docker-style size like '4g' or '512m', "
+            f"got {shm_size!r}"
+        )
 
     for key in ("skip_completed", "delete_checkpoints_after_eval"):
         if key not in runner:
@@ -286,6 +362,11 @@ def _validate_docker(config: Dict[str, Any]) -> None:
             raise KeyError(f"Missing required field: docker.{key}")
         if not _non_empty_str(docker[key]):
             raise ValueError(f"docker.{key} must be a non-empty string")
+    if parse_shm_size(docker["shm_size"]) is None:
+        raise ValueError(
+            f"docker.shm_size must be a docker-style size like '4g' or '512m', "
+            f"got {docker['shm_size']!r}"
+        )
 
 
 def _validate_seeds(config: Dict[str, Any]) -> None:
