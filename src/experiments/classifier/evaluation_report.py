@@ -277,7 +277,7 @@ def _load_single_result(json_path: str, exp_name: str) -> Optional[Dict[str, Any
         Dictionary with experiment metadata + metrics, or None on error.
     """
     try:
-        with open(json_path) as f:
+        with open(json_path, encoding="utf-8") as f:
             metrics = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         _logger.warning(f"Skipping malformed file {json_path}: {e}")
@@ -907,7 +907,7 @@ def generate_report(
         for json_path in sorted(glob(selection_summary_pattern)):
             path = Path(json_path)
             try:
-                with open(json_path) as f:
+                with open(json_path, encoding="utf-8") as f:
                     summary = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 _logger.warning(f"Skipping malformed file {json_path}: {e}")
@@ -1039,7 +1039,7 @@ def generate_report(
 
     # Save markdown
     report_md_path = output_path / "evaluation_report.md"
-    with open(report_md_path, "w") as f:
+    with open(report_md_path, "w", encoding="utf-8") as f:
         f.write(report_text)
     _logger.info(f"Report saved to: {report_md_path}")
 

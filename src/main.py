@@ -83,7 +83,7 @@ def _validate_split_file_has_split(split_file: str, split: str = "val") -> None:
             "A valid split file is required for evaluate mode."
         )
     try:
-        with open(split_path) as f:
+        with open(split_path, encoding="utf-8") as f:
             split_data = json.load(f)
     except json.JSONDecodeError as e:
         raise ValueError(f"split_file '{split_file}' is not valid JSON: {e}") from e
@@ -537,7 +537,7 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
             else f"evaluation_{eval_split}.json"
         )
         report_path = reports_dir / report_name
-        with open(report_path, "w") as f:
+        with open(report_path, "w", encoding="utf-8") as f:
             json.dump(_json_safe(report_payload), f, indent=2)
         logger.info(f"Evaluation report saved to: {report_path}")
 

@@ -67,6 +67,25 @@ class TestLoadConfig:
         assert result["model"]["params"]["layers"] == 50
         assert result["model"]["params"]["pretrained"] is True
 
+    def test_load_config_utf8_content(self, tmp_path):
+        """Regression: UTF-8 config with non-ASCII content loads on any locale.
+
+        The bytes are written explicitly as UTF-8 (bypassing the platform's
+        default text encoding) so the read side in ``load_config`` is what's
+        under test. Without ``encoding="utf-8"`` in ``load_config``, this file
+        raises UnicodeDecodeError on non-UTF-8 locales (e.g. cp932 on Japanese
+        Windows) — the byte 0x94 from the em-dash is the classic offender.
+        """
+        config_file = tmp_path / "utf8_config.yaml"
+        config_file.write_bytes(
+            "experiment: classifier\nnote: 値 — テスト\n".encode("utf-8")
+        )
+
+        result = load_config(str(config_file))
+
+        assert result["experiment"] == "classifier"
+        assert result["note"] == "値 — テスト"
+
     def test_load_config_file_not_found(self):
         """Test loading a non-existent config file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="Config file not found"):
@@ -399,6 +418,25 @@ class TestSaveConfig:
         """Test saving with None path raises ValueError."""
         with pytest.raises(ValueError, match="Output path cannot be empty"):
             save_config({"test": "value"}, None)
+
+    def test_save_config_utf8_roundtrip(self, tmp_path):
+        """Regression: non-ASCII config is written and re-read as UTF-8.
+
+        Guards the ``save_config`` write path (mirrors the ``load_config`` read
+        fix): without ``encoding="utf-8"`` the file is written in the platform
+        default and would not round-trip through ``load_config`` on non-UTF-8
+        locales. Also asserts the raw bytes on disk are valid UTF-8.
+        """
+        config = {"experiment": "classifier", "note": "値 — テスト", "unit": "µm"}
+        output_file = tmp_path / "utf8_saved.yaml"
+
+        save_config(config, str(output_file))
+
+        # Raw bytes must decode as UTF-8 (would raise if written as cp932 etc.).
+        output_file.read_bytes().decode("utf-8")
+
+        loaded = load_config(str(output_file))
+        assert loaded == config
 
     def test_save_and_load_roundtrip(self, tmp_path):
         """Test that saving and loading preserves config."""

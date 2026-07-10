@@ -499,7 +499,7 @@ def generate_cross_split_report(
             "",
         ]
 
-    (out_path / "cross_split_report.md").write_text("\n".join(lines))
+    (out_path / "cross_split_report.md").write_text("\n".join(lines), encoding="utf-8")
     summary.to_csv(out_path / "cross_split_summary.csv", index=False)
     if not comparisons.empty:
         comparisons.to_csv(out_path / "cross_split_comparisons.csv", index=False)

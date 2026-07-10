@@ -41,7 +41,7 @@ class MetricsWriter:
 
         # If CSV exists, load existing fieldnames
         if self.csv_initialized:
-            with open(self.metrics_file, "r") as f:
+            with open(self.metrics_file, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 if reader.fieldnames:
                     self.csv_fieldnames = list(reader.fieldnames)
@@ -71,7 +71,7 @@ class MetricsWriter:
         """
         if not self.csv_initialized:
             self.csv_fieldnames = list(log_entry.keys())
-            with open(self.metrics_file, "w", newline="") as f:
+            with open(self.metrics_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
                 writer.writeheader()
             self.csv_initialized = True
@@ -83,7 +83,7 @@ class MetricsWriter:
                 self._rewrite_csv_with_new_fields()
 
         assert self.csv_fieldnames is not None
-        with open(self.metrics_file, "a", newline="") as f:
+        with open(self.metrics_file, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
             row = {field: log_entry.get(field) for field in self.csv_fieldnames}
             writer.writerow(row)
@@ -104,11 +104,11 @@ class MetricsWriter:
         assert self.csv_fieldnames is not None
         existing_data = []
         if self.metrics_file.exists():
-            with open(self.metrics_file, "r") as f:
+            with open(self.metrics_file, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 existing_data = list(reader)
 
-        with open(self.metrics_file, "w", newline="") as f:
+        with open(self.metrics_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=self.csv_fieldnames)
             writer.writeheader()
             for row in existing_data:

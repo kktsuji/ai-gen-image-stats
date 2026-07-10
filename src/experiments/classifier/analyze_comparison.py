@@ -477,7 +477,7 @@ class ComparisonReporter:
         report_text = "\n".join(lines)
 
         if output_file:
-            with open(output_file, "w") as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 f.write(report_text)
             print(f"\nReport saved to: {output_file}")
 
@@ -526,7 +526,7 @@ def compare_experiments(
         plot_path = os.path.join(output_dir, "training_comparison.png")
         report_path = os.path.join(output_dir, "comparison_report.txt")
 
-        with open(report_path, "w") as f:
+        with open(report_path, "w", encoding="utf-8") as f:
             f.write(report_text)
 
     visualizer.plot_training_curves(output_path=plot_path)

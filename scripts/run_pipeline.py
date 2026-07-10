@@ -536,7 +536,7 @@ def _pinned_requirement_versions() -> Dict[str, str]:
     """
     pins: Dict[str, str] = {}
     try:
-        lines = _REQUIREMENTS_FILE.read_text().splitlines()
+        lines = _REQUIREMENTS_FILE.read_text(encoding="utf-8").splitlines()
     except OSError:
         return pins
     for raw in lines:
