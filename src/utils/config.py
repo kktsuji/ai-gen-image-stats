@@ -150,7 +150,14 @@ def save_config(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False, indent=indent)
+        yaml.dump(
+            config,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            indent=indent,
+            allow_unicode=True,
+        )
 
 
 # ==============================================================================

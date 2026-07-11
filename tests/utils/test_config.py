@@ -420,20 +420,28 @@ class TestSaveConfig:
             save_config({"test": "value"}, None)
 
     def test_save_config_utf8_roundtrip(self, tmp_path):
-        """Regression: non-ASCII config is written and re-read as UTF-8.
+        """Regression: non-ASCII config is written as literal UTF-8 bytes.
 
         Guards the ``save_config`` write path (mirrors the ``load_config`` read
-        fix): without ``encoding="utf-8"`` the file is written in the platform
-        default and would not round-trip through ``load_config`` on non-UTF-8
-        locales. Also asserts the raw bytes on disk are valid UTF-8.
+        fix). ``allow_unicode=True`` makes the dumper emit the non-ASCII
+        characters verbatim rather than ``\\uXXXX`` escapes, so the bytes on
+        disk depend on the file encoding. The exact-bytes assertion below then
+        pins that encoding to UTF-8: switching ``save_config``'s ``open`` to
+        another codec breaks the test (``latin-1`` raises UnicodeEncodeError on
+        write; ``cp932``/``shift_jis`` produce different bytes that no longer
+        equal the UTF-8 encoding).
         """
         config = {"experiment": "classifier", "note": "値 — テスト", "unit": "µm"}
         output_file = tmp_path / "utf8_saved.yaml"
 
         save_config(config, str(output_file))
 
-        # Raw bytes must decode as UTF-8 (would raise if written as cp932 etc.).
-        output_file.read_bytes().decode("utf-8")
+        # The non-ASCII payload must be present on disk as its UTF-8 encoding.
+        raw = output_file.read_bytes()
+        assert "値 — テスト".encode("utf-8") in raw
+        assert "µm".encode("utf-8") in raw
+        # Escaped ASCII output would mean the encoding is never exercised.
+        assert not raw.isascii()
 
         loaded = load_config(str(output_file))
         assert loaded == config
