@@ -33,7 +33,7 @@ def load_config(config_path: Optional[Union[str, Path]]) -> Dict[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     return config
@@ -149,8 +149,15 @@ def save_config(
     # Create parent directories if they don't exist
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False, indent=indent)
+    with open(output_path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            config,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            indent=indent,
+            allow_unicode=True,
+        )
 
 
 # ==============================================================================

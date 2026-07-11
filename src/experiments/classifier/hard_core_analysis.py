@@ -416,7 +416,7 @@ def generate_report(
     report_text = "\n".join(lines)
 
     md_path = output_path / "hard_core_analysis.md"
-    with open(md_path, "w") as f:
+    with open(md_path, "w", encoding="utf-8") as f:
         f.write(report_text)
     _logger.info("Report saved to: %s", md_path)
 
