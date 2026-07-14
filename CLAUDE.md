@@ -140,7 +140,7 @@ outputs/<experiment_name>/
 The pipeline script orchestrates the full synthetic augmentation workflow. All experiment configuration (phase flags, runner/infra settings, seeds, global classifier overrides, and the baseline/fine-tune variant matrix) lives in a YAML config — `configs/pipeline.yaml` by default (gitignored, like other `configs/*.yaml`; template at `configs/examples/pipeline.yaml`). Run with `python -m scripts.run_pipeline [configs/pipeline.yaml]`. The driver (`scripts/run_pipeline.py`) keeps only the generic orchestration; `scripts/pipeline_config.py` strictly validates the config. Phases are toggled via the `phases.*` flags in the config:
 
 - **data_preparation** — prepare the train/val split (GPU/Docker)
-- **baseline_classifier** — train head-only baseline classifiers, the D0 reference (GPU/Docker)
+- **baseline_classifier** — train the real-only reference classifiers (GPU/Docker). The baseline path applies only its own overrides (balancing etc.) and does not force a transfer depth, so the backbone freeze state is inherited from the classifier base config: it is a head-only "D0" reference only when that config sets `freeze_backbone: true`, otherwise a full fine-tune
 - **ft_classifier** — train the fine-tuned frozen-depth sweep variants (GPU/Docker)
 - **evaluation** — evaluate each trained classifier, interleaved per experiment (GPU/Docker)
 - **summarize** — aggregate classifier evaluation reports (CPU-only, no Docker). Runs `src.experiments.classifier.evaluation_report` to produce cross-experiment comparison tables

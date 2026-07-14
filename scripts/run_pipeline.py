@@ -28,7 +28,11 @@ Naming convention:
     Dimension separator: "__" (double underscore)
     Within-dimension separator: "-" (hyphen) or "_" (single underscore)
     Transfer (frozen-depth sweep): {depth}__{balancing}  e.g. ft-mixed7__ws
-    Baseline:                      baseline__{strategy}   e.g. baseline__ws (head-only, D0)
+    Baseline:                      baseline__{strategy}   e.g. baseline__ws (real-only reference)
+        NOTE: the baseline path applies ONLY its own overrides (balancing etc.); it does NOT
+        force a transfer depth. The backbone freeze state is inherited from the classifier
+        base config, so the baseline is a head-only "D0" reference ONLY when that base config
+        sets model.initialization.freeze_backbone: true. Otherwise it is a full fine-tune.
 """
 
 import argparse
@@ -754,7 +758,7 @@ def main() -> None:
         run_and_wait(data_prep_config, [])
 
     # ------------------------------------------------------------------
-    # Classifier (head-only baselines + frozen-depth sweep, multi-seed): expand the
+    # Classifier (real-only baselines + frozen-depth sweep, multi-seed): expand the
     # variant matrix into one job list, then run them through a bounded thread pool
     # (runner.classifier_max_parallel concurrent GPU containers). Each job writes to its
     # own out_dir/seed, so they never contend. Evaluation is interleaved per experiment
