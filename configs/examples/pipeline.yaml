@@ -15,7 +15,7 @@ experiment: pipeline
 # ON/OFF switches for each pipeline phase.
 phases:
   data_preparation: false
-  baseline_classifier: true # head-only baselines (D0 reference)
+  baseline_classifier: true # real-only reference (freeze depth inherited from classifier base config)
   ft_classifier: true # frozen-depth sweep (ft-* variants)
   evaluation: true
   summarize: true
@@ -82,8 +82,11 @@ classifier_overrides:
   runtime:
     data.loading.num_workers: 2
 
-# Baseline classifier variants: real data only, head-only backbone, different balancing
-# strategies. The depth-D0 reference for the frozen-depth sweep.
+# Baseline classifier variants: real data only, different balancing strategies. The
+# reference for the frozen-depth sweep. NOTE: these overrides do NOT set a transfer depth,
+# so the backbone freeze state is inherited from the classifier base config (configs/
+# classifier.yaml). It is a head-only "D0" reference only when that config freezes the
+# backbone (freeze_backbone: true); otherwise the baseline is a full fine-tune.
 baselines:
   - name: baseline__vanilla
     overrides:
