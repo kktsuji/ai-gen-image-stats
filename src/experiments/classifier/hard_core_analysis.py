@@ -60,10 +60,22 @@ _logger = logging.getLogger(__name__)
 
 # Binary oracle ceiling (dedicated abnormal-vs-suspicious 2-class classifier) the
 # renormalized hard-core PR-AUC is meant to be contrasted against. Empirical
-# value: the held-out *test*-split PR-AUC of the 2-class transfer baseline
-# (ft-mixed67); ~0.95 reported on val was leakage. Dataset-specific -- update if
-# the abnormal-vs-suspicious baseline is retrained.
-BINARY_ORACLE_PR_AUC = 0.915
+# value: the held-out *test*-split PR-AUC of ``ft-mixed67__ce`` in the 2-class
+# binary-loss campaign, averaged over the 10 CV splits. That arm is the
+# config-matched twin of the multi-class arms (same unfreeze depth, same lr, all
+# balancing off), so it is the one-variable reference.
+#
+# Superseded value: 0.915, which matched no run on disk. The measured 2-class
+# test PR-AUCs are ft-head 0.887 / ft-mixed7 0.950 / ft-mixed67__ce 0.9514 /
+# ft-mixed67__us 0.9592 / ft-full__us 0.9646; the conclusion (multi-class does
+# not break the hard core) holds against every one of them, and inverted only
+# against the unsourced 0.915. See
+# ``outputs/analysis/c6-hardcore-20260912/hardcore_vs_binary_oracle.csv``.
+#
+# Note the comparison is UNPAIRED: the binary and multi-class CV folds are
+# different partitions (~23% overlap), so split-paired tests do not apply.
+# Dataset-specific -- update if the abnormal-vs-suspicious baseline is retrained.
+BINARY_ORACLE_PR_AUC = 0.9514
 
 # Float metrics aggregated/formatted (NaN-safe). hardcore_n is the integer
 # restricted sample count, shown separately. Sourced from the single
