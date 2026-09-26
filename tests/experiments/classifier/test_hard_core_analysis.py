@@ -58,7 +58,7 @@ class TestGenerateReport:
         md = (out / "hard_core_analysis.md").read_text()
         assert "Hard-Core Direct Evaluation" in md
         assert "contrast class (suspicious) = 1" in md
-        assert "0.915" in md  # binary oracle reference
+        assert str(hca.BINARY_ORACLE_PR_AUC) in md  # binary oracle reference
         assert "ft-mixed67__ws" in md
         assert (out / "hard_core_analysis.csv").exists()
 

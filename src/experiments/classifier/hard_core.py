@@ -10,7 +10,9 @@ Two scores are reported:
 
 - **renorm** (primary): ``P(abn) / (P(abn) + P(susp))``. This is the functional
   analog of a dedicated 2-class classifier's softmax over the two logits, so it
-  is the apples-to-apples comparison against the binary oracle ceiling (0.915).
+  is the apples-to-apples comparison against the binary oracle ceiling
+  (``BINARY_ORACLE_PR_AUC`` in :mod:`hard_core_analysis`; 0.9514 for the
+  in-house abnormal-vs-suspicious task).
 - **raw** (secondary / sanity): ``P(abn)``. Divergence from ``renorm`` reflects
   how much probability mass leaks to the other classes.
 
