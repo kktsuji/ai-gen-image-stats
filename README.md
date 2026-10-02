@@ -905,6 +905,45 @@ Rules:
   - Campaign README: the question; the design; every input outside the campaign (paths plus split-file hashes); the exact commands; the git commit; a short results summary.
 - **Scope.** This applies to campaigns started from 2026-10 onward. Earlier output trees keep their original layout and are not migrated.
 
+#### Running a campaign
+
+A campaign is defined by `configs/base.yaml` (one full experiment config with campaign-relative paths) and `configs/sweep.yaml`.
+
+The sweep combines named override bundles along one or more axes; the Cartesian product of the axes gives the conditions. Each condition is then run for every split and seed. The sweep fields are:
+
+| Field           | Meaning                                                                        |
+| --------------- | ------------------------------------------------------------------------------ |
+| `base_config`   | The base config file, relative to `configs/`                                   |
+| `family`        | The `<family>` level of `runs/split{N}/<family>/<experiment>/seed{S}/`         |
+| `done_marker`   | A file whose existence means a run is complete, e.g. `reports/evaluation.json` |
+| `path_keys`     | Config keys whose values are paths                                             |
+| `splits`        | `key`, `template` (with `{split}`), `indices`                                  |
+| `seeds`         | `key`, `values`                                                                |
+| `name_template` | E.g. `ad-{method}-{backbone}__{pool}`; its fields must match the axes          |
+| `axes`          | Per axis, value name → `{dotted.key: value}` overrides                         |
+
+```bash
+# Write every per-run config to configs/runs/<condition>/split{N}_seed{S}.yaml, run nothing
+python -m scripts.run_campaign work/<series>/<NN>-<campaign> --expand-only
+
+# Run (completed runs are skipped, so an interrupted campaign resumes)
+python -m scripts.run_campaign work/<series>/<NN>-<campaign> [--only SUBSTRING] [--jobs N] [--force]
+```
+
+How the driver handles configs and paths:
+
+- The stored per-run configs keep campaign-relative paths.
+- Only at run time does the driver resolve `output.base_dir` and the `path_keys` against the campaign folder. It then runs `python -m src.main` from the repository root.
+- Override keys must exist in the base config (typos are rejected).
+- The driver alone sets the split key, the seed key and `output.base_dir`.
+- The split key is always resolved as a path, even if `path_keys` omits it.
+- **Stored configs are records.**
+  - The stored config of a completed run is never overwritten, because it records what actually ran.
+  - If the sweep or base config changes so that a completed run would now expand differently, the driver reports it as `STALE`. It exits with a non-zero code when a stale run is within the `--only` selection; stale runs outside it are only warned about.
+  - To redo a run under the new definition, use `--force`. Only the configs of the runs actually being re-run are overwritten; `--expand-only --force` overwrites nothing.
+  - Before a forced re-run, the run's old done marker is removed (its other outputs are kept). If the re-run fails, the run counts as unfinished and is retried by the next normal invocation; it is not skipped as complete with old results.
+- `--jobs N` runs N experiments at once on the same GPU. GPU-heavy runs (e.g. PatchCore) can then fail with CUDA out-of-memory at start-up. A failed run's error and its log folder appear in the driver output, and re-running the same command retries only the unfinished runs (use `--jobs 1` if needed).
+
 ## Docker Usage
 
 The project also supports Docker for consistent environments:

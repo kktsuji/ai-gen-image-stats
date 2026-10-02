@@ -172,6 +172,33 @@ class TestRunAnomalyDetectionStubbed:
         assert summary["subclass"].tolist() == ["abnormal", "suspicious", "junk"]
         mock_plot.assert_called_once()
 
+    def test_failure_after_metrics_leaves_no_done_marker(self, ad_split_file, tmp_path):
+        """evaluation.json is the completion marker: it must be written last,
+        and a stale one from an earlier run must not survive a failed rerun."""
+        from unittest.mock import patch
+
+        config = _config(ad_split_file, tmp_path)
+        reports = tmp_path / "out" / "reports"
+        reports.mkdir(parents=True)
+        (reports / "evaluation.json").write_text('{"old": true}')
+
+        with (
+            patch(
+                "src.experiments.anomaly_detection.runner.get_features",
+                side_effect=lambda paths, spec, **kw: np.zeros((len(paths), 1)),
+            ),
+            patch(
+                "src.experiments.anomaly_detection.runner.plot_subclass_scores",
+                side_effect=RuntimeError("plot failed"),
+            ),
+            pytest.raises(RuntimeError, match="plot failed"),
+        ):
+            run_anomaly_detection(config, "cpu")
+
+        assert not (reports / "evaluation.json").exists()
+        assert not (reports / "evaluation.json.tmp").exists()
+        assert (reports / "predictions_test.npz").exists()
+
     def test_no_abnormal_in_test_still_writes_reports(self, ad_split_file, tmp_path):
         from unittest.mock import patch
 
