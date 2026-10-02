@@ -1234,6 +1234,35 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
     logger.info("Sample selection completed successfully!")
 
 
+def setup_experiment_anomaly_detection(config: Dict[str, Any]) -> None:
+    """Setup and run the one-class anomaly detection experiment.
+
+    Fits a detector on normal images only (frozen backbone features) and scores
+    the held-out binary test fold of an extended split file, writing a
+    classifier-compatible evaluation.json.
+
+    Args:
+        config: Configuration dictionary with data, feature_extraction, method,
+                threshold, and output sections.
+
+    Raises:
+        ValueError: If configuration is invalid
+        FileNotFoundError: If the split file or images don't exist
+    """
+    from src.experiments.anomaly_detection.config import (
+        validate_config as validate_anomaly_detection_config,
+    )
+    from src.experiments.anomaly_detection.runner import run_anomaly_detection
+
+    validate_anomaly_detection_config(config)
+
+    device, _ = setup_experiment_common(config, "ANOMALY DETECTION EXPERIMENT STARTED")
+    run_anomaly_detection(config, device)
+
+    logger.info("")
+    logger.info("Anomaly detection completed successfully!")
+
+
 def setup_experiment_data_preparation(config: Dict[str, Any]) -> None:
     """Setup and run data preparation experiment.
 
@@ -1308,11 +1337,14 @@ def main(args: Optional[list] = None) -> None:
             setup_experiment_sample_selection(config)
         elif experiment == "data_preparation":
             setup_experiment_data_preparation(config)
+        elif experiment == "anomaly_detection":
+            setup_experiment_anomaly_detection(config)
         else:
             raise ValueError(
                 f"Unknown experiment type: {experiment}. "
                 f"Supported experiments: classifier, diffusion, "
-                f"diffusion_pretrained, gan, sample_selection, data_preparation"
+                f"diffusion_pretrained, gan, sample_selection, data_preparation, "
+                f"anomaly_detection"
             )
 
         # Notify on success

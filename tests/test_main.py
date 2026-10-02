@@ -711,6 +711,42 @@ class TestExperimentDispatcher:
 
             mock_dp.assert_called_once()
 
+    @pytest.mark.component
+    def test_dispatcher_routes_to_anomaly_detection(self, tmp_path):
+        """Test that dispatcher correctly routes to anomaly_detection."""
+        config_file = tmp_path / "ad_config.yaml"
+        config_data = {"experiment": "anomaly_detection", "mode": "run"}
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with patch("src.main.setup_experiment_anomaly_detection") as mock_ad:
+            main([str(config_file)])
+
+            mock_ad.assert_called_once()
+
+    @pytest.mark.component
+    def test_setup_anomaly_detection_validates_and_runs(self, tmp_path):
+        """setup_experiment_anomaly_detection validates, sets up, then runs."""
+        from src.main import setup_experiment_anomaly_detection
+
+        config = {"experiment": "anomaly_detection"}
+        with (
+            patch(
+                "src.experiments.anomaly_detection.config.validate_config"
+            ) as mock_validate,
+            patch(
+                "src.main.setup_experiment_common", return_value=("cpu", tmp_path)
+            ) as mock_common,
+            patch(
+                "src.experiments.anomaly_detection.runner.run_anomaly_detection"
+            ) as mock_run,
+        ):
+            setup_experiment_anomaly_detection(config)
+
+        mock_validate.assert_called_once_with(config)
+        mock_common.assert_called_once()
+        mock_run.assert_called_once_with(config, "cpu")
+
 
 # ---------------------------------------------------------------------------
 # Shared test helpers (used by multiple test classes below)
