@@ -11,7 +11,9 @@ BH-corrected separately:
 - ``pool``: within each method x backbone, one normal pool against another.
 
 Outputs to ``<campaign>/reports/``: ``summary.csv``, ``comparisons.csv``,
-``subclass_auc.csv``, ``report.md`` and ``<metric>_by_condition.png``.
+``subclass_auc.csv``, ``report.md`` and ``<metric>_by_condition.png``. The
+report's condition table also shows ``<metric>_vs_all_normals`` (abnormal vs
+every normal subclass) when the runs report it.
 
 Run:
     python -m src.experiments.anomaly_detection.compare work/<series>/<campaign>
@@ -97,6 +99,10 @@ def validate_analysis_config(cfg: Dict[str, Any]) -> None:
     if not isinstance(groups, dict) or not groups:
         raise ValueError("analysis.reference_groups must be a non-empty mapping")
     for pattern, names in groups.items():
+        # A key matches the condition names containing it, so an empty key
+        # would match every condition.
+        if not isinstance(pattern, str) or not pattern:
+            raise ValueError("analysis.reference_groups keys must be non-empty strings")
         if (
             not isinstance(names, list)
             or not names
@@ -344,6 +350,14 @@ def _fmt(x: float, digits: int = 3) -> str:
     return "nan" if not math.isfinite(x) else f"{x:.{digits}f}"
 
 
+METRIC_LABELS = {"pr_auc": "PR-AUC", "roc_auc": "ROC-AUC"}
+
+
+def secondary_metric(metric: str) -> str:
+    """The evaluation.json key of ``metric`` measured against all normals."""
+    return f"{metric}_vs_all_normals"
+
+
 def write_markdown(
     path: Path,
     summary: pd.DataFrame,
@@ -367,20 +381,27 @@ def write_markdown(
         "",
         "## Conditions",
         "",
-        "| Condition | n | Mean | 95% CI | PR-AUC vs all normals |",
-        "| --- | --- | --- | --- | --- |",
     ]
     sec: Dict[str, float] = {
         str(r["experiment"]): float(r["mean"])
         for r in secondary.to_dict(orient="records")
     }
+    # The vs-all-normals column follows the metric and is omitted when no run
+    # reports it (e.g. a metric without a vs-all-normals counterpart).
+    sec_label = METRIC_LABELS.get(metric, f"`{metric}`") + " vs all normals"
+    header = ["Condition", "n", "Mean", "95% CI"] + ([sec_label] if sec else [])
+    lines += ["| " + " | ".join(header) + " |", "|" + " --- |" * len(header)]
     ordered = summary.sort_values(by="mean", ascending=False)
     for r in ordered.to_dict(orient="records"):
-        lines.append(
-            f"| `{r['experiment']}` | {r['n_splits']} | {_fmt(float(r['mean']))} | "
-            f"[{_fmt(float(r['ci_lower']))}, {_fmt(float(r['ci_upper']))}] | "
-            f"{_fmt(sec.get(str(r['experiment']), float('nan')))} |"
-        )
+        cells = [
+            f"`{r['experiment']}`",
+            str(r["n_splits"]),
+            _fmt(float(r["mean"])),
+            f"[{_fmt(float(r['ci_lower']))}, {_fmt(float(r['ci_upper']))}]",
+        ]
+        if sec:
+            cells.append(_fmt(sec.get(str(r["experiment"]), float("nan"))))
+        lines.append("| " + " | ".join(cells) + " |")
     lines += [
         "",
         "## References",
@@ -533,12 +554,17 @@ def run_compare(campaign_dir: Path) -> Path:
             split_means.setdefault(split, {})[exp] = {metric: v}
     summary = build_across_split_summary(split_means, [metric])
 
-    secondary_values = load_split_values(runs_base, family, "pr_auc_vs_all_normals")
+    sec_metric = secondary_metric(metric)
+    secondary_values = load_split_values(runs_base, family, sec_metric)
     sec_means: Dict[int, Dict[str, Dict[str, float]]] = {}
     for exp, values in secondary_values.items():
         for split, v in values.items():
-            sec_means.setdefault(split, {})[exp] = {"pr_auc_vs_all_normals": v}
-    secondary = build_across_split_summary(sec_means, ["pr_auc_vs_all_normals"])
+            sec_means.setdefault(split, {})[exp] = {sec_metric: v}
+    secondary = (
+        build_across_split_summary(sec_means, [sec_metric])
+        if sec_means
+        else pd.DataFrame(columns=["experiment", "mean"])
+    )
 
     comparisons = build_comparisons(cfg, conditions, references, chance)
     sub_auc = subclass_auc(runs_base, family)

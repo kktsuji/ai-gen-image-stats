@@ -126,6 +126,7 @@ class TestValidateAnalysisConfig:
             (lambda c: c.update(reference_groups={"-rn50_": "rn50-head"}), ValueError),
             (lambda c: c.update(reference_groups={"-rn50_": []}), ValueError),
             (lambda c: c.update(reference_groups={"-rn50_": [1]}), ValueError),
+            (lambda c: c.update(reference_groups={"": ["rn50-head"]}), ValueError),
             (lambda c: c["pool_contrast"].pop("control"), KeyError),
             (lambda c: c.update(pool_contrast="all"), ValueError),
             (lambda c: c["pool_contrast"].update(treatment=""), ValueError),
@@ -501,3 +502,81 @@ class TestFigureFollowsMetric:
             "Chance level of `roc_auc`: mean 0.500"
             in (reports / "report.md").read_text()
         )
+
+
+def _markdown(tmp_path, metric, secondary):
+    from src.experiments.anomaly_detection.compare import write_markdown
+
+    conditions, refs, chance = _in_memory()
+    comparisons = build_comparisons(_cfg(tmp_path), conditions, refs, chance)
+    summary = pd.DataFrame(
+        [
+            {
+                "experiment": n,
+                "n_splits": 4,
+                "mean": 0.3,
+                "ci_lower": 0.2,
+                "ci_upper": 0.4,
+            }
+            for n in conditions
+        ]
+    )
+    out = tmp_path / "report.md"
+    write_markdown(
+        out, summary, secondary, comparisons, refs, chance, pd.DataFrame(), metric
+    )
+    return out.read_text()
+
+
+@pytest.mark.unit
+class TestSecondaryMetricFollowsMetric:
+    def test_secondary_metric_name(self):
+        from src.experiments.anomaly_detection.compare import secondary_metric
+
+        assert secondary_metric("pr_auc") == "pr_auc_vs_all_normals"
+        assert secondary_metric("roc_auc") == "roc_auc_vs_all_normals"
+
+    def test_header_follows_metric(self, tmp_path):
+        secondary = pd.DataFrame([{"experiment": "ad-knn-rn50__all", "mean": 0.05}])
+        text = _markdown(tmp_path, "pr_auc", secondary)
+        assert "| Condition | n | Mean | 95% CI | PR-AUC vs all normals |" in text
+        assert "| `ad-knn-rn50__all` | 4 | 0.300 | [0.200, 0.400] | 0.050 |" in text
+        text = _markdown(tmp_path, "roc_auc", secondary)
+        assert "| Condition | n | Mean | 95% CI | ROC-AUC vs all normals |" in text
+
+    def test_column_omitted_without_secondary(self, tmp_path):
+        text = _markdown(tmp_path, "f1_1", pd.DataFrame(columns=["experiment", "mean"]))
+        assert "| Condition | n | Mean | 95% CI |\n| --- | --- | --- | --- |" in text
+        assert "vs all normals" not in text
+        assert "| `ad-knn-rn50__all` | 4 | 0.300 | [0.200, 0.400] |\n" in text
+
+    def test_run_compare_reads_secondary_of_metric(self, tmp_path):
+        from unittest.mock import patch
+
+        conditions, refs, chance = _in_memory()
+        campaign = tmp_path / "c"
+        (campaign / "configs").mkdir(parents=True)
+        cfg = _cfg(tmp_path)
+        cfg["metric"] = "roc_auc"
+        (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+        requested = []
+
+        def fake_load(base_dir, family, metric):
+            requested.append(metric)
+            if family == "binary-depth":
+                return {"ft-head__us": refs["rn50-head"]}
+            if metric == "roc_auc_vs_all_normals":
+                return {n: {s: 0.05 for s in v} for n, v in conditions.items()}
+            return conditions
+
+        mod = "src.experiments.anomaly_detection.compare"
+        with (
+            patch(f"{mod}.load_split_values", side_effect=fake_load),
+            patch(f"{mod}.chance_per_split", return_value=chance),
+            patch(f"{mod}.subclass_auc", return_value=pd.DataFrame()),
+            patch(f"{mod}.plot_conditions"),
+        ):
+            reports = run_compare(campaign)
+        assert "roc_auc_vs_all_normals" in requested
+        assert "pr_auc_vs_all_normals" not in requested
+        assert "ROC-AUC vs all normals" in (reports / "report.md").read_text()
