@@ -92,12 +92,13 @@ def plot_subclass_scores(
     ax.axvline(threshold, color="#555555", linestyle="--", linewidth=1)
     ax.text(
         threshold,
-        0.5,
+        0.02,
         " threshold",
         color="#555555",
         va="bottom",
         ha="left",
         fontsize=9,
+        transform=ax.get_xaxis_transform(),
     )
     ax.set_xlabel("Anomaly score (higher = more anomalous)")
     ax.set_title(title, fontsize=11)
