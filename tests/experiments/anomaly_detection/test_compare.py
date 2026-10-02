@@ -12,6 +12,7 @@ import yaml
 from src.experiments.anomaly_detection.compare import (
     build_comparisons,
     chance_per_split,
+    check_checkpoints,
     correct_within_families,
     load_split_values,
     main,
@@ -580,3 +581,74 @@ class TestSecondaryMetricFollowsMetric:
         assert "roc_auc_vs_all_normals" in requested
         assert "pr_auc_vs_all_normals" not in requested
         assert "ROC-AUC vs all normals" in (reports / "report.md").read_text()
+
+
+def _with_checkpoints(tmp_path: Path) -> Path:
+    """Campaign whose split{N} runs record the hash of a per-split checkpoint."""
+    import hashlib
+
+    campaign = _make_campaign(tmp_path)
+    for split in range(N_SPLITS):
+        ckpt = campaign / "runs" / f"split{split}" / "clf" / "x" / "seed0" / "best.pth"
+        ckpt.parent.mkdir(parents=True, exist_ok=True)
+        ckpt.write_bytes(f"weights{split}".encode())
+        digest = hashlib.sha256(ckpt.read_bytes()).hexdigest()
+        for cond in ("ad-knn-rn50__all", "ad-knn-rn50__suspicious"):
+            reports = (
+                campaign / "runs" / f"split{split}" / "ad-frozen" / cond / "seed0"
+            ) / "reports"
+            report = json.loads((reports / "evaluation.json").read_text())
+            report["checkpoint_sha256"] = digest
+            report["checkpoint"] = "../../../../clf/x/seed0/best.pth"
+            (reports / "evaluation.json").write_text(json.dumps(report))
+    return campaign
+
+
+@pytest.mark.unit
+class TestCheckpointCheck:
+    def test_unchanged_checkpoints_pass(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        check_checkpoints(str(campaign / "runs"), "ad-frozen")
+
+    def test_runs_without_checkpoint_are_not_checked(self, tmp_path):
+        campaign = _make_campaign(tmp_path)  # ImageNet / pre-existing reports
+        check_checkpoints(str(campaign / "runs"), "ad-frozen")
+
+    def test_changed_checkpoint_fails_and_lists_runs(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        (campaign / "runs/split2/clf/x/seed0/best.pth").write_bytes(b"retrained")
+        with pytest.raises(ValueError, match="has changed") as err:
+            check_checkpoints(str(campaign / "runs"), "ad-frozen")
+        message = str(err.value)
+        assert message.count("split2") == 4  # 2 conditions: report + checkpoint
+        assert "split1" not in message
+
+    def test_missing_checkpoint_fails(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        (campaign / "runs/split0/clf/x/seed0/best.pth").unlink()
+        with pytest.raises(ValueError, match="not found"):
+            check_checkpoints(str(campaign / "runs"), "ad-frozen")
+
+    def test_hash_without_path_reported(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        reports = campaign / "runs/split1/ad-frozen/ad-knn-rn50__all/seed0/reports"
+        report = json.loads((reports / "evaluation.json").read_text())
+        del report["checkpoint"]
+        (reports / "evaluation.json").write_text(json.dumps(report))
+        with pytest.raises(ValueError, match="without a checkpoint path"):
+            check_checkpoints(str(campaign / "runs"), "ad-frozen")
+
+    def test_survives_moving_the_series(self, tmp_path):
+        import shutil
+
+        campaign = _with_checkpoints(tmp_path)
+        moved = tmp_path / "moved"
+        shutil.move(str(campaign.parent), str(moved))
+        check_checkpoints(str(moved / campaign.name / "runs"), "ad-frozen")
+
+    def test_run_compare_stops_before_writing(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        (campaign / "runs/split0/clf/x/seed0/best.pth").write_bytes(b"retrained")
+        with pytest.raises(ValueError, match="run_campaign --force"):
+            run_compare(campaign)
+        assert not (campaign / "reports").exists()

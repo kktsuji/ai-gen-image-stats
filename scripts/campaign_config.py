@@ -28,7 +28,15 @@ conditions, and each condition is run on every split and seed::
 Every path in the base config and the sweep is written relative to the campaign
 folder. The values of ``path_keys`` (and ``output.base_dir``, which the driver
 sets) are resolved against the campaign folder only at run time, so the stored
-per-run configs stay portable when the series is moved.
+per-run configs stay portable when the series is moved. A ``path_keys`` value
+may contain ``{split}``, which is replaced by the split index of each run (e.g.
+a per-split checkpoint ``runs/split{split}/clf/x/seed0/checkpoints/best.pth``).
+
+A campaign may hold several sweep files named ``sweep*.yaml`` (e.g. a training
+stage ``sweep-train.yaml`` and a stage that uses its outputs, ``sweep.yaml``);
+``load_campaign`` takes the file name. Condition names must be unique across
+the sweep files, because the stored per-run configs are keyed by condition
+name only; ``load_campaign`` rejects a name that another sweep file also uses.
 
 Strict validation, mirroring ``scripts/pipeline_config.py``: every field is
 required and override keys must exist in the base config.
@@ -45,6 +53,7 @@ from src.utils.cli import dot_notation_to_dict, validate_override_keys
 from src.utils.config import load_config, merge_configs
 
 SWEEP_FILE = Path("configs") / "sweep.yaml"
+SWEEP_GLOB = "sweep*.yaml"
 REQUIRED_KEYS = (
     "base_config",
     "family",
@@ -215,6 +224,12 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
                     sweep["splits"]["template"].format(split=split),
                 )
                 cfg = _set_dotted(cfg, sweep["seeds"]["key"], seed)
+                for key in sweep["path_keys"]:
+                    value = _get_dotted(cfg, key)
+                    if isinstance(value, str) and "{split}" in value:
+                        cfg = _set_dotted(
+                            cfg, key, value.replace("{split}", str(split))
+                        )
                 cfg = _set_dotted(
                     cfg,
                     "output.base_dir",
@@ -226,13 +241,59 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
     return runs
 
 
-def load_campaign(campaign_dir: Path) -> tuple[Dict[str, Any], List[Run]]:
-    """Load ``<campaign>/configs/sweep.yaml`` and its base config, validate, expand.
+def condition_names(sweep: Dict[str, Any]) -> List[str]:
+    """Condition names of a sweep (``name_template`` over the axis value names)."""
+    axes = sweep["axes"]
+    axis_names = list(axes)
+    return [
+        sweep["name_template"].format(**dict(zip(axis_names, combo)))
+        for combo in itertools.product(*(list(axes[a]) for a in axis_names))
+    ]
+
+
+def _check_names_unique_across_sweeps(
+    configs_dir: Path, sweep_file: str, names: List[str]
+) -> None:
+    """Reject condition names that another ``sweep*.yaml`` also defines.
+
+    Two sweeps sharing a name would share ``configs/runs/<name>/`` (one stage
+    overwrites the other's record of what ran) and, with the same family, the
+    run folders too (one stage's done markers would skip the other's runs).
+    """
+    own = set(names)
+    for other in sorted(configs_dir.glob(SWEEP_GLOB)):
+        if other.name == sweep_file:
+            continue
+        sweep = load_config(other)
+        try:
+            other_names = condition_names(sweep)
+        except (KeyError, TypeError, AttributeError, ValueError, IndexError) as e:
+            raise ValueError(
+                f"Cannot read the condition names of {other} to check them "
+                f"against {sweep_file}: {e!r}"
+            ) from e
+        shared = sorted(own.intersection(other_names))
+        if shared:
+            raise ValueError(
+                f"Condition names {shared} are defined in both {sweep_file} and "
+                f"{other.name}; names must be unique across a campaign's sweep files"
+            )
+
+
+def load_campaign(
+    campaign_dir: Path, sweep_file: str = SWEEP_FILE.name
+) -> tuple[Dict[str, Any], List[Run]]:
+    """Load ``<campaign>/configs/<sweep_file>`` and its base config, validate, expand.
 
     Returns:
         (sweep, runs)
     """
-    sweep_path = campaign_dir / SWEEP_FILE
+    if Path(sweep_file).name != sweep_file or not Path(sweep_file).match(SWEEP_GLOB):
+        raise ValueError(
+            f"Sweep file '{sweep_file}' must be a file name matching {SWEEP_GLOB} "
+            "in the campaign's configs/"
+        )
+    sweep_path = campaign_dir / SWEEP_FILE.parent / sweep_file
     if not sweep_path.exists():
         raise FileNotFoundError(f"Sweep file not found: {sweep_path}")
     sweep = load_config(sweep_path)
@@ -241,7 +302,11 @@ def load_campaign(campaign_dir: Path) -> tuple[Dict[str, Any], List[Run]]:
         raise FileNotFoundError(f"Base config not found: {base_path}")
     base = load_config(base_path)
     validate_sweep(sweep, base)
-    return sweep, expand_runs(sweep, base)
+    runs = expand_runs(sweep, base)
+    _check_names_unique_across_sweeps(
+        sweep_path.parent, sweep_file, sorted({r.name for r in runs})
+    )
+    return sweep, runs
 
 
 def resolve_paths(

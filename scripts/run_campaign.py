@@ -1,5 +1,8 @@
 """Run a research campaign defined by ``<campaign>/configs/sweep.yaml``.
 
+``--sweep`` selects another ``sweep*.yaml`` file in ``configs/`` (for campaigns
+with several stages, e.g. ``sweep-train.yaml`` then ``sweep.yaml``).
+
 Expands the sweep into one config per (condition, split, seed), stores them
 under ``<campaign>/configs/runs/`` with campaign-relative paths, and runs each
 with ``python -m src.main`` from the repository root. Paths are resolved
@@ -9,7 +12,7 @@ so an interrupted campaign resumes where it stopped.
 
 Usage:
     python -m scripts.run_campaign work/<series>/<NN>-<campaign> [--expand-only]
-        [--only SUBSTRING] [--jobs N] [--force]
+        [--only SUBSTRING] [--jobs N] [--force] [--sweep FILE]
 """
 
 import argparse
@@ -159,10 +162,11 @@ def run_campaign(
     only: Optional[str] = None,
     jobs: int = 1,
     force: bool = False,
+    sweep_file: str = "sweep.yaml",
 ) -> Dict[str, Any]:
     """Expand and run a campaign; returns a summary dict."""
     campaign_dir = campaign_dir.resolve()
-    sweep, runs = load_campaign(campaign_dir)
+    sweep, runs = load_campaign(campaign_dir, sweep_file)
     selected = [r for r in runs if only is None or only in r.name]
     selected_ids = {(r.name, r.split, r.seed) for r in selected}
     # --expand-only runs nothing, so even with --force no record is replaced.
@@ -255,6 +259,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--jobs", type=int, default=1, help="Concurrent runs (default 1)"
     )
     parser.add_argument("--force", action="store_true", help="Re-run completed runs")
+    parser.add_argument(
+        "--sweep",
+        default="sweep.yaml",
+        help="Sweep file (sweep*.yaml) in the campaign's configs/ (default sweep.yaml)",
+    )
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("--jobs must be >= 1")
@@ -268,6 +277,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         only=args.only,
         jobs=args.jobs,
         force=args.force,
+        sweep_file=args.sweep,
     )
     # STALE runs outside an --only selection are warned about, not failed on.
     return 1 if summary["failed"] or summary["stale_selected"] else 0
