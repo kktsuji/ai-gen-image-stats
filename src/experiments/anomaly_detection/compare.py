@@ -20,6 +20,7 @@ Run:
 """
 
 import argparse
+import json
 import logging
 import math
 from glob import glob
@@ -32,6 +33,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
+from src.experiments.anomaly_detection.features import file_sha256
 from src.experiments.classifier.cross_split_report import (
     build_across_split_summary,
     compute_split_means,
@@ -166,6 +168,46 @@ def _completed(paths: List[str]) -> List[str]:
     report to the same run set as the main metric.
     """
     return [p for p in paths if (Path(p).parent / "evaluation.json").exists()]
+
+
+def check_checkpoints(runs_base: str, family: str) -> None:
+    """Fail if a finished run's features came from since-replaced weights.
+
+    The runner records ``checkpoint_sha256`` and ``checkpoint`` (relative to the
+    run's ``reports/``) in ``evaluation.json``. If an earlier stage (e.g. the
+    classifier training) was re-run, the run's stored config and done marker
+    are unchanged, so the campaign driver skips it; this check catches it
+    before stale results are reported. Runs with ImageNet weights (no
+    checkpoint) and runs from before the key existed are not checked.
+
+    Raises:
+        ValueError: Listing every run whose checkpoint is missing or changed.
+    """
+    pattern = str(Path(runs_base) / "split*" / family / "*" / "seed*" / "reports")
+    hashes: Dict[Path, str] = {}
+    problems: List[str] = []
+    for reports in sorted(glob(pattern)):
+        report_file = Path(reports) / "evaluation.json"
+        if not report_file.exists():
+            continue
+        with open(report_file, encoding="utf-8") as f:
+            report = json.load(f)
+        expected = report.get("checkpoint_sha256")
+        if expected is None:
+            continue
+        checkpoint = (Path(reports) / report["checkpoint"]).resolve()
+        if not checkpoint.exists():
+            problems.append(f"{report_file}: checkpoint {checkpoint} not found")
+            continue
+        if checkpoint not in hashes:
+            hashes[checkpoint] = file_sha256(str(checkpoint))
+        if hashes[checkpoint] != expected:
+            problems.append(f"{report_file}: checkpoint {checkpoint} has changed")
+    if problems:
+        raise ValueError(
+            "Runs built from other weights than their checkpoint now holds "
+            "(re-run them with run_campaign --force):\n" + "\n".join(problems)
+        )
 
 
 def chance_per_split(
@@ -536,6 +578,7 @@ def run_compare(campaign_dir: Path) -> Path:
     conditions = load_split_values(runs_base, family, metric)
     if not conditions:
         raise ValueError(f"No runs found under {runs_base} (family {family})")
+    check_checkpoints(runs_base, family)
     references: Dict[str, SplitValues] = {}
     for name, ref in cfg["references"].items():
         # Campaign-relative like runs.base_dir; absolute paths are used as-is.

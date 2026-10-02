@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -116,6 +116,17 @@ def compute_binary_metrics(
     return metrics
 
 
+def _relative_to(path: Optional[str], directory: Path) -> Optional[str]:
+    """``path`` relative to ``directory`` (absolute if that is impossible)."""
+    if path is None:
+        return None
+    absolute = Path(path).resolve()
+    try:
+        return os.path.relpath(absolute, directory.resolve())
+    except ValueError:  # e.g. another drive on Windows
+        return str(absolute)
+
+
 def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
     """Fit on normals, score held-out images, write reports.
 
@@ -210,6 +221,11 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
     # cross_split_report), so drop any old one now and write it last.
     evaluation_path = reports_dir / "evaluation.json"
     evaluation_path.unlink(missing_ok=True)
+    # Record which checkpoint the features came from (content hash, and its path
+    # relative to this reports/ folder so it survives moving the series), so a
+    # later analysis can detect results built from since-replaced weights.
+    report_payload["checkpoint_sha256"] = spec.get("checkpoint_sha256")
+    report_payload["checkpoint"] = _relative_to(fe_config["checkpoint"], reports_dir)
 
     np.savez_compressed(
         reports_dir / "predictions_test.npz",

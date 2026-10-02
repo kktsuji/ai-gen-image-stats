@@ -1,6 +1,7 @@
 """Tests for the anomaly-detection runner and report."""
 
 import json
+from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
@@ -106,6 +107,34 @@ class TestReport:
         }
 
 
+@pytest.mark.unit
+class TestCheckpointRecorded:
+    def test_hash_and_relative_path_recorded(self, ad_split_file, tmp_path):
+        from unittest.mock import patch
+
+        from src.experiments.anomaly_detection.features import file_sha256
+
+        ckpt = tmp_path / "clf" / "best.pth"
+        ckpt.parent.mkdir()
+        ckpt.write_bytes(b"weights")
+        config = _config(ad_split_file, tmp_path)
+        config["feature_extraction"]["checkpoint"] = str(ckpt)
+        with (
+            patch(
+                "src.experiments.anomaly_detection.runner.get_features",
+                side_effect=lambda paths, spec, **kw: np.array(
+                    [[1.0] if "abnormal" in p else [0.0] for p in paths]
+                ),
+            ),
+            patch("src.experiments.anomaly_detection.runner.plot_subclass_scores"),
+        ):
+            reports = run_anomaly_detection(config, "cpu")
+        evaluation = json.loads((reports / "evaluation.json").read_text())
+        assert evaluation["checkpoint_sha256"] == file_sha256(str(ckpt))
+        assert not Path(evaluation["checkpoint"]).is_absolute()
+        assert (reports / evaluation["checkpoint"]).resolve() == ckpt.resolve()
+
+
 def _config(split_file, tmp_path, method="knn"):
     return {
         "compute": {"device": "cpu", "seed": 0},
@@ -168,6 +197,8 @@ class TestRunAnomalyDetectionStubbed:
         assert evaluation["recall_1"] == pytest.approx(1.0)
         assert evaluation["threshold"] == pytest.approx(0.0)
         assert evaluation["normal_pool"] == "all"
+        assert evaluation["checkpoint"] is None
+        assert evaluation["checkpoint_sha256"] is None
         assert (reports / "predictions_test.npz").exists()
         summary = pd.read_csv(reports / "subclass_summary.csv")
         assert summary["subclass"].tolist() == ["abnormal", "suspicious", "junk"]
