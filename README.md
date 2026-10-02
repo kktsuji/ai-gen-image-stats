@@ -858,6 +858,53 @@ python -m scripts.run_pipeline [configs/pipeline.yaml]
 python -m src.experiments.sample_selection.evaluation_report
 ```
 
+### Organizing Experiments: Series and Campaigns
+
+Research outputs are organized so that a folder can be moved (e.g. to an archive drive) and still be understood on its own. They live under `work/`, which is gitignored: this repository is public, and `work/` holds results, local paths and patient-derived image paths. `outputs/` stays the default, throwaway destination for ad-hoc runs and the example configs. Anything that belongs to a research question goes under `work/`.
+
+There are three levels:
+
+| Level        | Definition                                                                                               | Example                                         |
+| ------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Series**   | A line of research: campaigns that ask related questions and share inputs                                | `work/anomaly-detection/`                       |
+| **Campaign** | The set of runs that answers one question and is analyzed together (one README, one set of paired tests) | `01-frozen-sweep`: 12 conditions × 10 splits    |
+| **Run**      | One execution of one config (one method, one split, one seed)                                            | `runs/split0/ad-frozen/ad-knn-rn50__all/seed0/` |
+
+Layout:
+
+```text
+work/<series>/
+├── README.md                 # purpose of the series + ledger of its campaigns
+├── shared/                   # inputs shared by the series' campaigns (never results)
+│   ├── splits/               # e.g. derived split files
+│   └── cache/                # regenerable caches (e.g. frozen features)
+└── <NN>-<campaign>/
+    ├── README.md             # question, design, inputs, how to run, commit, results
+    ├── configs/              # campaign definition + the exact per-run configs
+    ├── runs/                 # run outputs: split{N}/<family>/<experiment>/seed{S}/
+    └── reports/              # campaign-level tables, statistical tests, figures
+```
+
+Rules:
+
+- **Where things go.**
+  - Inputs that other series also use stay **outside** the series: raw images, the binary CV splits, and other series' results such as classifier baselines.
+  - Inputs and caches shared only within one series go in `<series>/shared/`.
+  - Everything that belongs to one campaign goes inside that campaign's folder.
+- **Paths.**
+  - Inside a campaign, paths are written relative to the campaign folder, e.g. `runs/...`.
+  - Paths to the series' shared inputs go through `../shared/...`.
+  - Paths outside the series may change when the folder moves. That is accepted, but they must be recorded in the campaign README.
+- **Moving.** Move a whole series as a unit. A single campaign depends on `../shared/`, so it should not be moved out of its series alone.
+- **Naming.**
+  - Series and campaigns use kebab-case.
+  - Campaign names start with a two-digit number in execution order (`00-pilot`, `01-frozen-sweep`, …).
+- **Run layout.** `runs/` keeps the `split{N}/<family>/<experiment>/seed{S}/` structure, so `cross_split_report.load_per_split_results(base_dir="<campaign>/runs", family=...)` reads it unchanged.
+- **READMEs.**
+  - Series README: what the series is about, plus a ledger of its campaigns (question, date, commit, outcome).
+  - Campaign README: the question; the design; every input outside the campaign (paths plus split-file hashes); the exact commands; the git commit; a short results summary.
+- **Scope.** This applies to campaigns started from 2026-10 onward. Earlier output trees keep their original layout and are not migrated.
+
 ## Docker Usage
 
 The project also supports Docker for consistent environments:

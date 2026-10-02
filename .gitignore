@@ -338,6 +338,9 @@ dist
 outputs/
 out/
 
+# Research series/campaigns (see README "Series and Campaigns"); never committed
+work/
+
 # Dataset folders (large files, not for version control)
 data/
 
