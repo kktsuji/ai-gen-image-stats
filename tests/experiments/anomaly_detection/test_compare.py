@@ -388,6 +388,7 @@ class TestReviewFixes:
                     "score": [1.0, junk_score],
                 }
             ).to_csv(reports / "subclass_scores.csv", index=False)
+            (reports / "evaluation.json").write_text("{}")  # finished run
 
         # split0: two seeds with AUC 1 and 0 -> split mean 0.5; split1: AUC 1.
         write(0, 0, 0.0)
@@ -397,3 +398,45 @@ class TestReviewFixes:
         row = df.iloc[0]
         assert row["n_splits"] == 2
         assert row["auc_mean"] == pytest.approx((0.5 + 1.0) / 2)
+
+
+@pytest.mark.component
+class TestFinalReviewFixes:
+    def test_unfinished_runs_ignored_by_chance_and_subclass_auc(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        runs = campaign / "runs"
+        # Make one condition's split-0 run unfinished (no evaluation.json).
+        unfinished = (
+            runs / "split0" / "ad-frozen" / "ad-knn-rn50__all" / "seed0" / "reports"
+        )
+        (unfinished / "evaluation.json").unlink()
+        # The other condition's split 0 is unfinished too, so split 0 has no
+        # finished run at all and must vanish from both.
+        other = (
+            runs
+            / "split0"
+            / "ad-frozen"
+            / "ad-knn-rn50__suspicious"
+            / "seed0"
+            / "reports"
+        )
+        (other / "evaluation.json").unlink()
+
+        chance = chance_per_split(str(runs), "ad-frozen")
+        assert 0 not in chance and set(chance) == {1, 2, 3}
+        df = subclass_auc(str(runs), "ad-frozen")
+        assert (df["n_splits"] == N_SPLITS - 1).all()
+
+    def test_chance_level_depends_on_metric(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        runs = str(campaign / "runs")
+        assert chance_per_split(runs, "ad-frozen", "roc_auc") == {
+            s: 0.5 for s in range(N_SPLITS)
+        }
+        assert chance_per_split(runs, "ad-frozen", "f1_1") == {}
+
+    def test_no_chance_level_skips_vs_chance(self, tmp_path):
+        conditions, refs, _ = _in_memory()
+        df = build_comparisons(_cfg(tmp_path), conditions, refs, {})
+        assert "vs_chance" not in set(df["family"])
+        assert {"vs_classifier", "pool"} <= set(df["family"])

@@ -8,6 +8,7 @@ report and paired statistical tests can consume it unchanged.
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -204,8 +205,10 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
 
     reports_dir = resolve_output_path(config, "reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
-    with open(reports_dir / "evaluation.json", "w", encoding="utf-8") as f:
-        json.dump(report_payload, f, indent=2)
+    # evaluation.json doubles as the "run complete" marker (campaign driver,
+    # cross_split_report), so drop any old one now and write it last.
+    evaluation_path = reports_dir / "evaluation.json"
+    evaluation_path.unlink(missing_ok=True)
 
     np.savez_compressed(
         reports_dir / "predictions_test.npz",
@@ -235,6 +238,12 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
             f"pool={data_config['normal_pool']}"
         ),
     )
+
+    # Written last and atomically: its presence means every report is complete.
+    tmp_path = evaluation_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(report_payload, f, indent=2)
+    os.replace(tmp_path, evaluation_path)
 
     logger.info(
         f"PR-AUC {metrics.get('pr_auc', float('nan')):.4f}  "

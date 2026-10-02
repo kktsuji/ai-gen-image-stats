@@ -72,12 +72,18 @@ def is_done(campaign_dir: Path, run: Run, done_marker: str) -> bool:
 
 
 def run_one(
-    campaign_dir: Path, run: Run, path_keys: List[str], python: str = sys.executable
+    campaign_dir: Path,
+    run: Run,
+    path_keys: List[str],
+    python: str = sys.executable,
+    done_marker: Optional[str] = None,
 ) -> bool:
     """Run one config via ``python -m src.main``; returns True on success.
 
     The resolved (absolute-path) config is written to a temporary file that is
     removed afterwards; ``src.main`` itself snapshots it into the run's logs.
+    If the run fails, its ``done_marker`` is removed even if the experiment
+    wrote it before failing, so the run is retried rather than skipped.
     """
     resolved = resolve_paths(run.config, path_keys, campaign_dir)
     fd, tmp_name = tempfile.mkstemp(prefix="campaign-run-", suffix=".yaml")
@@ -94,6 +100,8 @@ def run_one(
     finally:
         Path(tmp_name).unlink(missing_ok=True)
     if result.returncode != 0:
+        if done_marker is not None:
+            (campaign_dir / run.output_dir / done_marker).unlink(missing_ok=True)
         logger.error(
             f"FAILED {run.config_path} (exit {result.returncode}); "
             f"run logs: {campaign_dir / run.output_dir / 'logs'}\n"
@@ -159,7 +167,7 @@ def run_campaign(
     todo = [
         r
         for r in selected
-        if force or not is_done(campaign_dir, r, sweep["done_marker"])
+        if forced or not is_done(campaign_dir, r, sweep["done_marker"])
     ]
     summary: Dict[str, Any] = {
         "conditions": len(conditions),
@@ -184,7 +192,7 @@ def run_campaign(
 
     def task(item: tuple[int, Run]) -> tuple[Run, bool]:
         index, run = item
-        ok = run_one(campaign_dir, run, path_keys)
+        ok = run_one(campaign_dir, run, path_keys, done_marker=sweep["done_marker"])
         logger.info(
             f"[{index}/{len(todo)}] {'ok  ' if ok else 'FAIL'} {run.name} "
             f"split{run.split} seed{run.seed} ({time.time() - start:.0f}s elapsed)"

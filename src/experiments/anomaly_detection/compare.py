@@ -125,18 +125,44 @@ def load_split_values(
     return values
 
 
-def chance_per_split(runs_base: str, family: str) -> SplitValues:
-    """Chance PR-AUC per split: the abnormal fraction of the binary test fold.
+def _completed(paths: List[str]) -> List[str]:
+    """Keep report files whose run finished (its ``evaluation.json`` exists).
 
-    All conditions of a campaign share the test folds, so any run's
-    ``predictions_test.npz`` gives the targets for its split.
+    ``evaluation.json`` is written last, so this restricts every part of the
+    report to the same run set as the main metric.
     """
+    return [p for p in paths if (Path(p).parent / "evaluation.json").exists()]
+
+
+def chance_per_split(
+    runs_base: str, family: str, metric: str = "pr_auc"
+) -> SplitValues:
+    """Chance level of ``metric`` per split.
+
+    - ``pr_auc``: the abnormal fraction of the binary test fold. All conditions
+      share the test folds, so any finished run's ``predictions_test.npz``
+      gives the targets for its split.
+    - ``roc_auc``: 0.5 for every split with a finished run.
+    - Any other metric has no defined chance level: returns ``{}``, so the
+      vs-chance comparison is skipped.
+    """
+    paths = _completed(
+        sorted(
+            glob(f"{runs_base}/split*/{family}/*/seed*/reports/predictions_test.npz")
+        )
+    )
     chance: SplitValues = {}
-    for path in sorted(
-        glob(f"{runs_base}/split*/{family}/*/seed*/reports/predictions_test.npz")
-    ):
+    if metric not in ("pr_auc", "roc_auc"):
+        logger.warning(
+            f"No chance level defined for metric '{metric}'; skipping vs_chance"
+        )
+        return chance
+    for path in paths:
         split = int(Path(path).parts[-6].removeprefix("split"))
         if split in chance:
+            continue
+        if metric == "roc_auc":
+            chance[split] = 0.5
             continue
         with np.load(path) as data:
             chance[split] = float(np.mean(data["targets"]))
@@ -152,8 +178,8 @@ def subclass_auc(runs_base: str, family: str) -> pd.DataFrame:
     0.5 mean that subclass scores as *more* anomalous than the CTCs.
     """
     rows: List[Dict[str, Any]] = []
-    for path in sorted(
-        glob(f"{runs_base}/split*/{family}/*/seed*/reports/subclass_scores.csv")
+    for path in _completed(
+        sorted(glob(f"{runs_base}/split*/{family}/*/seed*/reports/subclass_scores.csv"))
     ):
         parts = Path(path).parts
         split, condition = int(parts[-6].removeprefix("split")), parts[-4]
@@ -304,8 +330,13 @@ def write_markdown(
     lines = ["# Campaign comparison report", ""]
     lines += [
         f"Metric: `{metric}`. Unit of analysis: the split.",
-        f"Chance level (abnormal fraction of the test fold): mean {_fmt(float(np.mean(list(chance.values()))))}"
-        f" over {len(chance)} splits.",
+        (
+            f"Chance level of `{metric}`: mean {_fmt(float(np.mean(list(chance.values()))))}"
+            f" over {len(chance)} splits"
+            + (" (abnormal fraction of the test fold)." if metric == "pr_auc" else ".")
+            if chance
+            else f"No chance level is defined for `{metric}`; the vs-chance comparison is skipped."
+        ),
         "",
         "## Conditions",
         "",
@@ -410,7 +441,7 @@ def plot_conditions(
         ax.set_yticks(y)
         ax.set_yticklabels(sub["experiment"], fontsize=9)
         ax.invert_yaxis()
-        lines = [("chance", chance, ":")]
+        lines = [("chance", chance, ":")] if math.isfinite(chance) else []
         lines += [
             (n, float(np.mean(list(references[n].values()))), "--") for n in ref_names
         ]
@@ -463,7 +494,7 @@ def run_compare(campaign_dir: Path) -> Path:
                 f"Reference {name}: no '{ref['experiment']}' results under {ref_base}"
             )
         references[name] = values[ref["experiment"]]
-    chance = chance_per_split(runs_base, family)
+    chance = chance_per_split(runs_base, family, metric)
 
     split_means: Dict[int, Dict[str, Dict[str, float]]] = {}
     for exp, values in conditions.items():

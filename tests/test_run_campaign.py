@@ -272,7 +272,9 @@ class TestForceAndStaleEdgeCases:
         with patch.object(
             rc,
             "run_one",
-            side_effect=lambda c, r, k: seen.append((r.name, r.split, r.seed)) or True,
+            side_effect=lambda c, r, k, **kw: (
+                seen.append((r.name, r.split, r.seed)) or True
+            ),
         ):
             summary = rc.run_campaign(campaign, only="knn-rn50")
         assert target in seen
@@ -293,6 +295,54 @@ class TestForceAndStaleEdgeCases:
 
 
 @pytest.mark.unit
+class TestFinalReviewFixes:
+    def test_failed_run_marker_removed(self, tmp_path):
+        """A run that wrote its done marker and then failed must not count as done."""
+        campaign = _make_campaign(tmp_path)
+        _, runs = rc.load_campaign(campaign)
+        run = runs[0]
+        marker = campaign.resolve() / run.output_dir / "reports/evaluation.json"
+
+        def fake_run(cmd, **kwargs):
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("{}")  # written before the failure
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="ERROR late failure", stderr=""
+            )
+
+        with patch.object(rc.subprocess, "run", side_effect=fake_run):
+            ok = rc.run_one(
+                campaign.resolve(), run, [], done_marker="reports/evaluation.json"
+            )
+        assert not ok
+        assert not marker.exists()
+
+    def test_successful_run_keeps_marker(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        _, runs = rc.load_campaign(campaign)
+        run = runs[0]
+        marker = campaign.resolve() / run.output_dir / "reports/evaluation.json"
+
+        def fake_run(cmd, **kwargs):
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("{}")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(rc.subprocess, "run", side_effect=fake_run):
+            assert rc.run_one(
+                campaign.resolve(), run, [], done_marker="reports/evaluation.json"
+            )
+        assert marker.exists()
+
+    def test_expand_only_force_counts_done_runs_as_skipped(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        summary = rc.run_campaign(campaign, expand_only=True, force=True)
+        assert summary["skipped_done"] == 1
+        assert summary["selected"] == 16
+
+
+@pytest.mark.unit
 class TestSplitKeyAlwaysResolved:
     def test_split_key_resolved_without_path_keys(self, tmp_path):
         sweep = _sweep()
@@ -300,7 +350,7 @@ class TestSplitKeyAlwaysResolved:
         campaign = _make_campaign(tmp_path, sweep=sweep)
         seen = []
         with patch.object(
-            rc, "run_one", side_effect=lambda c, r, k: seen.append(k) or True
+            rc, "run_one", side_effect=lambda c, r, k, **kw: seen.append(k) or True
         ):
             rc.run_campaign(campaign, only="knn-rn50")
         assert seen and all(k[0] == "data.split_file" for k in seen)
@@ -314,7 +364,9 @@ class TestEndToEnd:
         # Run through the real subprocess path with the fake interpreter.
         orig = rc.run_one
         with patch.object(
-            rc, "run_one", side_effect=lambda c, r, k: orig(c, r, k, python=fake_python)
+            rc,
+            "run_one",
+            side_effect=lambda c, r, k, **kw: orig(c, r, k, python=fake_python, **kw),
         ):
             summary = rc.run_campaign(campaign, jobs=2)
 
@@ -331,7 +383,9 @@ class TestEndToEnd:
 
         # Second pass: completed runs are skipped, failed ones are retried.
         with patch.object(
-            rc, "run_one", side_effect=lambda c, r, k: orig(c, r, k, python=fake_python)
+            rc,
+            "run_one",
+            side_effect=lambda c, r, k, **kw: orig(c, r, k, python=fake_python, **kw),
         ) as again:
             summary2 = rc.run_campaign(campaign)
         assert summary2["skipped_done"] == 8
