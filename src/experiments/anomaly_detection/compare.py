@@ -111,9 +111,16 @@ def validate_analysis_config(cfg: Dict[str, Any]) -> None:
             raise ValueError(
                 f"analysis.reference_groups['{pattern}'] references unknown {unknown}"
             )
+    contrast = cfg["pool_contrast"]
+    if not isinstance(contrast, dict):
+        raise ValueError("analysis.pool_contrast must be a mapping")
     for key in ("treatment", "control"):
-        if key not in cfg["pool_contrast"]:
+        if key not in contrast:
             raise KeyError(f"Missing required field: analysis.pool_contrast.{key}")
+        if not isinstance(contrast[key], str) or not contrast[key]:
+            raise ValueError(f"analysis.pool_contrast.{key} must be a non-empty string")
+    if contrast["treatment"] == contrast["control"]:
+        raise ValueError("analysis.pool_contrast treatment and control must differ")
 
 
 # --------------------------------------------------------------------------

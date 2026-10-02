@@ -127,6 +127,10 @@ class TestValidateAnalysisConfig:
             (lambda c: c.update(reference_groups={"-rn50_": []}), ValueError),
             (lambda c: c.update(reference_groups={"-rn50_": [1]}), ValueError),
             (lambda c: c["pool_contrast"].pop("control"), KeyError),
+            (lambda c: c.update(pool_contrast="all"), ValueError),
+            (lambda c: c["pool_contrast"].update(treatment=""), ValueError),
+            (lambda c: c["pool_contrast"].update(control=1), ValueError),
+            (lambda c: c["pool_contrast"].update(control="all"), ValueError),
         ],
     )
     def test_invalid(self, tmp_path, mutate, exc):

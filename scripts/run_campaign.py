@@ -21,7 +21,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import IO, Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
@@ -90,13 +90,24 @@ def run_one(
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             yaml.safe_dump(resolved, f, sort_keys=False, allow_unicode=True)
-        result = subprocess.run(
-            [python, "-m", "src.main", tmp_name],
-            cwd=REPO_ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # Stream the child's output to temporary files instead of pipes, so a
+        # long or chatty run (e.g. progress bars) never accumulates in memory;
+        # only the tails are read back, and only on failure.
+        with (
+            tempfile.TemporaryFile() as out,
+            tempfile.TemporaryFile() as err,
+        ):
+            result = subprocess.run(
+                [python, "-m", "src.main", tmp_name],
+                cwd=REPO_ROOT,
+                stdout=out,
+                stderr=err,
+            )
+            failure_output = (
+                format_failure_output(_tail_text(out), _tail_text(err))
+                if result.returncode != 0
+                else ""
+            )
     finally:
         Path(tmp_name).unlink(missing_ok=True)
     if result.returncode != 0:
@@ -104,11 +115,17 @@ def run_one(
             (campaign_dir / run.output_dir / done_marker).unlink(missing_ok=True)
         logger.error(
             f"FAILED {run.config_path} (exit {result.returncode}); "
-            f"run logs: {campaign_dir / run.output_dir / 'logs'}\n"
-            f"{format_failure_output(result.stdout, result.stderr)}"
+            f"run logs: {campaign_dir / run.output_dir / 'logs'}\n{failure_output}"
         )
         return False
     return True
+
+
+def _tail_text(f: IO[bytes], max_bytes: int = 65536) -> str:
+    """Decode at most the last ``max_bytes`` of a binary file object."""
+    f.seek(0, os.SEEK_END)
+    f.seek(max(0, f.tell() - max_bytes))
+    return f.read().decode("utf-8", errors="replace")
 
 
 def format_failure_output(stdout: Optional[str], stderr: Optional[str]) -> str:

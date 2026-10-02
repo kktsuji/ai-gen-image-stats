@@ -15,6 +15,20 @@ from scripts import run_campaign as rc
 from tests.test_campaign_config import _base, _sweep
 
 
+def _fake_process(returncode, stdout="", stderr="", before=None):
+    """subprocess.run stand-in that writes to the file objects it is given,
+    like a real child process does."""
+
+    def run(cmd, **kwargs):
+        if before is not None:
+            before()
+        kwargs["stdout"].write(stdout.encode("utf-8"))
+        kwargs["stderr"].write(stderr.encode("utf-8"))
+        return subprocess.CompletedProcess(cmd, returncode)
+
+    return run
+
+
 def _make_campaign(root: Path, sweep=None) -> Path:
     """Series folder with shared/ and one campaign; returns the campaign dir."""
     campaign = root / "series" / "01-test"
@@ -136,17 +150,34 @@ class TestFailureReporting:
         campaign = _make_campaign(tmp_path)
         _, runs = rc.load_campaign(campaign)
 
-        result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout=stdout, stderr=stderr
-        )
         with (
-            patch.object(rc.subprocess, "run", return_value=result),
+            patch.object(
+                rc.subprocess, "run", side_effect=_fake_process(1, stdout, stderr)
+            ),
             caplog.at_level("ERROR"),
         ):
             ok = rc.run_one(campaign.resolve(), runs[0], [])
         assert not ok
         assert expected in caplog.text
         assert "run logs:" in caplog.text and runs[0].output_dir in caplog.text
+
+
+@pytest.mark.unit
+class TestTailText:
+    def test_only_last_bytes_read(self):
+        import tempfile
+
+        with tempfile.TemporaryFile() as f:
+            f.write(b"A" * 1000 + b"END")
+            assert rc._tail_text(f, max_bytes=10) == "AAAAAAAEND"
+            assert rc._tail_text(f).endswith("END") and len(rc._tail_text(f)) == 1003
+
+    def test_invalid_utf8_replaced(self):
+        import tempfile
+
+        with tempfile.TemporaryFile() as f:
+            f.write("é".encode("utf-8")[1:] + b"ok")
+            assert rc._tail_text(f).endswith("ok")
 
 
 @pytest.mark.unit
@@ -303,12 +334,11 @@ class TestFinalReviewFixes:
         run = runs[0]
         marker = campaign.resolve() / run.output_dir / "reports/evaluation.json"
 
-        def fake_run(cmd, **kwargs):
+        def write_marker():
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text("{}")  # written before the failure
-            return subprocess.CompletedProcess(
-                cmd, 1, stdout="ERROR late failure", stderr=""
-            )
+
+        fake_run = _fake_process(1, "ERROR late failure", "", before=write_marker)
 
         with patch.object(rc.subprocess, "run", side_effect=fake_run):
             ok = rc.run_one(
