@@ -159,7 +159,7 @@ def _write_images(directory, names):
         Image.new("RGB", (8, 8)).save(directory / name)
 
 
-@pytest.mark.component
+@pytest.mark.unit
 class TestGenerateExtendedSplits:
     def _setup(self, tmp_path):
         root = tmp_path / "data"

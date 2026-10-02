@@ -1,0 +1,61 @@
+# ------------------------------------------------------------------------------
+# ONE-CLASS ANOMALY DETECTION (learn from normal cells only)
+# ------------------------------------------------------------------------------
+# Fits a detector on normal images only (frozen ImageNet backbone features) and
+# scores the held-out binary test fold (abnormal vs suspicious). The test fold is
+# identical to the classifier CV runs, so results pair per split.
+#
+# 1) Derive the extended split files once (binary CV splits are read-only):
+#   python -m src.experiments.anomaly_detection.splits \
+#     --src-dir /path/to/splits/cv-binary --normal-dir data/in-house/normal \
+#     --path-remap data/ data/in-house/ --out-dir outputs/splits/cv-binary-ad
+# 2) Run:
+#   python -m src.main configs/anomaly-detection.yaml
+#
+# Copy to configs/ (gitignored) and edit freely.
+# ------------------------------------------------------------------------------
+experiment: anomaly_detection
+mode: run # Only mode supported for this experiment
+
+compute:
+  device: cuda # cuda, cpu, auto
+  seed: 0 # Seeds the PatchCore coreset; k-NN / Mahalanobis are deterministic
+
+data:
+  split_file: "outputs/splits/cv-binary-ad/cv_binary_ad_split0.json"
+  normal_pool: all # all = every normal subclass; suspicious = suspicious train only
+
+feature_extraction:
+  model: resnet50 # resnet50 (256 -> 224) or inceptionv3 (320 -> 299)
+  image_size: 256 # Resize (same preprocessing as the classifier runs)
+  crop_size: 224 # Center crop
+  batch_size: 64
+  num_workers: 4
+  cache_dir: "outputs/anomaly_detection/feature_cache" # null disables caching
+
+method:
+  type: knn # knn, mahalanobis, patchcore (only the selected subsection is read)
+  knn:
+    k: 5 # Mean distance to the k nearest normal training images
+  mahalanobis:
+    shrinkage: ledoit_wolf # Covariance shrinkage estimator
+  patchcore:
+    layers: [layer2, layer3] # Intermediate layers (inceptionv3: e.g. Mixed_5d, Mixed_6e)
+    grid_size: 14 # Patch grid per image after resizing the feature maps
+    feature_dim: 256 # Channel dimension of each patch embedding
+    coreset_ratio: 0.01 # Fraction of normal patches kept in the memory bank
+    projection_dim: 128 # Random projection used for coreset selection
+
+threshold:
+  normal_percentile: 95 # Threshold = this percentile of normal validation scores
+
+output:
+  # <base>/split{N}/<family>/<experiment>/seed0 is readable by cross_split_report
+  base_dir: outputs/anomaly-detection/split0/ad-frozen/ad-knn-rn50__all/seed0
+  subdirs:
+    logs: logs
+    reports: reports
+
+logging:
+  console_level: INFO
+  file_level: INFO

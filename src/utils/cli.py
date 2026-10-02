@@ -440,6 +440,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         "gan",
         "data_preparation",
         "sample_selection",
+        "anomaly_detection",
     ]
     if config["experiment"] not in valid_experiments:
         raise ValueError(
