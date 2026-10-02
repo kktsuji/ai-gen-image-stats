@@ -629,6 +629,15 @@ class TestCheckpointCheck:
         with pytest.raises(ValueError, match="not found"):
             check_checkpoints(str(campaign / "runs"), "ad-frozen")
 
+    def test_hash_without_path_reported(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        reports = campaign / "runs/split1/ad-frozen/ad-knn-rn50__all/seed0/reports"
+        report = json.loads((reports / "evaluation.json").read_text())
+        del report["checkpoint"]
+        (reports / "evaluation.json").write_text(json.dumps(report))
+        with pytest.raises(ValueError, match="without a checkpoint path"):
+            check_checkpoints(str(campaign / "runs"), "ad-frozen")
+
     def test_survives_moving_the_series(self, tmp_path):
         import shutil
 

@@ -70,6 +70,10 @@ def _save_classifier_checkpoint(path, backbone, extra=None):
     return str(path)
 
 
+class _Unsafe:
+    """Stand-in for an arbitrary pickled object (not allowed by weights_only)."""
+
+
 def _shifted_backbone(offset):
     from tests.experiments.anomaly_detection.conftest import TinyBackbone
 
@@ -114,6 +118,40 @@ class TestCheckpointWeights:
         torch.save({"model_state_dict": state}, tmp_path / "a.pth")
         with pytest.raises(ValueError, match="does not match"):
             load_backbone_weights(TinyBackbone(), str(tmp_path / "a.pth"))
+
+    def test_save_checkpoint_format_loads_weights_only(self, tmp_path):
+        from src.utils.checkpoint import save_checkpoint
+        from tests.experiments.anomaly_detection.conftest import TinyBackbone
+
+        source = _shifted_backbone(1)
+        path = tmp_path / "best_model.pth"
+        save_checkpoint(
+            path,
+            model=source,
+            optimizer=torch.optim.SGD(source.parameters(), lr=0.1),
+            epoch=3,
+            global_step=30,
+            is_best=True,
+            metrics={"loss": 0.5, "f1_1": 0.8},
+            best_metric=0.8,
+            best_metric_name="f1_1",
+            trainer_class="ClassifierTrainer",
+            save_optimizer=False,
+        )
+        model = TinyBackbone()
+        load_backbone_weights(model, str(path))
+        assert torch.equal(model.layer2.weight, source.layer2.weight)
+
+    def test_arbitrary_pickled_objects_refused(self, tmp_path):
+        import pickle
+
+        from tests.experiments.anomaly_detection.conftest import TinyBackbone
+
+        ckpt = _save_classifier_checkpoint(
+            tmp_path / "a.pth", TinyBackbone(), {"evil": _Unsafe()}
+        )
+        with pytest.raises(pickle.UnpicklingError):
+            load_backbone_weights(TinyBackbone(), ckpt)
 
     def test_unexpected_key_raises(self, tmp_path):
         from tests.experiments.anomaly_detection.conftest import TinyBackbone

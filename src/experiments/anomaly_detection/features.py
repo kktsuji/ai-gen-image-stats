@@ -70,7 +70,7 @@ def load_backbone_weights(model: torch.nn.Module, checkpoint_path: str) -> None:
     every other parameter and buffer must be present, so a checkpoint from a
     different backbone fails instead of silently keeping ImageNet weights.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     state = {
         k: v
         for k, v in checkpoint["model_state_dict"].items()

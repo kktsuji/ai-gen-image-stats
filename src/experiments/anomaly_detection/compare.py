@@ -195,7 +195,13 @@ def check_checkpoints(runs_base: str, family: str) -> None:
         expected = report.get("checkpoint_sha256")
         if expected is None:
             continue
-        checkpoint = (Path(reports) / report["checkpoint"]).resolve()
+        recorded = report.get("checkpoint")
+        if not isinstance(recorded, str) or not recorded:
+            problems.append(
+                f"{report_file}: checkpoint_sha256 without a checkpoint path"
+            )
+            continue
+        checkpoint = (Path(reports) / recorded).resolve()
         if not checkpoint.exists():
             problems.append(f"{report_file}: checkpoint {checkpoint} not found")
             continue
