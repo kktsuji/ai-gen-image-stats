@@ -52,7 +52,9 @@ threshold:
 
 output:
   # Series/campaign layout (see README "Series and Campaigns"):
-  # <campaign>/runs/split{N}/<family>/<experiment>/seed0 is readable by cross_split_report
+  # <campaign>/runs/split{N}/<family>/<experiment>/seed0 is readable by cross_split_report.
+  # Paths in this example are repo-root relative (run from the repo root); configs kept
+  # inside a campaign use campaign-relative paths (runs/..., ../shared/...) instead.
   base_dir: work/anomaly-detection/00-pilot/runs/split0/ad-frozen/ad-knn-rn50__all/seed0
   subdirs:
     logs: logs
