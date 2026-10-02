@@ -144,6 +144,7 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
         batch_size=fe_config["batch_size"],
         num_workers=fe_config["num_workers"],
         cache_dir=fe_config["cache_dir"],
+        checkpoint=fe_config["checkpoint"],
     )
     logger.info(f"Features {features.shape} ready in {time.time() - t0:.1f}s")
 

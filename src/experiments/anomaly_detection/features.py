@@ -1,9 +1,12 @@
 """Anomaly Detection - Frozen Feature Extraction with Caching
 
-Extracts features from a frozen ImageNet backbone, either as one pooled vector
-per image (k-NN / Mahalanobis) or as a grid of locally-aware patch vectors
-(PatchCore). Frozen features do not depend on the split, so every image is
-extracted once and cached on disk; each split then reads its subset.
+Extracts features from a frozen backbone, either as one pooled vector per image
+(k-NN / Mahalanobis) or as a grid of locally-aware patch vectors (PatchCore).
+The backbone has ImageNet weights, or the weights of a fine-tuned classifier
+checkpoint (``feature_extraction.checkpoint``). ImageNet features do not depend
+on the split, so every image is extracted once and cached on disk; each split
+then reads its subset. A checkpoint is part of the cache key (by content hash),
+so per-split checkpoints get separate caches.
 """
 
 import hashlib
@@ -29,6 +32,11 @@ from src.utils.data.transforms import get_val_transforms
 
 logger = logging.getLogger(__name__)
 
+# Classification head of ResNetClassifier / InceptionV3Classifier. Its shape
+# depends on num_classes and it is not used by extract_features(), so it is not
+# loaded from a checkpoint.
+HEAD_PREFIX = "fc."
+
 
 class PathListDataset(Dataset):
     """Unlabeled dataset over an explicit list of image paths."""
@@ -45,8 +53,46 @@ class PathListDataset(Dataset):
         return self.transform(image)
 
 
+def file_sha256(path: str) -> str:
+    """Hex SHA-256 of a file's content."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_backbone_weights(model: torch.nn.Module, checkpoint_path: str) -> None:
+    """Load a classifier checkpoint's backbone weights into ``model``.
+
+    The checkpoint must come from the same architecture (``save_checkpoint``
+    format, ``model_state_dict``). The classification head (``fc.*``) is skipped;
+    every other parameter and buffer must be present, so a checkpoint from a
+    different backbone fails instead of silently keeping ImageNet weights.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state = {
+        k: v
+        for k, v in checkpoint["model_state_dict"].items()
+        if not k.startswith(HEAD_PREFIX)
+    }
+    result = model.load_state_dict(state, strict=False)
+    missing = [k for k in result.missing_keys if not k.startswith(HEAD_PREFIX)]
+    if missing or result.unexpected_keys:
+        raise ValueError(
+            f"Checkpoint {checkpoint_path} does not match the feature model: "
+            f"missing {missing[:5]}, unexpected {result.unexpected_keys[:5]}"
+        )
+    model.eval()
+    logger.info(f"Loaded backbone weights from {checkpoint_path}")
+
+
 def build_feature_spec(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Describe the feature representation a config needs (also the cache key)."""
+    """Describe the feature representation a config needs (also the cache key).
+
+    With ``feature_extraction.checkpoint`` set, the spec records the checkpoint's
+    content hash (not its path, so a moved series keeps its caches).
+    """
     fe = config["feature_extraction"]
     spec: Dict[str, Any] = {
         "model": fe["model"],
@@ -54,6 +100,8 @@ def build_feature_spec(config: Dict[str, Any]) -> Dict[str, Any]:
         "crop_size": fe["crop_size"],
         "normalize": "imagenet",
     }
+    if fe["checkpoint"] is not None:
+        spec["checkpoint_sha256"] = file_sha256(fe["checkpoint"])
     method = config["method"]
     if method["type"] == "patchcore":
         params = method["patchcore"]
@@ -73,7 +121,8 @@ def spec_cache_name(spec: Dict[str, Any]) -> str:
     digest = hashlib.sha256(
         json.dumps(spec, sort_keys=True).encode("utf-8")
     ).hexdigest()[:12]
-    return f"{spec['model']}_{spec['kind']}_{digest}.npz"
+    model = spec["model"] + ("-ft" if "checkpoint_sha256" in spec else "")
+    return f"{model}_{spec['kind']}_{digest}.npz"
 
 
 def _resize_map(fmap: torch.Tensor, grid_size: int) -> torch.Tensor:
@@ -156,6 +205,7 @@ def _extract(
     device: str,
     batch_size: int,
     num_workers: int,
+    checkpoint: Optional[str] = None,
 ) -> np.ndarray:
     transform = get_val_transforms(
         image_size=spec["image_size"],
@@ -167,6 +217,12 @@ def _extract(
         dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
     )
     model = create_feature_model(spec["model"], device)
+    if checkpoint is not None:
+        if file_sha256(checkpoint) != spec.get("checkpoint_sha256"):
+            raise ValueError(
+                f"Checkpoint {checkpoint} changed after the spec was built"
+            )
+        load_backbone_weights(model, checkpoint)
     if spec["kind"] == "patch":
         return extract_patch_features(
             model,
@@ -231,6 +287,7 @@ def get_features(
     batch_size: int,
     num_workers: int,
     cache_dir: Optional[str],
+    checkpoint: Optional[str] = None,
 ) -> np.ndarray:
     """Return features for ``paths`` (row-aligned), extracting only uncached ones.
 
@@ -243,6 +300,8 @@ def get_features(
         paths: Image paths; duplicates are allowed.
         spec: Feature spec from :func:`build_feature_spec`.
         cache_dir: Directory for the on-disk cache, or None to disable caching.
+        checkpoint: Classifier checkpoint whose backbone weights replace the
+            ImageNet ones; its hash must be in ``spec`` (``build_feature_spec``).
 
     Returns:
         Array whose first axis matches ``paths``.
@@ -250,7 +309,7 @@ def get_features(
     if not cache_dir:
         unique = list(dict.fromkeys(paths))
         logger.info(f"Extracting features for {len(unique)} images ({spec})")
-        feats = _extract(unique, spec, device, batch_size, num_workers)
+        feats = _extract(unique, spec, device, batch_size, num_workers, checkpoint)
         index = {path: i for i, path in enumerate(unique)}
         return feats[[index[p] for p in paths]]
 
@@ -263,7 +322,9 @@ def get_features(
 
         if missing:
             logger.info(f"Extracting features for {len(missing)} images ({spec})")
-            new_feats = _extract(missing, spec, device, batch_size, num_workers)
+            new_feats = _extract(
+                missing, spec, device, batch_size, num_workers, checkpoint
+            )
             if cached_feats is None:
                 cached_feats = new_feats
             else:

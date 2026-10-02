@@ -28,7 +28,14 @@ conditions, and each condition is run on every split and seed::
 Every path in the base config and the sweep is written relative to the campaign
 folder. The values of ``path_keys`` (and ``output.base_dir``, which the driver
 sets) are resolved against the campaign folder only at run time, so the stored
-per-run configs stay portable when the series is moved.
+per-run configs stay portable when the series is moved. A ``path_keys`` value
+may contain ``{split}``, which is replaced by the split index of each run (e.g.
+a per-split checkpoint ``runs/split{split}/clf/x/seed0/checkpoints/best.pth``).
+
+A campaign may hold several sweep files (e.g. a training stage and a stage that
+uses its outputs); ``load_campaign`` takes the file name. Condition names must
+then be unique across the sweeps, because the stored per-run configs are keyed
+by condition name.
 
 Strict validation, mirroring ``scripts/pipeline_config.py``: every field is
 required and override keys must exist in the base config.
@@ -215,6 +222,12 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
                     sweep["splits"]["template"].format(split=split),
                 )
                 cfg = _set_dotted(cfg, sweep["seeds"]["key"], seed)
+                for key in sweep["path_keys"]:
+                    value = _get_dotted(cfg, key)
+                    if isinstance(value, str) and "{split}" in value:
+                        cfg = _set_dotted(
+                            cfg, key, value.replace("{split}", str(split))
+                        )
                 cfg = _set_dotted(
                     cfg,
                     "output.base_dir",
@@ -226,13 +239,15 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
     return runs
 
 
-def load_campaign(campaign_dir: Path) -> tuple[Dict[str, Any], List[Run]]:
-    """Load ``<campaign>/configs/sweep.yaml`` and its base config, validate, expand.
+def load_campaign(
+    campaign_dir: Path, sweep_file: str = SWEEP_FILE.name
+) -> tuple[Dict[str, Any], List[Run]]:
+    """Load ``<campaign>/configs/<sweep_file>`` and its base config, validate, expand.
 
     Returns:
         (sweep, runs)
     """
-    sweep_path = campaign_dir / SWEEP_FILE
+    sweep_path = campaign_dir / SWEEP_FILE.parent / sweep_file
     if not sweep_path.exists():
         raise FileNotFoundError(f"Sweep file not found: {sweep_path}")
     sweep = load_config(sweep_path)

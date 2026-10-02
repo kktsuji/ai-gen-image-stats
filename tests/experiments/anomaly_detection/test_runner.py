@@ -117,6 +117,7 @@ def _config(split_file, tmp_path, method="knn"):
             "batch_size": 4,
             "num_workers": 0,
             "cache_dir": str(tmp_path / "cache"),
+            "checkpoint": None,
         },
         "method": {
             "type": method,

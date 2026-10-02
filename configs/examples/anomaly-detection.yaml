@@ -33,6 +33,9 @@ feature_extraction:
   batch_size: 64
   num_workers: 4
   cache_dir: "work/anomaly-detection/shared/cache/features" # null disables caching
+  # null = ImageNet weights; or a classifier checkpoint of the same model
+  # (e.g. checkpoints/best_model.pth) whose backbone weights are used instead
+  checkpoint: null
 
 method:
   type: knn # knn, mahalanobis, patchcore (only the selected subsection is read)

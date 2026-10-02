@@ -123,6 +123,11 @@ def _validate_feature_extraction_section(config: Dict[str, Any]) -> None:
         raise ValueError(
             "feature_extraction.cache_dir must be a non-empty string or null"
         )
+    checkpoint = _require(fe, "checkpoint", "feature_extraction")
+    if checkpoint is not None and (not isinstance(checkpoint, str) or not checkpoint):
+        raise ValueError(
+            "feature_extraction.checkpoint must be a non-empty string or null"
+        )
 
 
 def _validate_method_section(config: Dict[str, Any]) -> None:

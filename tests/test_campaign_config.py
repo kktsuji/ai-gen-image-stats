@@ -184,6 +184,51 @@ class TestExpandRuns:
 
 
 @pytest.mark.unit
+class TestSplitPlaceholderInPaths:
+    def _setup(self):
+        base = _base()
+        base["feature_extraction"]["checkpoint"] = None
+        sweep = _sweep()
+        sweep["path_keys"].append("feature_extraction.checkpoint")
+        sweep["axes"]["backbone"]["rn50"]["feature_extraction.checkpoint"] = (
+            "runs/split{split}/clf/rn50/seed0/checkpoints/best_model.pth"
+        )
+        return sweep, base
+
+    def test_placeholder_replaced_per_split(self):
+        sweep, base = self._setup()
+        validate_sweep(sweep, base)
+        runs = expand_runs(sweep, base)
+        by_key = {(r.name, r.split, r.seed): r.config for r in runs}
+        assert (
+            by_key[("ad-knn-rn50", 1, 0)]["feature_extraction"]["checkpoint"]
+            == "runs/split1/clf/rn50/seed0/checkpoints/best_model.pth"
+        )
+        assert (
+            by_key[("ad-knn-rn50", 0, 1)]["feature_extraction"]["checkpoint"]
+            == "runs/split0/clf/rn50/seed0/checkpoints/best_model.pth"
+        )
+        # A null value (other condition) stays null.
+        assert (
+            by_key[("ad-knn-incv3", 1, 0)]["feature_extraction"]["checkpoint"] is None
+        )
+
+    def test_placeholder_only_in_path_keys(self):
+        sweep, base = self._setup()
+        sweep["path_keys"].remove("feature_extraction.checkpoint")
+        runs = expand_runs(sweep, base)
+        assert "{split}" in runs[0].config["feature_extraction"]["checkpoint"]
+
+    def test_resolved_against_campaign(self, tmp_path):
+        sweep, base = self._setup()
+        cfg = expand_runs(sweep, base)[2].config  # ad-knn-rn50, split1 seed0
+        out = resolve_paths(cfg, sweep["path_keys"], tmp_path)
+        assert out["feature_extraction"]["checkpoint"] == str(
+            tmp_path.resolve() / "runs/split1/clf/rn50/seed0/checkpoints/best_model.pth"
+        )
+
+
+@pytest.mark.unit
 class TestResolvePaths:
     def test_relative_paths_resolved_against_campaign(self, tmp_path):
         cfg = expand_runs(_sweep(), _base())[0].config
@@ -216,9 +261,9 @@ class TestResolvePaths:
 
 @pytest.mark.unit
 class TestLoadCampaign:
-    def _write(self, campaign, sweep, base):
+    def _write(self, campaign, sweep, base, name="sweep.yaml"):
         (campaign / "configs").mkdir(parents=True)
-        (campaign / "configs" / "sweep.yaml").write_text(yaml.safe_dump(sweep))
+        (campaign / "configs" / name).write_text(yaml.safe_dump(sweep))
         if base is not None:
             (campaign / "configs" / "base.yaml").write_text(yaml.safe_dump(base))
 
@@ -227,6 +272,16 @@ class TestLoadCampaign:
         sweep, runs = load_campaign(tmp_path)
         assert sweep["family"] == "ad-frozen"
         assert len(runs) == 16
+
+    def test_other_sweep_file(self, tmp_path):
+        sweep = _sweep()
+        sweep["family"] = "clf"
+        self._write(tmp_path, sweep, _base(), name="sweep-train.yaml")
+        loaded, runs = load_campaign(tmp_path, "sweep-train.yaml")
+        assert loaded["family"] == "clf"
+        assert runs[0].output_dir.startswith("runs/split0/clf/")
+        with pytest.raises(FileNotFoundError, match="Sweep"):
+            load_campaign(tmp_path)
 
     def test_missing_sweep(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="Sweep"):
