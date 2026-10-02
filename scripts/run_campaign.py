@@ -138,9 +138,10 @@ def run_campaign(
     campaign_dir = campaign_dir.resolve()
     sweep, runs = load_campaign(campaign_dir)
     selected = [r for r in runs if only is None or only in r.name]
+    selected_ids = {(r.name, r.split, r.seed) for r in selected}
     # --expand-only runs nothing, so even with --force no record is replaced.
     forced = force and not expand_only
-    rerun = {(r.name, r.split, r.seed) for r in selected} if forced else set()
+    rerun = selected_ids if forced else set()
     stale = write_run_configs(campaign_dir, runs, sweep["done_marker"], rerun)
     if forced:
         # Drop the old done markers of the runs about to be redone, so that a
@@ -177,7 +178,11 @@ def run_campaign(
         "succeeded": 0,
         "failed": [],
         "stale": [str(r.config_path) for r in stale],
-        "stale_selected": [str(r.config_path) for r in stale if r in selected],
+        "stale_selected": [
+            str(r.config_path)
+            for r in stale
+            if (r.name, r.split, r.seed) in selected_ids
+        ],
     }
     if expand_only:
         logger.info(

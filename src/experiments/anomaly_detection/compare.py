@@ -22,7 +22,7 @@ import logging
 import math
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -94,9 +94,18 @@ def validate_analysis_config(cfg: Dict[str, Any]) -> None:
                     f"Missing required field: analysis.references.{name}.{key}"
                 )
     groups = cfg["reference_groups"]
-    if not isinstance(groups, dict):
-        raise ValueError("analysis.reference_groups must be a mapping")
+    if not isinstance(groups, dict) or not groups:
+        raise ValueError("analysis.reference_groups must be a non-empty mapping")
     for pattern, names in groups.items():
+        if (
+            not isinstance(names, list)
+            or not names
+            or not all(isinstance(n, str) for n in names)
+        ):
+            raise ValueError(
+                f"analysis.reference_groups['{pattern}'] must be a non-empty list "
+                "of reference names"
+            )
         unknown = [n for n in names if n not in refs]
         if unknown:
             raise ValueError(
@@ -123,6 +132,18 @@ def load_split_values(
             if metric in metrics:
                 values.setdefault(exp, {})[split] = metrics[metric]
     return values
+
+
+def _split_and_condition(report_file: str) -> Tuple[int, str]:
+    """Split index and condition name of a run's report file.
+
+    Run layout (see README "Series and Campaigns"):
+    ``<runs_base>/split{N}/<family>/<condition>/seed{S}/reports/<file>``,
+    so counting from the end: file (-1), reports (-2), seed (-3),
+    condition (-4), family (-5), split{N} (-6).
+    """
+    parts = Path(report_file).parts
+    return int(parts[-6].removeprefix("split")), parts[-4]
 
 
 def _completed(paths: List[str]) -> List[str]:
@@ -158,7 +179,7 @@ def chance_per_split(
         )
         return chance
     for path in paths:
-        split = int(Path(path).parts[-6].removeprefix("split"))
+        split, _ = _split_and_condition(path)
         if split in chance:
             continue
         if metric == "roc_auc":
@@ -181,8 +202,7 @@ def subclass_auc(runs_base: str, family: str) -> pd.DataFrame:
     for path in _completed(
         sorted(glob(f"{runs_base}/split*/{family}/*/seed*/reports/subclass_scores.csv"))
     ):
-        parts = Path(path).parts
-        split, condition = int(parts[-6].removeprefix("split")), parts[-4]
+        split, condition = _split_and_condition(path)
         table = pd.read_csv(path)
         abnormal = table.loc[table["subclass"] == "abnormal", "score"].to_numpy()
         for subclass in sorted(set(table["subclass"]) - {"abnormal"}):
@@ -420,6 +440,9 @@ def plot_conditions(
     """One panel per reference group: condition means with 95% CI and
     reference lines for chance and the classifier arms."""
     groups = list(reference_groups.items())
+    if not groups:
+        logger.warning("No reference groups; skipping the condition figure")
+        return
     fig, axes = plt.subplots(
         1, len(groups), figsize=(6 * len(groups), 4.2), sharex=True, squeeze=False
     )

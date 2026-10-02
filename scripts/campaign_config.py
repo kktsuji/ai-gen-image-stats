@@ -86,7 +86,8 @@ def _require(mapping: Dict[str, Any], key: str, where: str) -> Any:
     if not isinstance(mapping, dict):
         raise ValueError(f"{where} must be a mapping")
     if key not in mapping:
-        raise KeyError(f"Missing required field: {where}.{key}" if where else key)
+        name = f"{where}.{key}" if where else key
+        raise KeyError(f"Missing required field: {name}")
     return mapping[key]
 
 

@@ -122,6 +122,10 @@ class TestValidateAnalysisConfig:
             (lambda c: c["runs"].pop("family"), KeyError),
             (lambda c: c["references"]["rn50-head"].pop("experiment"), KeyError),
             (lambda c: c.update(reference_groups={"-x_": ["nope"]}), ValueError),
+            (lambda c: c.update(reference_groups={}), ValueError),
+            (lambda c: c.update(reference_groups={"-rn50_": "rn50-head"}), ValueError),
+            (lambda c: c.update(reference_groups={"-rn50_": []}), ValueError),
+            (lambda c: c.update(reference_groups={"-rn50_": [1]}), ValueError),
             (lambda c: c["pool_contrast"].pop("control"), KeyError),
         ],
     )
@@ -440,3 +444,19 @@ class TestFinalReviewFixes:
         df = build_comparisons(_cfg(tmp_path), conditions, refs, {})
         assert "vs_chance" not in set(df["family"])
         assert {"vs_classifier", "pool"} <= set(df["family"])
+
+
+@pytest.mark.unit
+class TestPrReviewFixes:
+    def test_split_and_condition(self):
+        from src.experiments.anomaly_detection.compare import _split_and_condition
+
+        path = "/c/runs/split7/ad-frozen/ad-knn-rn50__all/seed0/reports/x.csv"
+        assert _split_and_condition(path) == (7, "ad-knn-rn50__all")
+
+    def test_plot_skipped_without_groups(self, tmp_path):
+        from src.experiments.anomaly_detection.compare import plot_conditions
+
+        out = tmp_path / "fig.png"
+        plot_conditions(out, pd.DataFrame(), {}, {}, 0.2)
+        assert not out.exists()

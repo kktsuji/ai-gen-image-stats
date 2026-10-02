@@ -122,6 +122,21 @@ class TestValidateSweep:
 
 
 @pytest.mark.unit
+class TestRequire:
+    def test_message_without_prefix(self):
+        from scripts.campaign_config import _require
+
+        with pytest.raises(KeyError, match="Missing required field: key"):
+            _require({}, "key", "")
+
+    def test_message_with_prefix(self):
+        from scripts.campaign_config import _require
+
+        with pytest.raises(KeyError, match="Missing required field: sweep.key"):
+            _require({}, "key", "sweep")
+
+
+@pytest.mark.unit
 class TestExpandRuns:
     def test_cartesian_product_and_order(self):
         runs = expand_runs(_sweep(), _base())
