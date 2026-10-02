@@ -240,7 +240,7 @@ class TestRunAnomalyDetection:
         assert evaluation["class_names"] == ["suspicious", "abnormal"]
         assert evaluation["n_train_normals"] == 11  # 6 suspicious + 5 red
         assert evaluation["n_test"] == 7
-        assert evaluation["n_test_all_normals"] == 10
+        assert evaluation["n_test_vs_all_normals"] == 10  # 7 test + 3 extra normals
 
         preds = np.load(reports / "predictions_test.npz")
         assert preds["scores"].shape == (7,)

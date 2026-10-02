@@ -197,7 +197,7 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
         "n_train_normals": len(parts["train_normals"]),
         "n_val_normals": len(parts["val_normals"]),
         "n_test": len(parts["test"]),
-        "n_test_all_normals": len(all_targets),
+        "n_test_vs_all_normals": len(all_targets),
         "split_file": data_config["split_file"],
     }
 
