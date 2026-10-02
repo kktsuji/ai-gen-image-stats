@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import (
     average_precision_score,
     balanced_accuracy_score,
@@ -214,8 +215,6 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
         paths=np.array([e["path"] for e in parts["test"]]),
         subclasses=np.array([e["subclass"] for e in parts["test"]]),
     )
-
-    import pandas as pd
 
     table = pd.concat(
         [

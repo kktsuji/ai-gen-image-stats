@@ -8,8 +8,13 @@ suspicious normals fall relative to the abnormal CTCs.
 from pathlib import Path
 from typing import Any, Dict, List
 
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Use non-interactive backend for headless environments
+matplotlib.use("Agg")
 
 # Plot order: the positive class first, then the hardest negative, then the
 # extra normal subclasses (any unknown subclass is appended alphabetically).
@@ -59,11 +64,6 @@ def plot_subclass_scores(
     table: pd.DataFrame, threshold: float, output_path: Path, title: str
 ) -> None:
     """Horizontal box plot of scores per subclass with the decision threshold."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     order = _ordered_subclasses(table["subclass"].unique().tolist())
     data = [table.loc[table["subclass"] == s, "score"].to_numpy() for s in order]
     labels = [f"{s} (n={len(d)})" for s, d in zip(order, data)]
