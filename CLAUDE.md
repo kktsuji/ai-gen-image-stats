@@ -18,6 +18,7 @@ python -m scripts.run_pipeline [configs/pipeline.yaml]       # run full syntheti
 python -m src.experiments.sample_selection.evaluation_report  # aggregate selection-eval reports
 python -m src.experiments.anomaly_detection.splits --src-dir <cv-binary dir> --normal-dir data/in-house/normal --path-remap data/ data/in-house/ --out-dir work/anomaly-detection/shared/splits  # derive one-class AD splits
 python -m src.main configs/examples/anomaly-detection.yaml   # one-class anomaly detection (fit on normals only)
+python -m scripts.run_campaign work/<series>/<NN>-<campaign> [--expand-only] [--only S] [--jobs N]  # run a campaign sweep (configs/sweep.yaml)
 
 # Override config values with dot-notation
 python -m src.main configs/diffusion.yaml --model.architecture.image_size 60
@@ -165,6 +166,10 @@ The canonical rules are in README.md, under "Organizing Experiments: Series and 
   - Inputs outside the series (raw data, binary CV splits, other series' results) may break when a folder moves. That is accepted, but they must be recorded in the campaign README.
 - **Moving**: move a whole series as a unit.
 - **Before starting a campaign**: create its README (question, design, external inputs with split-file hashes, commands, commit), then add it to the series ledger.
+- **Running**: define `configs/base.yaml` + `configs/sweep.yaml` and run `python -m scripts.run_campaign <campaign>`.
+  - `scripts/campaign_config.py` validates the sweep and expands it (axes → conditions × splits × seeds).
+  - `scripts/run_campaign.py` stores portable per-run configs in `configs/runs/` and resolves the paths at run time.
+  - Runs whose `done_marker` exists are skipped.
 
 ### Pipeline (`scripts/run_pipeline.py`)
 
