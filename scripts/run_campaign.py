@@ -61,15 +61,20 @@ def run_one(
         result = subprocess.run(
             [python, "-m", "src.main", tmp_name],
             cwd=REPO_ROOT,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
     finally:
         Path(tmp_name).unlink(missing_ok=True)
     if result.returncode != 0:
-        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
-        logger.error(f"FAILED {run.config_path} (exit {result.returncode}):\n{tail}")
+        # src.main logs to stdout, so its error usually lands there, not stderr.
+        output = (result.stderr or "").strip() or (result.stdout or "").strip()
+        tail = "\n".join(output.splitlines()[-8:])
+        logger.error(
+            f"FAILED {run.config_path} (exit {result.returncode}); "
+            f"run logs: {campaign_dir / run.output_dir / 'logs'}\n{tail}"
+        )
         return False
     return True
 

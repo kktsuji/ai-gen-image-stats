@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -113,6 +114,34 @@ class TestRunOne:
             (campaign / "../shared/splits/s0.json").resolve()
         )
         assert not Path(seen["cmd"][3]).exists()
+
+
+@pytest.mark.unit
+class TestFailureReporting:
+    @pytest.mark.parametrize(
+        "stdout,stderr,expected",
+        [
+            ("line1\nRuntimeError: CUDA out of memory\n", "", "CUDA out of memory"),
+            ("ignored stdout\n", "Traceback: boom\n", "Traceback: boom"),
+        ],
+    )
+    def test_error_tail_and_log_dir_reported(
+        self, tmp_path, caplog, stdout, stderr, expected
+    ):
+        campaign = _make_campaign(tmp_path)
+        _, runs = rc.load_campaign(campaign)
+
+        result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=stdout, stderr=stderr
+        )
+        with (
+            patch.object(rc.subprocess, "run", return_value=result),
+            caplog.at_level("ERROR"),
+        ):
+            ok = rc.run_one(campaign.resolve(), runs[0], [])
+        assert not ok
+        assert expected in caplog.text
+        assert "run logs:" in caplog.text and runs[0].output_dir in caplog.text
 
 
 @pytest.mark.component

@@ -936,6 +936,7 @@ How the driver handles configs and paths:
 - Only at run time does the driver resolve `output.base_dir` and the `path_keys` against the campaign folder. It then runs `python -m src.main` from the repository root.
 - Override keys must exist in the base config (typos are rejected).
 - The driver alone sets the split key, the seed key and `output.base_dir`.
+- `--jobs N` runs N experiments at once on the same GPU. GPU-heavy runs (e.g. PatchCore) can then fail with CUDA out-of-memory at start-up. A failed run's error and its log folder appear in the driver output, and re-running the same command retries only the unfinished runs (use `--jobs 1` if needed).
 
 ## Docker Usage
 
