@@ -8,7 +8,8 @@
 # 1) Derive the extended split files once (binary CV splits are read-only):
 #   python -m src.experiments.anomaly_detection.splits \
 #     --src-dir /path/to/splits/cv-binary --normal-dir data/in-house/normal \
-#     --path-remap data/ data/in-house/ --out-dir outputs/splits/cv-binary-ad
+#     --path-remap data/ data/in-house/ \
+#     --out-dir outputs/anomaly-detection/shared/splits
 # 2) Run:
 #   python -m src.main configs/anomaly-detection.yaml
 #
@@ -22,7 +23,7 @@ compute:
   seed: 0 # Seeds the PatchCore coreset; k-NN / Mahalanobis are deterministic
 
 data:
-  split_file: "outputs/splits/cv-binary-ad/cv_binary_ad_split0.json"
+  split_file: "outputs/anomaly-detection/shared/splits/cv_binary_ad_split0.json"
   normal_pool: all # all = every normal subclass; suspicious = suspicious train only
 
 feature_extraction:
@@ -31,7 +32,7 @@ feature_extraction:
   crop_size: 224 # Center crop
   batch_size: 64
   num_workers: 4
-  cache_dir: "outputs/anomaly_detection/feature_cache" # null disables caching
+  cache_dir: "outputs/anomaly-detection/shared/cache/features" # null disables caching
 
 method:
   type: knn # knn, mahalanobis, patchcore (only the selected subsection is read)
@@ -50,8 +51,9 @@ threshold:
   normal_percentile: 95 # Threshold = this percentile of normal validation scores
 
 output:
-  # <base>/split{N}/<family>/<experiment>/seed0 is readable by cross_split_report
-  base_dir: outputs/anomaly-detection/split0/ad-frozen/ad-knn-rn50__all/seed0
+  # Series/campaign layout (see README "Series and Campaigns"):
+  # <campaign>/runs/split{N}/<family>/<experiment>/seed0 is readable by cross_split_report
+  base_dir: outputs/anomaly-detection/00-pilot/runs/split0/ad-frozen/ad-knn-rn50__all/seed0
   subdirs:
     logs: logs
     reports: reports

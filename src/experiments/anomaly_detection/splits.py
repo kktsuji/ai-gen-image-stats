@@ -16,7 +16,7 @@ Run:
         --src-dir /path/to/splits/cv-binary \\
         --normal-dir data/in-house/normal \\
         --path-remap data/ data/in-house/ \\
-        --out-dir outputs/splits/cv-binary-ad
+        --out-dir outputs/anomaly-detection/shared/splits
 """
 
 import argparse
