@@ -108,6 +108,99 @@ class TestGetFeaturesCache:
             get_features(["a"], spec, "cpu", 2, 0, str(tmp_path))
 
 
+def _crash_mid_write(file, **arrays):
+    """Stand-in for np.savez that writes partial bytes, then fails."""
+    if isinstance(file, (str, bytes)) or hasattr(file, "__fspath__"):
+        with open(file, "wb") as f:
+            f.write(b"PK-partial")
+    else:
+        file.write(b"PK-partial")
+    raise OSError("disk full")
+
+
+@pytest.mark.unit
+class TestCacheWriteSafety:
+    def _spec(self):
+        return build_feature_spec(_config("knn"))
+
+    def test_lock_file_used_and_no_temp_left(self, tmp_path):
+        spec = self._spec()
+        with patch(
+            "src.experiments.anomaly_detection.features._extract",
+            return_value=np.ones((1, 2), dtype=np.float32),
+        ):
+            get_features(["a"], spec, "cpu", 2, 0, str(tmp_path))
+        names = sorted(p.name for p in tmp_path.iterdir())
+        assert names == [spec_cache_name(spec), spec_cache_name(spec) + ".lock"]
+
+    def test_failed_write_keeps_previous_cache(self, tmp_path):
+        spec = self._spec()
+        with patch(
+            "src.experiments.anomaly_detection.features._extract",
+            return_value=np.ones((1, 2), dtype=np.float32),
+        ):
+            get_features(["a"], spec, "cpu", 2, 0, str(tmp_path))
+        cache = tmp_path / spec_cache_name(spec)
+        before = cache.read_bytes()
+
+        with (
+            patch(
+                "src.experiments.anomaly_detection.features._extract",
+                return_value=np.full((1, 2), 5.0, dtype=np.float32),
+            ),
+            patch(
+                "src.experiments.anomaly_detection.features.np.savez",
+                side_effect=_crash_mid_write,
+            ),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            get_features(["b"], spec, "cpu", 2, 0, str(tmp_path))
+
+        assert cache.read_bytes() == before
+        assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.component
+class TestCacheConcurrency:
+    def test_concurrent_writers_keep_all_rows(self, tmp_path):
+        """Two runs extending the same cache at once must not lose rows."""
+        import threading
+        import time
+
+        spec = build_feature_spec(_config("knn"))
+
+        def slow_extract(paths, *args):
+            time.sleep(0.05)  # widen the read-modify-write window
+            return np.array([[float(p[1:])] * 2 for p in paths], dtype=np.float32)
+
+        groups = [[f"x{i}" for i in range(k, k + 3)] for k in (0, 10, 20, 30)]
+        errors = []
+
+        def worker(paths):
+            try:
+                get_features(paths, spec, "cpu", 2, 0, str(tmp_path))
+            except Exception as e:  # pragma: no cover - surfaced below
+                errors.append(e)
+
+        with patch(
+            "src.experiments.anomaly_detection.features._extract",
+            side_effect=slow_extract,
+        ):
+            threads = [threading.Thread(target=worker, args=(g,)) for g in groups]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+        assert not errors
+        with np.load(tmp_path / spec_cache_name(spec)) as data:
+            stored = {str(p): row for p, row in zip(data["paths"], data["features"])}
+        all_paths = [p for g in groups for p in g]
+        assert sorted(stored) == sorted(all_paths)
+        for path in all_paths:
+            np.testing.assert_array_equal(stored[path], [float(path[1:])] * 2)
+
+
 @pytest.mark.unit
 class TestExtraction:
     def test_pooled_and_patch_extraction(self, tiny_backbone, ad_split_file):

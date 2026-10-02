@@ -172,6 +172,34 @@ class TestRunAnomalyDetectionStubbed:
         assert summary["subclass"].tolist() == ["abnormal", "suspicious", "junk"]
         mock_plot.assert_called_once()
 
+    def test_no_abnormal_in_test_still_writes_reports(self, ad_split_file, tmp_path):
+        from unittest.mock import patch
+
+        split = json.loads(ad_split_file.read_text())
+        split["test"] = [e for e in split["test"] if e["label"] == 0]
+        path = tmp_path / "no_abnormal.json"
+        path.write_text(json.dumps(split))
+
+        with (
+            patch(
+                "src.experiments.anomaly_detection.runner.get_features",
+                side_effect=lambda paths, spec, **kw: np.zeros((len(paths), 1)),
+            ),
+            patch("src.experiments.anomaly_detection.runner.plot_subclass_scores"),
+        ):
+            reports = run_anomaly_detection(_config(path, tmp_path), "cpu")
+
+        evaluation = json.loads((reports / "evaluation.json").read_text())
+        for key in (
+            "pr_auc",
+            "roc_auc",
+            "pr_auc_vs_all_normals",
+            "roc_auc_vs_all_normals",
+        ):
+            assert key not in evaluation
+        assert (reports / "predictions_test.npz").exists()
+        assert (reports / "subclass_summary.csv").exists()
+
     def test_no_normals_raises(self, tmp_path):
         split: Dict[str, Any] = {
             k: []

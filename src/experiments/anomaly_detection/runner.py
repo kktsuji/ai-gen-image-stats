@@ -171,10 +171,15 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
     # Secondary: abnormal vs every held-out normal subclass (~38:1 regime).
     all_targets = np.concatenate([targets, np.zeros(len(extra_scores), dtype=int)])
     all_scores = np.concatenate([test_scores, extra_scores])
-    metrics["pr_auc_vs_all_normals"] = float(
-        average_precision_score(all_targets, all_scores)
-    )
-    metrics["roc_auc_vs_all_normals"] = float(roc_auc_score(all_targets, all_scores))
+    if len(np.unique(all_targets)) == 2:
+        metrics["pr_auc_vs_all_normals"] = float(
+            average_precision_score(all_targets, all_scores)
+        )
+        metrics["roc_auc_vs_all_normals"] = float(
+            roc_auc_score(all_targets, all_scores)
+        )
+    else:
+        logger.warning("Skipping vs-all-normals AUC metrics: no abnormal in test")
 
     classes = split["metadata"]["classes"]
     class_names = [name for name, _ in sorted(classes.items(), key=lambda x: x[1])]
@@ -236,7 +241,8 @@ def run_anomaly_detection(config: Dict[str, Any], device: str) -> Path:
         f"PR-AUC {metrics.get('pr_auc', float('nan')):.4f}  "
         f"ROC-AUC {metrics.get('roc_auc', float('nan')):.4f}  "
         f"recall_1 {metrics['recall_1']:.4f}  "
-        f"PR-AUC vs all normals {metrics['pr_auc_vs_all_normals']:.4f}"
+        f"PR-AUC vs all normals "
+        f"{metrics.get('pr_auc_vs_all_normals', float('nan')):.4f}"
     )
     logger.info("Per-subclass summary:\n" + summary.to_string(index=False))
     logger.info(f"Reports written to: {reports_dir}")

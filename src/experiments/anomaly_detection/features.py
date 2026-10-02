@@ -9,12 +9,15 @@ extracted once and cached on disk; each split then reads its subset.
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from filelock import FileLock
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
@@ -177,6 +180,50 @@ def _extract(
     return features.astype(np.float32)
 
 
+def _load_cache(cache_file: Path, spec: Dict[str, Any]) -> Tuple[List[str], Any]:
+    """Read a feature cache; returns ([], None) when the file does not exist."""
+    if not cache_file.exists():
+        return [], None
+    with np.load(cache_file, allow_pickle=False) as data:
+        stored_spec = json.loads(str(data["spec"]))
+        if stored_spec != spec:
+            raise ValueError(
+                f"Feature cache {cache_file} was built for a different spec"
+            )
+        paths = [str(p) for p in data["paths"]]
+        features = data["features"]
+    logger.info(f"Loaded {len(paths)} cached features from {cache_file}")
+    return paths, features
+
+
+def _save_cache_atomic(
+    cache_file: Path,
+    spec: Dict[str, Any],
+    paths: List[str],
+    features: np.ndarray,
+) -> None:
+    """Write the cache to a temp file in the same directory, then rename it.
+
+    The rename is atomic, so a reader never sees a partially written file.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=cache_file.parent, prefix=cache_file.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "wb") as f:
+            np.savez(
+                f,
+                spec=np.array(json.dumps(spec, sort_keys=True)),
+                paths=np.array(paths),
+                features=features,
+            )
+        os.replace(tmp_name, cache_file)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    logger.info(f"Feature cache updated: {cache_file}")
+
+
 def get_features(
     paths: Sequence[str],
     spec: Dict[str, Any],
@@ -187,6 +234,11 @@ def get_features(
 ) -> np.ndarray:
     """Return features for ``paths`` (row-aligned), extracting only uncached ones.
 
+    The cache is shared by every run with the same spec (all methods, all
+    splits). A file lock is held across read -> extract -> write so concurrent
+    runs neither corrupt the file nor lose each other's rows, and runs needing
+    the same images wait instead of extracting them twice.
+
     Args:
         paths: Image paths; duplicates are allowed.
         spec: Feature spec from :func:`build_feature_spec`.
@@ -195,44 +247,30 @@ def get_features(
     Returns:
         Array whose first axis matches ``paths``.
     """
-    unique = list(dict.fromkeys(paths))
-    cached_paths: List[str] = []
-    cached_feats: Optional[np.ndarray] = None
-    cache_file = Path(cache_dir) / spec_cache_name(spec) if cache_dir else None
+    if not cache_dir:
+        unique = list(dict.fromkeys(paths))
+        logger.info(f"Extracting features for {len(unique)} images ({spec})")
+        feats = _extract(unique, spec, device, batch_size, num_workers)
+        index = {path: i for i, path in enumerate(unique)}
+        return feats[[index[p] for p in paths]]
 
-    if cache_file is not None and cache_file.exists():
-        with np.load(cache_file, allow_pickle=False) as data:
-            stored_spec = json.loads(str(data["spec"]))
-            if stored_spec != spec:
-                raise ValueError(
-                    f"Feature cache {cache_file} was built for a different spec"
-                )
-            cached_paths = [str(p) for p in data["paths"]]
-            cached_feats = data["features"]
-        logger.info(f"Loaded {len(cached_paths)} cached features from {cache_file}")
+    cache_file = Path(cache_dir) / spec_cache_name(spec)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(cache_file) + ".lock"):
+        cached_paths, cached_feats = _load_cache(cache_file, spec)
+        index = {path: i for i, path in enumerate(cached_paths)}
+        missing = [p for p in dict.fromkeys(paths) if p not in index]
 
-    index = {path: i for i, path in enumerate(cached_paths)}
-    missing = [p for p in unique if p not in index]
+        if missing:
+            logger.info(f"Extracting features for {len(missing)} images ({spec})")
+            new_feats = _extract(missing, spec, device, batch_size, num_workers)
+            if cached_feats is None:
+                cached_feats = new_feats
+            else:
+                cached_feats = np.concatenate([cached_feats, new_feats], axis=0)
+            for path in missing:
+                index[path] = len(cached_paths)
+                cached_paths.append(path)
+            _save_cache_atomic(cache_file, spec, cached_paths, cached_feats)
 
-    if missing:
-        logger.info(f"Extracting features for {len(missing)} images ({spec})")
-        new_feats = _extract(missing, spec, device, batch_size, num_workers)
-        if cached_feats is None:
-            cached_feats = new_feats
-        else:
-            cached_feats = np.concatenate([cached_feats, new_feats], axis=0)
-        for path in missing:
-            index[path] = len(cached_paths)
-            cached_paths.append(path)
-        if cache_file is not None:
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            np.savez(
-                cache_file,
-                spec=np.array(json.dumps(spec, sort_keys=True)),
-                paths=np.array(cached_paths),
-                features=cached_feats,
-            )
-            logger.info(f"Feature cache updated: {cache_file}")
-
-    assert cached_feats is not None
     return cached_feats[[index[p] for p in paths]]
