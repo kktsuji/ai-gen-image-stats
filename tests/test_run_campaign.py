@@ -373,6 +373,41 @@ class TestFinalReviewFixes:
 
 
 @pytest.mark.unit
+class TestInterpreterNotStartable:
+    def test_missing_python_is_a_run_failure(self, tmp_path, caplog):
+        campaign = _make_campaign(tmp_path)
+        _, runs = rc.load_campaign(campaign)
+        run = runs[0]
+        marker = campaign.resolve() / run.output_dir / "reports/evaluation.json"
+        marker.parent.mkdir(parents=True)
+        marker.write_text("{}")
+        with caplog.at_level("ERROR"):
+            ok = rc.run_one(
+                campaign.resolve(),
+                run,
+                [],
+                python=str(tmp_path / "no-such-python"),
+                done_marker="reports/evaluation.json",
+            )
+        assert not ok
+        assert "could not start" in caplog.text
+        assert not marker.exists()
+
+    def test_campaign_continues_after_unstartable_run(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        orig = rc.run_one
+        with patch.object(
+            rc,
+            "run_one",
+            side_effect=lambda c, r, k, **kw: orig(
+                c, r, k, python=str(tmp_path / "no-such-python"), **kw
+            ),
+        ):
+            summary = rc.run_campaign(campaign, only="knn-rn50")
+        assert len(summary["failed"]) == 4 and summary["succeeded"] == 0
+
+
+@pytest.mark.unit
 class TestSplitKeyAlwaysResolved:
     def test_split_key_resolved_without_path_keys(self, tmp_path):
         sweep = _sweep()

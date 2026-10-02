@@ -45,6 +45,8 @@ def write_run_configs(
     ``(name, split, seed)`` is in ``rerun``, i.e. ``--force``). If the
     sweep now expands to a different config for a completed run, that run is
     returned as *stale*: its outputs no longer match the sweep definition.
+    Runs that are not complete always get the current expansion written, since
+    their stored config describes what will run next.
 
     Returns:
         Completed runs whose stored config differs from the current expansion.
@@ -97,24 +99,31 @@ def run_one(
             tempfile.TemporaryFile() as out,
             tempfile.TemporaryFile() as err,
         ):
-            result = subprocess.run(
-                [python, "-m", "src.main", tmp_name],
-                cwd=REPO_ROOT,
-                stdout=out,
-                stderr=err,
-            )
-            failure_output = (
-                format_failure_output(_tail_text(out), _tail_text(err))
-                if result.returncode != 0
-                else ""
-            )
+            try:
+                returncode: Optional[int] = subprocess.run(
+                    [python, "-m", "src.main", tmp_name],
+                    cwd=REPO_ROOT,
+                    stdout=out,
+                    stderr=err,
+                ).returncode
+            except OSError as e:
+                # The interpreter could not be started (missing, not executable):
+                # a failure of this run, not of the whole campaign.
+                returncode = None
+                failure_output = f"could not start {python}: {e}"
+            else:
+                failure_output = (
+                    format_failure_output(_tail_text(out), _tail_text(err))
+                    if returncode != 0
+                    else ""
+                )
     finally:
         Path(tmp_name).unlink(missing_ok=True)
-    if result.returncode != 0:
+    if returncode != 0:
         if done_marker is not None:
             (campaign_dir / run.output_dir / done_marker).unlink(missing_ok=True)
         logger.error(
-            f"FAILED {run.config_path} (exit {result.returncode}); "
+            f"FAILED {run.config_path} (exit {returncode}); "
             f"run logs: {campaign_dir / run.output_dir / 'logs'}\n{failure_output}"
         )
         return False

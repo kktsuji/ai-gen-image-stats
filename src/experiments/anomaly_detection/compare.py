@@ -11,7 +11,7 @@ BH-corrected separately:
 - ``pool``: within each method x backbone, one normal pool against another.
 
 Outputs to ``<campaign>/reports/``: ``summary.csv``, ``comparisons.csv``,
-``subclass_auc.csv``, ``report.md`` and ``pr_auc_by_condition.png``.
+``subclass_auc.csv``, ``report.md`` and ``<metric>_by_condition.png``.
 
 Run:
     python -m src.experiments.anomaly_detection.compare work/<series>/<campaign>
@@ -443,6 +443,7 @@ def plot_conditions(
     references: Dict[str, SplitValues],
     reference_groups: Dict[str, List[str]],
     chance: float,
+    metric: str = "pr_auc",
 ) -> None:
     """One panel per reference group: condition means with 95% CI and
     reference lines for chance and the classifier arms."""
@@ -489,7 +490,7 @@ def plot_conditions(
                 color="#444444",
             )
         ax.set_title(f"Conditions matching '{pattern.strip('-_')}'", fontsize=10)
-        ax.set_xlabel("PR-AUC (mean over splits, 95% CI)")
+        ax.set_xlabel(f"{metric} (mean over splits, 95% CI)")
         ax.set_xlim(0, 1)
         ax.grid(axis="x", color="#e5e5e5", linewidth=0.8)
         ax.set_axisbelow(True)
@@ -558,11 +559,12 @@ def run_compare(campaign_dir: Path) -> Path:
         metric,
     )
     plot_conditions(
-        reports / "pr_auc_by_condition.png",
+        reports / f"{metric}_by_condition.png",
         summary,
         references,
         cfg["reference_groups"],
         float(np.mean(list(chance.values()))) if chance else float("nan"),
+        metric,
     )
     logger.info(f"Comparison report written to {reports}")
     return reports

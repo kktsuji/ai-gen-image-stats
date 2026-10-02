@@ -464,3 +464,40 @@ class TestPrReviewFixes:
         out = tmp_path / "fig.png"
         plot_conditions(out, pd.DataFrame(), {}, {}, 0.2)
         assert not out.exists()
+
+
+@pytest.mark.component
+class TestFigureFollowsMetric:
+    def test_label_and_filename_use_metric(self, tmp_path):
+        from unittest.mock import patch
+
+        campaign = _make_campaign(tmp_path)
+        cfg = _cfg(tmp_path)
+        cfg["metric"] = "roc_auc"
+        (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+        # The fixture only stores pr_auc; give every run a roc_auc too.
+        for path in list(campaign.rglob("evaluation.json")) + list(
+            (tmp_path / "ref").rglob("evaluation.json")
+        ):
+            data = json.loads(path.read_text())
+            data["roc_auc"] = data["pr_auc"]
+            path.write_text(json.dumps(data))
+
+        labels = []
+        import matplotlib.axes
+
+        orig = matplotlib.axes.Axes.set_xlabel
+
+        def record(self, label, *args, **kwargs):
+            labels.append(label)
+            return orig(self, label, *args, **kwargs)
+
+        with patch.object(matplotlib.axes.Axes, "set_xlabel", record):
+            reports = run_compare(campaign)
+        assert (reports / "roc_auc_by_condition.png").exists()
+        assert not (reports / "pr_auc_by_condition.png").exists()
+        assert labels and all(lbl.startswith("roc_auc") for lbl in labels)
+        assert (
+            "Chance level of `roc_auc`: mean 0.500"
+            in (reports / "report.md").read_text()
+        )
