@@ -336,6 +336,9 @@ dist
 # Project Specific
 # Training outputs (checkpoints, logs, generated samples)
 outputs/
+
+# Research series/campaigns (see README "Series and Campaigns"); never committed
+work/
 out/
 
 # Dataset folders (large files, not for version control)
