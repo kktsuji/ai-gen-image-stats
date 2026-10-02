@@ -478,6 +478,15 @@ class TestEndToEnd:
         assert stored["output"]["base_dir"] == "runs/split0/clf/train-knn-rn50/seed0"
         assert not (campaign / "configs/runs/ad-knn-rn50").exists()
 
+    def test_shared_name_stops_before_writing(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        other = _sweep()
+        other["family"] = "clf"
+        (campaign / "configs" / "sweep-train.yaml").write_text(yaml.safe_dump(other))
+        with pytest.raises(ValueError, match="unique across"):
+            rc.main([str(campaign), "--expand-only", "--sweep", "sweep-train.yaml"])
+        assert not (campaign / "configs" / "runs").exists()
+
     def test_main_rejects_bad_jobs(self, tmp_path):
         with pytest.raises(SystemExit):
             rc.main([str(tmp_path), "--jobs", "0"])

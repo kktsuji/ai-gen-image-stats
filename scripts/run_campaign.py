@@ -1,7 +1,7 @@
 """Run a research campaign defined by ``<campaign>/configs/sweep.yaml``.
 
-``--sweep`` selects another sweep file in ``configs/`` (for campaigns with
-several stages, e.g. ``sweep-train.yaml`` then ``sweep.yaml``).
+``--sweep`` selects another ``sweep*.yaml`` file in ``configs/`` (for campaigns
+with several stages, e.g. ``sweep-train.yaml`` then ``sweep.yaml``).
 
 Expands the sweep into one config per (condition, split, seed), stores them
 under ``<campaign>/configs/runs/`` with campaign-relative paths, and runs each
@@ -262,7 +262,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--sweep",
         default="sweep.yaml",
-        help="Sweep file in the campaign's configs/ (default sweep.yaml)",
+        help="Sweep file (sweep*.yaml) in the campaign's configs/ (default sweep.yaml)",
     )
     args = parser.parse_args(argv)
     if args.jobs < 1:

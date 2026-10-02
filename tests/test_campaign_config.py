@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from scripts.campaign_config import (
+    condition_names,
     expand_runs,
     load_campaign,
     resolve_paths,
@@ -282,6 +283,44 @@ class TestLoadCampaign:
         assert runs[0].output_dir.startswith("runs/split0/clf/")
         with pytest.raises(FileNotFoundError, match="Sweep"):
             load_campaign(tmp_path)
+
+    def test_condition_names_match_expansion(self):
+        names = condition_names(_sweep())
+        assert names == list(
+            dict.fromkeys(r.name for r in expand_runs(_sweep(), _base()))
+        )
+
+    def test_name_shared_with_other_sweep_rejected(self, tmp_path):
+        self._write(tmp_path, _sweep(), _base())
+        other = _sweep()
+        other["family"] = "clf"  # a different family does not make it safe
+        other["axes"]["method"] = {"knn": {"method.type": "knn"}}
+        (tmp_path / "configs" / "sweep-train.yaml").write_text(yaml.safe_dump(other))
+        for name in ("sweep.yaml", "sweep-train.yaml"):
+            with pytest.raises(ValueError, match="ad-knn-incv3', 'ad-knn-rn50"):
+                load_campaign(tmp_path, name)
+
+    def test_distinct_names_across_sweeps_accepted(self, tmp_path):
+        self._write(tmp_path, _sweep(), _base())
+        other = _sweep()
+        other["name_template"] = "train-{method}-{backbone}"
+        (tmp_path / "configs" / "sweep-train.yaml").write_text(yaml.safe_dump(other))
+        assert len(load_campaign(tmp_path)[1]) == 16
+        assert len(load_campaign(tmp_path, "sweep-train.yaml")[1]) == 16
+
+    def test_unreadable_other_sweep_rejected(self, tmp_path):
+        self._write(tmp_path, _sweep(), _base())
+        (tmp_path / "configs" / "sweep-old.yaml").write_text(
+            yaml.safe_dump({"axes": {"m": {"a": {}}}})  # no name_template
+        )
+        with pytest.raises(ValueError, match="Cannot read the condition names"):
+            load_campaign(tmp_path)
+
+    @pytest.mark.parametrize("name", ["train.yaml", "../sweep.yaml", "x/sweep.yaml"])
+    def test_sweep_file_name_must_match_glob(self, tmp_path, name):
+        self._write(tmp_path, _sweep(), _base())
+        with pytest.raises(ValueError, match="sweep\\*.yaml"):
+            load_campaign(tmp_path, name)
 
     def test_missing_sweep(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="Sweep"):

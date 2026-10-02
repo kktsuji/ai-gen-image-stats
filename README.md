@@ -942,8 +942,8 @@ How the driver handles configs and paths:
 - The split key is always resolved as a path, even if `path_keys` omits it.
 - In a `path_keys` value, `{split}` is replaced by each run's split index. This lets a later stage use per-split outputs of an earlier one, e.g. `runs/split{split}/clf/<experiment>/seed0/checkpoints/best_model.pth`.
 - **Several stages.**
-  - A campaign may have several sweep files in `configs/` (e.g. `sweep-train.yaml`, then `sweep.yaml`); `--sweep` selects one.
-  - Condition names must be unique across a campaign's sweep files, because the stored per-run configs are kept under `configs/runs/<condition>/`.
+  - A campaign may have several sweep files in `configs/`, named `sweep*.yaml` (e.g. `sweep-train.yaml`, then `sweep.yaml`); `--sweep` selects one.
+  - Condition names must be unique across a campaign's sweep files, because the stored per-run configs are kept under `configs/runs/<condition>/`. The driver checks this against the other `sweep*.yaml` files and stops before writing anything if a name is shared.
 - **Stored configs are records.**
   - The stored config of a completed run is never overwritten, because it records what actually ran.
   - If the sweep or base config changes so that a completed run would now expand differently, the driver reports it as `STALE`. It exits with a non-zero code when a stale run is within the `--only` selection; stale runs outside it are only warned about.
