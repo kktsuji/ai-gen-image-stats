@@ -234,6 +234,65 @@ class TestStoredConfigsAndStaleRuns:
 
 
 @pytest.mark.unit
+class TestForceAndStaleEdgeCases:
+    def _setup_stale(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        rc.run_campaign(campaign, expand_only=True)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        base = _base()
+        base["data"]["normal_pool"] = "suspicious"
+        (campaign / "configs" / "base.yaml").write_text(yaml.safe_dump(base))
+        return campaign
+
+    def test_expand_only_with_force_keeps_records(self, tmp_path):
+        campaign = self._setup_stale(tmp_path)
+        stored = campaign / "configs/runs/ad-knn-rn50/split0_seed0.yaml"
+        marker = (
+            campaign / "runs/split0/ad-frozen/ad-knn-rn50/seed0/reports/evaluation.json"
+        )
+
+        summary = rc.run_campaign(campaign, expand_only=True, force=True)
+
+        assert yaml.safe_load(stored.read_text())["data"]["normal_pool"] == "all"
+        assert summary["stale"] == ["configs/runs/ad-knn-rn50/split0_seed0.yaml"]
+        assert marker.exists()
+
+    def test_failed_forced_rerun_is_retried_later(self, tmp_path):
+        campaign = self._setup_stale(tmp_path)
+        marker = (
+            campaign / "runs/split0/ad-frozen/ad-knn-rn50/seed0/reports/evaluation.json"
+        )
+        target = ("ad-knn-rn50", 0, 0)
+
+        with patch.object(rc, "run_one", return_value=False):
+            rc.run_campaign(campaign, only="knn-rn50", force=True)
+        assert not marker.exists()  # the old result no longer counts as done
+
+        seen = []
+        with patch.object(
+            rc,
+            "run_one",
+            side_effect=lambda c, r, k: seen.append((r.name, r.split, r.seed)) or True,
+        ):
+            summary = rc.run_campaign(campaign, only="knn-rn50")
+        assert target in seen
+        assert summary["stale"] == []
+
+    def test_stale_outside_only_selection_does_not_fail(self, tmp_path):
+        campaign = self._setup_stale(tmp_path)  # stale run is ad-knn-rn50
+        with patch.object(rc, "run_one", return_value=True):
+            assert rc.main([str(campaign), "--only", "maha"]) == 0
+            summary = rc.run_campaign(campaign, only="maha")
+        assert summary["stale"] == ["configs/runs/ad-knn-rn50/split0_seed0.yaml"]
+        assert summary["stale_selected"] == []
+
+    def test_stale_inside_only_selection_fails(self, tmp_path):
+        campaign = self._setup_stale(tmp_path)
+        with patch.object(rc, "run_one", return_value=True):
+            assert rc.main([str(campaign), "--only", "knn-rn50"]) == 1
+
+
+@pytest.mark.unit
 class TestSplitKeyAlwaysResolved:
     def test_split_key_resolved_without_path_keys(self, tmp_path):
         sweep = _sweep()

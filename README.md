@@ -939,8 +939,9 @@ How the driver handles configs and paths:
 - The split key is always resolved as a path, even if `path_keys` omits it.
 - **Stored configs are records.**
   - The stored config of a completed run is never overwritten, because it records what actually ran.
-  - If the sweep or base config changes so that a completed run would now expand differently, the driver reports it as `STALE` and exits with a non-zero code.
-  - To redo it under the new definition, use `--force`. Only the configs of the runs being re-run are overwritten.
+  - If the sweep or base config changes so that a completed run would now expand differently, the driver reports it as `STALE`. It exits with a non-zero code when a stale run is within the `--only` selection; stale runs outside it are only warned about.
+  - To redo a run under the new definition, use `--force`. Only the configs of the runs actually being re-run are overwritten; `--expand-only --force` overwrites nothing.
+  - Before a forced re-run, the run's old done marker is removed (its other outputs are kept). If the re-run fails, the run counts as unfinished and is retried by the next normal invocation; it is not skipped as complete with old results.
 - `--jobs N` runs N experiments at once on the same GPU. GPU-heavy runs (e.g. PatchCore) can then fail with CUDA out-of-memory at start-up. A failed run's error and its log folder appear in the driver output, and re-running the same command retries only the unfinished runs (use `--jobs 1` if needed).
 
 ## Docker Usage

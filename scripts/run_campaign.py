@@ -130,8 +130,18 @@ def run_campaign(
     campaign_dir = campaign_dir.resolve()
     sweep, runs = load_campaign(campaign_dir)
     selected = [r for r in runs if only is None or only in r.name]
-    rerun = {(r.name, r.split, r.seed) for r in selected} if force else set()
+    # --expand-only runs nothing, so even with --force no record is replaced.
+    forced = force and not expand_only
+    rerun = {(r.name, r.split, r.seed) for r in selected} if forced else set()
     stale = write_run_configs(campaign_dir, runs, sweep["done_marker"], rerun)
+    if forced:
+        # Drop the old done markers of the runs about to be redone, so that a
+        # failed re-run is retried later instead of being skipped as complete
+        # with old outputs under its new stored config. Other outputs are kept.
+        for run in selected:
+            (campaign_dir / run.output_dir / sweep["done_marker"]).unlink(
+                missing_ok=True
+            )
     for run in stale:
         logger.warning(
             f"STALE {run.config_path}: the run is complete but the sweep now expands "
@@ -159,6 +169,7 @@ def run_campaign(
         "succeeded": 0,
         "failed": [],
         "stale": [str(r.config_path) for r in stale],
+        "stale_selected": [str(r.config_path) for r in stale if r in selected],
     }
     if expand_only:
         logger.info(
@@ -219,7 +230,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         jobs=args.jobs,
         force=args.force,
     )
-    return 1 if summary["failed"] or summary["stale"] else 0
+    # STALE runs outside an --only selection are warned about, not failed on.
+    return 1 if summary["failed"] or summary["stale_selected"] else 0
 
 
 if __name__ == "__main__":
