@@ -21,7 +21,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
@@ -32,13 +32,39 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def write_run_configs(campaign_dir: Path, runs: List[Run]) -> None:
-    """Store every expanded per-run config (campaign-relative paths)."""
+def write_run_configs(
+    campaign_dir: Path,
+    runs: List[Run],
+    done_marker: str,
+    rerun: Optional[Set[Tuple[str, int, int]]] = None,
+) -> List[Run]:
+    """Store every expanded per-run config (campaign-relative paths).
+
+    The stored config of a completed run is the record of what actually ran,
+    so it is never overwritten unless that run is about to be re-run (its
+    ``(name, split, seed)`` is in ``rerun``, i.e. ``--force``). If the
+    sweep now expands to a different config for a completed run, that run is
+    returned as *stale*: its outputs no longer match the sweep definition.
+
+    Returns:
+        Completed runs whose stored config differs from the current expansion.
+    """
+    stale: List[Run] = []
     for run in runs:
         path = campaign_dir / run.config_path
+        if (
+            path.exists()
+            and is_done(campaign_dir, run, done_marker)
+            and (run.name, run.split, run.seed) not in (rerun or set())
+        ):
+            with open(path, encoding="utf-8") as f:
+                if yaml.safe_load(f) != run.config:
+                    stale.append(run)
+            continue
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(run.config, f, sort_keys=False, allow_unicode=True)
+    return stale
 
 
 def is_done(campaign_dir: Path, run: Run, done_marker: str) -> bool:
@@ -68,15 +94,29 @@ def run_one(
     finally:
         Path(tmp_name).unlink(missing_ok=True)
     if result.returncode != 0:
-        # src.main logs to stdout, so its error usually lands there, not stderr.
-        output = (result.stderr or "").strip() or (result.stdout or "").strip()
-        tail = "\n".join(output.splitlines()[-8:])
         logger.error(
             f"FAILED {run.config_path} (exit {result.returncode}); "
-            f"run logs: {campaign_dir / run.output_dir / 'logs'}\n{tail}"
+            f"run logs: {campaign_dir / run.output_dir / 'logs'}\n"
+            f"{format_failure_output(result.stdout, result.stderr)}"
         )
         return False
     return True
+
+
+def format_failure_output(stdout: Optional[str], stderr: Optional[str]) -> str:
+    """Tail of a failed run's output.
+
+    ``src.main`` logs (including the exception) to stdout, while stderr mostly
+    carries library warnings and progress bars. So the stdout tail comes first,
+    with the stderr tail after it.
+    """
+    parts = []
+    for label, text, n in (("stdout", stdout, 8), ("stderr", stderr, 4)):
+        lines = (text or "").strip().splitlines()
+        if lines:
+            parts.append(f"--- {label} (last {min(n, len(lines))} lines) ---")
+            parts.extend(lines[-n:])
+    return "\n".join(parts) if parts else "(no output)"
 
 
 def run_campaign(
@@ -89,14 +129,23 @@ def run_campaign(
     """Expand and run a campaign; returns a summary dict."""
     campaign_dir = campaign_dir.resolve()
     sweep, runs = load_campaign(campaign_dir)
-    write_run_configs(campaign_dir, runs)
+    selected = [r for r in runs if only is None or only in r.name]
+    rerun = {(r.name, r.split, r.seed) for r in selected} if force else set()
+    stale = write_run_configs(campaign_dir, runs, sweep["done_marker"], rerun)
+    for run in stale:
+        logger.warning(
+            f"STALE {run.config_path}: the run is complete but the sweep now expands "
+            "to a different config. Its stored config (what actually ran) is kept; "
+            "re-run with --force to redo it under the new definition."
+        )
+    # The split file is a path too; resolve it even if path_keys omits it.
+    path_keys = list(dict.fromkeys([sweep["splits"]["key"], *sweep["path_keys"]]))
     conditions = sorted({r.name for r in runs})
     logger.info(
         f"Campaign {campaign_dir.name}: {len(conditions)} conditions, "
         f"{len(runs)} runs; configs written to {campaign_dir / 'configs' / 'runs'}"
     )
 
-    selected = [r for r in runs if only is None or only in r.name]
     todo = [
         r
         for r in selected
@@ -109,6 +158,7 @@ def run_campaign(
         "skipped_done": len(selected) - len(todo),
         "succeeded": 0,
         "failed": [],
+        "stale": [str(r.config_path) for r in stale],
     }
     if expand_only:
         logger.info(
@@ -123,7 +173,7 @@ def run_campaign(
 
     def task(item: tuple[int, Run]) -> tuple[Run, bool]:
         index, run = item
-        ok = run_one(campaign_dir, run, sweep["path_keys"])
+        ok = run_one(campaign_dir, run, path_keys)
         logger.info(
             f"[{index}/{len(todo)}] {'ok  ' if ok else 'FAIL'} {run.name} "
             f"split{run.split} seed{run.seed} ({time.time() - start:.0f}s elapsed)"
@@ -169,7 +219,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         jobs=args.jobs,
         force=args.force,
     )
-    return 1 if summary["failed"] else 0
+    return 1 if summary["failed"] or summary["stale"] else 0
 
 
 if __name__ == "__main__":

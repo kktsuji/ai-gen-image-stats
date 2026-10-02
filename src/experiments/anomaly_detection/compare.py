@@ -146,6 +146,8 @@ def chance_per_split(runs_base: str, family: str) -> SplitValues:
 def subclass_auc(runs_base: str, family: str) -> pd.DataFrame:
     """ROC-AUC of abnormal vs each normal subclass, per condition (split-mean).
 
+    Seeds are averaged within each split first, so ``n_splits`` counts splits
+    and every split carries equal weight regardless of its number of seeds.
     0.5 means the detector cannot tell CTCs from that subclass; values below
     0.5 mean that subclass scores as *more* anomalous than the CTCs.
     """
@@ -174,8 +176,11 @@ def subclass_auc(runs_base: str, family: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["condition", "subclass", "auc_mean", "n_splits"])
     df = pd.DataFrame(rows)
+    per_split = df.groupby(["condition", "subclass", "split"], as_index=False).agg(
+        auc=("auc", "mean")
+    )
     return (
-        df.groupby(["condition", "subclass"])["auc"]
+        per_split.groupby(["condition", "subclass"])["auc"]
         .agg(auc_mean="mean", n_splits="count")
         .reset_index()
     )
@@ -450,10 +455,12 @@ def run_compare(campaign_dir: Path) -> Path:
         raise ValueError(f"No runs found under {runs_base} (family {family})")
     references: Dict[str, SplitValues] = {}
     for name, ref in cfg["references"].items():
-        values = load_split_values(ref["base_dir"], ref["family"], metric)
+        # Campaign-relative like runs.base_dir; absolute paths are used as-is.
+        ref_base = str(campaign_dir / ref["base_dir"])
+        values = load_split_values(ref_base, ref["family"], metric)
         if ref["experiment"] not in values:
             raise ValueError(
-                f"Reference {name}: no '{ref['experiment']}' results under {ref['base_dir']}"
+                f"Reference {name}: no '{ref['experiment']}' results under {ref_base}"
             )
         references[name] = values[ref["experiment"]]
     chance = chance_per_split(runs_base, family)

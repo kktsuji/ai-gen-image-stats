@@ -122,7 +122,12 @@ class TestFailureReporting:
         "stdout,stderr,expected",
         [
             ("line1\nRuntimeError: CUDA out of memory\n", "", "CUDA out of memory"),
-            ("ignored stdout\n", "Traceback: boom\n", "Traceback: boom"),
+            # A noisy stderr (warnings) must not hide the error logged to stdout.
+            (
+                "INFO start\nERROR Experiment failed: CUDA out of memory\n",
+                "UserWarning: deprecated\n100%|####| 10/10\n",
+                "ERROR Experiment failed: CUDA out of memory",
+            ),
         ],
     )
     def test_error_tail_and_log_dir_reported(
@@ -142,6 +147,105 @@ class TestFailureReporting:
         assert not ok
         assert expected in caplog.text
         assert "run logs:" in caplog.text and runs[0].output_dir in caplog.text
+
+
+@pytest.mark.unit
+class TestFormatFailureOutput:
+    def test_stdout_first_then_stderr(self):
+        out = rc.format_failure_output("a\nb\nERROR boom\n", "warn1\nwarn2\n")
+        assert out.index("ERROR boom") < out.index("warn2")
+        assert out.splitlines()[0] == "--- stdout (last 3 lines) ---"
+
+    def test_tails_are_bounded(self):
+        out = rc.format_failure_output(
+            "\n".join(f"o{i}" for i in range(20)),
+            "\n".join(f"e{i}" for i in range(20)),
+        )
+        assert "o11" not in out and "o12" in out and "o19" in out
+        assert "e15" not in out and "e16" in out
+
+    def test_no_output(self):
+        assert rc.format_failure_output(None, "") == "(no output)"
+
+
+def _done(campaign: Path, output_dir: str) -> None:
+    reports = campaign / output_dir / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "evaluation.json").write_text("{}")
+
+
+@pytest.mark.unit
+class TestStoredConfigsAndStaleRuns:
+    def _edit_base(self, campaign: Path, normal_pool: str) -> None:
+        base = _base()
+        base["data"]["normal_pool"] = normal_pool
+        (campaign / "configs" / "base.yaml").write_text(yaml.safe_dump(base))
+
+    def test_completed_run_config_kept_and_flagged_stale(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        rc.run_campaign(campaign, expand_only=True)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        stored = campaign / "configs/runs/ad-knn-rn50/split0_seed0.yaml"
+        pending = campaign / "configs/runs/ad-knn-rn50/split1_seed0.yaml"
+
+        self._edit_base(campaign, "suspicious")
+        summary = rc.run_campaign(campaign, expand_only=True)
+
+        assert summary["stale"] == ["configs/runs/ad-knn-rn50/split0_seed0.yaml"]
+        assert yaml.safe_load(stored.read_text())["data"]["normal_pool"] == "all"
+        assert (
+            yaml.safe_load(pending.read_text())["data"]["normal_pool"] == "suspicious"
+        )
+
+    def test_unchanged_sweep_has_no_stale_runs(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        rc.run_campaign(campaign, expand_only=True)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        assert rc.run_campaign(campaign, expand_only=True)["stale"] == []
+
+    def test_completed_run_without_stored_config_gets_one(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        summary = rc.run_campaign(campaign, expand_only=True)
+        assert summary["stale"] == []
+        assert (campaign / "configs/runs/ad-knn-rn50/split0_seed0.yaml").exists()
+
+    def test_force_overwrites_only_rerun_selection(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        rc.run_campaign(campaign, expand_only=True)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        _done(campaign, "runs/split0/ad-frozen/ad-maha-rn50/seed0")
+        self._edit_base(campaign, "suspicious")
+        with patch.object(rc, "run_one", return_value=True):
+            summary = rc.run_campaign(campaign, only="knn-rn50", force=True)
+
+        knn = campaign / "configs/runs/ad-knn-rn50/split0_seed0.yaml"
+        maha = campaign / "configs/runs/ad-maha-rn50/split0_seed0.yaml"
+        assert yaml.safe_load(knn.read_text())["data"]["normal_pool"] == "suspicious"
+        assert yaml.safe_load(maha.read_text())["data"]["normal_pool"] == "all"
+        assert summary["stale"] == ["configs/runs/ad-maha-rn50/split0_seed0.yaml"]
+
+    def test_main_returns_nonzero_when_stale(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        rc.run_campaign(campaign, expand_only=True)
+        _done(campaign, "runs/split0/ad-frozen/ad-knn-rn50/seed0")
+        self._edit_base(campaign, "suspicious")
+        assert rc.main([str(campaign), "--expand-only"]) == 1
+
+
+@pytest.mark.unit
+class TestSplitKeyAlwaysResolved:
+    def test_split_key_resolved_without_path_keys(self, tmp_path):
+        sweep = _sweep()
+        sweep["path_keys"] = ["feature_extraction.cache_dir"]  # split key omitted
+        campaign = _make_campaign(tmp_path, sweep=sweep)
+        seen = []
+        with patch.object(
+            rc, "run_one", side_effect=lambda c, r, k: seen.append(k) or True
+        ):
+            rc.run_campaign(campaign, only="knn-rn50")
+        assert seen and all(k[0] == "data.split_file" for k in seen)
+        assert all(k.count("data.split_file") == 1 for k in seen)
 
 
 @pytest.mark.component

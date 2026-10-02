@@ -355,3 +355,45 @@ class TestInMemory:
         assert len(pd.read_csv(reports / "comparisons.csv")) == 5
         mock_plot.assert_called_once()
         assert mock_plot.call_args[0][4] == pytest.approx(0.2)
+
+
+@pytest.mark.component
+class TestReviewFixes:
+    def test_relative_reference_resolved_from_campaign(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        cfg = _cfg(tmp_path)
+        # tmp_path/ref seen from tmp_path/series/01-c is ../../ref
+        cfg["references"]["rn50-head"]["base_dir"] = "../../ref"
+        (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "src.experiments.anomaly_detection.compare.plot_conditions",
+                lambda *a, **k: None,
+            )
+            reports = run_compare(campaign)
+        comparisons = pd.read_csv(reports / "comparisons.csv")
+        assert (comparisons["reference"] == "rn50-head").sum() == 2
+
+    def test_subclass_auc_averages_seeds_within_split(self, tmp_path):
+        runs = tmp_path / "runs"
+
+        def write(split, seed, junk_score):
+            reports = (
+                runs / f"split{split}" / "fam" / "cond" / f"seed{seed}" / "reports"
+            )
+            reports.mkdir(parents=True)
+            pd.DataFrame(
+                {
+                    "subclass": ["abnormal", "junk"],
+                    "score": [1.0, junk_score],
+                }
+            ).to_csv(reports / "subclass_scores.csv", index=False)
+
+        # split0: two seeds with AUC 1 and 0 -> split mean 0.5; split1: AUC 1.
+        write(0, 0, 0.0)
+        write(0, 1, 2.0)
+        write(1, 0, 0.0)
+        df = subclass_auc(str(runs), "fam")
+        row = df.iloc[0]
+        assert row["n_splits"] == 2
+        assert row["auc_mean"] == pytest.approx((0.5 + 1.0) / 2)
