@@ -178,3 +178,47 @@ class TestReviewFixes:
         b.write_text(json.dumps(_ad_split()))
         with pytest.raises(ValueError, match="Two source files"):
             generate_normal_subclass_splits([a, str(b)], str(tmp_path / "out"))
+
+
+@pytest.mark.unit
+class TestAbnormalDroppedByLabel:
+    def test_differently_named_abnormal_class_is_dropped(self):
+        split = _ad_split()
+        split["metadata"]["classes"] = {"suspicious": 0, "ctc": 1}
+        for key in ("train", "val", "test"):
+            for e in split[key]:
+                if e["label"] == 1:
+                    e["subclass"] = "ctc"
+        out = build_normal_subclass_split(split)
+        assert "ctc" not in out["metadata"]["classes"]
+        assert out["metadata"]["dropped_subclass"] == "ctc"
+        assert all(
+            e["subclass"] != "ctc" for p in ("train", "val", "test") for e in out[p]
+        )
+
+    def test_non_binary_metadata_rejected(self):
+        split = _ad_split()
+        split["metadata"]["classes"] = {"suspicious": 0, "abnormal": 2}
+        with pytest.raises(ValueError, match="binary source split"):
+            build_normal_subclass_split(split)
+        del split["metadata"]["classes"]
+        with pytest.raises(ValueError, match="binary source split"):
+            build_normal_subclass_split(split)
+
+    def test_label1_with_wrong_tag_rejected(self):
+        split = _ad_split()
+        split["train"][-1]["subclass"] = "red"  # an abnormal image tagged as normal
+        with pytest.raises(ValueError, match="has label 1 but subclass 'red'"):
+            build_normal_subclass_split(split)
+
+    def test_abnormal_tag_with_label0_rejected(self):
+        split = _ad_split()
+        split["val"][0]["subclass"] = "abnormal"  # label 0
+        with pytest.raises(ValueError, match="tagged 'abnormal' but has label 0"):
+            build_normal_subclass_split(split)
+
+    def test_extra_entry_with_label1_rejected(self):
+        split = _ad_split()
+        split["normal_extra_train"][0]["label"] = 1
+        with pytest.raises(ValueError, match="expected 0"):
+            build_normal_subclass_split(split)

@@ -50,23 +50,42 @@ CARRIED_METADATA = (
 )
 
 
-def build_normal_subclass_split(
-    ad_split: Dict[str, Any], abnormal_name: str = "abnormal"
-) -> Dict[str, Any]:
+# Binary convention of the CV splits (enforced by ``splits.py``): label 1 is the
+# abnormal class, label 0 the normal one. Abnormal images are dropped by label,
+# never by name, so a differently named abnormal class cannot slip through.
+ABNORMAL_LABEL = 1
+NORMAL_LABEL = 0
+
+
+def build_normal_subclass_split(ad_split: Dict[str, Any]) -> Dict[str, Any]:
     """Build the normal-subclass split from one extended AD split.
+
+    Abnormal images are the label-1 entries of ``train``/``val``/``test``; the
+    name of that class comes from ``metadata.classes``. ``normal_extra_*``
+    entries must all be label 0.
 
     Args:
         ad_split: Parsed ``cv_binary_ad_split{N}.json``.
-        abnormal_name: Subclass tag of the abnormal images, which are dropped.
 
     Returns:
         Split dict with ``train``/``val``/``test`` and ``metadata``.
 
     Raises:
-        ValueError: If an entry lacks a subclass tag, a partition ends up empty,
-            a subclass is missing from train, or a path appears in more than
-            one partition.
+        ValueError: If the source is not a binary split with label 1 as its
+            abnormal class, an abnormal entry's tag does not match that class,
+            a ``normal_extra_*`` entry is not label 0, an entry lacks a
+            subclass tag, a partition ends up empty, a subclass is missing from
+            train, or a path appears in more than one partition.
     """
+    binary_classes = ad_split.get("metadata", {}).get("classes", {})
+    label_to_name = {label: name for name, label in binary_classes.items()}
+    if sorted(label_to_name) != [NORMAL_LABEL, ABNORMAL_LABEL]:
+        raise ValueError(
+            "Expected a binary source split with labels {0, 1} in "
+            f"metadata.classes, got {binary_classes}"
+        )
+    abnormal_name = label_to_name[ABNORMAL_LABEL]
+
     selected: Dict[str, List[Dict[str, Any]]] = {}
     for part, source_keys in PARTITIONS.items():
         entries = []
@@ -74,8 +93,26 @@ def build_normal_subclass_split(
             for entry in ad_split[key]:
                 if "subclass" not in entry:
                     raise ValueError(f"Entry without a subclass tag in '{key}'")
-                if entry["subclass"] != abnormal_name:
-                    entries.append(entry)
+                if key.startswith("normal_extra_"):
+                    if entry["label"] != NORMAL_LABEL:
+                        raise ValueError(
+                            f"{entry['path']} in '{key}' has label {entry['label']}, "
+                            f"expected {NORMAL_LABEL}"
+                        )
+                elif entry["label"] == ABNORMAL_LABEL:
+                    if entry["subclass"] != abnormal_name:
+                        raise ValueError(
+                            f"{entry['path']} in '{key}' has label "
+                            f"{ABNORMAL_LABEL} but subclass "
+                            f"'{entry['subclass']}', expected '{abnormal_name}'"
+                        )
+                    continue
+                if entry["subclass"] == abnormal_name:
+                    raise ValueError(
+                        f"{entry['path']} in '{key}' is tagged '{abnormal_name}' "
+                        f"but has label {entry['label']}"
+                    )
+                entries.append(entry)
         if not entries:
             raise ValueError(f"No normal entries for partition '{part}'")
         selected[part] = entries
