@@ -87,6 +87,7 @@ def _cfg(tmp_path: Path) -> dict:
         },
         "reference_groups": {"-rn50_": ["rn50-head"]},
         "pool_contrast": {"treatment": "all", "control": "suspicious"},
+        "condition_references": {},
     }
 
 
@@ -652,3 +653,203 @@ class TestCheckpointCheck:
         with pytest.raises(ValueError, match="run_campaign --force"):
             run_compare(campaign)
         assert not (campaign / "reports").exists()
+
+
+def _with_earlier_campaign(tmp_path: Path) -> Path:
+    """Campaign plus an earlier sibling campaign whose runs pair one to one."""
+    campaign = _make_campaign(tmp_path)
+    earlier = campaign.parent / "00-earlier" / "runs"
+    for split in range(N_SPLITS):
+        for cond, value in (("ad-knn-x__all", 0.10), ("ad-knn-x__suspicious", 0.25)):
+            _write_eval(
+                earlier / f"split{split}" / "ad-old" / cond / "seed0",
+                {"pr_auc": value + 0.001 * split},
+            )
+    cfg = _cfg(tmp_path)
+    cfg["condition_references"] = {
+        "earlier": {
+            "label": "Against the earlier campaign (same method and pool)",
+            "base_dir": "../00-earlier/runs",
+            "family": "ad-old",
+            "pairs": {
+                "ad-knn-rn50__all": "ad-knn-x__all",
+                "ad-knn-rn50__suspicious": "ad-knn-x__suspicious",
+            },
+        }
+    }
+    (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+    return campaign
+
+
+@pytest.mark.unit
+class TestConditionReferences:
+    def test_empty_is_valid_and_required(self, tmp_path):
+        cfg = _cfg(tmp_path)
+        validate_analysis_config(cfg)
+        del cfg["condition_references"]
+        with pytest.raises(KeyError, match="condition_references"):
+            validate_analysis_config(cfg)
+
+    @pytest.mark.parametrize(
+        "mutate,match",
+        [
+            (lambda c: c.update(condition_references=[]), "must be a mapping"),
+            (lambda c: c["condition_references"].update(chance={}), "reserved"),
+            (lambda c: c["condition_references"].update(classifier={}), "reserved"),
+            (lambda c: c["condition_references"].update(x="y"), "must be a mapping"),
+            (lambda c: c["condition_references"]["earlier"].pop("pairs"), "pairs"),
+            (lambda c: c["condition_references"]["earlier"].update(label=""), "label"),
+            (lambda c: c["condition_references"]["earlier"].update(pairs={}), "pairs"),
+            (
+                lambda c: c["condition_references"]["earlier"].update(pairs={"a": ""}),
+                "pairs",
+            ),
+        ],
+    )
+    def test_invalid(self, tmp_path, mutate, match):
+        campaign = _with_earlier_campaign(tmp_path)
+        cfg = yaml.safe_load((campaign / "configs" / "analysis.yaml").read_text())
+        mutate(cfg)
+        with pytest.raises((KeyError, ValueError), match=match):
+            validate_analysis_config(cfg)
+
+    def test_own_family_and_report_section(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        reports = run_compare(campaign)
+        comps = pd.read_csv(reports / "comparisons.csv")
+        fam = comps[comps["family"] == "vs_earlier"]
+        assert sorted(zip(fam["treatment"], fam["reference"])) == [
+            ("ad-knn-rn50__all", "ad-knn-x__all"),
+            ("ad-knn-rn50__suspicious", "ad-knn-x__suspicious"),
+        ]
+        assert (fam["n_splits"] == N_SPLITS).all()
+        # Paired one to one, not every condition against every reference.
+        all_row = pd.DataFrame(fam[fam["treatment"] == "ad-knn-rn50__all"]).iloc[0]
+        assert all_row["reference_mean"] == pytest.approx(0.1015)
+        # Corrected within its own family (2 tests), not with the classifier rows.
+        assert set(comps["family"]) == {
+            "vs_chance",
+            "vs_classifier",
+            "pool",
+            "vs_earlier",
+        }
+        report = (reports / "report.md").read_text()
+        assert "## Against the earlier campaign (same method and pool)" in report
+
+    def test_build_comparisons_corrects_within_family(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        reports = run_compare(campaign)
+        comps = pd.read_csv(reports / "comparisons.csv")
+        fam = comps[comps["family"] == "vs_earlier"]
+        assert len(fam) == 2
+        from src.utils.statistical_testing import apply_correction_with_nan
+
+        expected = apply_correction_with_nan(
+            fam["p_value_ttest"].tolist(), method="benjamini-hochberg"
+        )
+        assert fam["p_ttest_corrected"].tolist() == pytest.approx(expected)
+
+    def test_unknown_condition_rejected(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        cfg = yaml.safe_load((campaign / "configs" / "analysis.yaml").read_text())
+        cfg["condition_references"]["earlier"]["pairs"]["ad-typo__all"] = (
+            "ad-knn-x__all"
+        )
+        (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+        with pytest.raises(ValueError, match="ad-typo__all"):
+            run_compare(campaign)
+        assert not (campaign / "reports").exists()
+
+    def test_unknown_reference_experiment_rejected(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        cfg = yaml.safe_load((campaign / "configs" / "analysis.yaml").read_text())
+        cfg["condition_references"]["earlier"]["pairs"]["ad-knn-rn50__all"] = "nope"
+        (campaign / "configs" / "analysis.yaml").write_text(yaml.safe_dump(cfg))
+        with pytest.raises(ValueError, match="'nope'"):
+            run_compare(campaign)
+
+    def test_empty_adds_no_section(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        report = (run_compare(campaign) / "report.md").read_text()
+        assert (
+            report.count("\n## ") == 6
+        )  # Conditions, References, 3 families, subclass
+
+
+@pytest.mark.unit
+class TestConditionReferenceReviewFixes:
+    def test_checkpoint_check_limited_to_experiments(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        (campaign / "runs/split2/clf/x/seed0/best.pth").write_bytes(b"retrained")
+        runs = str(campaign / "runs")
+        check_checkpoints(runs, "ad-frozen", {"some-other-experiment"})
+        with pytest.raises(ValueError, match="has changed") as err:
+            check_checkpoints(runs, "ad-frozen", {"ad-knn-rn50__all"})
+        assert "ad-knn-rn50__suspicious" not in str(err.value)
+
+    def test_unrelated_reference_run_does_not_block_report(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        # An unpaired run in the reference tree whose checkpoint is gone.
+        stray = campaign.parent / "00-earlier/runs/split0/ad-old/unpaired/seed0"
+        _write_eval(
+            stray,
+            {"pr_auc": 0.5, "checkpoint_sha256": "0" * 64, "checkpoint": "../x.pth"},
+        )
+        run_compare(campaign)  # does not raise
+
+    def test_paired_reference_run_with_changed_checkpoint_blocks(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        reports = campaign.parent / "00-earlier/runs/split1/ad-old/ad-knn-x__all/seed0"
+        _write_eval(
+            reports,
+            {"pr_auc": 0.1, "checkpoint_sha256": "0" * 64, "checkpoint": "../x.pth"},
+        )
+        with pytest.raises(ValueError, match="not found"):
+            run_compare(campaign)
+
+    def test_unpaired_pair_warned_and_noted(self, tmp_path, caplog):
+        import logging
+        import shutil
+
+        campaign = _with_earlier_campaign(tmp_path)
+        earlier = campaign.parent / "00-earlier/runs"
+        for split in range(1, N_SPLITS):  # keep split 0 only for this experiment
+            shutil.rmtree(earlier / f"split{split}/ad-old/ad-knn-x__suspicious")
+        with caplog.at_level(logging.WARNING):
+            reports = run_compare(campaign)
+        comps = pd.read_csv(reports / "comparisons.csv")
+        fam = comps[comps["family"] == "vs_earlier"]
+        assert fam["treatment"].tolist() == ["ad-knn-rn50__all"]
+        assert "ad-knn-x__suspicious` (1 shared splits)" in caplog.text
+        report = (reports / "report.md").read_text()
+        assert (
+            "Not compared (fewer than 2 splits shared with the reference): "
+            "`ad-knn-rn50__suspicious` vs `ad-knn-x__suspicious` (1 shared splits)."
+        ) in report
+
+    def test_all_pairs_compared_adds_no_note(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        assert "Not compared" not in (run_compare(campaign) / "report.md").read_text()
+
+
+@pytest.mark.unit
+class TestBuildComparisonsNeedsConditionRefs:
+    def test_missing_condition_refs_raise_clear_error(self, tmp_path):
+        cfg = _cfg(tmp_path)
+        cfg["condition_references"] = {
+            "earlier": {
+                "label": "x",
+                "base_dir": "runs",
+                "family": "f",
+                "pairs": {"ad-a__all": "ad-b__all"},
+            }
+        }
+        conditions = {"ad-a__all": {0: 0.1, 1: 0.2}}
+        for refs in (None, {}):
+            with pytest.raises(ValueError, match="load_condition_references"):
+                build_comparisons(cfg, conditions, {}, {}, refs)
+
+    def test_empty_config_needs_no_condition_refs(self, tmp_path):
+        conditions = {"ad-a__all": {0: 0.1, 1: 0.2}}
+        out = build_comparisons(_cfg(tmp_path), conditions, {}, {0: 0.1, 1: 0.1})
+        assert set(out["family"]) == {"vs_chance"}

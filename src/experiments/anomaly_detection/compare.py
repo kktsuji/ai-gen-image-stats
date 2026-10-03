@@ -1,7 +1,7 @@
 """Anomaly Detection - Campaign Comparison Report
 
 Paired-by-split analysis of an anomaly-detection campaign
-(``<campaign>/configs/analysis.yaml``). Three pre-specified test families, each
+(``<campaign>/configs/analysis.yaml``). Pre-specified test families, each
 BH-corrected separately:
 
 - ``vs_chance``: each condition against the per-split chance level of PR-AUC
@@ -9,6 +9,9 @@ BH-corrected separately:
 - ``vs_classifier``: each condition against the external classifier reference
   arms of the same backbone (seed-averaged per split, as in cross_split_report).
 - ``pool``: within each method x backbone, one normal pool against another.
+- ``vs_<name>``, one per ``condition_references`` entry: each listed condition
+  against one named run of another tree (e.g. the same method and pool in an
+  earlier campaign), paired one to one.
 
 Outputs to ``<campaign>/reports/``: ``summary.csv``, ``comparisons.csv``,
 ``subclass_auc.csv``, ``report.md`` and ``<metric>_by_condition.png``. The
@@ -25,7 +28,7 @@ import logging
 import math
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -71,6 +74,7 @@ def validate_analysis_config(cfg: Dict[str, Any]) -> None:
         "references",
         "reference_groups",
         "pool_contrast",
+        "condition_references",
     ):
         if key not in cfg:
             raise KeyError(f"Missing required field: analysis.{key}")
@@ -129,6 +133,46 @@ def validate_analysis_config(cfg: Dict[str, Any]) -> None:
             raise ValueError(f"analysis.pool_contrast.{key} must be a non-empty string")
     if contrast["treatment"] == contrast["control"]:
         raise ValueError("analysis.pool_contrast treatment and control must differ")
+    _validate_condition_references(cfg["condition_references"])
+
+
+# Families of the fixed comparisons; condition_references add ``vs_<name>``.
+RESERVED_REFERENCE_NAMES = ("chance", "classifier")
+
+
+def _validate_condition_references(cond_refs: Any) -> None:
+    """``condition_references``: {name: {label, base_dir, family, pairs}} (may be {})."""
+    where = "analysis.condition_references"
+    if not isinstance(cond_refs, dict):
+        raise ValueError(f"{where} must be a mapping (use {{}} for none)")
+    for name, entry in cond_refs.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{where} names must be non-empty strings")
+        if name in RESERVED_REFERENCE_NAMES:
+            raise ValueError(
+                f"{where}.{name}: the name is reserved ({RESERVED_REFERENCE_NAMES})"
+            )
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where}.{name} must be a mapping")
+        for key in ("label", "base_dir", "family", "pairs"):
+            if key not in entry:
+                raise KeyError(f"Missing required field: {where}.{name}.{key}")
+        for key in ("label", "base_dir", "family"):
+            if not isinstance(entry[key], str) or not entry[key]:
+                raise ValueError(f"{where}.{name}.{key} must be a non-empty string")
+        pairs = entry["pairs"]
+        if (
+            not isinstance(pairs, dict)
+            or not pairs
+            or not all(
+                isinstance(k, str) and k and isinstance(v, str) and v
+                for k, v in pairs.items()
+            )
+        ):
+            raise ValueError(
+                f"{where}.{name}.pairs must be a non-empty mapping of condition "
+                "name -> reference experiment name"
+            )
 
 
 # --------------------------------------------------------------------------
@@ -170,7 +214,9 @@ def _completed(paths: List[str]) -> List[str]:
     return [p for p in paths if (Path(p).parent / "evaluation.json").exists()]
 
 
-def check_checkpoints(runs_base: str, family: str) -> None:
+def check_checkpoints(
+    runs_base: str, family: str, experiments: Optional[Collection[str]] = None
+) -> None:
     """Fail if a finished run's features came from since-replaced weights.
 
     The runner records ``checkpoint_sha256`` and ``checkpoint`` (relative to the
@@ -180,6 +226,10 @@ def check_checkpoints(runs_base: str, family: str) -> None:
     before stale results are reported. Runs with ImageNet weights (no
     checkpoint) and runs from before the key existed are not checked.
 
+    Args:
+        experiments: Only check runs of these experiments (condition folders);
+            None checks the whole family.
+
     Raises:
         ValueError: Listing every run whose checkpoint is missing or changed.
     """
@@ -188,6 +238,9 @@ def check_checkpoints(runs_base: str, family: str) -> None:
     problems: List[str] = []
     for reports in sorted(glob(pattern)):
         report_file = Path(reports) / "evaluation.json"
+        # .../<family>/<experiment>/seed{S}/reports
+        if experiments is not None and Path(reports).parts[-3] not in experiments:
+            continue
         if not report_file.exists():
             continue
         with open(report_file, encoding="utf-8") as f:
@@ -358,13 +411,43 @@ def correct_within_families(
     return df
 
 
+def unpaired_condition_references(
+    cfg: Dict[str, Any],
+    conditions: Dict[str, SplitValues],
+    condition_refs: Dict[str, Dict[str, SplitValues]],
+) -> Dict[str, List[str]]:
+    """``condition_references`` pairs that share fewer than 2 splits.
+
+    ``paired_row`` drops such pairs, so they are listed (per family
+    ``vs_<name>``) for a warning and a note in the report instead of vanishing.
+
+    Precondition: ``condition_refs`` comes from ``load_condition_references``,
+    which has checked that every paired condition and reference experiment
+    exists.
+    """
+    unpaired: Dict[str, List[str]] = {}
+    for ref_name, entry in cfg["condition_references"].items():
+        for cond, ref_exp in entry["pairs"].items():
+            shared = set(conditions[cond]) & set(condition_refs[ref_name][ref_exp])
+            if len(shared) < 2:
+                unpaired.setdefault(f"vs_{ref_name}", []).append(
+                    f"`{cond}` vs `{ref_exp}` ({len(shared)} shared splits)"
+                )
+    return unpaired
+
+
 def build_comparisons(
     cfg: Dict[str, Any],
     conditions: Dict[str, SplitValues],
     references: Dict[str, SplitValues],
     chance: SplitValues,
+    condition_refs: Optional[Dict[str, Dict[str, SplitValues]]] = None,
 ) -> pd.DataFrame:
-    """All three comparison families, corrected within each family."""
+    """All comparison families, corrected within each family.
+
+    ``condition_refs`` maps each ``condition_references`` name to the split
+    values of its reference experiments (as loaded by ``run_compare``).
+    """
     rows: List[Optional[Dict[str, Any]]] = []
     for name, values in sorted(conditions.items()):
         rows.append(paired_row("vs_chance", name, "chance", values, chance))
@@ -384,6 +467,22 @@ def build_comparisons(
                 rows.append(
                     paired_row("pool", name, other, conditions[name], conditions[other])
                 )
+    for ref_name, entry in cfg["condition_references"].items():
+        if condition_refs is None or ref_name not in condition_refs:
+            raise ValueError(
+                f"condition_references.{ref_name}: its reference values were not "
+                "passed; load them with load_condition_references"
+            )
+        for cond, ref_exp in entry["pairs"].items():
+            rows.append(
+                paired_row(
+                    f"vs_{ref_name}",
+                    cond,
+                    ref_exp,
+                    conditions[cond],
+                    condition_refs[ref_name][ref_exp],
+                )
+            )
     return correct_within_families(
         [r for r in rows if r is not None], cfg["alpha"], cfg["correction"]
     )
@@ -415,7 +514,14 @@ def write_markdown(
     chance: SplitValues,
     sub_auc: pd.DataFrame,
     metric: str,
+    extra_titles: Optional[Dict[str, str]] = None,
+    unpaired: Optional[Dict[str, List[str]]] = None,
 ) -> None:
+    """Write ``report.md``.
+
+    ``extra_titles`` adds sections ({family: title}); ``unpaired`` lists, per
+    family, the pairs that could not be compared (fewer than 2 shared splits).
+    """
     lines = ["# Campaign comparison report", ""]
     lines += [
         f"Metric: `{metric}`. Unit of analysis: the split.",
@@ -466,6 +572,7 @@ def write_markdown(
         "vs_chance": "Against chance",
         "vs_classifier": "Against classifier baselines (same backbone)",
         "pool": "Normal pool: all vs suspicious",
+        **(extra_titles or {}),
     }
     for fam, title in titles.items():
         sub = (
@@ -488,6 +595,14 @@ def write_markdown(
                 f"{_fmt(float(r['p_ttest_corrected']), 4)} | "
                 f"{'yes' if bool(r['significant']) else 'no'} |"
             )
+        skipped = (unpaired or {}).get(fam)
+        if skipped:
+            lines += [
+                "",
+                "Not compared (fewer than 2 splits shared with the reference): "
+                + "; ".join(skipped)
+                + ".",
+            ]
 
     if not sub_auc.empty:
         pivot = sub_auc.pivot(index="condition", columns="subclass", values="auc_mean")
@@ -570,6 +685,42 @@ def plot_conditions(
     plt.close(fig)
 
 
+def load_condition_references(
+    campaign_dir: Path,
+    cond_refs: Dict[str, Any],
+    conditions: Dict[str, SplitValues],
+    metric: str,
+) -> Dict[str, Dict[str, SplitValues]]:
+    """Load the reference experiments of every ``condition_references`` entry.
+
+    ``base_dir`` is campaign-relative (absolute paths are used as is). Every
+    paired condition and reference experiment must exist, and the reference
+    runs pass the same checkpoint check as the campaign's own runs.
+
+    Raises:
+        ValueError: If a paired condition or reference experiment is missing.
+    """
+    loaded: Dict[str, Dict[str, SplitValues]] = {}
+    for name, entry in cond_refs.items():
+        base = str(campaign_dir / entry["base_dir"])
+        values = load_split_values(base, entry["family"], metric)
+        # Only the paired experiments enter the report, so only they are checked.
+        check_checkpoints(base, entry["family"], set(entry["pairs"].values()))
+        for cond, ref_exp in entry["pairs"].items():
+            if cond not in conditions:
+                raise ValueError(
+                    f"condition_references.{name}: no finished runs of condition "
+                    f"'{cond}' in this campaign"
+                )
+            if ref_exp not in values:
+                raise ValueError(
+                    f"condition_references.{name}: no '{ref_exp}' results under "
+                    f"{base} (family {entry['family']})"
+                )
+        loaded[name] = values
+    return loaded
+
+
 def run_compare(campaign_dir: Path) -> Path:
     """Run the comparison for a campaign; returns its reports directory."""
     cfg_path = campaign_dir / ANALYSIS_FILE
@@ -615,7 +766,14 @@ def run_compare(campaign_dir: Path) -> Path:
         else pd.DataFrame(columns=["experiment", "mean"])
     )
 
-    comparisons = build_comparisons(cfg, conditions, references, chance)
+    condition_refs = load_condition_references(
+        campaign_dir, cfg["condition_references"], conditions, metric
+    )
+    comparisons = build_comparisons(cfg, conditions, references, chance, condition_refs)
+    unpaired = unpaired_condition_references(cfg, conditions, condition_refs)
+    for fam, pairs in unpaired.items():
+        for pair in pairs:
+            logger.warning(f"{fam}: not compared, {pair}")
     sub_auc = subclass_auc(runs_base, family)
 
     reports = campaign_dir / "reports"
@@ -632,6 +790,11 @@ def run_compare(campaign_dir: Path) -> Path:
         chance,
         sub_auc,
         metric,
+        {
+            f"vs_{name}": entry["label"]
+            for name, entry in cfg["condition_references"].items()
+        },
+        unpaired,
     )
     plot_conditions(
         reports / f"{metric}_by_condition.png",
