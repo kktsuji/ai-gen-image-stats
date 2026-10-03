@@ -1,0 +1,234 @@
+"""Tests for the normal-subclass classification split derivation."""
+
+import hashlib
+import json
+
+import pytest
+
+from src.experiments.anomaly_detection.normal_subclass_split import (
+    build_normal_subclass_split,
+    generate_normal_subclass_splits,
+    main,
+)
+from src.utils.data.datasets import SplitFileDataset
+
+
+def _entries(prefix, n, subclass):
+    label = 1 if subclass == "abnormal" else 0
+    return [
+        {"path": f"{prefix}/{subclass}_{i}.png", "label": label, "subclass": subclass}
+        for i in range(n)
+    ]
+
+
+def _ad_split():
+    return {
+        "train": _entries("tr", 4, "suspicious") + _entries("tr", 2, "abnormal"),
+        "val": _entries("va", 2, "suspicious") + _entries("va", 1, "abnormal"),
+        "test": _entries("te", 3, "suspicious") + _entries("te", 1, "abnormal"),
+        "normal_extra_train": _entries("tr", 5, "red") + _entries("tr", 2, "junk"),
+        "normal_extra_val": _entries("va", 1, "red") + _entries("va", 1, "junk"),
+        "normal_extra_test": _entries("te", 2, "red") + _entries("te", 1, "junk"),
+        "metadata": {
+            "classes": {"suspicious": 0, "abnormal": 1},
+            "split_index": 3,
+            "repeat": 0,
+            "fold": 3,
+            "n_folds": 5,
+            "n_repeats": 2,
+            "repeat_seed": 42,
+            "val_fraction": 0.15,
+            "unrelated": "dropped",
+        },
+    }
+
+
+@pytest.mark.unit
+class TestBuildNormalSubclassSplit:
+    def test_no_abnormal_anywhere(self):
+        out = build_normal_subclass_split(_ad_split())
+        for part in ("train", "val", "test"):
+            assert all(e["subclass"] != "abnormal" for e in out[part])
+        assert "abnormal" not in out["metadata"]["classes"]
+
+    def test_partitions_follow_the_ad_split(self):
+        out = build_normal_subclass_split(_ad_split())
+        assert len(out["train"]) == 4 + 5 + 2
+        assert len(out["val"]) == 2 + 1 + 1
+        assert len(out["test"]) == 3 + 2 + 1
+        assert all(e["path"].startswith("tr/") for e in out["train"])
+        assert all(e["path"].startswith("te/") for e in out["test"])
+
+    def test_alphabetical_labels_and_metadata(self):
+        out = build_normal_subclass_split(_ad_split())
+        meta = out["metadata"]
+        assert meta["classes"] == {"junk": 0, "red": 1, "suspicious": 2}
+        for e in out["train"]:
+            assert e["label"] == meta["classes"][e["subclass"]]
+        assert meta["class_samples"]["train"] == {"junk": 2, "red": 5, "suspicious": 4}
+        assert meta["split_index"] == 3 and meta["repeat_seed"] == 42
+        assert "unrelated" not in meta
+
+    def test_missing_subclass_tag_rejected(self):
+        split = _ad_split()
+        del split["val"][0]["subclass"]
+        with pytest.raises(ValueError, match="subclass tag"):
+            build_normal_subclass_split(split)
+
+    def test_empty_partition_rejected(self):
+        split = _ad_split()
+        split["val"] = _entries("va", 1, "abnormal")
+        split["normal_extra_val"] = []
+        with pytest.raises(ValueError, match="'val'"):
+            build_normal_subclass_split(split)
+
+    def test_overlap_rejected(self):
+        split = _ad_split()
+        split["normal_extra_test"].append(dict(split["normal_extra_train"][0]))
+        with pytest.raises(ValueError, match="in both 'train' and 'test'"):
+            build_normal_subclass_split(split)
+
+
+@pytest.mark.unit
+class TestGenerate:
+    def _write_source(self, tmp_path, index=3):
+        src = tmp_path / "src" / f"cv_binary_ad_split{index}.json"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text(json.dumps(_ad_split()))
+        return src
+
+    def test_writes_file_with_provenance(self, tmp_path):
+        src = self._write_source(tmp_path)
+        (target,) = generate_normal_subclass_splits([str(src)], str(tmp_path / "out"))
+        assert target.name == "normal_subclass_split3.json"
+        meta = json.loads(target.read_text())["metadata"]
+        assert meta["source_split_file"] == str(src)
+        assert meta["source_sha256"] == hashlib.sha256(src.read_bytes()).hexdigest()
+
+    def test_no_overwrite_without_force(self, tmp_path):
+        src = self._write_source(tmp_path)
+        out = str(tmp_path / "out")
+        generate_normal_subclass_splits([str(src)], out)
+        with pytest.raises(FileExistsError):
+            generate_normal_subclass_splits([str(src)], out)
+        generate_normal_subclass_splits([str(src)], out, force=True)
+
+    def test_bad_inputs(self, tmp_path):
+        with pytest.raises(ValueError, match="No source"):
+            generate_normal_subclass_splits([], str(tmp_path))
+        bad = tmp_path / "noindex.json"
+        bad.write_text(json.dumps(_ad_split()))
+        with pytest.raises(ValueError, match="split index"):
+            generate_normal_subclass_splits([str(bad)], str(tmp_path / "out"))
+
+    def test_cli_and_dataset_compatibility(self, tmp_path):
+        self._write_source(tmp_path, index=0)
+        self._write_source(tmp_path, index=1)
+        out = tmp_path / "out"
+        main(["--src-dir", str(tmp_path / "src"), "--out-dir", str(out)])
+        assert sorted(p.name for p in out.iterdir()) == [
+            "normal_subclass_split0.json",
+            "normal_subclass_split1.json",
+        ]
+        dataset = SplitFileDataset(str(out / "normal_subclass_split0.json"), "train")
+        assert dataset.get_classes() == ["junk", "red", "suspicious"]
+        assert len(dataset) == 11
+
+
+@pytest.mark.unit
+class TestReviewFixes:
+    def _write(self, tmp_path, index, split):
+        src = tmp_path / "src" / f"cv_binary_ad_split{index}.json"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text(json.dumps(split))
+        return str(src)
+
+    def test_class_only_in_val_or_test_rejected(self):
+        split = _ad_split()
+        split["normal_extra_test"] += _entries("te", 1, "blur")
+        with pytest.raises(ValueError, match="blur.*not in train"):
+            build_normal_subclass_split(split)
+
+    def test_mappings_must_agree_across_splits(self, tmp_path):
+        other = _ad_split()
+        for key in ("normal_extra_train", "normal_extra_val", "normal_extra_test"):
+            other[key] = [e for e in other[key] if e["subclass"] != "junk"]
+        srcs = [self._write(tmp_path, 0, _ad_split()), self._write(tmp_path, 1, other)]
+        out = tmp_path / "out"
+        with pytest.raises(ValueError, match="normal_subclass_split1.json maps"):
+            generate_normal_subclass_splits(srcs, str(out))
+        assert not out.exists()
+
+    def test_existing_output_writes_nothing(self, tmp_path):
+        srcs = [self._write(tmp_path, i, _ad_split()) for i in range(3)]
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "normal_subclass_split2.json").write_text("old")
+        with pytest.raises(FileExistsError, match="nothing was written"):
+            generate_normal_subclass_splits(srcs, str(out))
+        assert sorted(p.name for p in out.iterdir()) == ["normal_subclass_split2.json"]
+        assert (out / "normal_subclass_split2.json").read_text() == "old"
+        generate_normal_subclass_splits(srcs, str(out), force=True)
+        assert len(list(out.iterdir())) == 3
+
+    def test_duplicate_index_rejected(self, tmp_path):
+        a = self._write(tmp_path, 1, _ad_split())
+        b = tmp_path / "other" / "cv_binary_ad_split1.json"
+        b.parent.mkdir()
+        b.write_text(json.dumps(_ad_split()))
+        with pytest.raises(ValueError, match="Two source files"):
+            generate_normal_subclass_splits([a, str(b)], str(tmp_path / "out"))
+
+
+@pytest.mark.unit
+class TestAbnormalDroppedByLabel:
+    def test_differently_named_abnormal_class_is_dropped(self):
+        split = _ad_split()
+        split["metadata"]["classes"] = {"suspicious": 0, "ctc": 1}
+        for key in ("train", "val", "test"):
+            for e in split[key]:
+                if e["label"] == 1:
+                    e["subclass"] = "ctc"
+        out = build_normal_subclass_split(split)
+        assert "ctc" not in out["metadata"]["classes"]
+        assert out["metadata"]["dropped_subclass"] == "ctc"
+        assert all(
+            e["subclass"] != "ctc" for p in ("train", "val", "test") for e in out[p]
+        )
+
+    def test_non_binary_metadata_rejected(self):
+        split = _ad_split()
+        split["metadata"]["classes"] = {"suspicious": 0, "abnormal": 2}
+        with pytest.raises(ValueError, match="binary source split"):
+            build_normal_subclass_split(split)
+        del split["metadata"]["classes"]
+        with pytest.raises(ValueError, match="binary source split"):
+            build_normal_subclass_split(split)
+
+    def test_label1_with_wrong_tag_rejected(self):
+        split = _ad_split()
+        split["train"][-1]["subclass"] = "red"  # an abnormal image tagged as normal
+        with pytest.raises(ValueError, match="has label 1 but subclass 'red'"):
+            build_normal_subclass_split(split)
+
+    def test_abnormal_tag_with_label0_rejected(self):
+        split = _ad_split()
+        split["val"][0]["subclass"] = "abnormal"  # label 0
+        with pytest.raises(ValueError, match="tagged 'abnormal' but has label 0"):
+            build_normal_subclass_split(split)
+
+    def test_extra_entry_with_label1_rejected(self):
+        split = _ad_split()
+        split["normal_extra_train"][0]["label"] = 1
+        with pytest.raises(ValueError, match="expected 0"):
+            build_normal_subclass_split(split)
+
+
+@pytest.mark.unit
+class TestMissingPartition:
+    @pytest.mark.parametrize("key", ["train", "normal_extra_val"])
+    def test_missing_partition_rejected(self, key):
+        split = _ad_split()
+        del split[key]
+        with pytest.raises(ValueError, match=f"missing the '{key}' partition"):
+            build_normal_subclass_split(split)
