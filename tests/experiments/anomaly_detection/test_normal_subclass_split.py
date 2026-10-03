@@ -146,7 +146,7 @@ class TestReviewFixes:
     def test_class_only_in_val_or_test_rejected(self):
         split = _ad_split()
         split["normal_extra_test"] += _entries("te", 1, "blur")
-        with pytest.raises(ValueError, match="'blur'.*not in train"):
+        with pytest.raises(ValueError, match="blur.*not in train"):
             build_normal_subclass_split(split)
 
     def test_mappings_must_agree_across_splits(self, tmp_path):
@@ -221,4 +221,14 @@ class TestAbnormalDroppedByLabel:
         split = _ad_split()
         split["normal_extra_train"][0]["label"] = 1
         with pytest.raises(ValueError, match="expected 0"):
+            build_normal_subclass_split(split)
+
+
+@pytest.mark.unit
+class TestMissingPartition:
+    @pytest.mark.parametrize("key", ["train", "normal_extra_val"])
+    def test_missing_partition_rejected(self, key):
+        split = _ad_split()
+        del split[key]
+        with pytest.raises(ValueError, match=f"missing the '{key}' partition"):
             build_normal_subclass_split(split)

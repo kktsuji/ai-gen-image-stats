@@ -73,9 +73,10 @@ def build_normal_subclass_split(ad_split: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If the source is not a binary split with label 1 as its
             abnormal class, an abnormal entry's tag does not match that class,
-            a ``normal_extra_*`` entry is not label 0, an entry lacks a
-            subclass tag, a partition ends up empty, a subclass is missing from
-            train, or a path appears in more than one partition.
+            a ``normal_extra_*`` entry is not label 0, the source lacks a
+            partition, an entry lacks a subclass tag, a partition ends up
+            empty, a subclass is missing from train, or a path appears in more
+            than one partition.
     """
     binary_classes = ad_split.get("metadata", {}).get("classes", {})
     label_to_name = {label: name for name, label in binary_classes.items()}
@@ -90,6 +91,8 @@ def build_normal_subclass_split(ad_split: Dict[str, Any]) -> Dict[str, Any]:
     for part, source_keys in PARTITIONS.items():
         entries = []
         for key in source_keys:
+            if key not in ad_split:
+                raise ValueError(f"Source split is missing the '{key}' partition")
             for entry in ad_split[key]:
                 if "subclass" not in entry:
                     raise ValueError(f"Entry without a subclass tag in '{key}'")
