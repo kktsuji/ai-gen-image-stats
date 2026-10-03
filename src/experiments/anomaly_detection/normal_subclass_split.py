@@ -29,7 +29,7 @@ import logging
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,8 @@ def build_normal_subclass_split(
 
     Raises:
         ValueError: If an entry lacks a subclass tag, a partition ends up empty,
-            or a path appears in more than one partition.
+            a subclass is missing from train, or a path appears in more than
+            one partition.
     """
     selected: Dict[str, List[Dict[str, Any]]] = {}
     for part, source_keys in PARTITIONS.items():
@@ -80,6 +81,10 @@ def build_normal_subclass_split(
         selected[part] = entries
 
     names = sorted({e["subclass"] for entries in selected.values() for e in entries})
+    # A class absent from train would get a label the classifier never learns.
+    untrained = sorted(set(names) - {e["subclass"] for e in selected["train"]})
+    if untrained:
+        raise ValueError(f"Subclasses {untrained} appear in val/test but not in train")
     classes = {name: i for i, name in enumerate(names)}
     out: Dict[str, Any] = {
         part: [
@@ -125,37 +130,57 @@ def generate_normal_subclass_splits(
 ) -> List[Path]:
     """Write ``normal_subclass_split{N}.json`` for each extended AD split file.
 
-    The source file and its SHA-256 are recorded in the metadata.
+    All splits are built and checked before anything is written, so a failure
+    leaves the output directory untouched: every split must map the same
+    subclasses to the same labels (a label means one subclass across splits),
+    and without ``force`` no output may exist yet. The source file and its
+    SHA-256 are recorded in the metadata.
 
     Raises:
-        ValueError: If there are no source files or names do not end in a split
-            index.
+        ValueError: If there are no source files, a name does not end in a
+            split index, two sources share an index, or the splits' class
+            mappings differ.
         FileExistsError: If an output exists and ``force`` is False.
     """
     if not src_files:
         raise ValueError("No source split files given")
     out_path = Path(out_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
-    written = []
+    planned: List[Tuple[Path, Dict[str, Any]]] = []
     for src in src_files:
         stem = Path(src).stem  # cv_binary_ad_split{N}
         index = stem.rsplit("split", 1)[-1]
         if not index.isdigit():
             raise ValueError(f"Cannot read the split index from {src}")
         target = out_path / f"normal_subclass_split{index}.json"
-        if target.exists() and not force:
-            raise FileExistsError(f"{target} exists (use --force to overwrite)")
+        if any(t == target for t, _ in planned):
+            raise ValueError(f"Two source files map to {target.name}")
         raw = Path(src).read_bytes()
         split = build_normal_subclass_split(json.loads(raw))
         split["metadata"]["source_split_file"] = str(src)
         split["metadata"]["source_sha256"] = hashlib.sha256(raw).hexdigest()
+        planned.append((target, split))
+
+    reference = planned[0][1]["metadata"]["classes"]
+    for target, split in planned[1:]:
+        if split["metadata"]["classes"] != reference:
+            raise ValueError(
+                f"{target.name} maps classes {split['metadata']['classes']}, "
+                f"but {planned[0][0].name} maps {reference}"
+            )
+    existing = [str(t) for t, _ in planned if t.exists()]
+    if existing and not force:
+        raise FileExistsError(
+            f"Outputs exist (use --force to overwrite; nothing was written): {existing}"
+        )
+
+    out_path.mkdir(parents=True, exist_ok=True)
+    for target, split in planned:
         target.write_text(json.dumps(split, indent=2), encoding="utf-8")
         logger.info(
             f"{target.name}: train {len(split['train'])}, val {len(split['val'])}, "
             f"test {len(split['test'])}, classes {split['metadata']['classes']}"
         )
-        written.append(target)
-    return written
+    return [t for t, _ in planned]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:

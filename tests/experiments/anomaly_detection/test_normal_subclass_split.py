@@ -133,3 +133,48 @@ class TestGenerate:
         dataset = SplitFileDataset(str(out / "normal_subclass_split0.json"), "train")
         assert dataset.get_classes() == ["junk", "red", "suspicious"]
         assert len(dataset) == 11
+
+
+@pytest.mark.unit
+class TestReviewFixes:
+    def _write(self, tmp_path, index, split):
+        src = tmp_path / "src" / f"cv_binary_ad_split{index}.json"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text(json.dumps(split))
+        return str(src)
+
+    def test_class_only_in_val_or_test_rejected(self):
+        split = _ad_split()
+        split["normal_extra_test"] += _entries("te", 1, "blur")
+        with pytest.raises(ValueError, match="'blur'.*not in train"):
+            build_normal_subclass_split(split)
+
+    def test_mappings_must_agree_across_splits(self, tmp_path):
+        other = _ad_split()
+        for key in ("normal_extra_train", "normal_extra_val", "normal_extra_test"):
+            other[key] = [e for e in other[key] if e["subclass"] != "junk"]
+        srcs = [self._write(tmp_path, 0, _ad_split()), self._write(tmp_path, 1, other)]
+        out = tmp_path / "out"
+        with pytest.raises(ValueError, match="normal_subclass_split1.json maps"):
+            generate_normal_subclass_splits(srcs, str(out))
+        assert not out.exists()
+
+    def test_existing_output_writes_nothing(self, tmp_path):
+        srcs = [self._write(tmp_path, i, _ad_split()) for i in range(3)]
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "normal_subclass_split2.json").write_text("old")
+        with pytest.raises(FileExistsError, match="nothing was written"):
+            generate_normal_subclass_splits(srcs, str(out))
+        assert sorted(p.name for p in out.iterdir()) == ["normal_subclass_split2.json"]
+        assert (out / "normal_subclass_split2.json").read_text() == "old"
+        generate_normal_subclass_splits(srcs, str(out), force=True)
+        assert len(list(out.iterdir())) == 3
+
+    def test_duplicate_index_rejected(self, tmp_path):
+        a = self._write(tmp_path, 1, _ad_split())
+        b = tmp_path / "other" / "cv_binary_ad_split1.json"
+        b.parent.mkdir()
+        b.write_text(json.dumps(_ad_split()))
+        with pytest.raises(ValueError, match="Two source files"):
+            generate_normal_subclass_splits([a, str(b)], str(tmp_path / "out"))
