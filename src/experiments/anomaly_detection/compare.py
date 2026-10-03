@@ -420,6 +420,10 @@ def unpaired_condition_references(
 
     ``paired_row`` drops such pairs, so they are listed (per family
     ``vs_<name>``) for a warning and a note in the report instead of vanishing.
+
+    Precondition: ``condition_refs`` comes from ``load_condition_references``,
+    which has checked that every paired condition and reference experiment
+    exists.
     """
     unpaired: Dict[str, List[str]] = {}
     for ref_name, entry in cfg["condition_references"].items():
@@ -464,6 +468,11 @@ def build_comparisons(
                     paired_row("pool", name, other, conditions[name], conditions[other])
                 )
     for ref_name, entry in cfg["condition_references"].items():
+        if condition_refs is None or ref_name not in condition_refs:
+            raise ValueError(
+                f"condition_references.{ref_name}: its reference values were not "
+                "passed; load them with load_condition_references"
+            )
         for cond, ref_exp in entry["pairs"].items():
             rows.append(
                 paired_row(
@@ -471,7 +480,7 @@ def build_comparisons(
                     cond,
                     ref_exp,
                     conditions[cond],
-                    (condition_refs or {})[ref_name][ref_exp],
+                    condition_refs[ref_name][ref_exp],
                 )
             )
     return correct_within_families(

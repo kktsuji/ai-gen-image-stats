@@ -830,3 +830,26 @@ class TestConditionReferenceReviewFixes:
     def test_all_pairs_compared_adds_no_note(self, tmp_path):
         campaign = _with_earlier_campaign(tmp_path)
         assert "Not compared" not in (run_compare(campaign) / "report.md").read_text()
+
+
+@pytest.mark.unit
+class TestBuildComparisonsNeedsConditionRefs:
+    def test_missing_condition_refs_raise_clear_error(self, tmp_path):
+        cfg = _cfg(tmp_path)
+        cfg["condition_references"] = {
+            "earlier": {
+                "label": "x",
+                "base_dir": "runs",
+                "family": "f",
+                "pairs": {"ad-a__all": "ad-b__all"},
+            }
+        }
+        conditions = {"ad-a__all": {0: 0.1, 1: 0.2}}
+        for refs in (None, {}):
+            with pytest.raises(ValueError, match="load_condition_references"):
+                build_comparisons(cfg, conditions, {}, {}, refs)
+
+    def test_empty_config_needs_no_condition_refs(self, tmp_path):
+        conditions = {"ad-a__all": {0: 0.1, 1: 0.2}}
+        out = build_comparisons(_cfg(tmp_path), conditions, {}, {0: 0.1, 1: 0.1})
+        assert set(out["family"]) == {"vs_chance"}
