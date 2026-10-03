@@ -774,3 +774,59 @@ class TestConditionReferences:
         assert (
             report.count("\n## ") == 6
         )  # Conditions, References, 3 families, subclass
+
+
+@pytest.mark.unit
+class TestConditionReferenceReviewFixes:
+    def test_checkpoint_check_limited_to_experiments(self, tmp_path):
+        campaign = _with_checkpoints(tmp_path)
+        (campaign / "runs/split2/clf/x/seed0/best.pth").write_bytes(b"retrained")
+        runs = str(campaign / "runs")
+        check_checkpoints(runs, "ad-frozen", {"some-other-experiment"})
+        with pytest.raises(ValueError, match="has changed") as err:
+            check_checkpoints(runs, "ad-frozen", {"ad-knn-rn50__all"})
+        assert "ad-knn-rn50__suspicious" not in str(err.value)
+
+    def test_unrelated_reference_run_does_not_block_report(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        # An unpaired run in the reference tree whose checkpoint is gone.
+        stray = campaign.parent / "00-earlier/runs/split0/ad-old/unpaired/seed0"
+        _write_eval(
+            stray,
+            {"pr_auc": 0.5, "checkpoint_sha256": "0" * 64, "checkpoint": "../x.pth"},
+        )
+        run_compare(campaign)  # does not raise
+
+    def test_paired_reference_run_with_changed_checkpoint_blocks(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        reports = campaign.parent / "00-earlier/runs/split1/ad-old/ad-knn-x__all/seed0"
+        _write_eval(
+            reports,
+            {"pr_auc": 0.1, "checkpoint_sha256": "0" * 64, "checkpoint": "../x.pth"},
+        )
+        with pytest.raises(ValueError, match="not found"):
+            run_compare(campaign)
+
+    def test_unpaired_pair_warned_and_noted(self, tmp_path, caplog):
+        import logging
+        import shutil
+
+        campaign = _with_earlier_campaign(tmp_path)
+        earlier = campaign.parent / "00-earlier/runs"
+        for split in range(1, N_SPLITS):  # keep split 0 only for this experiment
+            shutil.rmtree(earlier / f"split{split}/ad-old/ad-knn-x__suspicious")
+        with caplog.at_level(logging.WARNING):
+            reports = run_compare(campaign)
+        comps = pd.read_csv(reports / "comparisons.csv")
+        fam = comps[comps["family"] == "vs_earlier"]
+        assert fam["treatment"].tolist() == ["ad-knn-rn50__all"]
+        assert "ad-knn-x__suspicious` (1 shared splits)" in caplog.text
+        report = (reports / "report.md").read_text()
+        assert (
+            "Not compared (fewer than 2 splits shared with the reference): "
+            "`ad-knn-rn50__suspicious` vs `ad-knn-x__suspicious` (1 shared splits)."
+        ) in report
+
+    def test_all_pairs_compared_adds_no_note(self, tmp_path):
+        campaign = _with_earlier_campaign(tmp_path)
+        assert "Not compared" not in (run_compare(campaign) / "report.md").read_text()

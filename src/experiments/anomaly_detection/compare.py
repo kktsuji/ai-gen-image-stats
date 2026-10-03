@@ -28,7 +28,7 @@ import logging
 import math
 from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -214,7 +214,9 @@ def _completed(paths: List[str]) -> List[str]:
     return [p for p in paths if (Path(p).parent / "evaluation.json").exists()]
 
 
-def check_checkpoints(runs_base: str, family: str) -> None:
+def check_checkpoints(
+    runs_base: str, family: str, experiments: Optional[Collection[str]] = None
+) -> None:
     """Fail if a finished run's features came from since-replaced weights.
 
     The runner records ``checkpoint_sha256`` and ``checkpoint`` (relative to the
@@ -224,6 +226,10 @@ def check_checkpoints(runs_base: str, family: str) -> None:
     before stale results are reported. Runs with ImageNet weights (no
     checkpoint) and runs from before the key existed are not checked.
 
+    Args:
+        experiments: Only check runs of these experiments (condition folders);
+            None checks the whole family.
+
     Raises:
         ValueError: Listing every run whose checkpoint is missing or changed.
     """
@@ -232,6 +238,9 @@ def check_checkpoints(runs_base: str, family: str) -> None:
     problems: List[str] = []
     for reports in sorted(glob(pattern)):
         report_file = Path(reports) / "evaluation.json"
+        # .../<family>/<experiment>/seed{S}/reports
+        if experiments is not None and Path(reports).parts[-3] not in experiments:
+            continue
         if not report_file.exists():
             continue
         with open(report_file, encoding="utf-8") as f:
@@ -402,6 +411,27 @@ def correct_within_families(
     return df
 
 
+def unpaired_condition_references(
+    cfg: Dict[str, Any],
+    conditions: Dict[str, SplitValues],
+    condition_refs: Dict[str, Dict[str, SplitValues]],
+) -> Dict[str, List[str]]:
+    """``condition_references`` pairs that share fewer than 2 splits.
+
+    ``paired_row`` drops such pairs, so they are listed (per family
+    ``vs_<name>``) for a warning and a note in the report instead of vanishing.
+    """
+    unpaired: Dict[str, List[str]] = {}
+    for ref_name, entry in cfg["condition_references"].items():
+        for cond, ref_exp in entry["pairs"].items():
+            shared = set(conditions[cond]) & set(condition_refs[ref_name][ref_exp])
+            if len(shared) < 2:
+                unpaired.setdefault(f"vs_{ref_name}", []).append(
+                    f"`{cond}` vs `{ref_exp}` ({len(shared)} shared splits)"
+                )
+    return unpaired
+
+
 def build_comparisons(
     cfg: Dict[str, Any],
     conditions: Dict[str, SplitValues],
@@ -476,8 +506,13 @@ def write_markdown(
     sub_auc: pd.DataFrame,
     metric: str,
     extra_titles: Optional[Dict[str, str]] = None,
+    unpaired: Optional[Dict[str, List[str]]] = None,
 ) -> None:
-    """Write ``report.md``; ``extra_titles`` adds sections ({family: title})."""
+    """Write ``report.md``.
+
+    ``extra_titles`` adds sections ({family: title}); ``unpaired`` lists, per
+    family, the pairs that could not be compared (fewer than 2 shared splits).
+    """
     lines = ["# Campaign comparison report", ""]
     lines += [
         f"Metric: `{metric}`. Unit of analysis: the split.",
@@ -551,6 +586,14 @@ def write_markdown(
                 f"{_fmt(float(r['p_ttest_corrected']), 4)} | "
                 f"{'yes' if bool(r['significant']) else 'no'} |"
             )
+        skipped = (unpaired or {}).get(fam)
+        if skipped:
+            lines += [
+                "",
+                "Not compared (fewer than 2 splits shared with the reference): "
+                + "; ".join(skipped)
+                + ".",
+            ]
 
     if not sub_auc.empty:
         pivot = sub_auc.pivot(index="condition", columns="subclass", values="auc_mean")
@@ -652,7 +695,8 @@ def load_condition_references(
     for name, entry in cond_refs.items():
         base = str(campaign_dir / entry["base_dir"])
         values = load_split_values(base, entry["family"], metric)
-        check_checkpoints(base, entry["family"])
+        # Only the paired experiments enter the report, so only they are checked.
+        check_checkpoints(base, entry["family"], set(entry["pairs"].values()))
         for cond, ref_exp in entry["pairs"].items():
             if cond not in conditions:
                 raise ValueError(
@@ -717,6 +761,10 @@ def run_compare(campaign_dir: Path) -> Path:
         campaign_dir, cfg["condition_references"], conditions, metric
     )
     comparisons = build_comparisons(cfg, conditions, references, chance, condition_refs)
+    unpaired = unpaired_condition_references(cfg, conditions, condition_refs)
+    for fam, pairs in unpaired.items():
+        for pair in pairs:
+            logger.warning(f"{fam}: not compared, {pair}")
     sub_auc = subclass_auc(runs_base, family)
 
     reports = campaign_dir / "reports"
@@ -737,6 +785,7 @@ def run_compare(campaign_dir: Path) -> Path:
             f"vs_{name}": entry["label"]
             for name, entry in cfg["condition_references"].items()
         },
+        unpaired,
     )
     plot_conditions(
         reports / f"{metric}_by_condition.png",
