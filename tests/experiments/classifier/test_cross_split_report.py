@@ -16,12 +16,12 @@ from src.experiments.classifier.cross_split_report import (
     _format_comparison_table,
     _parse_split_label,
     _select_baseline,
-    _t_ci,
     build_across_split_summary,
     compute_cross_split_comparisons,
     compute_split_means,
     generate_cross_split_report,
     load_per_split_results,
+    t_ci,
 )
 from src.experiments.classifier.evaluation_report import key_metrics
 
@@ -35,12 +35,12 @@ class TestPureHelpers:
         assert _parse_split_label("a/b/c") is None
 
     def test_t_ci_known(self):
-        mean, lo, hi = _t_ci(np.array([0.70, 0.72, 0.74, 0.76]))
+        mean, lo, hi = t_ci(np.array([0.70, 0.72, 0.74, 0.76]))
         assert mean == pytest.approx(0.73)
         assert lo < mean < hi
 
     def test_t_ci_single_value_nan_bounds(self):
-        mean, lo, hi = _t_ci(np.array([0.7]))
+        mean, lo, hi = t_ci(np.array([0.7]))
         assert mean == 0.7
         assert np.isnan(lo) and np.isnan(hi)
 

@@ -137,7 +137,7 @@ def compute_split_means(
     return means
 
 
-def _t_ci(values: np.ndarray, confidence: float = 0.95) -> Tuple[float, float, float]:
+def t_ci(values: np.ndarray, confidence: float = 0.95) -> Tuple[float, float, float]:
     """Two-sided t confidence interval for the mean of ``values``.
 
     Returns (mean, ci_lower, ci_upper). With n < 2 the CI bounds are NaN.
@@ -178,7 +178,7 @@ def build_across_split_summary(
             if not vals:
                 continue
             arr = np.asarray(vals, dtype=np.float64)
-            mean, lo, hi = _t_ci(arr, confidence)
+            mean, lo, hi = t_ci(arr, confidence)
             rows.append(
                 {
                     "experiment": exp,
