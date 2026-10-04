@@ -490,7 +490,8 @@ def plot_curve(
     path: Path, cfg: Dict[str, Any], table: pd.DataFrame, chance: SplitValues
 ) -> None:
     """Mean and 95% CI per arm over k (categorical axis; k = 0 at the left)."""
-    labels = ["0", *[str(k) for k in k_order(cfg["ks"])]]
+    has_zero = bool((table["reference"] != "").any()) if not table.empty else False
+    labels = [*(["0"] if has_zero else []), *[str(k) for k in k_order(cfg["ks"])]]
     pos = {k: i for i, k in enumerate(labels)}
     fig, ax = plt.subplots(figsize=(8, 5))
     markers = ["s", "^", "v", "D", "P"]

@@ -123,7 +123,19 @@ class TestValidateConfig:
         validate_config(_cfg())
 
     @pytest.mark.parametrize(
-        "key", ["metric", "ks", "draws", "arms", "zero_references", "criteria"]
+        "key",
+        [
+            "metric",
+            "alpha",
+            "correction",
+            "runs_base",
+            "ks",
+            "draws",
+            "classifier_arm",
+            "arms",
+            "zero_references",
+            "criteria",
+        ],
     )
     def test_missing_field(self, key):
         cfg = _cfg()
@@ -409,3 +421,27 @@ class TestChanceLabel:
             [],
         )
         assert f"Chance level ({label}" in path.read_text()
+
+
+@pytest.mark.unit
+class TestPlotZeroTick:
+    def _ticks(self, tmp_path, zero, monkeypatch):
+        from src.experiments.anomaly_detection import learning_curve as lc
+
+        seen = {}
+        original = lc.plt.Axes.set_xticks
+
+        def spy(ax, ticks, labels=None, **kw):
+            seen["labels"] = list(labels) if labels is not None else None
+            return original(ax, ticks, labels, **kw)
+
+        monkeypatch.setattr(lc.plt.Axes, "set_xticks", spy)
+        curves = TestAnalysis()._curves()
+        table = curve_table(_cfg()["arms"], curves, zero, KS)
+        lc.plot_curve(tmp_path / "lc.png", _cfg(), table, {})
+        return seen["labels"]
+
+    def test_zero_tick_only_with_zero_points(self, tmp_path, monkeypatch):
+        zero = {"maha": [("frozen", {s: 0.12 for s in range(N_SPLITS)})]}
+        assert self._ticks(tmp_path, zero, monkeypatch)[0] == "0"
+        assert self._ticks(tmp_path, {}, monkeypatch) == ["1", "5", "20", "all"]
