@@ -330,3 +330,46 @@ class TestLoadCampaign:
         self._write(tmp_path, _sweep(), None)
         with pytest.raises(FileNotFoundError, match="Base config"):
             load_campaign(tmp_path)
+
+
+@pytest.mark.unit
+class TestAxisFieldsInSplitTemplate:
+    def _sweep(self):
+        sweep = _sweep()
+        sweep["splits"]["template"] = "../shared/k/s{split}_{method}_{backbone}.json"
+        return sweep
+
+    def test_axis_value_names_substituted(self):
+        runs = expand_runs(self._sweep(), _base())
+        files = {(r.name, r.split): r.config["data"]["split_file"] for r in runs}
+        assert files[("ad-knn-rn50", 1)] == "../shared/k/s1_knn_rn50.json"
+        assert files[("ad-maha-incv3", 0)] == "../shared/k/s0_maha_incv3.json"
+        validate_sweep(self._sweep(), _base())
+
+    @pytest.mark.parametrize(
+        "template,match",
+        [
+            ("s{split}_{draw}.json", r"\['draw'\] are neither"),
+            ("s{split}_{0}.json", "only plain named fields"),
+            ("s{split:03d}.json", "only plain named fields"),
+            ("s{split!r}.json", "only plain named fields"),
+            ("s{split}_{method.x}.json", "only plain named fields"),
+            ("s{split.json", "not a valid template"),
+            ("s_{method}.json", "must contain '{split}'"),
+        ],
+    )
+    def test_invalid_templates(self, template, match):
+        sweep = _sweep()
+        sweep["splits"]["template"] = template
+        with pytest.raises(ValueError, match=match):
+            validate_sweep(sweep, _base())
+
+
+@pytest.mark.unit
+class TestSplitAxisReserved:
+    def test_axis_named_split_rejected(self):
+        sweep = _sweep()
+        sweep["axes"]["split"] = {"a": {}}
+        sweep["name_template"] = "ad-{method}-{backbone}-{split}"
+        with pytest.raises(ValueError, match="'split' is reserved"):
+            validate_sweep(sweep, _base())
