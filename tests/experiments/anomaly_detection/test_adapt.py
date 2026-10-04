@@ -343,3 +343,25 @@ class TestBatchNormStats:
             (tmp_path / "out" / "reports" / "adaptation.json").read_text()
         )
         assert summary["update_frozen_bn_stats"] is update
+
+
+@pytest.mark.component
+class TestBatchSizes:
+    def test_center_uses_feature_extraction_batch_size(
+        self, ad_split_file, tmp_path, tiny_adapt_model, monkeypatch
+    ):
+        import src.experiments.anomaly_detection.adapt as adapt_module
+
+        seen = []
+        real_loader = adapt_module.DataLoader
+
+        def recording_loader(dataset, **kwargs):
+            seen.append((type(dataset).__name__, kwargs["batch_size"]))
+            return real_loader(dataset, **kwargs)
+
+        monkeypatch.setattr(adapt_module, "DataLoader", recording_loader)
+        config = _adapt_config(ad_split_file, tmp_path)
+        config["feature_extraction"]["batch_size"] = 5
+        config["adaptation"]["batch_size"] = 3
+        run_adaptation(config, "cpu")
+        assert seen == [("PathListDataset", 5), ("TwoViewDataset", 3)]

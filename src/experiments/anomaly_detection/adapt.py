@@ -121,7 +121,10 @@ def msc_loss(
     """NT-Xent loss between two views, on already mean-shifted features.
 
     For 2B embeddings, each one's positive is the other view of the same image;
-    the other 2B - 2 embeddings are negatives (self-similarity excluded).
+    the other 2B - 2 embeddings are negatives (self-similarity excluded). The
+    inputs are normalized again here on purpose: ``mean_shift`` already returns
+    unit vectors (so this is a no-op in training), but the loss stays correct
+    for any input, as in the MSC reference implementation.
     """
     z = torch.cat([view1, view2], dim=0)
     z = F.normalize(z, dim=-1)
@@ -214,7 +217,8 @@ def run_adaptation(config: Dict[str, Any], device: str) -> Path:
             paths,
             get_val_transforms(fe["image_size"], fe["crop_size"], "imagenet"),
         ),
-        batch_size=ad["batch_size"],
+        # Gradient-free feature extraction, batched as in run mode.
+        batch_size=fe["batch_size"],
         shuffle=False,
         num_workers=fe["num_workers"],
     )

@@ -20,7 +20,7 @@ feature_extraction:
   model: resnet50
   image_size: 256 # same preprocessing as the classifier runs
   crop_size: 224
-  batch_size: 64 # unused in adapt mode (adaptation.batch_size is used)
+  batch_size: 64 # computing the center (no gradient); training uses adaptation.batch_size
   num_workers: 4
   cache_dir: null # unused in adapt mode
   checkpoint: null # must be null: adaptation starts from the ImageNet weights
