@@ -55,7 +55,13 @@ class TestBuildSubsampledSplit:
         assert [e for e in out["train"] if e["label"] == 0] == [
             e for e in src["train"] if e["label"] == 0
         ]
-        for key in ("val", "test", "normal_extra_train", "normal_extra_test"):
+        for key in (
+            "val",
+            "test",
+            "normal_extra_train",
+            "normal_extra_val",
+            "normal_extra_test",
+        ):
             assert out[key] == src[key]
         assert len(_abnormal(src["train"])) == 8  # source untouched
 
@@ -147,7 +153,9 @@ class TestGenerate:
         (out / "cv_binary_ad_split0_k1_d0.json").write_text("old")
         with pytest.raises(FileExistsError, match="nothing was written"):
             generate_subsampled_splits(srcs, str(out), [1, 2], 1)
-        assert [p.name for p in out.iterdir()] == ["cv_binary_ad_split0_k1_d0.json"]
+        assert sorted(p.name for p in out.iterdir()) == [
+            "cv_binary_ad_split0_k1_d0.json"
+        ]
         generate_subsampled_splits(srcs, str(out), [1, 2], 1, force=True)
         assert len(list(out.iterdir())) == 2
 
