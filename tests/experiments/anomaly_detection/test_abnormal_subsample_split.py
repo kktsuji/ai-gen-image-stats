@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -135,7 +136,7 @@ class TestGenerate:
         assert sub["source_split_file"] == srcs[1]
         assert (
             sub["source_sha256"]
-            == hashlib.sha256(open(srcs[1], "rb").read()).hexdigest()
+            == hashlib.sha256(Path(srcs[1]).read_bytes()).hexdigest()
         )
         assert sub["k"] == 4 and sub["draw"] == 1
 

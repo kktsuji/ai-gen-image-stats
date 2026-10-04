@@ -72,6 +72,10 @@ def draw_order(split: Dict[str, Any], draw: int) -> List[str]:
 def build_subsampled_split(split: Dict[str, Any], k: int, draw: int) -> Dict[str, Any]:
     """Copy of ``split`` whose ``train`` keeps ``k`` abnormal images of a draw.
 
+    The source provenance (``source_split_file``, ``source_sha256``) is not
+    known here; ``generate_subsampled_splits`` adds it to
+    ``metadata.abnormal_subsample``.
+
     Raises:
         ValueError: If ``k`` is not a positive integer, the split has fewer
             than ``k`` abnormal training images, or ``draw_order`` rejects it.
