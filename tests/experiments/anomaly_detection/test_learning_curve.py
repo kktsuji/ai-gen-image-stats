@@ -19,6 +19,7 @@ from src.experiments.anomaly_detection.learning_curve import (
     run_learning_curve,
     smallest_k_from,
     validate_config,
+    write_markdown,
 )
 
 KS = [1, 5, 20]
@@ -94,9 +95,12 @@ def _make_campaign(tmp_path: Path, skip=()) -> Path:
                         continue
                     value = means[k] + (0.01 if d else -0.01) + 0.002 * split
                     _write_eval(base / name / "seed0", value, tgt)
-            _write_eval(
-                base / f"{prefix}-kall" / "seed0", means["all"] + 0.002 * split, tgt
-            )
+            if (f"{prefix}-kall", split) not in skip:
+                _write_eval(
+                    base / f"{prefix}-kall" / "seed0",
+                    means["all"] + 0.002 * split,
+                    tgt,
+                )
         _write_eval(
             tmp_path
             / "series"
@@ -140,6 +144,10 @@ class TestValidateConfig:
             (lambda c: c["arms"]["clf"].update(template="rn50-k{k}"), "exactly"),
             (lambda c: c["arms"]["clf"].update(template="k{k}-d{draw}-{x}"), "exactly"),
             (lambda c: c["arms"]["clf"].update(template="k{k"), "not a valid"),
+            (lambda c: c["arms"]["clf"].update(template="a-{}-k{k}-d{draw}"), "plain"),
+            (lambda c: c["arms"]["clf"].update(template="a-{0}-k{k}-d{draw}"), "plain"),
+            (lambda c: c["arms"]["clf"].update(template="k{k!r}-d{draw}"), "plain"),
+            (lambda c: c["arms"]["clf"].update(template="k{k:02d}-d{draw}"), "plain"),
             (lambda c: c["arms"]["clf"].update(full=""), "full"),
             (lambda c: c.update(zero_references={"clf": []}), "not a detector"),
             (lambda c: c.update(zero_references={"maha": []}), "non-empty list"),
@@ -173,22 +181,41 @@ class TestArmValues:
             "a-k1-d1": {0: 0.4, 1: 0.6},
             "a-kall": {0: 0.9},
         }
-        out, notes = arm_values(values, self.ARM, [1], [0, 1])
+        out, notes = arm_values(values, self.ARM, [1], [0, 1], {0, 1})
         assert out[1] == pytest.approx({0: 0.3, 1: 0.5})
         assert out["all"] == {0: 0.9}
-        assert notes == []
+        assert notes == ["A, k=all: split 1 missing"]
 
     def test_incomplete_split_left_out_with_a_note(self):
         values = {"a-k1-d0": {0: 0.2, 1: 0.4}, "a-k1-d1": {0: 0.4}}
-        out, notes = arm_values(values, self.ARM, [1], [0, 1])
+        out, notes = arm_values(values, self.ARM, [1], [0, 1], {0, 1})
         assert out[1] == pytest.approx({0: 0.3})
         assert any("split 1 left out (draws [1] missing)" in n for n in notes)
         assert any("no 'a-kall' runs" in n for n in notes)
 
     def test_no_full_arm(self):
         arm = {**self.ARM, "full": None}
-        out, notes = arm_values({"a-k1-d0": {0: 0.2}}, arm, [1], [0])
+        out, notes = arm_values({"a-k1-d0": {0: 0.2}}, arm, [1], [0], {0})
         assert "all" not in out and notes == []
+
+    def test_split_without_any_draw_is_noted(self):
+        values = {
+            "a-k1-d0": {0: 0.2, 1: 0.4},
+            "a-k1-d1": {0: 0.4, 1: 0.6},
+            "a-k5-d0": {0: 0.5},
+            "a-k5-d1": {0: 0.7},
+            "a-kall": {0: 0.9, 1: 0.9},
+        }
+        out, notes = arm_values(values, self.ARM, [1, 5, 20], [0, 1], {0, 1})
+        assert out[5] == pytest.approx({0: 0.6})
+        assert "A, k=5: split 1 left out (draws [0, 1] missing)" in notes
+        assert "A, k=20: no split has every draw finished" in notes
+        assert 20 not in out
+
+    def test_splits_outside_expected_are_ignored(self):
+        values = {"a-k1-d0": {0: 0.2, 7: 0.9}, "a-kall": {0: 0.9, 7: 0.9}}
+        out, _ = arm_values(values, self.ARM, [1], [0], {0})
+        assert out[1] == {0: 0.2} and out["all"] == {0: 0.9}
 
 
 @pytest.mark.unit
@@ -307,6 +334,46 @@ class TestRunLearningCurve:
         with pytest.raises(ValueError, match="has changed"):
             run_learning_curve(campaign)
 
+    def test_split_missing_everywhere_in_one_arm_is_noted(self, tmp_path):
+        skip = {(f"ad-maha-k20-d{d}", 3) for d in DRAWS} | {("ad-maha-kall", 3)}
+        campaign = _make_campaign(tmp_path, skip=skip)
+        run_learning_curve(campaign)
+        md = (campaign / "reports" / "learning_curve.md").read_text()
+        assert "Mahalanobis, k=20: split 3 left out (draws [0, 1] missing)" in md
+        assert "Mahalanobis, k=all: split 3 missing" in md
+
+    def test_chance_missing_split_is_noted(self, tmp_path):
+        skip = {(f"ad-maha-k{k}-d{d}", 3) for k in KS for d in DRAWS}
+        skip.add(("ad-maha-kall", 3))
+        campaign = _make_campaign(tmp_path, skip=skip)
+        run_learning_curve(campaign)
+        md = (campaign / "reports" / "learning_curve.md").read_text()
+        assert "chance: split 3 has no finished detector run" in md
+
+    def _add_checkpoint(self, tmp_path, campaign, experiment, split=0):
+        ckpt = tmp_path / f"{experiment}.pth"
+        ckpt.write_bytes(b"weights")
+        reports = (
+            campaign / "runs" / f"split{split}" / "ad-k" / experiment / "seed0"
+        ) / "reports"
+        if not (reports / "evaluation.json").exists():
+            _write_eval(reports.parent, 0.5)
+        ev = json.loads((reports / "evaluation.json").read_text())
+        ev["checkpoint_sha256"] = hashlib.sha256(b"weights").hexdigest()
+        ev["checkpoint"] = str(ckpt)
+        (reports / "evaluation.json").write_text(json.dumps(ev))
+        return ckpt
+
+    def test_checkpoint_check_covers_only_the_arm_runs(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        other = self._add_checkpoint(tmp_path, campaign, "ad-unrelated")
+        used = self._add_checkpoint(tmp_path, campaign, "ad-maha-k5-d0")
+        other.write_bytes(b"retrained")
+        run_learning_curve(campaign)  # an unrelated run does not block
+        used.write_bytes(b"retrained")
+        with pytest.raises(ValueError, match="has changed"):
+            run_learning_curve(campaign)
+
     def test_errors(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             run_learning_curve(tmp_path)
@@ -321,3 +388,24 @@ class TestRunLearningCurve:
         (campaign / "configs" / "learning_curve.yaml").write_text(yaml.safe_dump(cfg))
         with pytest.raises(ValueError, match="No finished runs for arm 'clf'"):
             run_learning_curve(campaign)
+
+
+@pytest.mark.unit
+class TestChanceLabel:
+    @pytest.mark.parametrize(
+        "metric,label",
+        [("pr_auc", "mean abnormal fraction"), ("roc_auc", "0.5 for ROC-AUC")],
+    )
+    def test_label_follows_the_metric(self, tmp_path, metric, label):
+        cfg = {**_cfg(), "metric": metric}
+        path = tmp_path / "lc.md"
+        write_markdown(
+            path,
+            cfg,
+            curve_table(cfg["arms"], {"clf": {}, "maha": {}}, {}, KS),
+            pd.DataFrame(),
+            {},
+            {0: 0.5},
+            [],
+        )
+        assert f"Chance level ({label}" in path.read_text()

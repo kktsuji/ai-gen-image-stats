@@ -14,8 +14,9 @@ Pre-specified test families, each BH-corrected separately:
 
 - ``vs_classifier``: each detector at each ``k`` (and ``all``) against the
   classifier arm at the same ``k``, paired by split.
-- ``vs_chance``: each arm at each ``k`` against the per-split chance level of
-  PR-AUC (the abnormal fraction of the test fold), as in ``compare``.
+- ``vs_chance``: each arm at each ``k`` against the per-split chance level, as
+  in ``compare`` (the abnormal fraction of the test fold for ``pr_auc``, 0.5
+  for ``roc_auc``; skipped for other metrics).
 
 Descriptive criteria (fixed in the config before running):
 
@@ -40,7 +41,7 @@ import logging
 import math
 import string
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Collection, Dict, List, Optional, Sequence, Tuple, Union
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -64,6 +65,11 @@ logger = logging.getLogger(__name__)
 
 CONFIG_FILE = Path("configs") / "learning_curve.yaml"
 FULL = "all"  # the k label of the unsubsampled arm
+# What chance_per_split returns per metric (other metrics: no chance level).
+CHANCE_LABELS = {
+    "pr_auc": "mean abnormal fraction of the test folds",
+    "roc_auc": "0.5 for ROC-AUC",
+}
 K = Union[int, str]
 
 
@@ -151,9 +157,26 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         _non_empty_str(arm["family"], f"{where}.family")
         template = _non_empty_str(arm["template"], f"{where}.template")
         try:
-            fields = {f for _, f, _, _ in string.Formatter().parse(template) if f}
+            parsed = list(string.Formatter().parse(template))
         except ValueError as e:
             raise ValueError(f"{where}.template is not a valid template: {e}") from e
+        fields = set()
+        for _, field, spec, conversion in parsed:
+            if field is None:
+                continue
+            # Positional ({}, {0}), attribute or format-spec fields would fail
+            # (or misname runs) only later, when the names are formatted.
+            if not field.isidentifier() or spec or conversion:
+                raise ValueError(
+                    f"{where}.template: only the plain fields {{k}} and {{draw}} "
+                    f"are allowed, got '{{{field}}}'"
+                    + (
+                        f" with '{conversion or ''}{spec or ''}'"
+                        if spec or conversion
+                        else ""
+                    )
+                )
+            fields.add(field)
         if fields != {"k", "draw"}:
             raise ValueError(
                 f"{where}.template must use exactly the fields {{k}} and {{draw}}, "
@@ -209,41 +232,59 @@ def validate_config(cfg: Dict[str, Any]) -> None:
 # --------------------------------------------------------------------------
 
 
+def arm_experiments(
+    arm: Dict[str, Any], ks: Sequence[int], draws: Sequence[int]
+) -> List[str]:
+    """Every experiment (condition folder) name an arm expects."""
+    names = [arm["template"].format(k=k, draw=d) for k in ks for d in draws]
+    return names + ([arm["full"]] if arm["full"] is not None else [])
+
+
 def arm_values(
     values: Dict[str, SplitValues],
     arm: Dict[str, Any],
     ks: Sequence[int],
     draws: Sequence[int],
+    expected: Collection[int],
 ) -> Tuple[Dict[K, SplitValues], List[str]]:
     """Draw-averaged value per split for each ``k`` of one arm.
 
     Args:
         values: Seed-averaged metric per (experiment, split) of the arm's family.
+        expected: The splits every point should have (those seen in any arm);
+            each one missing from a point is noted.
 
     Returns:
         ``{k: {split: value}}`` (``k`` = ``"all"`` for the ``full`` run) and a
-        list of notes on splits left out because a draw had not finished.
+        list of notes on every split left out of a point, and on points
+        without any run.
     """
     out: Dict[K, SplitValues] = {}
     notes: List[str] = []
     for k in ks:
         per_draw = [values.get(arm["template"].format(k=k, draw=d), {}) for d in draws]
-        splits = set().union(*per_draw)
-        complete = {s for s in splits if all(s in pd_ for pd_ in per_draw)}
-        for s in sorted(splits - complete):
-            missing = [d for d, pd_ in zip(draws, per_draw) if s not in pd_]
-            notes.append(
-                f"{arm['label']}, k={k}: split {s} left out (draws {missing} missing)"
-            )
-        if complete:
+        complete = {s for s in expected if all(s in pd_ for pd_ in per_draw)}
+        if not complete:
+            notes.append(f"{arm['label']}, k={k}: no split has every draw finished")
+        else:
+            for s in sorted(set(expected) - complete):
+                missing = [d for d, pd_ in zip(draws, per_draw) if s not in pd_]
+                notes.append(
+                    f"{arm['label']}, k={k}: split {s} left out "
+                    f"(draws {missing} missing)"
+                )
             out[k] = {
                 s: float(np.mean([pd_[s] for pd_ in per_draw]))
                 for s in sorted(complete)
             }
-    if arm["full"] is not None and arm["full"] in values:
-        out[FULL] = dict(values[arm["full"]])
-    elif arm["full"] is not None:
-        notes.append(f"{arm['label']}, k={FULL}: no '{arm['full']}' runs")
+    if arm["full"] is not None:
+        full = {s: v for s, v in values.get(arm["full"], {}).items() if s in expected}
+        if not full:
+            notes.append(f"{arm['label']}, k={FULL}: no '{arm['full']}' runs")
+        else:
+            out[FULL] = full
+            for s in sorted(set(expected) - set(full)):
+                notes.append(f"{arm['label']}, k={FULL}: split {s} missing")
     return out, notes
 
 
@@ -388,7 +429,8 @@ def write_markdown(
     lines = [f"# Learning curve over k ({metric})", ""]
     if chance:
         lines += [
-            f"Chance level (mean abnormal fraction of the test folds): {_fmt(float(np.mean(list(chance.values()))))}",
+            f"Chance level ({CHANCE_LABELS.get(metric, 'per split')}): "
+            f"{_fmt(float(np.mean(list(chance.values()))))}",
             "",
         ]
     lines += [
@@ -509,10 +551,24 @@ def run_learning_curve(campaign_dir: Path) -> Path:
 
     curves: Dict[str, Dict[K, SplitValues]] = {}
     notes: List[str] = []
+    arm_runs: Dict[str, Dict[str, SplitValues]] = {}
     for name, arm in cfg["arms"].items():
-        check_checkpoints(runs_base, arm["family"])
-        values = load_split_values(runs_base, arm["family"], metric)
-        curves[name], arm_notes = arm_values(values, arm, cfg["ks"], cfg["draws"])
+        # Only the runs this arm uses: others in the family do not block it.
+        check_checkpoints(
+            runs_base, arm["family"], set(arm_experiments(arm, cfg["ks"], cfg["draws"]))
+        )
+        arm_runs[name] = load_split_values(runs_base, arm["family"], metric)
+    # A split seen in any experiment of any arm is expected in every point.
+    expected = {
+        s
+        for name, arm in cfg["arms"].items()
+        for exp in arm_experiments(arm, cfg["ks"], cfg["draws"])
+        for s in arm_runs[name].get(exp, {})
+    }
+    for name, arm in cfg["arms"].items():
+        curves[name], arm_notes = arm_values(
+            arm_runs[name], arm, cfg["ks"], cfg["draws"], expected
+        )
         notes += arm_notes
         if not curves[name]:
             raise ValueError(f"No finished runs for arm '{name}' under {runs_base}")
@@ -530,10 +586,20 @@ def run_learning_curve(campaign_dir: Path) -> Path:
                 )
             zero.setdefault(name, []).append((ref["label"], values[ref["experiment"]]))
 
-    detector_family = next(
-        a["family"] for n, a in cfg["arms"].items() if n != cfg["classifier_arm"]
-    )
-    chance = chance_per_split(runs_base, detector_family, metric)
+    # The detectors' predictions hold the test targets (the classifier's use
+    # another format); the test folds are shared, so any detector gives a split.
+    chance: SplitValues = {}
+    for family in sorted(
+        {a["family"] for n, a in cfg["arms"].items() if n != cfg["classifier_arm"]}
+    ):
+        for split, value in chance_per_split(runs_base, family, metric).items():
+            chance.setdefault(split, value)
+    if metric in CHANCE_LABELS:
+        for split in sorted(expected - set(chance)):
+            notes.append(
+                f"chance: split {split} has no finished detector run, so it is "
+                "left out of every vs_chance comparison"
+            )
     table = curve_table(cfg["arms"], curves, zero, cfg["ks"])
     comparisons = build_comparisons(cfg, curves, chance)
     criteria = evaluate_criteria(cfg, curves)
