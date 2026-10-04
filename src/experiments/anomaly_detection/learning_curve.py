@@ -56,7 +56,7 @@ from src.experiments.anomaly_detection.compare import (
     load_split_values,
     paired_row,
 )
-from src.experiments.classifier.cross_split_report import _t_ci
+from src.experiments.classifier.cross_split_report import t_ci
 from src.utils.config import load_config
 
 matplotlib.use("Agg")
@@ -169,12 +169,9 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             if not field.isidentifier() or spec or conversion:
                 raise ValueError(
                     f"{where}.template: only the plain fields {{k}} and {{draw}} "
-                    f"are allowed, got '{{{field}}}'"
-                    + (
-                        f" with '{conversion or ''}{spec or ''}'"
-                        if spec or conversion
-                        else ""
-                    )
+                    f"are allowed, got '{{{field}"
+                    f"{'!' + conversion if conversion else ''}"
+                    f"{':' + spec if spec else ''}}}'"
                 )
             fields.add(field)
         if fields != {"k", "draw"}:
@@ -312,7 +309,7 @@ def curve_table(
         points += [(k, "", curves[name][k]) for k in k_order(ks) if k in curves[name]]
         for k, ref_label, vals in points:
             arr = np.array([vals[s] for s in sorted(vals)], dtype=np.float64)
-            mean, lo, hi = _t_ci(arr, 0.95)
+            mean, lo, hi = t_ci(arr, 0.95)
             rows.append(
                 {
                     "arm": name,

@@ -424,6 +424,15 @@ class TestChanceLabel:
 
 
 @pytest.mark.unit
+class TestTemplateErrorMessage:
+    def test_shows_the_field_as_written(self):
+        cfg = _cfg()
+        cfg["arms"]["clf"]["template"] = "k{k!r:>3}-d{draw}"
+        with pytest.raises(ValueError, match=r"got '\{k!r:>3\}'"):
+            validate_config(cfg)
+
+
+@pytest.mark.unit
 class TestPlotZeroTick:
     def _ticks(self, tmp_path, zero, monkeypatch):
         from src.experiments.anomaly_detection import learning_curve as lc
