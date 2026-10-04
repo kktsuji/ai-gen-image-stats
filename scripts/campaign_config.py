@@ -31,6 +31,10 @@ sets) are resolved against the campaign folder only at run time, so the stored
 per-run configs stay portable when the series is moved. A ``path_keys`` value
 may contain ``{split}``, which is replaced by the split index of each run (e.g.
 a per-split checkpoint ``runs/split{split}/clf/x/seed0/checkpoints/best.pth``).
+The ``splits.template`` must contain ``{split}`` and may also name axes, e.g.
+``../shared/splits-kctc/cv_binary_ad_split{split}_k{k}_d{draw}.json``: each
+axis field is replaced by the condition's value name on that axis, so one sweep
+can read a different split file per condition.
 
 A campaign may hold several sweep files named ``sweep*.yaml`` (e.g. a training
 stage ``sweep-train.yaml`` and a stage that uses its outputs, ``sweep.yaml``);
@@ -131,6 +135,26 @@ def _set_dotted(config: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
     return merge_configs(config, dot_notation_to_dict(key, value))
 
 
+def _format_fields(template: str, name: str) -> set:
+    """Field names of a ``str.format`` template; only plain ``{name}`` fields."""
+    fields = set()
+    try:
+        parsed = list(string.Formatter().parse(template))
+    except ValueError as e:
+        raise ValueError(f"{name} is not a valid template: {e}") from e
+    for _, field, spec, conversion in parsed:
+        if field is None:
+            continue
+        if not field.isidentifier() or spec or conversion:
+            raise ValueError(
+                f"{name}: only plain named fields like '{{split}}' are allowed, "
+                f"got '{{{field}{'!' + conversion if conversion else ''}"
+                f"{':' + spec if spec else ''}}}'"
+            )
+        fields.add(field)
+    return fields
+
+
 def validate_sweep(sweep: Dict[str, Any], base: Dict[str, Any]) -> None:
     """Validate a sweep definition against its base config.
 
@@ -152,7 +176,8 @@ def validate_sweep(sweep: Dict[str, Any], base: Dict[str, Any]) -> None:
     template = _non_empty_str(
         _require(splits, "template", "sweep.splits"), "sweep.splits.template"
     )
-    if "{split}" not in template:
+    template_fields = _format_fields(template, "sweep.splits.template")
+    if "split" not in template_fields:
         raise ValueError("sweep.splits.template must contain '{split}'")
     _int_list(_require(splits, "indices", "sweep.splits"), "sweep.splits.indices")
 
@@ -172,6 +197,9 @@ def validate_sweep(sweep: Dict[str, Any], base: Dict[str, Any]) -> None:
     if not isinstance(axes, dict) or not axes:
         raise ValueError("sweep.axes must be a non-empty mapping")
     driver_keys = {split_key, seed_key, "output.base_dir"}
+    if "split" in axes:
+        # 'split' is the split-index field of splits.template.
+        raise ValueError("sweep.axes: 'split' is reserved and cannot be an axis name")
     for axis, values in axes.items():
         if not isinstance(values, dict) or not values:
             raise ValueError(f"sweep.axes.{axis} must be a non-empty mapping")
@@ -185,6 +213,13 @@ def validate_sweep(sweep: Dict[str, Any], base: Dict[str, Any]) -> None:
                 if key in driver_keys:
                     raise ValueError(f"{where}: '{key}' is set by the driver")
                 validate_override_keys(base, dot_notation_to_dict(key, val))
+
+    unknown = template_fields - {"split"} - set(axes)
+    if unknown:
+        raise ValueError(
+            f"sweep.splits.template fields {sorted(unknown)} are neither 'split' "
+            f"nor an axis ({sorted(axes)})"
+        )
 
     name_template = _non_empty_str(sweep["name_template"], "sweep.name_template")
     fields = {f for _, f, _, _ in string.Formatter().parse(name_template) if f}
@@ -212,6 +247,9 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
         if name in names:
             raise ValueError(f"Duplicate condition name '{name}'")
         names.add(name)
+        value_names = {
+            axis: value_name for axis, (value_name, _) in zip(axis_names, combo)
+        }
         condition = copy.deepcopy(base)
         for _, overrides in combo:
             for key, val in overrides.items():
@@ -221,7 +259,7 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
                 cfg = _set_dotted(
                     condition,
                     sweep["splits"]["key"],
-                    sweep["splits"]["template"].format(split=split),
+                    sweep["splits"]["template"].format(split=split, **value_names),
                 )
                 cfg = _set_dotted(cfg, sweep["seeds"]["key"], seed)
                 for key in sweep["path_keys"]:
