@@ -1,0 +1,57 @@
+# One-class anomaly detection: adapt the backbone on normal images only
+# (mode: adapt, Mean-Shifted Contrastive; Reiss & Hoshen, AAAI 2023).
+# No abnormal image and no label is used. The result
+# (<output.base_dir>/checkpoints/final_model.pth) is used by a run-mode config
+# through feature_extraction.checkpoint.
+#
+# Run: python -m src.main configs/examples/anomaly-detection-adapt.yaml
+experiment: anomaly_detection
+mode: adapt
+
+compute:
+  device: cuda
+  seed: 0
+
+data:
+  split_file: "work/anomaly-detection/shared/splits/cv_binary_ad_split0.json"
+  normal_pool: suspicious # all | suspicious: which training normals to adapt on
+
+feature_extraction:
+  model: resnet50
+  image_size: 256 # same preprocessing as the classifier runs
+  crop_size: 224
+  batch_size: 64 # computing the center (no gradient); training uses adaptation.batch_size
+  num_workers: 4
+  cache_dir: null # unused in adapt mode
+  checkpoint: null # must be null: adaptation starts from the ImageNet weights
+
+adaptation:
+  method: msc
+  trainable_layers: ["layer4*"] # parameter-name patterns (fnmatch); fc.* never trains
+  # BatchNorm running statistics of the layers NOT trained: true re-estimates
+  # them on the normal images (as the classifier training does), false keeps
+  # the ImageNet statistics
+  update_frozen_bn_stats: true
+  epochs: 300 # ~1500 optimizer steps for ~370 normals at batch 64
+  batch_size: 64
+  learning_rate: 1.0e-5 # SGD, as in the MSC paper
+  momentum: 0.9
+  weight_decay: 5.0e-5
+  temperature: 0.25
+  augmentation: # geometry and blur only, never color (stains carry information)
+    crop_scale: [0.5, 1.0]
+    horizontal_flip: true
+    vertical_flip: true
+    rotate90: true
+    blur_probability: 0.2
+
+output:
+  base_dir: outputs/anomaly-detection-adapt
+  subdirs:
+    logs: logs
+    checkpoints: checkpoints
+    reports: reports
+
+logging:
+  console_level: INFO
+  file_level: INFO

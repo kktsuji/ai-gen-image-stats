@@ -1237,9 +1237,11 @@ def setup_experiment_sample_selection(config: Dict[str, Any]) -> None:
 def setup_experiment_anomaly_detection(config: Dict[str, Any]) -> None:
     """Setup and run the one-class anomaly detection experiment.
 
-    Fits a detector on normal images only (frozen backbone features) and scores
-    the held-out binary test fold of an extended split file, writing a
-    classifier-compatible evaluation.json.
+    ``mode: run`` fits a detector on normal images only (frozen backbone
+    features) and scores the held-out binary test fold of an extended split
+    file, writing a classifier-compatible evaluation.json. ``mode: adapt``
+    adapts the backbone on the normal training images (Mean-Shifted
+    Contrastive) and saves a checkpoint for ``feature_extraction.checkpoint``.
 
     Args:
         config: Configuration dictionary with data, feature_extraction, method,
@@ -1257,7 +1259,13 @@ def setup_experiment_anomaly_detection(config: Dict[str, Any]) -> None:
     validate_anomaly_detection_config(config)
 
     device, _ = setup_experiment_common(config, "ANOMALY DETECTION EXPERIMENT STARTED")
-    run_anomaly_detection(config, device)
+    if config.get("mode") == "adapt":
+        # Representation adaptation on normal images (Mean-Shifted Contrastive).
+        from src.experiments.anomaly_detection.adapt import run_adaptation
+
+        run_adaptation(config, device)
+    else:
+        run_anomaly_detection(config, device)
 
     logger.info("")
     logger.info("Anomaly detection completed successfully!")

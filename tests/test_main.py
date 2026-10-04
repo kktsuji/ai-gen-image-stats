@@ -747,6 +747,27 @@ class TestExperimentDispatcher:
         mock_common.assert_called_once()
         mock_run.assert_called_once_with(config, "cpu")
 
+    @pytest.mark.component
+    def test_setup_anomaly_detection_adapt_mode_runs_adaptation(self, tmp_path):
+        """mode: adapt runs the adaptation, not the detector."""
+        from src.main import setup_experiment_anomaly_detection
+
+        config = {"experiment": "anomaly_detection", "mode": "adapt"}
+        with (
+            patch("src.experiments.anomaly_detection.config.validate_config"),
+            patch("src.main.setup_experiment_common", return_value=("cpu", tmp_path)),
+            patch(
+                "src.experiments.anomaly_detection.runner.run_anomaly_detection"
+            ) as mock_run,
+            patch(
+                "src.experiments.anomaly_detection.adapt.run_adaptation"
+            ) as mock_adapt,
+        ):
+            setup_experiment_anomaly_detection(config)
+
+        mock_adapt.assert_called_once_with(config, "cpu")
+        mock_run.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Shared test helpers (used by multiple test classes below)

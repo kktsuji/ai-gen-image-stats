@@ -17,6 +17,8 @@ from src.utils.config import (
 VALID_FEATURE_MODELS = ["inceptionv3", "resnet50"]
 VALID_NORMAL_POOLS = ["all", "suspicious"]
 VALID_METHODS = ["knn", "mahalanobis", "patchcore"]
+VALID_MODES = ["run", "adapt"]
+VALID_ADAPTATION_METHODS = ["msc"]
 VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 # Intermediate layers that PatchCore may tap, per backbone.
@@ -67,12 +69,24 @@ def validate_config(config: Dict[str, Any]) -> None:
         KeyError: If required fields are missing.
         ValueError: If values are invalid.
     """
-    validate_experiment_section(config, "anomaly_detection", ["run"])
+    validate_experiment_section(config, "anomaly_detection", VALID_MODES)
     validate_compute_section(config)
-    validate_output_section(config, required_subdirs=["logs", "reports"])
     _validate_logging_section(config)
     _validate_data_section(config)
     _validate_feature_extraction_section(config)
+    if config["mode"] == "adapt":
+        # Representation adaptation (adapt.py): no detector, no threshold.
+        validate_output_section(
+            config, required_subdirs=["logs", "checkpoints", "reports"]
+        )
+        if config["feature_extraction"]["checkpoint"] is not None:
+            raise ValueError(
+                "feature_extraction.checkpoint must be null in adapt mode "
+                "(adaptation starts from the ImageNet weights)"
+            )
+        _validate_adaptation_section(config)
+        return
+    validate_output_section(config, required_subdirs=["logs", "reports"])
     _validate_method_section(config)
     _validate_threshold_section(config)
 
@@ -177,3 +191,63 @@ def _validate_threshold_section(config: Dict[str, Any]) -> None:
     pct = _require(threshold, "normal_percentile", "threshold")
     if isinstance(pct, bool) or not isinstance(pct, (int, float)) or not 0 < pct < 100:
         raise ValueError("threshold.normal_percentile must be in (0, 100)")
+
+
+def _is_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
+def _validate_adaptation_section(config: Dict[str, Any]) -> None:
+    """``adaptation`` (mode adapt): Mean-Shifted Contrastive training settings."""
+    ad = _require_section(config, "adaptation")
+    method = _require(ad, "method", "adaptation")
+    if method not in VALID_ADAPTATION_METHODS:
+        raise ValueError(
+            f"Invalid adaptation.method: '{method}'. "
+            f"Must be one of {VALID_ADAPTATION_METHODS}"
+        )
+    layers = _require(ad, "trainable_layers", "adaptation")
+    if (
+        not isinstance(layers, list)
+        or not layers
+        or not all(isinstance(x, str) and x for x in layers)
+    ):
+        raise ValueError(
+            "adaptation.trainable_layers must be a non-empty list of name patterns"
+        )
+    _check_positive_int(_require(ad, "epochs", "adaptation"), "adaptation.epochs")
+    batch_size = _require(ad, "batch_size", "adaptation")
+    _check_positive_int(batch_size, "adaptation.batch_size")
+    if batch_size < 2:
+        raise ValueError("adaptation.batch_size must be at least 2 (contrastive)")
+    for key in ("learning_rate", "temperature"):
+        value = _require(ad, key, "adaptation")
+        if not _is_number(value) or value <= 0:
+            raise ValueError(f"adaptation.{key} must be a positive number")
+    if not isinstance(_require(ad, "update_frozen_bn_stats", "adaptation"), bool):
+        raise ValueError("adaptation.update_frozen_bn_stats must be a boolean")
+    momentum = _require(ad, "momentum", "adaptation")
+    if not _is_number(momentum) or not 0 <= momentum < 1:
+        raise ValueError("adaptation.momentum must be in [0, 1)")
+    weight_decay = _require(ad, "weight_decay", "adaptation")
+    if not _is_number(weight_decay) or weight_decay < 0:
+        raise ValueError("adaptation.weight_decay must be a non-negative number")
+
+    aug = _require_section(ad, "augmentation", "adaptation")
+    scale = _require(aug, "crop_scale", "adaptation.augmentation")
+    if (
+        not isinstance(scale, list)
+        or len(scale) != 2
+        or not all(_is_number(x) for x in scale)
+        or not 0 < scale[0] <= scale[1] <= 1
+    ):
+        raise ValueError(
+            "adaptation.augmentation.crop_scale must be [min, max] "
+            "with 0 < min <= max <= 1"
+        )
+    for key in ("horizontal_flip", "vertical_flip", "rotate90"):
+        if not isinstance(_require(aug, key, "adaptation.augmentation"), bool):
+            raise ValueError(f"adaptation.augmentation.{key} must be a boolean")
+    blur = _require(aug, "blur_probability", "adaptation.augmentation")
+    if not _is_number(blur) or not 0 <= blur <= 1:
+        raise ValueError("adaptation.augmentation.blur_probability must be in [0, 1]")
