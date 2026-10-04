@@ -224,6 +224,8 @@ def _validate_adaptation_section(config: Dict[str, Any]) -> None:
         value = _require(ad, key, "adaptation")
         if not _is_number(value) or value <= 0:
             raise ValueError(f"adaptation.{key} must be a positive number")
+    if not isinstance(_require(ad, "update_frozen_bn_stats", "adaptation"), bool):
+        raise ValueError("adaptation.update_frozen_bn_stats must be a boolean")
     momentum = _require(ad, "momentum", "adaptation")
     if not _is_number(momentum) or not 0 <= momentum < 1:
         raise ValueError("adaptation.momentum must be in [0, 1)")

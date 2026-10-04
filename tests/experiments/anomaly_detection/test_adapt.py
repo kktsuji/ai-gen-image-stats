@@ -70,7 +70,7 @@ class TestHelpers:
         assert all(p.requires_grad for p in model.layer3.parameters())
 
     def test_set_trainable_requires_a_match(self):
-        with pytest.raises(ValueError, match="No parameter matches"):
+        with pytest.raises(ValueError, match="No backbone parameter matches"):
             set_trainable(TinyBackbone(), ["layer9*"])
 
     def test_rotate90_keeps_size(self):
@@ -112,6 +112,7 @@ def _adapt_config(split_file, tmp_path, pool="all"):
         "adaptation": {
             "method": "msc",
             "trainable_layers": ["layer3*"],
+            "update_frozen_bn_stats": True,
             "epochs": 2,
             "batch_size": 4,
             "learning_rate": 0.05,
@@ -154,6 +155,7 @@ class TestAdaptConfig:
             ("adaptation",),
             ("adaptation", "method"),
             ("adaptation", "trainable_layers"),
+            ("adaptation", "update_frozen_bn_stats"),
             ("adaptation", "temperature"),
             ("adaptation", "augmentation"),
             ("adaptation", "augmentation", "crop_scale"),
@@ -182,6 +184,7 @@ class TestAdaptConfig:
             ("temperature", -1),
             ("momentum", 1.0),
             ("weight_decay", -0.1),
+            ("update_frozen_bn_stats", "no"),
         ],
     )
     def test_invalid_adaptation(self, tmp_path, key, value):
@@ -268,3 +271,75 @@ class TestRunAdaptation:
         config["adaptation"]["batch_size"] = 4  # 6 normals < 2 full batches
         with pytest.raises(ValueError, match="too few"):
             run_adaptation(config, "cpu")
+
+
+class _BNBackbone(torch.nn.Module):
+    """Tiny backbone with BatchNorm in a frozen and in a trainable block."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        torch.manual_seed(0)
+        self.layer2 = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 4, 3, stride=2, padding=1), torch.nn.BatchNorm2d(4)
+        )
+        self.layer3 = torch.nn.Sequential(
+            torch.nn.Conv2d(4, 6, 3, stride=2, padding=1), torch.nn.BatchNorm2d(6)
+        )
+        self.fc = torch.nn.Linear(6, 1)
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layer3(self.layer2(x)).mean(dim=(2, 3))
+
+
+@pytest.mark.unit
+class TestReviewFixes:
+    def test_head_never_trainable(self):
+        model = _BNBackbone()
+        set_trainable(model, ["*"])
+        assert not any(p.requires_grad for p in model.fc.parameters())
+        assert all(p.requires_grad for p in model.layer3.parameters())
+
+    def test_head_only_pattern_rejected(self):
+        with pytest.raises(ValueError, match="not used by extract_features"):
+            set_trainable(_BNBackbone(), ["fc*"])
+
+    def test_freeze_untrained_batchnorm(self):
+        from src.experiments.anomaly_detection.adapt import freeze_untrained_batchnorm
+
+        model = _BNBackbone()
+        set_trainable(model, ["layer3*"])
+        model.train()
+        assert freeze_untrained_batchnorm(model) == 1
+        assert not model.layer2[1].training
+        assert model.layer3[1].training
+
+
+@pytest.mark.component
+class TestBatchNormStats:
+    @pytest.mark.parametrize("update", [True, False])
+    def test_frozen_bn_stats_follow_the_setting(
+        self, ad_split_file, tmp_path, monkeypatch, update
+    ):
+        model = _BNBackbone().eval()
+        monkeypatch.setattr(
+            "src.experiments.anomaly_detection.adapt.create_feature_model",
+            lambda name, device: model,
+        )
+        before = copy.deepcopy(model.state_dict())
+        config = _adapt_config(ad_split_file, tmp_path)
+        config["adaptation"]["update_frozen_bn_stats"] = update
+        run_adaptation(config, "cpu")
+        after = model.state_dict()
+        frozen_same = torch.equal(
+            before["layer2.1.running_mean"], after["layer2.1.running_mean"]
+        )
+        assert frozen_same is (not update)
+        # The frozen block's weights never change; the trained block's stats do.
+        assert torch.equal(before["layer2.0.weight"], after["layer2.0.weight"])
+        assert not torch.equal(
+            before["layer3.1.running_mean"], after["layer3.1.running_mean"]
+        )
+        summary = json.loads(
+            (tmp_path / "out" / "reports" / "adaptation.json").read_text()
+        )
+        assert summary["update_frozen_bn_stats"] is update

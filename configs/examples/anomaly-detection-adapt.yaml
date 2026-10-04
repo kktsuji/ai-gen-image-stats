@@ -27,7 +27,11 @@ feature_extraction:
 
 adaptation:
   method: msc
-  trainable_layers: ["layer4*"] # parameter-name patterns (fnmatch)
+  trainable_layers: ["layer4*"] # parameter-name patterns (fnmatch); fc.* never trains
+  # BatchNorm running statistics of the layers NOT trained: true re-estimates
+  # them on the normal images (as the classifier training does), false keeps
+  # the ImageNet statistics
+  update_frozen_bn_stats: true
   epochs: 300 # ~1500 optimizer steps for ~370 normals at batch 64
   batch_size: 64
   learning_rate: 1.0e-5 # SGD, as in the MSC paper

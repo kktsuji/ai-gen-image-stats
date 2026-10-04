@@ -16,7 +16,13 @@ MSC, as implemented here:
    contrastive loss (temperature ``tau``) pulls the two views of each image
    together and pushes other images apart, in the mean-shifted space.
 
-Only the parameters matching ``adaptation.trainable_layers`` are updated. The
+Only the parameters matching ``adaptation.trainable_layers`` are updated (the
+classification head ``fc.*``, unused by ``extract_features``, never is).
+BatchNorm running statistics are a separate choice,
+``adaptation.update_frozen_bn_stats``: ``true`` lets every BatchNorm layer
+re-estimate them on the normal images during training (as the classifier
+training of the other campaigns does), ``false`` keeps the layers without
+trainable parameters in eval mode so they stay exactly as initialised. The
 result is saved in the classifier checkpoint format
 (``checkpoints/final_model.pth``, written last and atomically), so the
 ``run`` mode can use it through ``feature_extraction.checkpoint``.
@@ -39,7 +45,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-from src.experiments.anomaly_detection.features import PathListDataset
+from src.experiments.anomaly_detection.features import HEAD_PREFIX, PathListDataset
 from src.experiments.anomaly_detection.runner import (
     load_extended_split,
     select_partitions,
@@ -131,16 +137,40 @@ def msc_loss(
 def set_trainable(model: torch.nn.Module, patterns: Sequence[str]) -> int:
     """Train only parameters whose name matches a pattern; returns their count.
 
+    The classification head (``fc.*``) is never trained: ``extract_features``
+    does not use it, so it would get no gradient.
+
     Raises:
-        ValueError: If no parameter matches.
+        ValueError: If no backbone parameter matches.
     """
     n_trainable = 0
     for name, param in model.named_parameters():
-        param.requires_grad = any(fnmatch.fnmatch(name, p) for p in patterns)
+        param.requires_grad = not name.startswith(HEAD_PREFIX) and any(
+            fnmatch.fnmatch(name, p) for p in patterns
+        )
         n_trainable += param.numel() if param.requires_grad else 0
     if n_trainable == 0:
-        raise ValueError(f"No parameter matches adaptation.trainable_layers {patterns}")
+        raise ValueError(
+            f"No backbone parameter matches adaptation.trainable_layers {patterns} "
+            f"(the head '{HEAD_PREFIX}*' is not used by extract_features)"
+        )
     return n_trainable
+
+
+def freeze_untrained_batchnorm(model: torch.nn.Module) -> int:
+    """Put BatchNorm layers without trainable parameters in eval mode.
+
+    Call after ``model.train()``: their running statistics then stay fixed.
+    Returns the number of layers frozen this way.
+    """
+    frozen = 0
+    for module in model.modules():
+        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm) and not any(
+            p.requires_grad for p in module.parameters()
+        ):
+            module.eval()
+            frozen += 1
+    return frozen
 
 
 @torch.no_grad()
@@ -209,6 +239,8 @@ def run_adaptation(config: Dict[str, Any], device: str) -> Path:
     start = time.time()
     for epoch in range(1, ad["epochs"] + 1):
         model.train()
+        if not ad["update_frozen_bn_stats"]:
+            freeze_untrained_batchnorm(model)
         losses = []
         for view1, view2 in train_loader:
             f1 = model.extract_features(view1.to(device))  # type: ignore[operator]
@@ -239,6 +271,7 @@ def run_adaptation(config: Dict[str, Any], device: str) -> Path:
         "epochs": ad["epochs"],
         "steps": int(sum(h["steps"] for h in history)),
         "trainable_parameters": n_trainable,
+        "update_frozen_bn_stats": ad["update_frozen_bn_stats"],
         "first_loss": history[0]["loss"],
         "final_loss": history[-1]["loss"],
         "split_file": config["data"]["split_file"],
