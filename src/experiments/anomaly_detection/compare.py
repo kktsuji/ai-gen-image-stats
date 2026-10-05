@@ -270,7 +270,10 @@ def check_checkpoints(
 
 
 def chance_per_split(
-    runs_base: str, family: str, metric: str = "pr_auc"
+    runs_base: str,
+    family: str,
+    metric: str = "pr_auc",
+    experiments: Optional[Collection[str]] = None,
 ) -> SplitValues:
     """Chance level of ``metric`` per split.
 
@@ -280,6 +283,10 @@ def chance_per_split(
     - ``roc_auc``: 0.5 for every split with a finished run.
     - Any other metric has no defined chance level: returns ``{}``, so the
       vs-chance comparison is skipped.
+
+    Args:
+        experiments: Only read runs of these experiments (condition folders);
+            None reads the whole family.
     """
     paths = _completed(
         sorted(
@@ -293,7 +300,9 @@ def chance_per_split(
         )
         return chance
     for path in paths:
-        split, _ = _split_and_condition(path)
+        split, condition = _split_and_condition(path)
+        if experiments is not None and condition not in experiments:
+            continue
         if split in chance:
             continue
         if metric == "roc_auc":

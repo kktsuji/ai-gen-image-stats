@@ -1,9 +1,12 @@
 """Anomaly Detection - Learning Curve over k Labelled Abnormal Images
 
-Analyses a campaign whose arms are trained on splits keeping only ``k``
-abnormal training images (``abnormal_subsample_split.py``), several random
-draws per ``k``: a classifier, and one-class detectors on that classifier's
-features. Configured by ``<campaign>/configs/learning_curve.yaml``.
+Analyses arms trained on splits keeping only ``k`` abnormal training images
+(``abnormal_subsample_split.py``), several random draws per ``k``: one
+reference arm (e.g. a classifier) and arms compared with it (e.g. one-class
+detectors on that classifier's features, or other training methods). Each arm
+reads its own run tree (``base_dir``, campaign-relative), so a reference
+trained in an earlier campaign is reused as is. Configured by
+``<campaign>/configs/learning_curve.yaml``.
 
 The unit is the split, as in ``compare``: per split, an arm's value at ``k``
 is the mean over the draws, and a split enters only when every draw of that
@@ -12,21 +15,21 @@ one run per split on the unsubsampled split (``full``).
 
 Pre-specified test families, each BH-corrected separately:
 
-- ``vs_classifier``: each detector at each ``k`` (and ``all``) against the
-  classifier arm at the same ``k``, paired by split.
+- ``vs_reference``: each other arm at each ``k`` (and ``all``) against the
+  reference arm at the same ``k``, paired by split.
 - ``vs_chance``: each arm at each ``k`` against the per-split chance level, as
   in ``compare`` (the abnormal fraction of the test fold for ``pr_auc``, 0.5
   for ``roc_auc``; skipped for other metrics).
 
 Descriptive criteria (fixed in the config before running):
 
-- per detector, the smallest ``k`` from which the mean difference to the
-  classifier stays >= ``-criteria.ad_margin`` for that and every larger ``k``;
-- the smallest ``k`` from which the classifier's mean stays >=
-  ``criteria.classifier_target``.
+- per non-reference arm, the smallest ``k`` from which the mean difference to
+  the reference stays >= ``-criteria.margin`` for that and every larger ``k``;
+- per arm, the smallest ``k`` from which its mean stays >= ``criteria.target``.
 
-``zero_references`` add ``k = 0`` points per detector (runs of other trees, e.g.
-frozen ImageNet features): shown in the table and the figure, not tested.
+``zero_references`` add ``k = 0`` points per non-reference arm (runs of other
+trees, e.g. frozen ImageNet features): shown in the table and the figure, not
+tested.
 
 Outputs to ``<campaign>/reports/``: ``learning_curve.csv``,
 ``learning_curve_comparisons.csv``, ``learning_curve.md`` and
@@ -124,10 +127,9 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         "metric",
         "alpha",
         "correction",
-        "runs_base",
         "ks",
         "draws",
-        "classifier_arm",
+        "reference_arm",
         "arms",
         "zero_references",
         "criteria",
@@ -139,7 +141,6 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         raise ValueError(
             "learning_curve.correction must be benjamini-hochberg or bonferroni"
         )
-    _non_empty_str(cfg["runs_base"], "learning_curve.runs_base")
     _int_list(cfg["ks"], "learning_curve.ks", 1)
     _int_list(cfg["draws"], "learning_curve.draws", 0)
 
@@ -147,13 +148,14 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     if not isinstance(arms, dict) or len(arms) < 2:
         raise ValueError(
             "learning_curve.arms must map at least two arm names "
-            "(the classifier and one detector)"
+            "(the reference and one compared with it)"
         )
     for name, arm in arms.items():
         where = f"learning_curve.arms.{name}"
-        for key in ("label", "family", "template", "full"):
+        for key in ("label", "base_dir", "family", "template", "full"):
             _require(arm, key, where)
         _non_empty_str(arm["label"], f"{where}.label")
+        _non_empty_str(arm["base_dir"], f"{where}.base_dir")
         _non_empty_str(arm["family"], f"{where}.family")
         template = _non_empty_str(arm["template"], f"{where}.template")
         try:
@@ -181,9 +183,9 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             )
         if arm["full"] is not None:
             _non_empty_str(arm["full"], f"{where}.full")
-    if cfg["classifier_arm"] not in arms:
+    if cfg["reference_arm"] not in arms:
         raise ValueError(
-            f"learning_curve.classifier_arm '{cfg['classifier_arm']}' is not an arm"
+            f"learning_curve.reference_arm '{cfg['reference_arm']}' is not an arm"
         )
 
     zero = cfg["zero_references"]
@@ -191,12 +193,12 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         raise ValueError(
             "learning_curve.zero_references must be a mapping ({} for none)"
         )
-    detectors = set(arms) - {cfg["classifier_arm"]}
+    compared = set(arms) - {cfg["reference_arm"]}
     for name, refs in zero.items():
-        if name not in detectors:
+        if name not in compared:
             raise ValueError(
-                f"learning_curve.zero_references.{name} is not a detector arm "
-                f"({sorted(detectors)})"
+                f"learning_curve.zero_references.{name} is not a non-reference arm "
+                f"({sorted(compared)})"
             )
         if not isinstance(refs, list) or not refs:
             raise ValueError(
@@ -211,14 +213,14 @@ def validate_config(cfg: Dict[str, Any]) -> None:
 
     criteria = cfg["criteria"]
     _number(
-        _require(criteria, "ad_margin", "learning_curve.criteria"),
-        "learning_curve.criteria.ad_margin",
+        _require(criteria, "margin", "learning_curve.criteria"),
+        "learning_curve.criteria.margin",
         0,
         1,
     )
     _number(
-        _require(criteria, "classifier_target", "learning_curve.criteria"),
-        "learning_curve.criteria.classifier_target",
+        _require(criteria, "target", "learning_curve.criteria"),
+        "learning_curve.criteria.target",
         0,
         1,
     )
@@ -331,21 +333,21 @@ def build_comparisons(
     curves: Dict[str, Dict[K, SplitValues]],
     chance: SplitValues,
 ) -> pd.DataFrame:
-    """The ``vs_classifier`` and ``vs_chance`` families, corrected separately."""
-    clf = cfg["classifier_arm"]
+    """The ``vs_reference`` and ``vs_chance`` families, corrected separately."""
+    ref = cfg["reference_arm"]
     rows: List[Dict[str, Any]] = []
     for name in cfg["arms"]:
         for k in k_order(cfg["ks"]):
             if k not in curves[name]:
                 continue
             treatment = f"{name}@k={k}"
-            if name != clf and k in curves[clf]:
+            if name != ref and k in curves[ref]:
                 row = paired_row(
-                    "vs_classifier",
+                    "vs_reference",
                     treatment,
-                    f"{clf}@k={k}",
+                    f"{ref}@k={k}",
                     curves[name][k],
-                    curves[clf][k],
+                    curves[ref][k],
                 )
                 if row:
                     rows.append(row)
@@ -381,26 +383,30 @@ def smallest_k_from(passes: Dict[K, bool], ks: Sequence[int]) -> Optional[K]:
 def evaluate_criteria(
     cfg: Dict[str, Any], curves: Dict[str, Dict[K, SplitValues]]
 ) -> Dict[str, Optional[K]]:
-    """The two pre-set descriptive criteria (see the module docstring)."""
-    clf = cfg["classifier_arm"]
-    margin = cfg["criteria"]["ad_margin"]
+    """The pre-set descriptive criteria (see the module docstring)."""
+    ref = cfg["reference_arm"]
+    margin = cfg["criteria"]["margin"]
+    target = cfg["criteria"]["target"]
     out: Dict[str, Optional[K]] = {}
     for name in cfg["arms"]:
-        if name == clf:
+        if name == ref:
             continue
         passes = {}
         for k in k_order(cfg["ks"]):
-            t, r = curves[name].get(k, {}), curves[clf].get(k, {})
+            t, r = curves[name].get(k, {}), curves[ref].get(k, {})
             common = sorted(set(t) & set(r))
             if common:
                 diff = float(np.mean([t[s] - r[s] for s in common]))
                 passes[k] = diff >= -margin
         out[f"{name}_within_margin"] = smallest_k_from(passes, cfg["ks"])
-    target = cfg["criteria"]["classifier_target"]
-    out[f"{clf}_reaches_target"] = smallest_k_from(
-        {k: float(np.mean(list(v.values()))) >= target for k, v in curves[clf].items()},
-        cfg["ks"],
-    )
+    for name in cfg["arms"]:
+        out[f"{name}_reaches_target"] = smallest_k_from(
+            {
+                k: float(np.mean(list(v.values()))) >= target
+                for k, v in curves[name].items()
+            },
+            cfg["ks"],
+        )
     return out
 
 
@@ -442,18 +448,19 @@ def write_markdown(
             f"{_fmt(r['mean'])} | {_fmt(r['std'])} | {_fmt(r['ci_lower'])}–{_fmt(r['ci_upper'])} |"
         )
     lines += ["", "## Pre-set criteria", ""]
-    margin = cfg["criteria"]["ad_margin"]
-    target = cfg["criteria"]["classifier_target"]
+    margin = cfg["criteria"]["margin"]
+    target = cfg["criteria"]["target"]
+    ref_label = cfg["arms"][cfg["reference_arm"]]["label"]
     for key, k in criteria.items():
         if key.endswith("_within_margin"):
             arm = key.removesuffix("_within_margin")
-            what = f"{cfg['arms'][arm]['label']}: smallest k from which the mean difference to the classifier stays >= -{margin}"
+            what = f"{cfg['arms'][arm]['label']}: smallest k from which the mean difference to {ref_label} stays >= -{margin}"
         else:
             arm = key.removesuffix("_reaches_target")
             what = f"{cfg['arms'][arm]['label']}: smallest k from which the mean stays >= {target}"
         lines.append(f"- {what}: **{'not reached' if k is None else k}**")
     titles = {
-        "vs_classifier": "Detectors vs the classifier at the same k",
+        "vs_reference": f"Each arm vs {ref_label} at the same k",
         "vs_chance": "Each arm vs chance",
     }
     for fam, title in titles.items():
@@ -545,7 +552,10 @@ def run_learning_curve(campaign_dir: Path) -> Path:
     cfg = load_config(cfg_path)
     validate_config(cfg)
     metric = cfg["metric"]
-    runs_base = str(campaign_dir / cfg["runs_base"])
+    # Campaign-relative like compare's base dirs; absolute paths are used as-is.
+    bases = {
+        name: str(campaign_dir / arm["base_dir"]) for name, arm in cfg["arms"].items()
+    }
 
     curves: Dict[str, Dict[K, SplitValues]] = {}
     notes: List[str] = []
@@ -553,9 +563,11 @@ def run_learning_curve(campaign_dir: Path) -> Path:
     for name, arm in cfg["arms"].items():
         # Only the runs this arm uses: others in the family do not block it.
         check_checkpoints(
-            runs_base, arm["family"], set(arm_experiments(arm, cfg["ks"], cfg["draws"]))
+            bases[name],
+            arm["family"],
+            set(arm_experiments(arm, cfg["ks"], cfg["draws"])),
         )
-        arm_runs[name] = load_split_values(runs_base, arm["family"], metric)
+        arm_runs[name] = load_split_values(bases[name], arm["family"], metric)
     # A split seen in any experiment of any arm is expected in every point.
     expected = {
         s
@@ -569,7 +581,7 @@ def run_learning_curve(campaign_dir: Path) -> Path:
         )
         notes += arm_notes
         if not curves[name]:
-            raise ValueError(f"No finished runs for arm '{name}' under {runs_base}")
+            raise ValueError(f"No finished runs for arm '{name}' under {bases[name]}")
 
     zero: Dict[str, List[Tuple[str, SplitValues]]] = {}
     for name, refs in cfg["zero_references"].items():
@@ -584,19 +596,22 @@ def run_learning_curve(campaign_dir: Path) -> Path:
                 )
             zero.setdefault(name, []).append((ref["label"], values[ref["experiment"]]))
 
-    # The detectors' predictions hold the test targets (the classifier's use
-    # another format); the test folds are shared, so any detector gives a split.
+    # Every run's predictions_test.npz holds the test targets; the test folds
+    # are shared, so any run the analysis uses gives the chance level of its
+    # split. Only those runs are read: another tree's family may hold others
+    # (e.g. a multi-class classifier) whose targets are not the binary fold's.
     chance: SplitValues = {}
-    for family in sorted(
-        {a["family"] for n, a in cfg["arms"].items() if n != cfg["classifier_arm"]}
-    ):
-        for split, value in chance_per_split(runs_base, family, metric).items():
+    for name, arm in cfg["arms"].items():
+        used = set(arm_experiments(arm, cfg["ks"], cfg["draws"]))
+        for split, value in chance_per_split(
+            bases[name], arm["family"], metric, used
+        ).items():
             chance.setdefault(split, value)
     if metric in CHANCE_LABELS:
         for split in sorted(expected - set(chance)):
             notes.append(
-                f"chance: split {split} has no finished detector run, so it is "
-                "left out of every vs_chance comparison"
+                f"chance: split {split} has no finished run with test predictions, "
+                "so it is left out of every vs_chance comparison"
             )
     table = curve_table(cfg["arms"], curves, zero, cfg["ks"])
     comparisons = build_comparisons(cfg, curves, chance)

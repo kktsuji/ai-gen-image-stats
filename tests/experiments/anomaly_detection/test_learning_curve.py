@@ -32,19 +32,20 @@ def _cfg():
         "metric": "pr_auc",
         "alpha": 0.05,
         "correction": "benjamini-hochberg",
-        "runs_base": "runs",
         "ks": list(KS),
         "draws": list(DRAWS),
-        "classifier_arm": "clf",
+        "reference_arm": "clf",
         "arms": {
             "clf": {
                 "label": "Classifier",
+                "base_dir": "runs",
                 "family": "clf",
                 "template": "rn50-k{k}-d{draw}",
                 "full": "rn50-kall",
             },
             "maha": {
                 "label": "Mahalanobis",
+                "base_dir": "runs",
                 "family": "ad-k",
                 "template": "ad-maha-k{k}-d{draw}",
                 "full": "ad-maha-kall",
@@ -60,7 +61,7 @@ def _cfg():
                 }
             ]
         },
-        "criteria": {"ad_margin": 0.05, "classifier_target": 0.9},
+        "criteria": {"margin": 0.05, "target": 0.9},
     }
 
 
@@ -128,10 +129,9 @@ class TestValidateConfig:
             "metric",
             "alpha",
             "correction",
-            "runs_base",
             "ks",
             "draws",
-            "classifier_arm",
+            "reference_arm",
             "arms",
             "zero_references",
             "criteria",
@@ -151,7 +151,7 @@ class TestValidateConfig:
             (lambda c: c.update(ks=[0, 1]), "ks"),
             (lambda c: c.update(ks=[1, 1]), "ks"),
             (lambda c: c.update(draws=[]), "draws"),
-            (lambda c: c.update(classifier_arm="x"), "classifier_arm"),
+            (lambda c: c.update(reference_arm="x"), "reference_arm"),
             (lambda c: c["arms"].pop("maha"), "at least two"),
             (lambda c: c["arms"]["clf"].update(template="rn50-k{k}"), "exactly"),
             (lambda c: c["arms"]["clf"].update(template="k{k}-d{draw}-{x}"), "exactly"),
@@ -161,13 +161,13 @@ class TestValidateConfig:
             (lambda c: c["arms"]["clf"].update(template="k{k!r}-d{draw}"), "plain"),
             (lambda c: c["arms"]["clf"].update(template="k{k:02d}-d{draw}"), "plain"),
             (lambda c: c["arms"]["clf"].update(full=""), "full"),
-            (lambda c: c.update(zero_references={"clf": []}), "not a detector"),
+            (lambda c: c.update(zero_references={"clf": []}), "not a non-reference"),
             (lambda c: c.update(zero_references={"maha": []}), "non-empty list"),
             (lambda c: c["zero_references"]["maha"][0].pop("family"), "family"),
-            (lambda c: c["criteria"].update(ad_margin=0), "ad_margin"),
+            (lambda c: c["criteria"].update(margin=0), "margin"),
             (
-                lambda c: c["criteria"].update(classifier_target=True),
-                "classifier_target",
+                lambda c: c["criteria"].update(target=True),
+                "target",
             ),
         ],
     )
@@ -277,8 +277,8 @@ class TestAnalysis:
     def test_comparisons_families(self):
         chance = {s: 0.2 for s in range(N_SPLITS)}
         df = build_comparisons(_cfg(), self._curves(), chance)
-        assert set(df["family"]) == {"vs_classifier", "vs_chance"}
-        vs_clf = df[df["family"] == "vs_classifier"]
+        assert set(df["family"]) == {"vs_reference", "vs_chance"}
+        vs_clf = df[df["family"] == "vs_reference"]
         assert list(vs_clf["treatment"]) == [f"maha@k={k}" for k in [*KS, "all"]]
         assert (vs_clf["reference"] == [f"clf@k={k}" for k in [*KS, "all"]]).all()
         assert len(df[df["family"] == "vs_chance"]) == 2 * 4
@@ -360,7 +360,7 @@ class TestRunLearningCurve:
         campaign = _make_campaign(tmp_path, skip=skip)
         run_learning_curve(campaign)
         md = (campaign / "reports" / "learning_curve.md").read_text()
-        assert "chance: split 3 has no finished detector run" in md
+        assert "chance: split 3 has no finished run with test predictions" in md
 
     def _add_checkpoint(self, tmp_path, campaign, experiment, split=0):
         ckpt = tmp_path / f"{experiment}.pth"
@@ -454,3 +454,66 @@ class TestPlotZeroTick:
         zero = {"maha": [("frozen", {s: 0.12 for s in range(N_SPLITS)})]}
         assert self._ticks(tmp_path, zero, monkeypatch)[0] == "0"
         assert self._ticks(tmp_path, {}, monkeypatch) == ["1", "5", "20", "all"]
+
+
+@pytest.mark.unit
+class TestReferenceArms:
+    def test_arm_base_dir_required(self):
+        cfg = _cfg()
+        del cfg["arms"]["clf"]["base_dir"]
+        with pytest.raises(KeyError, match="base_dir"):
+            validate_config(cfg)
+
+    def test_target_reported_for_every_arm(self):
+        out = evaluate_criteria(_cfg(), TestAnalysis()._curves())
+        # maha: 0.2, 0.6, 0.9, 0.93 -> >= 0.9 from k=20.
+        assert out["maha_reaches_target"] == 20
+        assert out["clf_reaches_target"] == 20
+
+
+@pytest.mark.component
+class TestReferenceInAnotherTree:
+    def test_reference_read_from_its_own_base_dir(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        # Move the classifier runs to another campaign's tree.
+        other = tmp_path / "series" / "04-ref"
+        for split_dir in (campaign / "runs").iterdir():
+            dest = other / "runs" / split_dir.name
+            dest.mkdir(parents=True)
+            (split_dir / "clf").rename(dest / "clf")
+        cfg = _cfg()
+        cfg["arms"]["clf"]["base_dir"] = "../04-ref/runs"
+        (campaign / "configs" / "learning_curve.yaml").write_text(yaml.safe_dump(cfg))
+        run_learning_curve(campaign)
+        table = pd.read_csv(campaign / "reports" / "learning_curve.csv")
+        clf_k5 = table[(table["arm"] == "clf") & (table["k"] == "5")].iloc[0]
+        assert clf_k5["mean"] == pytest.approx(0.8 + 0.002 * 1.5)
+        md = (campaign / "reports" / "learning_curve.md").read_text()
+        assert "## Notes" not in md
+
+    def test_chance_from_a_reference_only_family(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        targets = np.array([0] * 8 + [1] * 2)
+        for split in range(N_SPLITS):
+            for f in (campaign / "runs" / f"split{split}" / "ad-k").rglob(
+                "predictions_test.npz"
+            ):
+                f.unlink()
+            for f in (campaign / "runs" / f"split{split}" / "clf").rglob("reports"):
+                np.savez(f / "predictions_test.npz", targets=targets)
+        run_learning_curve(campaign)
+        md = (campaign / "reports" / "learning_curve.md").read_text()
+        assert "Chance level" in md and "0.200" in md
+
+
+@pytest.mark.component
+class TestChanceOnlyFromUsedRuns:
+    def test_unused_run_in_a_family_does_not_set_chance(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        # A run outside the analysis, sorting first, with 6-class targets.
+        for split in range(N_SPLITS):
+            run = campaign / "runs" / f"split{split}" / "ad-k" / "aaa-multiclass"
+            _write_eval(run / "seed0", 0.5, np.array([0, 1, 2, 3, 4, 5] * 2))
+        run_learning_curve(campaign)
+        md = (campaign / "reports" / "learning_curve.md").read_text()
+        assert "Chance level (mean abnormal fraction of the test folds): 0.200" in md
