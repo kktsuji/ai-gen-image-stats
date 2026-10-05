@@ -194,6 +194,16 @@ class TestLoadingAndReport:
         chance = chance_per_split(str(campaign / "runs"), "ad-frozen")
         assert chance == {s: pytest.approx(0.2) for s in range(N_SPLITS)}
 
+    def test_chance_per_split_limited_to_experiments(self, tmp_path):
+        campaign = _make_campaign(tmp_path)
+        run = campaign / "runs" / "split0" / "ad-frozen" / "aaa-other" / "seed0"
+        _write_eval(run, {"pr_auc": 0.5})
+        np.savez(run / "reports" / "predictions_test.npz", targets=np.ones(4))
+        runs = str(campaign / "runs")
+        assert chance_per_split(runs, "ad-frozen")[0] == pytest.approx(1.0)
+        limited = chance_per_split(runs, "ad-frozen", experiments={"ad-knn-rn50__all"})
+        assert limited == {s: pytest.approx(0.2) for s in range(N_SPLITS)}
+
     def test_subclass_auc(self, tmp_path):
         campaign = _make_campaign(tmp_path)
         df = subclass_auc(str(campaign / "runs"), "ad-frozen")
