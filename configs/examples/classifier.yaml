@@ -62,7 +62,8 @@ model:
     trainable_layers: null # List of layer patterns to unfreeze (InceptionV3 only)
     # Start from another run's weights (train mode only): null, or a classifier
     # checkpoint (model_state_dict) of the same architecture, loaded after the
-    # model is built. skip_head (required when checkpoint is set): true loads the
+    # model is built. skip_head (required when checkpoint is set; ignored while
+    # checkpoint is null, kept here so it can be overridden): true loads the
     # backbone only (new fc head, e.g. from a 6-class model), false loads every
     # key (e.g. linear probing then fine-tuning). Not combinable with resume.
     checkpoint: null

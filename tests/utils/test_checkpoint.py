@@ -232,6 +232,10 @@ class TestLoadModelWeights:
         load_model_weights(target, tmp_path / "a.pth")
         assert torch.equal(target.fc.weight, source.fc.weight)
 
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+            load_model_weights(TwoPartModel(), tmp_path / "none.pth")
+
     def test_file_sha256(self, tmp_path):
         path = tmp_path / "x.bin"
         path.write_bytes(b"abc")

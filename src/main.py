@@ -180,6 +180,7 @@ def _initialize_from_checkpoint(
         f"Initialized from {path} (skip_head={skip_head}, sha256={sha256[:16]})"
     )
     record = {"checkpoint": str(path), "sha256": sha256, "skip_head": skip_head}
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
     with open(Path(log_dir) / "initialization.json", "w") as f:
         json.dump(record, f, indent=2)
 

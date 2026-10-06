@@ -199,8 +199,12 @@ def load_model_weights(
     (``_orig_mod.``) is stripped.
 
     Raises:
+        FileNotFoundError: If the checkpoint file does not exist.
         ValueError: If the keys or shapes do not match.
     """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {path}")
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     state = {
         k.removeprefix("_orig_mod."): v
@@ -215,6 +219,10 @@ def load_model_weights(
     missing = [k for k in own if k not in state and not k.startswith(prefixes)]
     unexpected = [k for k in state if k not in own]
     if mismatched or missing or unexpected:
+        logger.debug(
+            f"Checkpoint {path} vs model: shape mismatch {mismatched}, "
+            f"missing {missing}, unexpected {unexpected}"
+        )
         raise ValueError(
             f"Checkpoint {path} does not match the model: "
             f"shape mismatch {mismatched[:5]}, missing {missing[:5]}, "

@@ -462,6 +462,46 @@ class TestClassifierExperimentSetup:
         assert record["skip_head"] is False
 
     @pytest.mark.integration
+    def test_evaluate_mode_ignores_init_checkpoint(self, tmp_path):
+        """Evaluate mode loads only evaluation.checkpoint, never the init one."""
+
+        class _Stop(Exception):
+            pass
+
+        eval_ckpt = tmp_path / "eval.pth"
+        eval_ckpt.touch()
+        config = _base_classifier_config(tmp_path)
+        config["mode"] = "evaluate"
+        config["model"]["initialization"]["checkpoint"] = str(tmp_path / "no.pth")
+        config["model"]["initialization"]["skip_head"] = False
+        config["output"]["subdirs"]["reports"] = "reports"
+        config["evaluation"] = {
+            "checkpoint": str(eval_ckpt),
+            "split": "val",
+            "bootstrap": {
+                "enabled": False,
+                "n_bootstrap": 10,
+                "confidence_level": 0.95,
+                "save_predictions": False,
+            },
+        }
+
+        with (
+            patch("src.main._initialize_from_checkpoint") as mock_init,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.load_checkpoint"
+            ),
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer"
+                ".evaluate_with_predictions",
+                side_effect=_Stop,
+            ),
+            pytest.raises(_Stop),
+        ):
+            setup_experiment_classifier(config)
+        mock_init.assert_not_called()
+
+    @pytest.mark.integration
     def test_setup_classifier_inceptionv3(self, tmp_path):
         """Test classifier setup with InceptionV3 model."""
         config = _base_classifier_config(tmp_path)
