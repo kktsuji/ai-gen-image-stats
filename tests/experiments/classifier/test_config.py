@@ -440,6 +440,41 @@ class TestValidateConfigErrorPaths:
         ):
             validate_config(config)
 
+    def test_init_checkpoint_valid(self):
+        """A checkpoint path with skip_head passes."""
+        config = get_v2_default_config()
+        config["model"]["initialization"]["checkpoint"] = "runs/a/final_model.pth"
+        config["model"]["initialization"]["skip_head"] = True
+        validate_config(config)
+
+    def test_init_checkpoint_requires_skip_head(self):
+        config = get_v2_default_config()
+        config["model"]["initialization"]["checkpoint"] = "a.pth"
+        del config["model"]["initialization"]["skip_head"]
+        with pytest.raises(KeyError, match="skip_head is required"):
+            validate_config(config)
+
+    @pytest.mark.parametrize("value", ["", "  ", 3])
+    def test_init_checkpoint_bad_value(self, value):
+        config = get_v2_default_config()
+        config["model"]["initialization"]["checkpoint"] = value
+        with pytest.raises(ValueError, match="checkpoint must be null"):
+            validate_config(config)
+
+    def test_skip_head_not_bool(self):
+        config = get_v2_default_config()
+        config["model"]["initialization"]["skip_head"] = "yes"
+        with pytest.raises(ValueError, match="skip_head must be a boolean"):
+            validate_config(config)
+
+    def test_init_checkpoint_with_resume_rejected(self):
+        config = get_v2_default_config()
+        config["model"]["initialization"]["checkpoint"] = "a.pth"
+        config["training"]["resume"]["enabled"] = True
+        config["training"]["resume"]["checkpoint"] = "b.pth"
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            validate_config(config)
+
     def test_freeze_backbone_not_bool(self):
         """freeze_backbone = 'yes' raises ValueError."""
         config = get_v2_default_config()

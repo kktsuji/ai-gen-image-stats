@@ -159,6 +159,31 @@ def _resolve_eval_contrast_class(
     )
 
 
+def _initialize_from_checkpoint(
+    model: torch.nn.Module, checkpoint: str, skip_head: bool, log_dir: Path
+) -> None:
+    """Initialize a classifier from another run's checkpoint (train mode).
+
+    ``skip_head`` keeps the new classification head (``fc.*``) and loads only
+    the backbone; otherwise every key is loaded. Which layers are trained is
+    still set by ``freeze_backbone`` / ``trainable_layers``. The checkpoint's
+    path and SHA-256 are written to ``<log_dir>/initialization.json``.
+    """
+    from src.utils.checkpoint import file_sha256, load_model_weights
+
+    path = Path(checkpoint)
+    if not path.exists():
+        raise FileNotFoundError(f"Initialization checkpoint not found: {path}")
+    load_model_weights(model, path, skip_prefixes=("fc.",) if skip_head else ())
+    sha256 = file_sha256(path)
+    logger.info(
+        f"Initialized from {path} (skip_head={skip_head}, sha256={sha256[:16]})"
+    )
+    record = {"checkpoint": str(path), "sha256": sha256, "skip_head": skip_head}
+    with open(Path(log_dir) / "initialization.json", "w") as f:
+        json.dump(record, f, indent=2)
+
+
 def setup_experiment_classifier(config: Dict[str, Any]) -> None:
     """Setup and run classifier experiment.
 
@@ -306,6 +331,15 @@ def setup_experiment_classifier(config: Dict[str, Any]) -> None:
         raise ValueError(
             f"Unknown model: {model_name}. "
             f"Supported models: inceptionv3, resnet50, resnet101, resnet152"
+        )
+
+    init_checkpoint = model_config["initialization"].get("checkpoint")
+    if mode == "train" and init_checkpoint is not None:
+        _initialize_from_checkpoint(
+            model,
+            init_checkpoint,
+            skip_head=model_config["initialization"]["skip_head"],
+            log_dir=log_dir,
         )
 
     model = model.to(device)

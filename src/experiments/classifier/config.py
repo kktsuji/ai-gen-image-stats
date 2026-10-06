@@ -414,6 +414,27 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError("initialization.pretrained must be a boolean")
         if "freeze_backbone" in init and not isinstance(init["freeze_backbone"], bool):
             raise ValueError("initialization.freeze_backbone must be a boolean")
+        # Optional start from another run's weights (absent = null): a path to a
+        # classifier checkpoint, loaded after the model is built (train mode).
+        init_checkpoint = init.get("checkpoint")
+        if init_checkpoint is not None:
+            if not isinstance(init_checkpoint, str) or not init_checkpoint.strip():
+                raise ValueError(
+                    "initialization.checkpoint must be null or a non-empty path"
+                )
+            if "skip_head" not in init:
+                raise KeyError(
+                    "initialization.skip_head is required when "
+                    "initialization.checkpoint is set"
+                )
+            resume = config.get("training", {}).get("resume", {})
+            if isinstance(resume, dict) and resume.get("enabled"):
+                raise ValueError(
+                    "initialization.checkpoint and training.resume.enabled are "
+                    "mutually exclusive (resume restores the full training state)"
+                )
+        if "skip_head" in init and not isinstance(init["skip_head"], bool):
+            raise ValueError("initialization.skip_head must be a boolean")
 
     # Validate loss configuration (optional; defaults to cross_entropy when absent
     # for backward compatibility). When present, it is validated strictly.
