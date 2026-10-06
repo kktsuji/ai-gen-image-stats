@@ -185,6 +185,8 @@ The canonical rules are in README.md, under "Organizing Experiments: Series and 
   - Series-shared inputs are reached via `../shared/`.
   - Inputs outside the series (raw data, binary CV splits, other series' results) may break when a folder moves. That is accepted, but they must be recorded in the campaign README.
 - **Moving**: move a whole series as a unit.
+  - If the series already exists at the archive location, new campaigns run in a working copy under `work/` (archive-only folders such as `legacy/` and `shared/models/` may be symlinks to it, so `../` paths resolve the same), and the working copy is merged into the archive when the series closes: symlinks and the working copy's README excluded, nothing overwritten, file counts and hashes compared.
+  - The ledger lives only in the archived series' README.
 - **Before starting a campaign**: create its README (question, design, external inputs with split-file hashes, commands, commit), then add it to the series ledger.
 - **Running**: define `configs/base.yaml` + `configs/sweep.yaml` and run `python -m scripts.run_campaign <campaign>`.
   - `scripts/campaign_config.py` validates the sweep and expands it (axes → conditions × splits × seeds).
