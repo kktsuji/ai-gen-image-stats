@@ -4,7 +4,13 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.utils.checkpoint import is_best_metric, load_checkpoint, save_checkpoint
+from src.utils.checkpoint import (
+    file_sha256,
+    is_best_metric,
+    load_checkpoint,
+    load_model_weights,
+    save_checkpoint,
+)
 
 
 class SimpleModel(nn.Module):
@@ -160,3 +166,79 @@ class TestIsBestMetric:
         """Invalid mode raises ValueError."""
         with pytest.raises(ValueError, match="Invalid metric mode"):
             is_best_metric(0.5, 0.3, "invalid")
+
+
+class TwoPartModel(nn.Module):
+    """A backbone layer plus a head named ``fc`` (as in the classifiers)."""
+
+    def __init__(self, num_classes: int = 2):
+        super().__init__()
+        self.body = nn.Linear(4, 3)
+        self.bn = nn.BatchNorm1d(3)
+        self.fc = nn.Linear(3, num_classes)
+
+
+def _save_model(model, path, prefix=""):
+    state = {f"{prefix}{k}": v for k, v in model.state_dict().items()}
+    torch.save({"model_state_dict": state}, path)
+
+
+@pytest.mark.unit
+class TestLoadModelWeights:
+    """load_model_weights: initialization from another run's checkpoint."""
+
+    def test_loads_every_key(self, tmp_path):
+        torch.manual_seed(0)
+        source = TwoPartModel()
+        _save_model(source, tmp_path / "a.pth")
+        target = TwoPartModel()
+        load_model_weights(target, tmp_path / "a.pth")
+        for k, v in source.state_dict().items():
+            assert torch.equal(target.state_dict()[k], v)
+
+    def test_skip_prefix_keeps_head(self, tmp_path):
+        """A skipped head may differ in shape (e.g. 6 classes -> 2)."""
+        _save_model(TwoPartModel(num_classes=6), tmp_path / "a.pth")
+        source_body = torch.load(tmp_path / "a.pth")["model_state_dict"]["body.weight"]
+        target = TwoPartModel(num_classes=2)
+        head_before = target.fc.weight.clone()
+        load_model_weights(target, tmp_path / "a.pth", skip_prefixes=("fc.",))
+        assert torch.equal(target.body.weight, source_body)
+        assert torch.equal(target.fc.weight, head_before)
+
+    def test_head_shape_mismatch_raises(self, tmp_path):
+        _save_model(TwoPartModel(num_classes=6), tmp_path / "a.pth")
+        with pytest.raises(ValueError, match="shape mismatch"):
+            load_model_weights(TwoPartModel(num_classes=2), tmp_path / "a.pth")
+
+    def test_missing_key_raises(self, tmp_path):
+        state = TwoPartModel().state_dict()
+        del state["bn.running_mean"]
+        torch.save({"model_state_dict": state}, tmp_path / "a.pth")
+        with pytest.raises(ValueError, match="missing"):
+            load_model_weights(TwoPartModel(), tmp_path / "a.pth")
+
+    def test_unexpected_key_raises(self, tmp_path):
+        state = TwoPartModel().state_dict()
+        state["extra.weight"] = torch.zeros(1)
+        torch.save({"model_state_dict": state}, tmp_path / "a.pth")
+        with pytest.raises(ValueError, match="unexpected"):
+            load_model_weights(TwoPartModel(), tmp_path / "a.pth")
+
+    def test_strips_compile_prefix(self, tmp_path):
+        source = TwoPartModel()
+        _save_model(source, tmp_path / "a.pth", prefix="_orig_mod.")
+        target = TwoPartModel()
+        load_model_weights(target, tmp_path / "a.pth")
+        assert torch.equal(target.fc.weight, source.fc.weight)
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+            load_model_weights(TwoPartModel(), tmp_path / "none.pth")
+
+    def test_file_sha256(self, tmp_path):
+        path = tmp_path / "x.bin"
+        path.write_bytes(b"abc")
+        assert file_sha256(path) == (
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )

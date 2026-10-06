@@ -3,9 +3,10 @@
 Standalone functions for saving and loading training checkpoints.
 """
 
+import hashlib
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
 
@@ -170,6 +171,64 @@ def load_checkpoint(
         )
 
     return checkpoint
+
+
+def file_sha256(path: Union[str, Path]) -> str:
+    """Hex SHA-256 of a file's content."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_model_weights(
+    model: torch.nn.Module,
+    path: Union[str, Path],
+    skip_prefixes: Sequence[str] = (),
+) -> None:
+    """Load a checkpoint's model weights into ``model``, skipping some keys.
+
+    For initializing a model from another run (not for resuming: no optimizer,
+    epoch or scheduler state is read). Keys starting with one of
+    ``skip_prefixes`` (e.g. ``"fc."`` for the classification head) are neither
+    loaded nor required; every other parameter and buffer of ``model`` must be
+    in the checkpoint with the same shape, and the checkpoint must not hold any
+    other key, so a checkpoint of a different architecture fails instead of
+    silently keeping the current weights. A ``torch.compile`` prefix
+    (``_orig_mod.``) is stripped.
+
+    Raises:
+        FileNotFoundError: If the checkpoint file does not exist.
+        ValueError: If the keys or shapes do not match.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {path}")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    state = {
+        k.removeprefix("_orig_mod."): v
+        for k, v in checkpoint["model_state_dict"].items()
+    }
+    # Skipped keys are dropped before the checks, so they are never reported as
+    # unexpected (checkpoint side) or missing (model side).
+    prefixes = tuple(skip_prefixes)
+    state = {k: v for k, v in state.items() if not k.startswith(prefixes)}
+    own = model.state_dict()
+    mismatched = [k for k, v in state.items() if k in own and v.shape != own[k].shape]
+    missing = [k for k in own if k not in state and not k.startswith(prefixes)]
+    unexpected = [k for k in state if k not in own]
+    if mismatched or missing or unexpected:
+        logger.debug(
+            f"Checkpoint {path} vs model: shape mismatch {mismatched}, "
+            f"missing {missing}, unexpected {unexpected}"
+        )
+        raise ValueError(
+            f"Checkpoint {path} does not match the model: "
+            f"shape mismatch {mismatched[:5]}, missing {missing[:5]}, "
+            f"unexpected {unexpected[:5]}"
+        )
+    model.load_state_dict(state, strict=False)
 
 
 def is_best_metric(

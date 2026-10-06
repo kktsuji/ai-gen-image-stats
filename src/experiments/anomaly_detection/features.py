@@ -28,6 +28,7 @@ from src.experiments.sample_selection.selector import (
     create_feature_model,
     extract_features_from_loader,
 )
+from src.utils.checkpoint import file_sha256, load_model_weights
 from src.utils.data.transforms import get_val_transforms
 
 logger = logging.getLogger(__name__)
@@ -53,15 +54,6 @@ class PathListDataset(Dataset):
         return self.transform(image)
 
 
-def file_sha256(path: str) -> str:
-    """Hex SHA-256 of a file's content."""
-    digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def load_backbone_weights(model: torch.nn.Module, checkpoint_path: str) -> None:
     """Load a classifier checkpoint's backbone weights into ``model``.
 
@@ -70,19 +62,7 @@ def load_backbone_weights(model: torch.nn.Module, checkpoint_path: str) -> None:
     every other parameter and buffer must be present, so a checkpoint from a
     different backbone fails instead of silently keeping ImageNet weights.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    state = {
-        k: v
-        for k, v in checkpoint["model_state_dict"].items()
-        if not k.startswith(HEAD_PREFIX)
-    }
-    result = model.load_state_dict(state, strict=False)
-    missing = [k for k in result.missing_keys if not k.startswith(HEAD_PREFIX)]
-    if missing or result.unexpected_keys:
-        raise ValueError(
-            f"Checkpoint {checkpoint_path} does not match the feature model: "
-            f"missing {missing[:5]}, unexpected {result.unexpected_keys[:5]}"
-        )
+    load_model_weights(model, checkpoint_path, skip_prefixes=(HEAD_PREFIX,))
     model.eval()
     logger.info(f"Loaded backbone weights from {checkpoint_path}")
 

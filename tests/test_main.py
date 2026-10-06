@@ -15,12 +15,14 @@ import torch.nn as nn
 import yaml
 
 from src.main import (
+    _initialize_from_checkpoint,
     _json_safe,
     _report_positive_class,
     _validate_split_file_has_split,
     main,
     setup_experiment_classifier,
 )
+from src.utils.checkpoint import file_sha256
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -434,6 +436,71 @@ class TestClassifierExperimentSetup:
             assert (tmp_path / "checkpoints").exists()
             assert (tmp_path / "logs").exists()
             assert list((tmp_path / "logs").glob("config_*.yaml"))
+
+    @pytest.mark.integration
+    def test_setup_classifier_init_checkpoint(self, tmp_path):
+        """Train mode starts from initialization.checkpoint and records it."""
+        import torch
+
+        from src.experiments.classifier.models.resnet import ResNetClassifier
+
+        torch.manual_seed(1)
+        source = ResNetClassifier(variant="resnet50", num_classes=2, pretrained=False)
+        init_path = tmp_path / "init.pth"
+        torch.save({"model_state_dict": source.state_dict()}, init_path)
+        config = _base_classifier_config(tmp_path)
+        config["model"]["initialization"]["checkpoint"] = str(init_path)
+        config["model"]["initialization"]["skip_head"] = False
+
+        with patch(
+            "src.experiments.classifier.trainer.ClassifierTrainer.train"
+        ) as mock_train:
+            setup_experiment_classifier(config)
+            mock_train.assert_called_once()
+
+        record = json.loads((tmp_path / "logs" / "initialization.json").read_text())
+        assert record["checkpoint"] == str(init_path)
+        assert record["skip_head"] is False
+
+    @pytest.mark.integration
+    def test_evaluate_mode_ignores_init_checkpoint(self, tmp_path):
+        """Evaluate mode loads only evaluation.checkpoint, never the init one."""
+
+        class _Stop(Exception):
+            pass
+
+        eval_ckpt = tmp_path / "eval.pth"
+        eval_ckpt.touch()
+        config = _base_classifier_config(tmp_path)
+        config["mode"] = "evaluate"
+        config["model"]["initialization"]["checkpoint"] = str(tmp_path / "no.pth")
+        config["model"]["initialization"]["skip_head"] = False
+        config["output"]["subdirs"]["reports"] = "reports"
+        config["evaluation"] = {
+            "checkpoint": str(eval_ckpt),
+            "split": "val",
+            "bootstrap": {
+                "enabled": False,
+                "n_bootstrap": 10,
+                "confidence_level": 0.95,
+                "save_predictions": False,
+            },
+        }
+
+        with (
+            patch("src.main._initialize_from_checkpoint") as mock_init,
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer.load_checkpoint"
+            ),
+            patch(
+                "src.experiments.classifier.trainer.ClassifierTrainer"
+                ".evaluate_with_predictions",
+                side_effect=_Stop,
+            ),
+            pytest.raises(_Stop),
+        ):
+            setup_experiment_classifier(config)
+        mock_init.assert_not_called()
 
     @pytest.mark.integration
     def test_setup_classifier_inceptionv3(self, tmp_path):
@@ -2228,3 +2295,59 @@ class TestValidateSplitFileHasSplit:
         )
         with pytest.raises(ValueError, match="no 'test' entries"):
             _validate_split_file_has_split(str(split_file), "test")
+
+
+class _LayerAndHead(nn.Module):
+    """A layer plus a head named ``fc`` (as in the classifiers)."""
+
+    def __init__(self, num_classes: int) -> None:
+        super().__init__()
+        self.layer = nn.Linear(4, 3)
+        self.fc = nn.Linear(3, num_classes)
+
+
+@pytest.mark.unit
+class TestInitializeFromCheckpoint:
+    """Classifier initialization from another run's checkpoint."""
+
+    @staticmethod
+    def _model(num_classes: int = 2) -> "_LayerAndHead":
+        return _LayerAndHead(num_classes)
+
+    def _save(self, model, path):
+        import torch
+
+        torch.save({"model_state_dict": model.state_dict()}, path)
+
+    def test_loads_all_and_records(self, tmp_path):
+        source = self._model()
+        self._save(source, tmp_path / "init.pth")
+        target = self._model()
+        _initialize_from_checkpoint(
+            target, str(tmp_path / "init.pth"), skip_head=False, log_dir=tmp_path
+        )
+        assert (target.fc.weight == source.fc.weight).all()
+        record = json.loads((tmp_path / "initialization.json").read_text())
+        assert record["skip_head"] is False
+        assert record["checkpoint"] == str(tmp_path / "init.pth")
+        assert record["sha256"] == file_sha256(tmp_path / "init.pth")
+
+    def test_skip_head_keeps_new_head(self, tmp_path):
+        source = self._model(num_classes=6)
+        self._save(source, tmp_path / "init.pth")
+        target = self._model(num_classes=2)
+        head = target.fc.weight.clone()
+        _initialize_from_checkpoint(
+            target, str(tmp_path / "init.pth"), skip_head=True, log_dir=tmp_path
+        )
+        assert (target.layer.weight == source.layer.weight).all()
+        assert (target.fc.weight == head).all()
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+            _initialize_from_checkpoint(
+                self._model(),
+                str(tmp_path / "no.pth"),
+                skip_head=False,
+                log_dir=tmp_path,
+            )
