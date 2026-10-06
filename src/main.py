@@ -172,8 +172,6 @@ def _initialize_from_checkpoint(
     from src.utils.checkpoint import file_sha256, load_model_weights
 
     path = Path(checkpoint)
-    if not path.exists():
-        raise FileNotFoundError(f"Initialization checkpoint not found: {path}")
     load_model_weights(model, path, skip_prefixes=("fc.",) if skip_head else ())
     sha256 = file_sha256(path)
     logger.info(

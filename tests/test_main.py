@@ -22,6 +22,7 @@ from src.main import (
     main,
     setup_experiment_classifier,
 )
+from src.utils.checkpoint import file_sha256
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -2329,7 +2330,7 @@ class TestInitializeFromCheckpoint:
         record = json.loads((tmp_path / "initialization.json").read_text())
         assert record["skip_head"] is False
         assert record["checkpoint"] == str(tmp_path / "init.pth")
-        assert len(record["sha256"]) == 64
+        assert record["sha256"] == file_sha256(tmp_path / "init.pth")
 
     def test_skip_head_keeps_new_head(self, tmp_path):
         source = self._model(num_classes=6)
@@ -2343,7 +2344,7 @@ class TestInitializeFromCheckpoint:
         assert (target.fc.weight == head).all()
 
     def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="Initialization checkpoint"):
+        with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
             _initialize_from_checkpoint(
                 self._model(),
                 str(tmp_path / "no.pth"),

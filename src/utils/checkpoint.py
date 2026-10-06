@@ -210,12 +210,12 @@ def load_model_weights(
         k.removeprefix("_orig_mod."): v
         for k, v in checkpoint["model_state_dict"].items()
     }
+    # Skipped keys are dropped before the checks, so they are never reported as
+    # unexpected (checkpoint side) or missing (model side).
     prefixes = tuple(skip_prefixes)
     state = {k: v for k, v in state.items() if not k.startswith(prefixes)}
     own = model.state_dict()
-    mismatched = [
-        k for k, v in state.items() if k in own and tuple(v.shape) != own[k].shape
-    ]
+    mismatched = [k for k, v in state.items() if k in own and v.shape != own[k].shape]
     missing = [k for k in own if k not in state and not k.startswith(prefixes)]
     unexpected = [k for k in state if k not in own]
     if mismatched or missing or unexpected:
