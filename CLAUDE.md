@@ -192,7 +192,7 @@ The canonical rules are in README.md, under "Organizing Experiments: Series and 
   - `scripts/campaign_config.py` validates the sweep and expands it (axes → conditions × splits × seeds).
   - `scripts/run_campaign.py` stores portable per-run configs in `configs/runs/` and resolves the paths at run time.
   - Runs whose `done_marker` exists are skipped.
-  - `{split}` in a `path_keys` value becomes the run's split index. `splits.template` must contain `{split}` and may also name axes (`..._k{k}_d{draw}.json`), replaced by the condition's value names. A multi-stage campaign uses several `sweep*.yaml` files (`--sweep`); condition names must be unique across them (checked by the driver).
+  - `{split}` and `{seed}` in a `path_keys` value become the run's split index and seed. `splits.template` must contain `{split}` and may also name axes (`..._k{k}_d{draw}.json`), replaced by the condition's value names. A multi-stage campaign uses several `sweep*.yaml` files (`--sweep`); condition names must be unique across them (checked by the driver).
 
 ### Pipeline (`scripts/run_pipeline.py`)
 

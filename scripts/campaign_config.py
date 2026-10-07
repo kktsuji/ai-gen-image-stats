@@ -29,8 +29,9 @@ Every path in the base config and the sweep is written relative to the campaign
 folder. The values of ``path_keys`` (and ``output.base_dir``, which the driver
 sets) are resolved against the campaign folder only at run time, so the stored
 per-run configs stay portable when the series is moved. A ``path_keys`` value
-may contain ``{split}``, which is replaced by the split index of each run (e.g.
-a per-split checkpoint ``runs/split{split}/clf/x/seed0/checkpoints/best.pth``).
+may contain ``{split}`` and ``{seed}``, which are replaced by the split index and
+the seed of each run (e.g. a per-run checkpoint of an earlier stage
+``runs/split{split}/clf/x/seed{seed}/checkpoints/best.pth``).
 The ``splits.template`` must contain ``{split}`` and may also name axes, e.g.
 ``../shared/splits-kctc/cv_binary_ad_split{split}_k{k}_d{draw}.json``: each
 axis field is replaced by the condition's value name on that axis, so one sweep
@@ -264,10 +265,11 @@ def expand_runs(sweep: Dict[str, Any], base: Dict[str, Any]) -> List[Run]:
                 cfg = _set_dotted(cfg, sweep["seeds"]["key"], seed)
                 for key in sweep["path_keys"]:
                     value = _get_dotted(cfg, key)
-                    if isinstance(value, str) and "{split}" in value:
-                        cfg = _set_dotted(
-                            cfg, key, value.replace("{split}", str(split))
-                        )
+                    if isinstance(value, str) and (
+                        "{split}" in value or "{seed}" in value
+                    ):
+                        value = value.replace("{split}", str(split))
+                        cfg = _set_dotted(cfg, key, value.replace("{seed}", str(seed)))
                 cfg = _set_dotted(
                     cfg,
                     "output.base_dir",
