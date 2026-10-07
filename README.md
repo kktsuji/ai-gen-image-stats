@@ -896,6 +896,10 @@ Rules:
   - Paths to the series' shared inputs go through `../shared/...`.
   - Paths outside the series may change when the folder moves. That is accepted, but they must be recorded in the campaign README.
 - **Moving.** Move a whole series as a unit. A single campaign depends on `../shared/`, so it should not be moved out of its series alone.
+  - A series may already exist at the archive location (e.g. its older results were archived there first). New campaigns then run in a working copy of the series under `work/`, and the working copy is merged into the archived series when it closes, instead of being moved with `mv`.
+  - In the working copy, folders that exist only in the archive (e.g. `legacy/`, `shared/models/`) may be symlinks to it. Campaign paths such as `../legacy/...` and `../shared/...` then resolve the same before and after the merge.
+  - Merge without overwriting: exclude those symlinks and the working copy's README, copy the rest into the archived series, and delete the working copy only after their file counts and hashes match (on a mismatch, keep it and investigate).
+  - Keep one ledger: the archived series' README. The working copy's README only points to it and describes the working copy.
 - **Naming.**
   - Series and campaigns use kebab-case.
   - Campaign names start with a two-digit number in execution order (`00-pilot`, `01-frozen-sweep`, …).
