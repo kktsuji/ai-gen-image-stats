@@ -230,6 +230,19 @@ class TestSplitPlaceholderInPaths:
             == "runs/split1/clf/rn50/seed0/checkpoints/best_model.pth"
         )
 
+    def test_seed_placeholder_without_split(self):
+        sweep, base = self._setup()
+        sweep["axes"]["backbone"]["rn50"]["feature_extraction.checkpoint"] = (
+            "runs/fixed/clf/rn50/seed{seed}/checkpoints/best_model.pth"
+        )
+        runs = expand_runs(sweep, base)
+        by_key = {(r.name, r.split, r.seed): r.config for r in runs}
+        for split in (0, 1):
+            assert (
+                by_key[("ad-knn-rn50", split, 1)]["feature_extraction"]["checkpoint"]
+                == "runs/fixed/clf/rn50/seed1/checkpoints/best_model.pth"
+            )
+
     def test_placeholder_only_in_path_keys(self):
         sweep, base = self._setup()
         sweep["path_keys"].remove("feature_extraction.checkpoint")
