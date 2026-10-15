@@ -106,6 +106,8 @@ class TestValidateConfig:
             ("sources", {"ctcs": 3}, "sources.ctcs"),
             ("catalog.class_layout_dir", "", "class_layout_dir"),
             ("extraction.roi_size", 0, "roi_size"),
+            ("extraction.roi_size", 41, "even"),
+            ("sources", {"ctc": "a.csv", "CTC": "b.csv"}, "more than case"),
             ("extraction.roi_size", True, "roi_size"),
             ("extraction.image_dir_glob", None, "image_dir_glob"),
             ("extraction.channels", {"b": "ch01", "g": "ch02"}, "exactly"),

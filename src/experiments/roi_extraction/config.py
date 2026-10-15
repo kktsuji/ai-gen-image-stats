@@ -76,6 +76,10 @@ def validate_config(config: Dict[str, Any]) -> None:
     sources = _require_section(config, "sources")
     if not sources:
         raise ValueError("'sources' must map at least one pool name to a CSV file")
+    lowered = [str(pool).lower() for pool in sources]
+    if len(set(lowered)) != len(lowered):
+        # case-insensitive file systems (NTFS) would merge their directories
+        raise ValueError(f"sources keys must differ in more than case: {list(sources)}")
     for pool, csv_name in sources.items():
         if not isinstance(pool, str) or not _POOL_NAME.fullmatch(pool):
             raise ValueError(
@@ -90,7 +94,11 @@ def validate_config(config: Dict[str, Any]) -> None:
         _check_str(layout_dir, "catalog.class_layout_dir")
 
     extraction = _require_section(config, "extraction")
-    _check_int(_require(extraction, "roi_size", "extraction"), "extraction.roi_size", 1)
+    roi_size = _require(extraction, "roi_size", "extraction")
+    _check_int(roi_size, "extraction.roi_size", 2)
+    if roi_size % 2:
+        # An odd window cannot be centred on the cell pixel by the original rule
+        raise ValueError(f"extraction.roi_size must be even, got {roi_size}")
     _check_str(
         _require(extraction, "image_dir_glob", "extraction"),
         "extraction.image_dir_glob",

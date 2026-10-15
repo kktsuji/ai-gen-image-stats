@@ -155,18 +155,40 @@ class TestRunRender:
         with pytest.raises(FileNotFoundError, match="--mode extract"):
             run_render(roi_inputs)
 
-    def test_rejects_rois_of_another_catalog(self, extracted):
+    def test_rejects_rois_of_other_cells(self, extracted):
+        csv = Path(extracted["data"]["coordinates_root"]) / "S 2" / "normalCells.csv"
+        csv.write_text("1,7,8\n")  # a cell moved after the extraction
         extracted["catalog"]["class_layout_dir"] = None
         extracted["output"]["force"] = True
-        run_catalog(extracted)  # the catalog changes after the extraction
+        run_catalog(extracted)
         extracted["rendering"]["layout"] = "pool"
-        with pytest.raises(ValueError, match="another version"):
+        with pytest.raises(ValueError, match="re-run --mode extract"):
             run_render(extracted)
 
-    def test_output_overlapping_raw16_raises(self, extracted):
-        extracted["rendering"]["output_dir"] = extracted["data"]["raw16_dir"]
-        with pytest.raises(ValueError, match="overlaps the input"):
+    def test_rebuilt_catalog_keeps_the_extraction_valid(self, extracted):
+        # Rebuilding the same catalog changes its file (created_at) but not
+        # its cells, so the ROIs need no re-extraction
+        extracted["output"]["force"] = True
+        run_catalog(extracted)
+        extracted["rendering"]["vstretch"] = None
+        assert run_render(extracted)["written_counts"]["abnormal"] == 1
+
+    @pytest.mark.parametrize(
+        "protected", ["data.raw16_dir", "data.image_root", "data.coordinates_root"]
+    )
+    def test_output_overlapping_an_input_raises(self, extracted, protected):
+        section, key = protected.split(".")
+        extracted["rendering"]["output_dir"] = extracted[section][key]
+        extracted["output"]["force"] = True
+        with pytest.raises(ValueError, match=f"overlaps {protected}"):
             run_render(extracted)
+
+    def test_output_containing_the_class_layout_raises(self, extracted):
+        layout = Path(extracted["catalog"]["class_layout_dir"])
+        extracted["rendering"]["output_dir"] = str(layout.parent)
+        with pytest.raises(ValueError, match="overlaps"):
+            run_render(extracted)
+        assert (layout / "abnormal").is_dir()
 
     def test_stretched_render(self, extracted):
         pytest.importorskip("cv2")

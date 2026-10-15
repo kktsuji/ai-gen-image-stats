@@ -136,9 +136,18 @@ class TestRunExtract:
             Path(roi_inputs["data"]["catalog"]).parent
         )
         roi_inputs["output"]["force"] = True
-        with pytest.raises(ValueError, match="overlaps the input"):
+        with pytest.raises(ValueError, match="overlaps data.catalog"):
             run_extract(roi_inputs)
         assert Path(roi_inputs["data"]["catalog"]).is_file()
+
+    def test_output_inside_the_class_layout_raises(self, roi_inputs, tmp_path):
+        layout = tmp_path / "layout"
+        layout.mkdir()
+        run_catalog(roi_inputs)
+        roi_inputs["catalog"]["class_layout_dir"] = str(layout)
+        roi_inputs["data"]["raw16_dir"] = str(layout / "raw16")
+        with pytest.raises(ValueError, match="overlaps catalog.class_layout_dir"):
+            run_extract(roi_inputs)
 
     def test_requires_catalog(self, roi_inputs):
         with pytest.raises(FileNotFoundError, match="--mode catalog"):

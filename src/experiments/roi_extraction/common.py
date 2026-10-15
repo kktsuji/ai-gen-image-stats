@@ -1,10 +1,11 @@
 """Helpers shared by the roi_extraction modes."""
 
+import hashlib
 import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, List
 
 from src.utils.checkpoint import file_sha256
 from src.utils.git import get_git_commit_hash
@@ -13,6 +14,8 @@ __all__ = [
     "file_sha256",
     "load_catalog",
     "prepare_output_dir",
+    "protected_paths",
+    "rois_sha256",
     "provenance",
     "write_json",
 ]
@@ -44,27 +47,55 @@ def load_catalog(path: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def prepare_output_dir(path: str, force: bool, inputs: Sequence[str]) -> Path:
+def rois_sha256(cells: List[Dict[str, Any]]) -> str:
+    """Hash of what the extraction depends on (each cell's position and name).
+
+    Order-independent; rebuilding an unchanged catalog, or changing only its
+    class paths, keeps this hash, so the extracted ROIs stay valid.
+    """
+    keys = ("sample", "img_no", "x", "y", "roi_name")
+    rois = sorted([cell[k] for k in keys] for cell in cells)
+    return hashlib.sha256(json.dumps(rois).encode("utf-8")).hexdigest()
+
+
+def protected_paths(config: Dict[str, Any], output_key: str) -> Dict[str, str]:
+    """Every path of the config other than the output ``output_key`` itself."""
+    paths = {f"data.{k}": v for k, v in config["data"].items()}
+    paths["rendering.output_dir"] = config["rendering"]["output_dir"]
+    if config["catalog"]["class_layout_dir"] is not None:
+        paths["catalog.class_layout_dir"] = config["catalog"]["class_layout_dir"]
+    del paths[output_key]
+    return paths
+
+
+def prepare_output_dir(path: str, force: bool, protected: Dict[str, str]) -> Path:
     """Return an empty output directory, refusing to overwrite one unless forced.
 
-    ``force`` deletes the directory, so it must not be, contain or lie inside
-    any of ``inputs`` (paths compared after resolving symlinks).
+    ``force`` empties the directory, so it must not be, contain or lie inside
+    any ``protected`` path (compared after resolving symlinks). A symlinked
+    output directory is emptied, not removed.
     """
     out_dir = Path(path)
     resolved = out_dir.resolve()
-    for input_path in inputs:
-        other = Path(input_path).resolve()
+    for key, other_path in protected.items():
+        other = Path(other_path).resolve()
         if other.is_relative_to(resolved) or resolved.is_relative_to(other):
             raise ValueError(
-                f"Output directory {path} overlaps the input {input_path}; "
+                f"Output directory {path} overlaps {key} ({other_path}); "
                 "choose a separate directory"
             )
+    if out_dir.exists() and not out_dir.is_dir():
+        raise NotADirectoryError(f"Output path exists and is not a directory: {path}")
     if out_dir.exists() and any(out_dir.iterdir()):
         if not force:
             raise FileExistsError(
                 f"Output directory is not empty: {path} (set output.force: true "
                 "to replace it)"
             )
-        shutil.rmtree(out_dir)
+        for child in out_dir.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir

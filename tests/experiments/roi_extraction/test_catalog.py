@@ -40,6 +40,11 @@ class TestHelpers:
             {"img_no": 4, "x": 5, "y": 6},
         ]
 
+    def test_read_coordinates_ignores_bom(self, tmp_path):
+        path = tmp_path / "c.csv"
+        path.write_bytes(b"\xef\xbb\xbf1,2,3\n")
+        assert read_coordinates(path) == [{"img_no": 1, "x": 2, "y": 3}]
+
     def test_read_coordinates_empty_file(self, tmp_path):
         path = tmp_path / "c.csv"
         path.write_text("")

@@ -17,7 +17,9 @@ from src.experiments.roi_extraction.common import (
     file_sha256,
     load_catalog,
     prepare_output_dir,
+    protected_paths,
     provenance,
+    rois_sha256,
     write_json,
 )
 from src.experiments.roi_extraction.config import CHANNEL_KEYS
@@ -98,7 +100,7 @@ def run_extract(config: Dict[str, Any]) -> Dict[str, Any]:
     out_dir = prepare_output_dir(
         data["raw16_dir"],
         config["output"]["force"],
-        inputs=[data["catalog"], data["image_root"], data["coordinates_root"]],
+        protected_paths(config, "data.raw16_dir"),
     )
     size = extraction["roi_size"]
     channels = extraction["channels"]
@@ -138,6 +140,7 @@ def run_extract(config: Dict[str, Any]) -> Dict[str, Any]:
         **provenance(),
         "catalog": data["catalog"],
         "catalog_sha256": file_sha256(data["catalog"]),
+        "rois_sha256": rois_sha256(cells),
         "image_root": data["image_root"],
         "image_dirs": {
             s: d.relative_to(Path(data["image_root"])).as_posix()

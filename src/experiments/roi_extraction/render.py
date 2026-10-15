@@ -14,7 +14,7 @@ import json
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from PIL import Image
@@ -23,7 +23,9 @@ from src.experiments.roi_extraction.common import (
     file_sha256,
     load_catalog,
     prepare_output_dir,
+    protected_paths,
     provenance,
+    rois_sha256,
     write_json,
 )
 from src.experiments.roi_extraction.config import CHANNEL_KEYS
@@ -85,19 +87,19 @@ def load_bgr16(raw16_dir: Path, name: str) -> np.ndarray:
     )
 
 
-def check_extraction(raw16_dir: Path, catalog_path: str) -> None:
-    """Require ``raw16_dir`` to have been extracted from this exact catalog."""
+def check_extraction(raw16_dir: Path, cells: List[Dict[str, Any]]) -> None:
+    """Require ``raw16_dir`` to hold the ROIs of these cells (same positions)."""
     report_path = raw16_dir / "extraction.json"
     if not report_path.is_file():
         raise FileNotFoundError(
             f"No extraction report in {raw16_dir} (run with --mode extract first)"
         )
     with open(report_path, encoding="utf-8") as f:
-        extracted_from = json.load(f)["catalog_sha256"]
-    if extracted_from != file_sha256(catalog_path):
+        extracted = json.load(f).get("rois_sha256")
+    if extracted != rois_sha256(cells):
         raise ValueError(
-            f"{raw16_dir} was extracted from another version of {catalog_path}; "
-            "re-run --mode extract"
+            f"{raw16_dir} was extracted for other cells than the catalog's "
+            "(positions or names changed); re-run --mode extract"
         )
 
 
@@ -116,12 +118,11 @@ def run_render(config: Dict[str, Any]) -> Dict[str, Any]:
             "catalog.class_layout_dir (this one has no class paths); use "
             "layout: pool instead"
         )
-    check_extraction(raw16_dir, data["catalog"])
+    check_extraction(raw16_dir, cells)
     out_dir = prepare_output_dir(
         rendering["output_dir"],
         config["output"]["force"],
-        inputs=[data["catalog"], data["raw16_dir"]]
-        + [p for p in [catalog["metadata"]["class_layout_dir"]] if p],
+        protected_paths(config, "rendering.output_dir"),
     )
 
     written: Counter = Counter()
