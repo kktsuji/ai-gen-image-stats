@@ -5,6 +5,7 @@ whatever the mode, so one config file drives all three modes
 (``--mode catalog``, ``--mode extract``, ``--mode render``).
 """
 
+import re
 from typing import Any, Dict
 
 MODES = ("catalog", "extract", "render")
@@ -13,6 +14,8 @@ LAYOUTS = ("class_paths", "pool")
 CHANNEL_KEYS = ("b", "g", "r")
 
 _DATA_KEYS = ("coordinates_root", "image_root", "catalog", "raw16_dir")
+# Pool names become directory names (rendering.layout: pool)
+_POOL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 def _require(section: Dict[str, Any], key: str, where: str) -> Any:
@@ -74,9 +77,11 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not sources:
         raise ValueError("'sources' must map at least one pool name to a CSV file")
     for pool, csv_name in sources.items():
-        _check_str(pool, "sources key")
-        if "/" in pool:
-            raise ValueError(f"sources key must not contain '/', got {pool!r}")
+        if not isinstance(pool, str) or not _POOL_NAME.fullmatch(pool):
+            raise ValueError(
+                "sources keys must be letters, digits, '_' or '-' (starting with "
+                f"a letter or digit), got {pool!r}"
+            )
         _check_str(csv_name, f"sources.{pool}")
 
     catalog = _require_section(config, "catalog")

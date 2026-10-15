@@ -10,6 +10,7 @@ stretched between two of its own percentiles (OpenCV HSV conversion, so hue
 and saturation, i.e. the channel ratios, are kept).
 """
 
+import json
 import logging
 from collections import Counter
 from pathlib import Path
@@ -41,7 +42,9 @@ def to_uint8(bgr16: np.ndarray) -> np.ndarray:
     return np.clip(scaled, 0, _MAX_OUT).astype(np.uint8)
 
 
-def vstretch(bgr8: np.ndarray, lower_percentile: float, upper_percentile: float):
+def vstretch(
+    bgr8: np.ndarray, lower_percentile: float, upper_percentile: float
+) -> np.ndarray:
     """Stretch the HSV value channel between two of the image's percentiles."""
     try:
         import cv2
@@ -61,7 +64,7 @@ def vstretch(bgr8: np.ndarray, lower_percentile: float, upper_percentile: float)
         )
     v_stretched = np.clip((v - lower) * (255.0 / (upper - lower)), 0, 255)
     v_stretched = v_stretched.astype(np.uint8)
-    return cv2.cvtColor(cv2.merge([h, s, v_stretched]), cv2.COLOR_HSV2BGR)
+    return np.asarray(cv2.cvtColor(cv2.merge([h, s, v_stretched]), cv2.COLOR_HSV2BGR))
 
 
 def render_pseudo_rgb8_vstretch(
@@ -82,12 +85,44 @@ def load_bgr16(raw16_dir: Path, name: str) -> np.ndarray:
     )
 
 
+def check_extraction(raw16_dir: Path, catalog_path: str) -> None:
+    """Require ``raw16_dir`` to have been extracted from this exact catalog."""
+    report_path = raw16_dir / "extraction.json"
+    if not report_path.is_file():
+        raise FileNotFoundError(
+            f"No extraction report in {raw16_dir} (run with --mode extract first)"
+        )
+    with open(report_path, encoding="utf-8") as f:
+        extracted_from = json.load(f)["catalog_sha256"]
+    if extracted_from != file_sha256(catalog_path):
+        raise ValueError(
+            f"{raw16_dir} was extracted from another version of {catalog_path}; "
+            "re-run --mode extract"
+        )
+
+
 def run_render(config: Dict[str, Any]) -> Dict[str, Any]:
     """Render every catalog cell into ``rendering.output_dir`` (``mode: render``)."""
     data, rendering = config["data"], config["rendering"]
-    cells = load_catalog(data["catalog"])
+    catalog = load_catalog(data["catalog"])
+    cells = catalog["cells"]
     raw16_dir = Path(data["raw16_dir"])
-    out_dir = prepare_output_dir(rendering["output_dir"], config["output"]["force"])
+    if (
+        rendering["layout"] == "class_paths"
+        and catalog["metadata"]["class_layout_dir"] is None
+    ):
+        raise ValueError(
+            "rendering.layout: class_paths needs a catalog built with "
+            "catalog.class_layout_dir (this one has no class paths); use "
+            "layout: pool instead"
+        )
+    check_extraction(raw16_dir, data["catalog"])
+    out_dir = prepare_output_dir(
+        rendering["output_dir"],
+        config["output"]["force"],
+        inputs=[data["catalog"], data["raw16_dir"]]
+        + [p for p in [catalog["metadata"]["class_layout_dir"]] if p],
+    )
 
     written: Counter = Counter()
     skipped = []

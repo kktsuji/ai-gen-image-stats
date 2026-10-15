@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from src.experiments.roi_extraction import extract as extract_module
 from src.experiments.roi_extraction.catalog import run_catalog
 from src.experiments.roi_extraction.extract import (
     find_image_dir,
@@ -38,6 +39,11 @@ class TestRoiWindow:
     def test_odd_size_window(self):
         # The original code takes size // 2 on both sides, then pads the start.
         assert roi_window(10, 5, 100) == (7, 12)
+
+    @pytest.mark.parametrize("center", [-1, 1000, 5000])
+    def test_center_outside_axis_raises(self, center):
+        with pytest.raises(ValueError, match="outside"):
+            roi_window(center, 40, 1000)
 
     def test_axis_shorter_than_roi_raises(self):
         with pytest.raises(ValueError, match="Cannot fit"):
@@ -72,6 +78,13 @@ class TestFiles:
         assert restored.dtype == np.uint16
         np.testing.assert_array_equal(restored, array)
 
+    def test_read_uint16_accepts_big_endian(self, tmp_path):
+        values = np.array([[1, 258], [4096, 65535]], dtype=">u2")
+        Image.frombytes("I;16B", (2, 2), values.tobytes()).save(tmp_path / "a.tif")
+        restored = read_uint16(tmp_path / "a.tif")
+        assert restored.dtype == np.dtype(np.uint16)
+        np.testing.assert_array_equal(restored, [[1, 258], [4096, 65535]])
+
     def test_read_uint16_rejects_8bit(self, tmp_path):
         Image.new("L", (2, 2)).save(tmp_path / "a.png")
         with pytest.raises(ValueError, match="16-bit"):
@@ -99,6 +112,33 @@ class TestRunExtract:
         assert report["image_dirs"] == {"S 1": "S 1/2 (after)", "S 2": "S 2/2 (after)"}
         with open(f"{out}/extraction.json") as f:
             assert json.load(f)["catalog_sha256"] == report["catalog_sha256"]
+
+    def test_reads_each_tile_once(self, roi_inputs, mocker):
+        run_catalog(roi_inputs)
+        spy = mocker.spy(extract_module, "read_uint16")
+        run_extract(roi_inputs)
+        # 4 distinct tiles (S 1: 1, 2, 3; S 2: 1) x 3 channels, although tile
+        # (S 1, 1) is used by both sources
+        assert spy.call_count == 12
+
+    def test_channel_tiles_of_different_shape_raise(self, roi_inputs):
+        run_catalog(roi_inputs)
+        tile_dir = Path(roi_inputs["data"]["image_root"]) / "S 1" / "2 (after)"
+        Image.fromarray(np.zeros((10, 16), dtype=np.uint16)).save(
+            tile_dir / "S 1 after.lif_s001_ch02.tif"
+        )
+        with pytest.raises(ValueError, match="differ in shape"):
+            run_extract(roi_inputs)
+
+    def test_output_overlapping_an_input_raises(self, roi_inputs):
+        run_catalog(roi_inputs)
+        roi_inputs["data"]["raw16_dir"] = str(
+            Path(roi_inputs["data"]["catalog"]).parent
+        )
+        roi_inputs["output"]["force"] = True
+        with pytest.raises(ValueError, match="overlaps the input"):
+            run_extract(roi_inputs)
+        assert Path(roi_inputs["data"]["catalog"]).is_file()
 
     def test_requires_catalog(self, roi_inputs):
         with pytest.raises(FileNotFoundError, match="--mode catalog"):

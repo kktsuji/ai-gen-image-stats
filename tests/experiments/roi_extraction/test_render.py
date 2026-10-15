@@ -143,6 +143,31 @@ class TestRunRender:
         assert report["written_counts"] == {"ctcs": 2, "normal_cells": 3}
         assert report["skipped_count"] == 0
 
+    def test_class_paths_layout_needs_class_paths(self, roi_inputs):
+        run_catalog(roi_inputs)  # class_layout_dir: null
+        run_extract(roi_inputs)
+        with pytest.raises(ValueError, match="layout: pool"):
+            run_render(roi_inputs)
+
+    def test_requires_extraction_report(self, roi_inputs):
+        run_catalog(roi_inputs)
+        roi_inputs["rendering"]["layout"] = "pool"
+        with pytest.raises(FileNotFoundError, match="--mode extract"):
+            run_render(roi_inputs)
+
+    def test_rejects_rois_of_another_catalog(self, extracted):
+        extracted["catalog"]["class_layout_dir"] = None
+        extracted["output"]["force"] = True
+        run_catalog(extracted)  # the catalog changes after the extraction
+        extracted["rendering"]["layout"] = "pool"
+        with pytest.raises(ValueError, match="another version"):
+            run_render(extracted)
+
+    def test_output_overlapping_raw16_raises(self, extracted):
+        extracted["rendering"]["output_dir"] = extracted["data"]["raw16_dir"]
+        with pytest.raises(ValueError, match="overlaps the input"):
+            run_render(extracted)
+
     def test_stretched_render(self, extracted):
         pytest.importorskip("cv2")
         report = run_render(extracted)

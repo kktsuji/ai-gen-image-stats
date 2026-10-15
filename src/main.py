@@ -1348,6 +1348,8 @@ def setup_experiment_roi_extraction(config: Dict[str, Any]) -> None:
     )
 
     validate_roi_extraction_config(config)
+    # A data-building step without log files: report its counts on the console
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     mode = config["mode"]
     if mode == "catalog":
         from src.experiments.roi_extraction.catalog import run_catalog
