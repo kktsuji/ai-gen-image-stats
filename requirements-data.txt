@@ -1,0 +1,7 @@
+# Optional dependencies of the data-building steps (CPU-only, run in the venv).
+# Not in requirements.txt, which mirrors the GPU image.
+#
+# opencv-python-headless: HSV conversion of roi_extraction's
+# pseudo_rgb8_vstretch. Pinned to the version that made the in-house training
+# images (results are bit-identical with it).
+opencv-python-headless==4.11.0.86

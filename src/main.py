@@ -1333,6 +1333,36 @@ def setup_experiment_data_preparation(config: Dict[str, Any]) -> None:
         prepare_split(config)
 
 
+def setup_experiment_roi_extraction(config: Dict[str, Any]) -> None:
+    """Setup and run the ROI extraction experiment.
+
+    ``mode: catalog`` builds the cell catalog from the coordinate CSVs,
+    ``mode: extract`` cuts lossless 16-bit ROIs from the tile TIFFs, and
+    ``mode: render`` turns them into training images with ``rendering.method``.
+
+    Args:
+        config: Configuration dictionary (see configs/examples/roi-extraction.yaml)
+    """
+    from src.experiments.roi_extraction.config import (
+        validate_config as validate_roi_extraction_config,
+    )
+
+    validate_roi_extraction_config(config)
+    mode = config["mode"]
+    if mode == "catalog":
+        from src.experiments.roi_extraction.catalog import run_catalog
+
+        run_catalog(config)
+    elif mode == "extract":
+        from src.experiments.roi_extraction.extract import run_extract
+
+        run_extract(config)
+    else:
+        from src.experiments.roi_extraction.render import run_render
+
+        run_render(config)
+
+
 def main(args: Optional[list] = None) -> None:
     """Main entry point for the application.
 
@@ -1380,12 +1410,14 @@ def main(args: Optional[list] = None) -> None:
             setup_experiment_data_preparation(config)
         elif experiment == "anomaly_detection":
             setup_experiment_anomaly_detection(config)
+        elif experiment == "roi_extraction":
+            setup_experiment_roi_extraction(config)
         else:
             raise ValueError(
                 f"Unknown experiment type: {experiment}. "
                 f"Supported experiments: classifier, diffusion, "
                 f"diffusion_pretrained, gan, sample_selection, data_preparation, "
-                f"anomaly_detection"
+                f"anomaly_detection, roi_extraction"
             )
 
         # Notify on success

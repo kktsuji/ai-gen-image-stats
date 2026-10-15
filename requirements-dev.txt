@@ -4,6 +4,8 @@
 
 # Include all core dependencies
 -r requirements.txt
+# Data-building extras (OpenCV), needed by the roi_extraction tests
+-r requirements-data.txt
 
 # Testing Framework
 pytest==9.0.2
