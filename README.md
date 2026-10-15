@@ -102,6 +102,28 @@ To receive Slack notifications when experiments complete or fail:
 
 ## Quick Start
 
+### Building the In-House Images from the Raw Tiles
+
+The in-house training images are 40×40 ROIs cut from 16-bit microscope tiles at
+cell coordinates from a CAD tool. The raw data is not in the repository: link it
+under `data/` (gitignored) first.
+
+```bash
+ln -s <raw tile directory> data/in-house-raw                    # <sample>/*after*/*_sNNN_chNN.tif
+ln -s <coordinate directory> data/in-house-cell-coordinates     # <sample>/<pool>.csv (img_no,x,y)
+pip install -r requirements-data.txt                            # OpenCV, for the rendering
+
+cp configs/examples/roi-extraction.yaml configs/roi-extraction.yaml
+python -m src.main configs/roi-extraction.yaml --mode catalog   # cell catalog (cells.json)
+python -m src.main configs/roi-extraction.yaml --mode extract   # lossless 16-bit ROIs
+python -m src.main configs/roi-extraction.yaml --mode render    # training images
+```
+
+The catalog records which cells are used and under which class (taken from an
+existing class layout); the extraction keeps the 16-bit values; the rendering
+method (`pseudo_rgb8_vstretch`, the transform of the current `data/in-house`
+images) is chosen by name, so other transforms reuse the first two steps.
+
 ### Preparing a Dataset Split
 
 ```bash

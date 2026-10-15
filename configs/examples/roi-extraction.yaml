@@ -1,0 +1,60 @@
+# ------------------------------------------------------------------------------
+# ROI EXTRACTION CONFIGURATION
+# ------------------------------------------------------------------------------
+# Builds training images from the raw microscope tiles in three steps, all driven
+# by this one file (every key is required in every mode):
+#
+#   python -m src.main configs/roi-extraction.yaml --mode catalog  # cells.json
+#   python -m src.main configs/roi-extraction.yaml --mode extract  # 16-bit ROIs
+#   python -m src.main configs/roi-extraction.yaml --mode render   # training images
+#
+# The catalog (which cells, filed under which classes) and the 16-bit ROIs do not
+# depend on the rendering method, so another method only needs a new render run
+# with its own rendering.output_dir.
+experiment: roi_extraction
+mode: catalog # catalog | extract | render
+
+data:
+  # One directory per sample, holding the header-less "img_no,x,y" CSVs of the CAD
+  coordinates_root: "data/in-house-cell-coordinates"
+  # One directory per sample (same names), holding the tile TIFF directories
+  image_root: "data/in-house-raw"
+  catalog: "data/in-house-roi/cells.json" # written by catalog, read by extract/render
+  raw16_dir: "data/in-house-roi/raw16" # written by extract, read by render
+
+# Pool name -> coordinate CSV of each sample directory. The pool name is stored as
+# each cell's "source" and names the output directory of rendering.layout: pool.
+sources:
+  ctcs: "groundTruthCTCs.csv" # CTCs judged by the collaborating physician
+  normal_cells: "normalCells.csv" # normal cells from the CAD
+
+catalog:
+  # Existing class layout (<class path>/<roi name>.png) whose class paths are
+  # recorded per cell, e.g. the current training images; null = no class paths.
+  # Every image there must match a cell of the catalog.
+  class_layout_dir: "data/in-house"
+
+extraction:
+  roi_size: 40 # square ROI side in pixels, shifted inward at tile edges
+  image_dir_glob: "*after*" # tile directory inside each sample directory
+  # Tile channel per output channel, by file-name suffix (*_sNNN_<suffix>.tif)
+  channels:
+    b: "ch01"
+    g: "ch02"
+    r: "ch03"
+
+rendering:
+  # pseudo_rgb8_vstretch: linear 16 -> 8 bit, then (if vstretch is set) stretch
+  # the HSV value channel of each image between two of its own percentiles.
+  # This is how the current in-house training images were made (50 / 99).
+  method: pseudo_rgb8_vstretch
+  vstretch: # null = no stretch (plain 8-bit pseudo RGB)
+    lower_percentile: 50
+    upper_percentile: 99
+  # class_paths: <output_dir>/<class path>/<roi name>.png (cells without a class
+  #              path are skipped); pool: <output_dir>/<source>/<roi name>.png
+  layout: class_paths
+  output_dir: "data/in-house-roi/pseudo_rgb8_vstretch"
+
+output:
+  force: false # true = replace an existing catalog / output directory

@@ -792,6 +792,44 @@ class TestExperimentDispatcher:
             mock_ad.assert_called_once()
 
     @pytest.mark.component
+    def test_dispatcher_routes_to_roi_extraction(self, tmp_path):
+        """Test that dispatcher correctly routes to roi_extraction."""
+        config_file = tmp_path / "roi_config.yaml"
+        config_data = {"experiment": "roi_extraction", "mode": "catalog"}
+        with open(config_file, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+
+        with patch("src.main.setup_experiment_roi_extraction") as mock_roi:
+            main([str(config_file)])
+
+            mock_roi.assert_called_once()
+
+    @pytest.mark.component
+    @pytest.mark.parametrize(
+        "mode, target",
+        [
+            ("catalog", "src.experiments.roi_extraction.catalog.run_catalog"),
+            ("extract", "src.experiments.roi_extraction.extract.run_extract"),
+            ("render", "src.experiments.roi_extraction.render.run_render"),
+        ],
+    )
+    def test_setup_roi_extraction_runs_the_mode(self, mode, target):
+        """setup_experiment_roi_extraction validates, then runs the mode's step."""
+        from src.main import setup_experiment_roi_extraction
+
+        config = {"experiment": "roi_extraction", "mode": mode}
+        with (
+            patch(
+                "src.experiments.roi_extraction.config.validate_config"
+            ) as mock_validate,
+            patch(target) as mock_run,
+        ):
+            setup_experiment_roi_extraction(config)
+
+        mock_validate.assert_called_once_with(config)
+        mock_run.assert_called_once_with(config)
+
+    @pytest.mark.component
     def test_setup_anomaly_detection_validates_and_runs(self, tmp_path):
         """setup_experiment_anomaly_detection validates, sets up, then runs."""
         from src.main import setup_experiment_anomaly_detection
