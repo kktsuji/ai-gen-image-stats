@@ -11,7 +11,7 @@ from src.experiments.roi_extraction import extract as extract_module
 from src.experiments.roi_extraction.catalog import run_catalog
 from src.experiments.roi_extraction.extract import (
     find_image_dir,
-    find_tile,
+    index_tiles,
     read_uint16,
     roi_window,
     run_extract,
@@ -63,13 +63,30 @@ class TestFiles:
         with pytest.raises(FileNotFoundError, match="exactly one"):
             find_image_dir(str(tmp_path), "S", "*after*")
 
-    def test_find_tile_by_suffix_not_by_order(self, tmp_path):
+    def test_index_tiles_by_suffix_not_by_order(self, tmp_path):
         for ch in ("ch00", "ch01", "ch02", "ch03"):
             (tmp_path / f"x_s007_{ch}.tif").touch()
         (tmp_path / "x_s070_ch01.tif").touch()
-        assert find_tile(tmp_path, 7, "ch01").name == "x_s007_ch01.tif"
-        with pytest.raises(FileNotFoundError):
-            find_tile(tmp_path, 8, "ch01")
+        (tmp_path / "x_ch01.tif").touch()  # a merged image without a tile number
+        (tmp_path / "x_s007_ch01.tif.bak").touch()
+        index = index_tiles(tmp_path, ["ch01", "ch02"])
+        assert {k: p.name for k, p in index.items()} == {
+            (7, "ch01"): "x_s007_ch01.tif",
+            (7, "ch02"): "x_s007_ch02.tif",
+            (70, "ch01"): "x_s070_ch01.tif",
+        }
+
+    def test_index_tiles_matches_suffixes_literally(self, tmp_path):
+        (tmp_path / "x_s001_ch1.tif").touch()
+        (tmp_path / "x_s001_ch[1].tif").touch()
+        index = index_tiles(tmp_path, ["ch[1]"])
+        assert [p.name for p in index.values()] == ["x_s001_ch[1].tif"]
+
+    def test_index_tiles_rejects_duplicates(self, tmp_path):
+        (tmp_path / "a_s001_ch01.tif").touch()
+        (tmp_path / "b_s001_ch01.tif").touch()
+        with pytest.raises(ValueError, match="two 'ch01' files"):
+            index_tiles(tmp_path, ["ch01"])
 
     def test_uint16_png_round_trip(self, tmp_path):
         array = np.array([[0, 1], [4096, 65535]], dtype=np.uint16)
@@ -120,6 +137,22 @@ class TestRunExtract:
         # 4 distinct tiles (S 1: 1, 2, 3; S 2: 1) x 3 channels, although tile
         # (S 1, 1) is used by both sources
         assert spy.call_count == 12
+
+    def test_missing_tiles_fail_before_the_output_is_emptied(self, roi_inputs):
+        run_catalog(roi_inputs)
+        run_extract(roi_inputs)
+        report = Path(roi_inputs["data"]["raw16_dir"]) / "extraction.json"
+        tile = (
+            Path(roi_inputs["data"]["image_root"])
+            / "S 2"
+            / "2 (after)"
+            / "S 2 after.lif_s001_ch03.tif"
+        )
+        tile.unlink()
+        roi_inputs["output"]["force"] = True
+        with pytest.raises(FileNotFoundError, match="ch03"):
+            run_extract(roi_inputs)
+        assert report.is_file()  # the previous extraction is kept
 
     def test_channel_tiles_of_different_shape_raise(self, roi_inputs):
         run_catalog(roi_inputs)

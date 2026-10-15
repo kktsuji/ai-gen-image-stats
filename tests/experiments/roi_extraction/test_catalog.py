@@ -66,6 +66,17 @@ class TestHelpers:
             "b": ["normal/blue", "normal/red"],
         }
 
+    def test_scan_class_layout_matches_extension_case_insensitively(self, tmp_path):
+        _touch_png(tmp_path / "abnormal" / "a.PNG")
+        (tmp_path / "abnormal" / "b.txt").write_text("x")
+        assert scan_class_layout(str(tmp_path)) == {"a": ["abnormal"]}
+
+    def test_scan_class_layout_rejects_top_level_images(self, tmp_path):
+        _touch_png(tmp_path / "abnormal" / "a.png")
+        _touch_png(tmp_path / "stray.png")
+        with pytest.raises(ValueError, match="outside any class directory"):
+            scan_class_layout(str(tmp_path))
+
     def test_scan_class_layout_missing_dir(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             scan_class_layout(str(tmp_path / "missing"))
@@ -174,3 +185,9 @@ class TestRunCatalog:
             run_catalog(roi_inputs)
         roi_inputs["output"]["force"] = True
         run_catalog(roi_inputs)
+
+    def test_catalog_inside_an_input_raises(self, roi_inputs):
+        coords = roi_inputs["data"]["coordinates_root"]
+        roi_inputs["data"]["catalog"] = f"{coords}/cells.json"
+        with pytest.raises(ValueError, match="overlaps data.coordinates_root"):
+            run_catalog(roi_inputs)

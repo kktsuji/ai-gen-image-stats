@@ -11,6 +11,7 @@ from src.utils.checkpoint import file_sha256
 from src.utils.git import get_git_commit_hash
 
 __all__ = [
+    "check_no_overlap",
     "file_sha256",
     "load_catalog",
     "prepare_output_dir",
@@ -68,6 +69,21 @@ def protected_paths(config: Dict[str, Any], output_key: str) -> Dict[str, str]:
     return paths
 
 
+def check_no_overlap(path: str, protected: Dict[str, str]) -> None:
+    """Refuse an output that is, contains or lies inside a ``protected`` path.
+
+    Paths are compared after resolving symlinks.
+    """
+    resolved = Path(path).resolve()
+    for key, other_path in protected.items():
+        other = Path(other_path).resolve()
+        if other.is_relative_to(resolved) or resolved.is_relative_to(other):
+            raise ValueError(
+                f"Output {path} overlaps {key} ({other_path}); "
+                "choose a separate location"
+            )
+
+
 def prepare_output_dir(path: str, force: bool, protected: Dict[str, str]) -> Path:
     """Return an empty output directory, refusing to overwrite one unless forced.
 
@@ -76,14 +92,7 @@ def prepare_output_dir(path: str, force: bool, protected: Dict[str, str]) -> Pat
     output directory is emptied, not removed.
     """
     out_dir = Path(path)
-    resolved = out_dir.resolve()
-    for key, other_path in protected.items():
-        other = Path(other_path).resolve()
-        if other.is_relative_to(resolved) or resolved.is_relative_to(other):
-            raise ValueError(
-                f"Output directory {path} overlaps {key} ({other_path}); "
-                "choose a separate directory"
-            )
+    check_no_overlap(path, protected)
     if out_dir.exists() and not out_dir.is_dir():
         raise NotADirectoryError(f"Output path exists and is not a directory: {path}")
     if out_dir.exists() and any(out_dir.iterdir()):

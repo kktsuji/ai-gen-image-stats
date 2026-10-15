@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.experiments.roi_extraction.common import (
+    check_no_overlap,
     file_sha256,
+    protected_paths,
     provenance,
     write_json,
 )
@@ -51,12 +53,24 @@ def read_coordinates(path: Path) -> List[Dict[str, int]]:
 
 
 def scan_class_layout(layout_dir: str) -> Dict[str, List[str]]:
-    """Map each image stem under ``layout_dir`` to the directories holding it."""
+    """Map each image stem under ``layout_dir`` to the directories holding it.
+
+    The extension is matched case-insensitively (``.png``, ``.PNG``), so the
+    result does not depend on the file system. Images must sit in a class
+    directory, not directly in ``layout_dir``.
+    """
     root = Path(layout_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"Class layout directory not found: {layout_dir}")
     layout: Dict[str, List[str]] = {}
-    for path in sorted(root.rglob("*.png")):
+    for path in sorted(root.rglob("*")):
+        if path.suffix.lower() != ".png" or not path.is_file():
+            continue
+        if path.parent == root:
+            raise ValueError(
+                f"Image outside any class directory: {path} (class layouts are "
+                "<class path>/<roi name>.png)"
+            )
         class_path = path.parent.relative_to(root).as_posix()
         layout.setdefault(path.stem, []).append(class_path)
     if not layout:
@@ -142,6 +156,7 @@ def build_catalog(
 def run_catalog(config: Dict[str, Any]) -> Dict[str, Any]:
     """Write the catalog to ``data.catalog`` (``mode: catalog``)."""
     out_path = Path(config["data"]["catalog"])
+    check_no_overlap(str(out_path), protected_paths(config, "data.catalog"))
     if out_path.exists() and not config["output"]["force"]:
         raise FileExistsError(
             f"Catalog already exists: {out_path} (set output.force: true to replace it)"

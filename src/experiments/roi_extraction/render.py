@@ -87,20 +87,32 @@ def load_bgr16(raw16_dir: Path, name: str) -> np.ndarray:
     )
 
 
-def check_extraction(raw16_dir: Path, cells: List[Dict[str, Any]]) -> None:
-    """Require ``raw16_dir`` to hold the ROIs of these cells (same positions)."""
+def check_extraction(
+    raw16_dir: Path, cells: List[Dict[str, Any]], extraction: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Require ``raw16_dir`` to hold the ROIs of these cells, cut as configured.
+
+    Returns the extraction report.
+    """
     report_path = raw16_dir / "extraction.json"
     if not report_path.is_file():
         raise FileNotFoundError(
             f"No extraction report in {raw16_dir} (run with --mode extract first)"
         )
     with open(report_path, encoding="utf-8") as f:
-        extracted = json.load(f).get("rois_sha256")
-    if extracted != rois_sha256(cells):
+        report = json.load(f)
+    if report.get("rois_sha256") != rois_sha256(cells):
         raise ValueError(
             f"{raw16_dir} was extracted for other cells than the catalog's "
             "(positions or names changed); re-run --mode extract"
         )
+    for key in ("roi_size", "channels"):
+        if report.get(key) != extraction[key]:
+            raise ValueError(
+                f"{raw16_dir} was extracted with {key} {report.get(key)!r}, but "
+                f"extraction.{key} is {extraction[key]!r}; re-run --mode extract"
+            )
+    return report
 
 
 def run_render(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -118,7 +130,7 @@ def run_render(config: Dict[str, Any]) -> Dict[str, Any]:
             "catalog.class_layout_dir (this one has no class paths); use "
             "layout: pool instead"
         )
-    check_extraction(raw16_dir, cells)
+    extracted = check_extraction(raw16_dir, cells, config["extraction"])
     out_dir = prepare_output_dir(
         rendering["output_dir"],
         config["output"]["force"],
@@ -153,6 +165,9 @@ def run_render(config: Dict[str, Any]) -> Dict[str, Any]:
         "catalog": data["catalog"],
         "catalog_sha256": file_sha256(data["catalog"]),
         "raw16_dir": data["raw16_dir"],
+        "rois_sha256": extracted["rois_sha256"],
+        "roi_size": extracted["roi_size"],
+        "channels": extracted["channels"],
         "written_counts": dict(sorted(written.items())),
         "skipped_count": len(skipped),
         "skipped": skipped,

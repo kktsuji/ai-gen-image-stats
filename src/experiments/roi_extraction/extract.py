@@ -6,9 +6,10 @@ rescaled, so every rendering method starts from the same pixels.
 """
 
 import logging
+import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import numpy as np
 from PIL import Image
@@ -25,6 +26,8 @@ from src.experiments.roi_extraction.common import (
 from src.experiments.roi_extraction.config import CHANNEL_KEYS
 
 logger = logging.getLogger(__name__)
+
+TileKey = Tuple[int, str]  # (img_no, file-name suffix)
 
 
 def roi_window(center: int, size: int, length: int) -> Tuple[int, int]:
@@ -62,15 +65,60 @@ def find_image_dir(image_root: str, sample: str, pattern: str) -> Path:
     return matches[0]
 
 
-def find_tile(image_dir: Path, img_no: int, suffix: str) -> Path:
-    """The tile TIFF ``*_sNNN_<suffix>.tif`` of ``image_dir``."""
-    matches = sorted(image_dir.glob(f"*_s{img_no:03d}_{suffix}.tif"))
-    if len(matches) != 1:
-        raise FileNotFoundError(
-            f"Expected exactly one tile '*_s{img_no:03d}_{suffix}.tif' in "
-            f"{image_dir}, found {len(matches)}"
-        )
-    return matches[0]
+def index_tiles(image_dir: Path, suffixes: Iterable[str]) -> Dict[TileKey, Path]:
+    """Index the tile TIFFs ``*_s<img_no>_<suffix>.tif`` of ``image_dir``.
+
+    One directory listing per sample (listings are slow on mounted drives);
+    suffixes are matched literally. A (tile, suffix) found twice is an error.
+    """
+    alternatives = "|".join(re.escape(s) for s in suffixes)
+    pattern = re.compile(rf".*_s(\d+)_({alternatives})\.tif")
+    index: Dict[TileKey, Path] = {}
+    for path in sorted(image_dir.iterdir()):
+        match = pattern.fullmatch(path.name)
+        if match is None:
+            continue
+        key = (int(match.group(1)), match.group(2))
+        if key in index:
+            raise ValueError(
+                f"Tile {key[0]} has two '{key[1]}' files in {image_dir}: "
+                f"{index[key].name}, {path.name}"
+            )
+        index[key] = path
+    return index
+
+
+def locate_tiles(
+    cells: List[Dict[str, Any]], image_root: str, extraction: Dict[str, Any]
+) -> Tuple[Dict[str, Path], Dict[Tuple[str, int], Dict[str, Path]]]:
+    """Find the image directory of every sample and the tiles of every cell.
+
+    Run before any output is touched, so a wrong or unmounted ``image_root``
+    fails without deleting a previous extraction.
+    """
+    channels = extraction["channels"]
+    image_dirs: Dict[str, Path] = {}
+    indexes: Dict[str, Dict[TileKey, Path]] = {}
+    tiles: Dict[Tuple[str, int], Dict[str, Path]] = {}
+    for cell in cells:
+        sample, img_no = cell["sample"], cell["img_no"]
+        if sample not in image_dirs:
+            image_dirs[sample] = find_image_dir(
+                image_root, sample, extraction["image_dir_glob"]
+            )
+            indexes[sample] = index_tiles(image_dirs[sample], channels.values())
+        if (sample, img_no) in tiles:
+            continue
+        missing = [s for s in channels.values() if (img_no, s) not in indexes[sample]]
+        if missing:
+            raise FileNotFoundError(
+                f"No tile *_s{img_no:03d}_<suffix>.tif for suffixes {missing} in "
+                f"{image_dirs[sample]}"
+            )
+        tiles[(sample, img_no)] = {
+            key: indexes[sample][(img_no, suffix)] for key, suffix in channels.items()
+        }
+    return image_dirs, tiles
 
 
 def read_uint16(path: Path) -> np.ndarray:
@@ -97,6 +145,7 @@ def run_extract(config: Dict[str, Any]) -> Dict[str, Any]:
         load_catalog(data["catalog"])["cells"],
         key=lambda c: (c["sample"], c["img_no"]),
     )
+    image_dirs, tile_paths = locate_tiles(cells, data["image_root"], extraction)
     out_dir = prepare_output_dir(
         data["raw16_dir"],
         config["output"]["force"],
@@ -105,21 +154,13 @@ def run_extract(config: Dict[str, Any]) -> Dict[str, Any]:
     size = extraction["roi_size"]
     channels = extraction["channels"]
 
-    image_dirs: Dict[str, Path] = {}
     tiles: Dict[str, np.ndarray] = {}
     tile_key = None
     for i, cell in enumerate(cells, 1):
         sample = cell["sample"]
-        if sample not in image_dirs:
-            image_dirs[sample] = find_image_dir(
-                data["image_root"], sample, extraction["image_dir_glob"]
-            )
         if tile_key != (sample, cell["img_no"]):
             tile_key = (sample, cell["img_no"])
-            tiles = {
-                key: read_uint16(find_tile(image_dirs[sample], cell["img_no"], suffix))
-                for key, suffix in channels.items()
-            }
+            tiles = {key: read_uint16(p) for key, p in tile_paths[tile_key].items()}
             shapes = {tile.shape for tile in tiles.values()}
             if len(shapes) != 1:
                 raise ValueError(

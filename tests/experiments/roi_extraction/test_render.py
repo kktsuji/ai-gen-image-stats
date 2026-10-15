@@ -183,6 +183,22 @@ class TestRunRender:
         with pytest.raises(ValueError, match=f"overlaps {protected}"):
             run_render(extracted)
 
+    @pytest.mark.parametrize(
+        "key, value",
+        [("roi_size", 6), ("channels", {"b": "ch03", "g": "ch02", "r": "ch01"})],
+    )
+    def test_rejects_rois_cut_with_other_settings(self, extracted, key, value):
+        extracted["extraction"][key] = value
+        with pytest.raises(ValueError, match=f"extracted with {key}"):
+            run_render(extracted)
+
+    def test_report_records_the_extraction(self, extracted):
+        extracted["rendering"]["vstretch"] = None
+        report = run_render(extracted)
+        assert report["roi_size"] == 4
+        assert report["channels"] == {"b": "ch01", "g": "ch02", "r": "ch03"}
+        assert len(report["rois_sha256"]) == 64
+
     def test_output_containing_the_class_layout_raises(self, extracted):
         layout = Path(extracted["catalog"]["class_layout_dir"])
         extracted["rendering"]["output_dir"] = str(layout.parent)
